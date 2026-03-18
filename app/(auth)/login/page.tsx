@@ -176,6 +176,9 @@ export default function LoginPage() {
                 'Entrar com e-mail'
               )}
             </Button>
+            <p className="text-xs text-center text-slate-400 mt-2">
+              Enviaremos um link seguro de acesso para seu e-mail. Sem senha necessária.
+            </p>
           </form>
         </div>
 

@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
     // Create profile with free plan for new users
     const { data: newProfile, error: createError } = await supabase
       .from('profiles')
-      .insert({ user_id: user.id, plan: 'free' })
+      .insert({ user_id: user.id, email: user.email ?? '', plan: 'free' })
       .select('api_key, plan')
       .single() as { data: { api_key: string | null; plan: string } | null, error: any }
 

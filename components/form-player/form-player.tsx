@@ -78,6 +78,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [direction, setDirection] = useState(0)
   const [progressAnim, setProgressAnim] = useState(0)
+  const [responseId, setResponseId] = useState<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const skipNextValidationRef = useRef(false)
@@ -143,6 +144,11 @@ export function FormPlayer({ form }: FormPlayerProps) {
     if (isLastQuestion) {
       handleSubmit()
     } else {
+      // Salvar progresso parcial antes de avançar
+      const updatedAnswers = { ...answers }
+      if (currentQuestion) {
+        savePartialResponse(updatedAnswers, currentQuestion.id).catch(console.warn)
+      }
       setDirection(1)
       setCurrentIndex(prev => Math.min(prev + 1, questions.length - 1))
     }
@@ -158,19 +164,36 @@ export function FormPlayer({ form }: FormPlayerProps) {
     if (!validateCurrentQuestion()) return
     setIsSubmitting(true)
 
-    const { error } = await supabase
-      .from('responses')
-      .insert({ form_id: form.id, answers } as never)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (responseId) headers['x-response-id'] = responseId
 
-    if (error) {
-      toast.error('Falha ao enviar resposta')
-      setIsSubmitting(false)
-    } else {
+      const res = await fetch('/api/responses', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          form_id: form.id,
+          answers,
+          completed: true,
+          last_question_answered: currentQuestion?.id ?? null,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        toast.error(data.error ?? 'Falha ao enviar resposta')
+        setIsSubmitting(false)
+        return
+      }
+
       firePixels(form)
       setIsSubmitted(true)
       if (form.redirect_url) {
         setTimeout(() => { window.location.href = form.redirect_url! }, 2800)
       }
+    } catch (e) {
+      toast.error('Falha ao enviar resposta')
+      setIsSubmitting(false)
     }
   }
 
@@ -180,6 +203,35 @@ export function FormPlayer({ form }: FormPlayerProps) {
       setErrors(prev => { const e = { ...prev }; delete e[questionId]; return e })
     }
   }
+
+  // Salva resposta parcial a cada pergunta respondida (upsert por responseId)
+  const savePartialResponse = useCallback(async (currentAnswers: Record<string, Json>, lastQuestionId: string) => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (responseId) headers['x-response-id'] = responseId
+
+      const res = await fetch('/api/responses', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          form_id: form.id,
+          answers: currentAnswers,
+          completed: false,
+          last_question_answered: lastQuestionId,
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (!responseId && data.response_id) {
+          setResponseId(data.response_id)
+        }
+      }
+    } catch (e) {
+      // Falha silenciosa — não impede o fluxo do player
+      console.warn('Partial save failed:', e)
+    }
+  }, [form.id, responseId])
 
   // Keyboard navigation
   useEffect(() => {

@@ -79,7 +79,14 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_api_key: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      increment_response_count: {
+        Args: { p_user_id: string }
+        Returns: void
+      }
     }
     Enums: {
       form_status: 'draft' | 'published' | 'closed'
@@ -89,25 +96,66 @@ export interface Database {
       profiles: {
         Row: {
           id: string
+          user_id: string
           email: string
           full_name: string | null
           avatar_url: string | null
+          plan: string
+          api_key: string | null
+          response_count: number
+          limit_alert_sent: boolean
           created_at: string
           updated_at: string
         }
         Insert: {
-          id: string
+          id?: string
+          user_id: string
           email: string
           full_name?: string | null
           avatar_url?: string | null
+          plan?: string
+          api_key?: string | null
+          response_count?: number
+          limit_alert_sent?: boolean
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
+          user_id?: string
           email?: string
           full_name?: string | null
           avatar_url?: string | null
+          plan?: string
+          api_key?: string | null
+          response_count?: number
+          limit_alert_sent?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      custom_domains: {
+        Row: {
+          id: string
+          user_id: string
+          form_id: string | null
+          domain: string
+          verified: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          form_id?: string | null
+          domain: string
+          verified?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          form_id?: string | null
+          verified?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -126,6 +174,7 @@ export interface Database {
           pixels: PixelConfig | null
           plan: PlanType
           redirect_url: string | null
+          webhook_url: string | null
           created_at: string
           updated_at: string
         }
@@ -142,6 +191,7 @@ export interface Database {
           pixels?: PixelConfig | null
           plan?: PlanType
           redirect_url?: string | null
+          webhook_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -156,6 +206,7 @@ export interface Database {
           pixels?: PixelConfig | null
           plan?: PlanType
           redirect_url?: string | null
+          webhook_url?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -166,21 +217,26 @@ export interface Database {
           form_id: string
           answers: Record<string, Json>
           completed: boolean
-          last_question_answered: number | null
+          last_question_answered: string | null
           submitted_at: string
+          created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
           form_id: string
           answers: Record<string, Json>
           completed?: boolean
-          last_question_answered?: number | null
+          last_question_answered?: string | null
           submitted_at?: string
+          created_at?: string
+          updated_at?: string
         }
         Update: {
           answers?: Record<string, Json>
           completed?: boolean
-          last_question_answered?: number | null
+          last_question_answered?: string | null
+          updated_at?: string
         }
         Relationships: []
       }

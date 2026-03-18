@@ -1,0 +1,71 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+// POST /api/settings/api-key — gerar/regenerar API key
+export async function POST(req: NextRequest) {
+  const supabase = await createClient()
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Verificar plano Professional
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('user_id', user.id)
+    .single() as { data: { plan: string } | null }
+
+  if (!profile || (profile.plan !== 'professional' && profile.plan !== 'enterprise')) {
+    return NextResponse.json(
+      { error: 'API key access requires Professional or Enterprise plan' },
+      { status: 403 }
+    )
+  }
+
+  // Gerar nova API key
+  const { data: keyData } = await supabase.rpc('generate_api_key') as { data: string | null }
+  const newKey = keyData ?? ('ek_' + Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b => b.toString(16).padStart(2, '0')).join(''))
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ api_key: newKey } as never)
+    .eq('user_id', user.id)
+
+  if (updateError) {
+    return NextResponse.json({ error: 'Failed to generate API key' }, { status: 500 })
+  }
+
+  return NextResponse.json({ api_key: newKey })
+}
+
+// GET /api/settings/api-key — obter status da API key
+export async function GET(req: NextRequest) {
+  const supabase = await createClient()
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('api_key, plan')
+    .eq('user_id', user.id)
+    .single() as { data: { api_key: string | null; plan: string } | null }
+
+  if (!profile) {
+    return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+  }
+
+  const maskedKey = profile.api_key
+    ? profile.api_key.slice(0, 8) + '*'.repeat(Math.max(0, profile.api_key.length - 12)) + profile.api_key.slice(-4)
+    : null
+
+  return NextResponse.json({
+    has_api_key: !!profile.api_key,
+    api_key_preview: maskedKey,
+    plan: profile.plan,
+  })
+}

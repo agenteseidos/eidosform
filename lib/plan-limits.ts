@@ -132,7 +132,7 @@ export async function checkResponseLimit(userId: string): Promise<{
  */
 export async function incrementResponseCount(userId: string): Promise<void> {
   const supabase = await createClient()
-  await supabase.rpc('increment_response_count', { user_id: userId })
+  await supabase.rpc('increment_response_count', { p_user_id: userId })
 }
 
 /**

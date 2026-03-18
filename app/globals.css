@@ -47,6 +47,16 @@
 }
 
 :root {
+  /* Paleta Eidos — cores extraídas da logo */
+  --eidos-yellow: #F5B731;
+  --eidos-orange: #E8923A;
+  --eidos-lime: #A8D34F;
+  --eidos-green: #4BB678;
+  --eidos-cyan: #2BA5B5;
+  --eidos-blue: #2B6CA3;
+  --eidos-navy: #1E3A5F;
+  --eidos-indigo: #3B2D6B;
+
   --radius: 0.625rem;
   --background: oklch(0.99 0.002 250);
   --foreground: oklch(0.13 0.02 250);

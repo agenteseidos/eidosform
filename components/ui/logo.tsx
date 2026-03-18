@@ -24,14 +24,14 @@ export function Logo({ href = '/', size = 'md', className }: LogoProps) {
         className
       )}
     >
-      <span style={{ color: '#F5C518' }}>Eidos</span>
-      <span className="font-extrabold text-foreground">Form</span>
+      <span style={{ color: '#F5B731' }} className="font-bold">Eidos</span>
+      <span style={{ color: 'var(--eidos-navy)' }} className="font-extrabold dark:text-white">Form</span>
     </span>
   )
 
   if (href) {
     return (
-      <Link href={href} className="focus:outline-none focus-visible:ring-2 rounded" style={{ '--tw-ring-color': '#F5C518' } as React.CSSProperties}>
+      <Link href={href} className="focus:outline-none focus-visible:ring-2 rounded" style={{ '--tw-ring-color': '#F5B731' } as React.CSSProperties}>
         {content}
       </Link>
     )

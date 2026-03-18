@@ -27,7 +27,7 @@ export default async function HomePage() {
       <div
         className="absolute inset-0 z-0"
         style={{
-          background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(37, 99, 235, 0.15) 0%, transparent 50%), radial-gradient(ellipse 60% 50% at 100% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%), radial-gradient(ellipse 60% 50% at 0% 80%, rgba(14, 165, 233, 0.06) 0%, transparent 50%), linear-gradient(to bottom, #ffffff 0%, #f8faff 100%)",
+          background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(43, 108, 163, 0.15) 0%, transparent 50%), radial-gradient(ellipse 60% 50% at 100% 50%, rgba(43, 165, 181, 0.08) 0%, transparent 50%), radial-gradient(ellipse 60% 50% at 0% 80%, rgba(75, 182, 120, 0.06) 0%, transparent 50%), linear-gradient(to bottom, #ffffff 0%, #f8faff 100%)",
         }}
       />
       
@@ -54,7 +54,7 @@ export default async function HomePage() {
           <div className="flex items-center gap-4">
             {user ? (
               <Link href="/dashboard">
-                <Button className="bg-[#F5C518] hover:bg-[#d4a914] text-slate-900 shadow-lg shadow-yellow-600/20 transition-all hover:shadow-yellow-600/30 hover:-translate-y-0.5">
+                <Button className="bg-[#F5B731] hover:bg-[#E8923A] text-slate-900 shadow-lg shadow-[#F5B731]/20 transition-all hover:shadow-[#F5B731]/30 hover:-translate-y-0.5">
                   Painel
                   <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
@@ -67,7 +67,7 @@ export default async function HomePage() {
                   </Button>
                 </Link>
                 <Link href="/login">
-                  <Button className="bg-[#F5C518] hover:bg-[#d4a914] text-slate-900 shadow-lg shadow-yellow-600/20 transition-all hover:shadow-yellow-600/30 hover:-translate-y-0.5">
+                  <Button className="bg-[#F5B731] hover:bg-[#E8923A] text-slate-900 shadow-lg shadow-[#F5B731]/20 transition-all hover:shadow-[#F5B731]/30 hover:-translate-y-0.5">
                     Começar
                     <ArrowRight className="ml-2 w-4 h-4" />
                   </Button>
@@ -81,14 +81,14 @@ export default async function HomePage() {
       {/* Hero Section */}
       <section className="relative z-10 pt-32 pb-20 px-6">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-50 text-yellow-700 text-sm font-medium mb-8 border border-yellow-100">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#F5B731]/10 text-[#1E3A5F] text-sm font-medium mb-8 border border-[#F5B731]/30">
             <Sparkles className="w-4 h-4" />
             Gratuito & Open Source
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold text-slate-900 leading-tight mb-6 tracking-tight">
             Formulários que parecem{' '}
-            <span className="text-[#F5C518]">
+            <span className="text-[#F5B731]">
               human
             </span>
           </h1>
@@ -100,7 +100,7 @@ export default async function HomePage() {
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/login">
-              <Button size="lg" className="h-14 px-8 text-lg bg-[#F5C518] hover:bg-[#d4a914] text-slate-900 shadow-xl shadow-yellow-600/25 transition-all hover:shadow-blue-600/35 hover:-translate-y-0.5">
+              <Button size="lg" className="h-14 px-8 text-lg bg-[#F5B731] hover:bg-[#E8923A] text-slate-900 shadow-xl shadow-yellow-600/25 transition-all hover:shadow-blue-600/35 hover:-translate-y-0.5">
                 Comece gratuitamente
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
@@ -131,7 +131,7 @@ export default async function HomePage() {
                 </div>
               </div>
             </div>
-            <div className="aspect-video bg-gradient-to-br from-blue-600 via-blue-500 to-sky-500 flex items-center justify-center relative overflow-hidden">
+            <div className="aspect-video bg-gradient-to-br from-[#1E3A5F] via-[#2B6CA3] to-[#2BA5B5] flex items-center justify-center relative overflow-hidden">
               {/* Decorative circles */}
               <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
               <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-sky-400/10 rounded-full blur-3xl"></div>
@@ -164,9 +164,9 @@ export default async function HomePage() {
           </div>
           
           <div className="grid md:grid-cols-3 gap-8">
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-50 to-white border border-blue-100/60 hover:shadow-lg hover:shadow-blue-100/50 transition-all duration-300">
-              <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center mb-4">
-                <Zap className="w-6 h-6 text-[#F5C518]" />
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-[#F5B731]/5 to-white border border-[#F5B731]/20 hover:shadow-lg hover:shadow-[#F5B731]/15 transition-all duration-300">
+              <div className="w-12 h-12 rounded-xl bg-[#F5B731]/15 flex items-center justify-center mb-4">
+                <Zap className="w-6 h-6 text-[#F5B731]" />
               </div>
               <h3 className="text-xl font-semibold text-slate-900 mb-2">Uma por Vez</h3>
               <p className="text-slate-600">
@@ -174,9 +174,9 @@ export default async function HomePage() {
               </p>
             </div>
             
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-sky-50 to-white border border-sky-100/60 hover:shadow-lg hover:shadow-sky-100/50 transition-all duration-300">
-              <div className="w-12 h-12 rounded-xl bg-sky-100 flex items-center justify-center mb-4">
-                <Palette className="w-6 h-6 text-sky-600" />
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-[#2BA5B5]/5 to-white border border-[#2BA5B5]/20 hover:shadow-lg hover:shadow-[#2BA5B5]/15 transition-all duration-300">
+              <div className="w-12 h-12 rounded-xl bg-[#2BA5B5]/15 flex items-center justify-center mb-4">
+                <Palette className="w-6 h-6 text-[#2BA5B5]" />
               </div>
               <h3 className="text-xl font-semibold text-slate-900 mb-2">Temas Incríveis</h3>
               <p className="text-slate-600">
@@ -184,9 +184,9 @@ export default async function HomePage() {
               </p>
             </div>
             
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-emerald-50 to-white border border-emerald-100/60 hover:shadow-lg hover:shadow-emerald-100/50 transition-all duration-300">
-              <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center mb-4">
-                <Shield className="w-6 h-6 text-emerald-600" />
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-[#4BB678]/5 to-white border border-[#4BB678]/20 hover:shadow-lg hover:shadow-[#4BB678]/15 transition-all duration-300">
+              <div className="w-12 h-12 rounded-xl bg-[#4BB678]/15 flex items-center justify-center mb-4">
+                <Shield className="w-6 h-6 text-[#4BB678]" />
               </div>
               <h3 className="text-xl font-semibold text-slate-900 mb-2">Privacidade em Primeiro</h3>
               <p className="text-slate-600">
@@ -217,7 +217,7 @@ export default async function HomePage() {
             ].map((type) => (
               <span
                 key={type}
-                className="px-4 py-2 bg-white rounded-full border border-slate-200 text-slate-700 text-sm font-medium shadow-sm hover:border-yellow-200 hover:bg-yellow-50 transition-colors cursor-default"
+                className="px-4 py-2 bg-white rounded-full border border-slate-200 text-slate-700 text-sm font-medium shadow-sm hover:border-[#F5B731]/40 hover:bg-[#F5B731]/8 transition-colors cursor-default"
               >
                 {type}
               </span>
@@ -229,7 +229,7 @@ export default async function HomePage() {
       {/* CTA */}
       <section className="relative z-10 py-20 px-6 bg-white">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="bg-gradient-to-br from-[#F5C518] via-[#F5C518] to-[#22C55E] rounded-3xl p-12 md:p-16 text-white relative overflow-hidden">
+          <div className="bg-gradient-to-br from-[#F5B731] via-[#E8923A] to-[#4BB678] rounded-3xl p-12 md:p-16 text-white relative overflow-hidden">
             {/* Decorative elements */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
@@ -241,7 +241,7 @@ export default async function HomePage() {
               Junte-se a milhares de pessoas que usam o EidosForm para coletar respostas.
             </p>
             <Link href="/login">
-              <Button size="lg" className="h-14 px-8 text-lg bg-white text-[#F5C518] hover:bg-blue-50 shadow-xl shadow-blue-900/20 relative transition-all hover:-translate-y-0.5">
+              <Button size="lg" className="h-14 px-8 text-lg bg-white text-[#F5B731] hover:bg-blue-50 shadow-xl shadow-blue-900/20 relative transition-all hover:-translate-y-0.5">
                 Comece gratuitamente
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>

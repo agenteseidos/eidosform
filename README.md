@@ -9,7 +9,7 @@ EidosForm é uma alternativa open-source ao Typeform, desenvolvida pela Eidos. C
 - 🎯 **Uma pergunta por vez** — experiência focada e conversacional
 - 🌙 **Dark mode nativo** — padrão escuro, sem piscar
 - 🇧🇷 **Interface em PT-BR** — totalmente em português
-- 🎨 **Temas customizáveis** — paleta Eidos: amarelo #F5C518, verde #22C55E
+- 🎨 **Temas customizáveis** — paleta Eidos: amarelo #F5B731, verde #22C55E
 - 📊 **Dashboard de respostas** — visualize e exporte em CSV
 - 🔗 **URLs amigáveis** — /f/seu-formulario
 - 📁 **Upload de arquivos** — integração com Cloudflare R2
@@ -55,7 +55,7 @@ Acesse http://localhost:3000
 
 ## 🎨 Cores Eidos
 
-- Amarelo: #F5C518 (primária, CTAs)
+- Amarelo: #F5B731 (primária, CTAs)
 - Verde: #22C55E (acento, sucesso)
 
 ## 📄 Licença

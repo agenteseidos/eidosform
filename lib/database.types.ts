@@ -25,6 +25,9 @@ export type QuestionType =
 // Form status
 export type FormStatus = 'draft' | 'published' | 'closed'
 
+// Plan tiers
+export type PlanType = 'free' | 'pro' | 'enterprise'
+
 // Theme presets
 export type ThemePreset = 
   | 'midnight'
@@ -58,6 +61,14 @@ export interface QuestionConfig {
   allowedFileTypes?: string[] // For file_upload
   maxFileSize?: number // In MB
   placeholder?: string
+}
+
+// Pixel tracking configuration
+export interface PixelConfig {
+  facebook?: string    // Facebook Pixel ID
+  google?: string      // Google Analytics / GTM ID
+  tiktok?: string      // TikTok Pixel ID
+  custom?: string[]    // Custom scripts/pixel codes
 }
 
 // Database tables
@@ -100,6 +111,10 @@ export interface Database {
           theme: ThemePreset
           questions: QuestionConfig[]
           thank_you_message: string
+          // New fields — Sprint Dia 2
+          pixels: PixelConfig | null
+          plan: PlanType
+          redirect_url: string | null
           created_at: string
           updated_at: string
         }
@@ -113,6 +128,9 @@ export interface Database {
           theme?: ThemePreset
           questions?: QuestionConfig[]
           thank_you_message?: string
+          pixels?: PixelConfig | null
+          plan?: PlanType
+          redirect_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -124,6 +142,9 @@ export interface Database {
           theme?: ThemePreset
           questions?: QuestionConfig[]
           thank_you_message?: string
+          pixels?: PixelConfig | null
+          plan?: PlanType
+          redirect_url?: string | null
           updated_at?: string
         }
       }
@@ -155,4 +176,3 @@ export type FormInsert = Database['public']['Tables']['forms']['Insert']
 export type FormUpdate = Database['public']['Tables']['forms']['Update']
 export type Response = Database['public']['Tables']['responses']['Row']
 export type ResponseInsert = Database['public']['Tables']['responses']['Insert']
-

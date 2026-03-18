@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, Json } from '@/lib/database.types'
 import { getTheme, getThemeCSSVariables } from '@/lib/themes'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { ChevronUp, ChevronDown, Check, ArrowRight } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
@@ -19,7 +18,6 @@ function firePixels(form: Form) {
   const pixels = form.pixels as Record<string, string> | null
   if (!pixels) return
 
-  // Meta Pixel
   if (pixels.metaPixelId) {
     const script = document.createElement('script')
     script.innerHTML = `
@@ -30,12 +28,11 @@ function firePixels(form: Form) {
     document.head.appendChild(script)
   }
 
-  // TikTok Pixel
   if (pixels.tiktokPixelId) {
     const script = document.createElement('script')
     script.innerHTML = `
       !function (w, d, t) {
-        w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=[page,track,identify,instances,debug,on,off,once,ready,alias,group,enableCookie,disableCookie],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
+        w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
         ttq.load('${pixels.tiktokPixelId}');
         ttq.track('SubmitForm');
       }(window, document, 'ttq');
@@ -43,7 +40,6 @@ function firePixels(form: Form) {
     document.head.appendChild(script)
   }
 
-  // Google Ads conversion
   if (pixels.googleAdsId && pixels.googleAdsLabel) {
     const gtag = document.createElement('script')
     gtag.src = `https://www.googletagmanager.com/gtag/js?id=${pixels.googleAdsId}`
@@ -60,7 +56,6 @@ function firePixels(form: Form) {
     document.head.appendChild(script)
   }
 
-  // GTM
   if (pixels.gtmId) {
     const script = document.createElement('script')
     script.innerHTML = `
@@ -82,78 +77,76 @@ export function FormPlayer({ form }: FormPlayerProps) {
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [direction, setDirection] = useState(0)
-  
+  const [progressAnim, setProgressAnim] = useState(0)
+
   const containerRef = useRef<HTMLDivElement>(null)
   const skipNextValidationRef = useRef(false)
 
   const currentQuestion = questions[currentIndex]
   const isLastQuestion = currentIndex === questions.length - 1
   const isFirstQuestion = currentIndex === 0
-  const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0
+  const progressFull = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0
+
+  // Animate progress on question change
+  useEffect(() => {
+    const timer = setTimeout(() => setProgressAnim(progressFull), 120)
+    return () => clearTimeout(timer)
+  }, [progressFull])
 
   const validateCurrentQuestion = useCallback(() => {
     if (!currentQuestion) return true
-    
+
     const answer = answers[currentQuestion.id]
-    
+
     if (currentQuestion.required) {
       if (answer === undefined || answer === null || answer === '') {
-        setErrors({ ...errors, [currentQuestion.id]: 'Este campo é obrigatório' })
+        setErrors(prev => ({ ...prev, [currentQuestion.id]: 'Este campo é obrigatório' }))
         return false
       }
-      
       if (Array.isArray(answer) && answer.length === 0) {
-        setErrors({ ...errors, [currentQuestion.id]: 'Selecione ao menos uma opção' })
+        setErrors(prev => ({ ...prev, [currentQuestion.id]: 'Selecione ao menos uma opção' }))
         return false
       }
     }
 
-    // Type-specific validation
     if (answer && currentQuestion.type === 'email') {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(String(answer))) {
-        setErrors({ ...errors, [currentQuestion.id]: 'Por favor, insira um e-mail válido' })
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(answer))) {
+        setErrors(prev => ({ ...prev, [currentQuestion.id]: 'Por favor, insira um e-mail válido' }))
         return false
       }
     }
 
     if (answer && currentQuestion.type === 'url') {
-      try {
-        new URL(String(answer))
-      } catch {
-        setErrors({ ...errors, [currentQuestion.id]: 'Por favor, insira uma URL válida' })
+      try { new URL(String(answer)) } catch {
+        setErrors(prev => ({ ...prev, [currentQuestion.id]: 'Por favor, insira uma URL válida' }))
         return false
       }
     }
 
     if (answer && currentQuestion.type === 'phone') {
-      const phoneRegex = /^[+]?[\d\s\-().]+$/
-      if (!phoneRegex.test(String(answer))) {
-        setErrors({ ...errors, [currentQuestion.id]: 'Por favor, insira um telefone válido' })
+      if (!/^[+]?[\d\s\-().]+$/.test(String(answer))) {
+        setErrors(prev => ({ ...prev, [currentQuestion.id]: 'Por favor, insira um telefone válido' }))
         return false
       }
     }
 
-    // Clear error if valid
-    const newErrors = { ...errors }
-    delete newErrors[currentQuestion.id]
-    setErrors(newErrors)
+    setErrors(prev => { const e = { ...prev }; delete e[currentQuestion.id]; return e })
     return true
-  }, [currentQuestion, answers, errors])
+  }, [currentQuestion, answers])
 
   const goToNext = useCallback((skipValidation?: boolean) => {
-    // Check both the parameter and the ref for skip validation
     const shouldSkip = skipValidation || skipNextValidationRef.current
-    skipNextValidationRef.current = false // Reset the ref
-    
+    skipNextValidationRef.current = false
+
     if (!shouldSkip && !validateCurrentQuestion()) return
-    
+
     if (isLastQuestion) {
       handleSubmit()
     } else {
       setDirection(1)
       setCurrentIndex(prev => Math.min(prev + 1, questions.length - 1))
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLastQuestion, questions.length, validateCurrentQuestion])
 
   const goToPrevious = useCallback(() => {
@@ -163,34 +156,28 @@ export function FormPlayer({ form }: FormPlayerProps) {
 
   const handleSubmit = async () => {
     if (!validateCurrentQuestion()) return
-    
     setIsSubmitting(true)
-    
-    const insertData = {
-      form_id: form.id,
-      answers: answers,
-    }
+
     const { error } = await supabase
       .from('responses')
-      .insert(insertData as never)
+      .insert({ form_id: form.id, answers } as never)
 
     if (error) {
       toast.error('Falha ao enviar resposta')
       setIsSubmitting(false)
     } else {
-      // Fire tracking pixels on successful submission
       firePixels(form)
       setIsSubmitted(true)
+      if (form.redirect_url) {
+        setTimeout(() => { window.location.href = form.redirect_url! }, 2800)
+      }
     }
   }
 
   const updateAnswer = (questionId: string, value: Json) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }))
-    // Clear error when user starts typing
     if (errors[questionId]) {
-      const newErrors = { ...errors }
-      delete newErrors[questionId]
-      setErrors(newErrors)
+      setErrors(prev => { const e = { ...prev }; delete e[questionId]; return e })
     }
   }
 
@@ -198,25 +185,21 @@ export function FormPlayer({ form }: FormPlayerProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isSubmitted || isSubmitting) return
-      
+
       if (e.key === 'Enter' && !e.shiftKey) {
-        // Don't submit on enter for textarea
         if (currentQuestion?.type === 'long_text') {
-          if (e.metaKey || e.ctrlKey) {
-            e.preventDefault()
-            goToNext()
-          }
+          if (e.metaKey || e.ctrlKey) { e.preventDefault(); goToNext() }
           return
         }
         e.preventDefault()
         goToNext()
       }
-      
+
       if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
         e.preventDefault()
         goToPrevious()
       }
-      
+
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         goToNext()
@@ -227,99 +210,93 @@ export function FormPlayer({ form }: FormPlayerProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [currentQuestion, goToNext, goToPrevious, isSubmitted, isSubmitting])
 
-  // Scroll/wheel navigation
+  // Wheel navigation
   useEffect(() => {
     let lastScrollTime = 0
-    const scrollThreshold = 500 // ms between scroll navigations
-    const deltaThreshold = 50 // minimum scroll delta to trigger navigation
-
     const handleWheel = (e: WheelEvent) => {
       if (isSubmitted || isSubmitting) return
-      
-      // Don't interfere with scrollable inputs like textarea
       const target = e.target as HTMLElement
       if (target.tagName === 'TEXTAREA') return
-      
       const now = Date.now()
-      if (now - lastScrollTime < scrollThreshold) return
-      
-      // Check if scroll delta is significant enough
-      if (Math.abs(e.deltaY) < deltaThreshold) return
-      
-      if (e.deltaY > 0) {
-        // Scrolling down - go to next question
-        goToNext()
-      } else {
-        // Scrolling up - go to previous question
-        goToPrevious()
-      }
-      
+      if (now - lastScrollTime < 500) return
+      if (Math.abs(e.deltaY) < 50) return
+      if (e.deltaY > 0) goToNext()
+      else goToPrevious()
       lastScrollTime = now
     }
-
     window.addEventListener('wheel', handleWheel, { passive: true })
     return () => window.removeEventListener('wheel', handleWheel)
   }, [goToNext, goToPrevious, isSubmitted, isSubmitting])
 
-  // Thank you screen
+  // ─── Thank you screen ────────────────────────────────────────────────────────
   if (isSubmitted) {
-    // Redirect if configured
-    if (form.redirect_url) {
-      window.location.href = form.redirect_url
-    }
-
     return (
-      <div 
+      <div
         className="min-h-screen flex items-center justify-center p-6"
-        style={{ 
-          ...themeStyles,
-          backgroundColor: theme.backgroundColor,
-          fontFamily: theme.fontFamily,
-        }}
+        style={{ ...themeStyles, backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, scale: 0.92, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-lg w-full px-4"
         >
           <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
+            initial={{ scale: 0, rotate: -90 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ delay: 0.25, type: 'spring', stiffness: 220, damping: 14 }}
             className="w-20 h-20 mx-auto mb-8 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: `${theme.primaryColor}20` }}
+            style={{ backgroundColor: `${theme.primaryColor}1A` }}
           >
             <Check className="w-10 h-10" style={{ color: theme.primaryColor }} />
           </motion.div>
-          <h1 
+
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.38 }}
             className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 leading-tight"
             style={{ color: theme.textColor }}
           >
-            {form.thank_you_message || 'Obrigado!'}
-          </h1>
-          <p 
+            {(form as unknown as Record<string,string>).thank_you_title || form.thank_you_message || 'Obrigado! 🎉'}
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.48 }}
             className="text-base md:text-lg opacity-70"
             style={{ color: theme.textColor }}
           >
-            Sua resposta foi registrada com sucesso.
-          </p>
-          
-          {/* EidosForm branding */}
+            {(form as unknown as Record<string,string>).thank_you_description || 'Sua resposta foi registrada com sucesso.'}
+          </motion.p>
+
+          {form.redirect_url && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.65 }}
+              className="mt-4 text-sm opacity-40"
+              style={{ color: theme.textColor }}
+            >
+              Redirecionando em instantes…
+            </motion.p>
+          )}
+
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
+            transition={{ delay: 0.8 }}
             className="mt-12"
           >
-            <a 
+            <a
               href="/"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm opacity-50 hover:opacity-70 transition-opacity"
+              className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
               style={{ color: theme.textColor }}
             >
-              <span>Feito com</span>
-              <span className="font-semibold">EidosForm</span>
+              Feito com <span className="font-semibold">EidosForm</span>
             </a>
           </motion.div>
         </motion.div>
@@ -327,64 +304,52 @@ export function FormPlayer({ form }: FormPlayerProps) {
     )
   }
 
-  // Empty form
+  // ─── Empty form ──────────────────────────────────────────────────────────────
   if (questions.length === 0) {
     return (
-      <div 
+      <div
         className="min-h-screen flex items-center justify-center p-6"
-        style={{ 
-          backgroundColor: theme.backgroundColor,
-          fontFamily: theme.fontFamily,
-        }}
+        style={{ backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
       >
-        <p style={{ color: theme.textColor }} className="opacity-50">
-          This form has no questions yet.
-        </p>
+        <p style={{ color: theme.textColor }} className="opacity-50">Este formulário ainda não tem perguntas.</p>
       </div>
     )
   }
 
   const slideVariants = {
-    enter: (direction: number) => ({
-      y: direction > 0 ? 100 : -100,
-      opacity: 0,
-    }),
-    center: {
-      y: 0,
-      opacity: 1,
-    },
-    exit: (direction: number) => ({
-      y: direction > 0 ? -100 : 100,
-      opacity: 0,
-    }),
+    enter: (dir: number) => ({ y: dir > 0 ? 72 : -72, opacity: 0, scale: 0.98 }),
+    center: { y: 0, opacity: 1, scale: 1 },
+    exit: (dir: number) => ({ y: dir > 0 ? -72 : 72, opacity: 0, scale: 0.98 }),
   }
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="min-h-screen flex flex-col"
-      style={{ 
-        ...themeStyles,
-        backgroundColor: theme.backgroundColor,
-        fontFamily: theme.fontFamily,
-      }}
+      style={{ ...themeStyles, backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
     >
-      {/* Progress bar */}
-      <div className="fixed top-0 left-0 right-0 z-50">
-        <Progress 
-          value={progress} 
-          className="h-1 rounded-none"
-          style={{ 
-            backgroundColor: `${theme.primaryColor}20`,
-          }}
-          indicatorStyle={{
-            backgroundColor: theme.primaryColor,
-          }}
+      {/* ── Progress bar ── */}
+      <div className="fixed top-0 left-0 right-0 z-50 h-1" style={{ backgroundColor: `${theme.primaryColor}20` }}>
+        <motion.div
+          className="h-full"
+          style={{ backgroundColor: theme.primaryColor }}
+          animate={{ width: `${progressAnim}%` }}
+          transition={{ duration: 0.45, ease: 'easeInOut' }}
         />
       </div>
 
-      {/* Main content */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 pt-12 pb-24">
+      {/* Progress label */}
+      <motion.div
+        className="fixed top-3 right-4 z-50 text-xs font-semibold tabular-nums"
+        style={{ color: theme.primaryColor }}
+        animate={{ opacity: progressAnim > 0 ? 1 : 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        {Math.round(progressAnim)}%
+      </motion.div>
+
+      {/* ── Main content ── */}
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 pt-14 pb-24">
         <div className="w-full max-w-2xl">
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
@@ -394,43 +359,43 @@ export function FormPlayer({ form }: FormPlayerProps) {
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              transition={{ duration: 0.38, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
               {/* Question number */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
+              <motion.div
+                initial={{ opacity: 0, x: -12 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 }}
-                className="mb-6 flex items-center gap-2"
+                transition={{ delay: 0.07 }}
+                className="mb-5 flex items-center gap-2"
               >
-                <span 
-                  className="text-base font-medium"
-                  style={{ color: theme.primaryColor }}
-                >
+                <span className="text-sm font-bold tabular-nums" style={{ color: theme.primaryColor }}>
                   {currentIndex + 1}
                 </span>
-                <ArrowRight className="w-4 h-4" style={{ color: theme.primaryColor }} />
+                <ArrowRight className="w-3.5 h-3.5" style={{ color: theme.primaryColor }} />
+                <span className="text-xs opacity-40" style={{ color: theme.textColor }}>
+                  de {questions.length}
+                </span>
               </motion.div>
 
-              {/* Question */}
-              <motion.h2 
-                initial={{ opacity: 0, y: 20 }}
+              {/* Title */}
+              <motion.h2
+                initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-                className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-3"
+                transition={{ delay: 0.12 }}
+                className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-3 leading-snug"
                 style={{ color: theme.textColor }}
               >
-                {currentQuestion.title || 'Untitled question'}
+                {currentQuestion.title || 'Pergunta sem título'}
                 {currentQuestion.required && (
                   <span style={{ color: theme.primaryColor }} className="ml-1">*</span>
                 )}
               </motion.h2>
 
               {currentQuestion.description && (
-                <motion.p 
-                  initial={{ opacity: 0, y: 20 }}
+                <motion.p
+                  initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
+                  transition={{ delay: 0.17 }}
                   className="text-base md:text-lg opacity-70 mb-6 sm:mb-8"
                   style={{ color: theme.textColor }}
                 >
@@ -438,11 +403,11 @@ export function FormPlayer({ form }: FormPlayerProps) {
                 </motion.p>
               )}
 
-              {/* Answer input */}
+              {/* Input */}
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
+                transition={{ delay: 0.22 }}
                 className="mt-8"
               >
                 <QuestionRenderer
@@ -452,28 +417,22 @@ export function FormPlayer({ form }: FormPlayerProps) {
                   theme={theme}
                   error={errors[currentQuestion.id]}
                   onSubmit={(skipValidation?: boolean) => {
-                    if (skipValidation) {
-                      skipNextValidationRef.current = true
-                    }
+                    if (skipValidation) skipNextValidationRef.current = true
                     goToNext(skipValidation)
                   }}
                   onClearError={() => {
-                    if (errors[currentQuestion.id]) {
-                      const newErrors = { ...errors }
-                      delete newErrors[currentQuestion.id]
-                      setErrors(newErrors)
-                    }
+                    setErrors(prev => { const e = { ...prev }; delete e[currentQuestion.id]; return e })
                   }}
                 />
               </motion.div>
 
-              {/* Error message */}
+              {/* Error */}
               <AnimatePresence>
                 {errors[currentQuestion.id] && (
                   <motion.p
-                    initial={{ opacity: 0, y: -10 }}
+                    initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
+                    exit={{ opacity: 0, y: -8 }}
                     className="mt-4 text-sm font-medium"
                     style={{ color: '#EF4444' }}
                   >
@@ -482,42 +441,37 @@ export function FormPlayer({ form }: FormPlayerProps) {
                 )}
               </AnimatePresence>
 
-              {/* Action buttons */}
+              {/* CTA */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
+                transition={{ delay: 0.27 }}
                 className="mt-6 sm:mt-8 flex flex-wrap items-center gap-3 sm:gap-4"
               >
                 <Button
                   onClick={() => goToNext()}
                   disabled={isSubmitting}
-                  className="h-12 px-6 text-base font-medium"
-                  style={{ 
-                    backgroundColor: theme.primaryColor,
-                    color: theme.backgroundColor,
-                  }}
+                  className="h-12 px-7 text-base font-semibold rounded-xl transition-transform active:scale-95"
+                  style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
                 >
                   {isSubmitting ? (
-                    'Enviando...'
+                    <span className="flex items-center gap-2">
+                      <motion.span
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
+                        className="block w-4 h-4 border-2 border-current border-t-transparent rounded-full"
+                      />
+                      Enviando…
+                    </span>
                   ) : isLastQuestion ? (
-                    <>
-                      Enviar
-                      <Check className="w-4 h-4 ml-2" />
-                    </>
+                    <span className="flex items-center gap-2">Enviar <Check className="w-4 h-4" /></span>
                   ) : (
-                    <>
-                      OK
-                      <Check className="w-4 h-4 ml-2" />
-                    </>
+                    <span className="flex items-center gap-2">OK <Check className="w-4 h-4" /></span>
                   )}
                 </Button>
 
-                <span 
-                  className="text-sm opacity-50"
-                  style={{ color: theme.textColor }}
-                >
-                  pressione <kbd className="font-mono font-medium">Enter ↵</kbd>
+                <span className="text-sm opacity-40" style={{ color: theme.textColor }}>
+                  pressione <kbd className="font-mono font-semibold">Enter ↵</kbd>
                 </span>
               </motion.div>
             </motion.div>
@@ -525,37 +479,38 @@ export function FormPlayer({ form }: FormPlayerProps) {
         </div>
       </main>
 
-      {/* Navigation footer */}
+      {/* ── Nav footer ── */}
       <footer className="fixed bottom-0 left-0 right-0 p-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="sm"
             onClick={goToPrevious}
             disabled={isFirstQuestion}
-            className="h-10 w-10 p-0"
+            className="h-9 w-9 p-0 rounded-lg"
             style={{ color: theme.textColor }}
+            aria-label="Pergunta anterior"
           >
-            <ChevronUp className="w-5 h-5" />
+            <ChevronUp className="w-4 h-4" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => goToNext()}
             disabled={isSubmitting}
-            className="h-10 w-10 p-0"
+            className="h-9 w-9 p-0 rounded-lg"
             style={{ color: theme.textColor }}
+            aria-label="Próxima pergunta"
           >
-            <ChevronDown className="w-5 h-5" />
+            <ChevronDown className="w-4 h-4" />
           </Button>
         </div>
 
-        {/* EidosForm branding */}
-        <a 
+        <a
           href="/"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm opacity-50 hover:opacity-70 transition-opacity"
+          className="text-xs opacity-40 hover:opacity-60 transition-opacity"
           style={{ color: theme.textColor }}
         >
           Feito com <span className="font-semibold">EidosForm</span>
@@ -564,4 +519,3 @@ export function FormPlayer({ form }: FormPlayerProps) {
     </div>
   )
 }
-

@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Form, Response, QuestionConfig, Json } from '@/lib/database.types'
+import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +30,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Card } from '@/components/ui/card'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
@@ -46,12 +53,19 @@ import {
   Image as ImageIcon,
   File,
   Eye,
+  CheckCircle2,
+  Clock,
+  BarChart3,
+  Users,
+  X,
 } from 'lucide-react'
 
 interface ResponsesDashboardProps {
   form: Form
   responses: Response[]
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatDate(date: string) {
   return new Date(date).toLocaleString('pt-BR', {
@@ -63,26 +77,23 @@ function formatDate(date: string) {
   })
 }
 
+function formatDateShort(date: string) {
+  return new Date(date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
 interface FileUpload {
   name: string
   type: string
   size?: number
-  data?: string  // base64 data URL (fallback)
-  url?: string   // R2 URL (preferred)
+  data?: string
+  url?: string
 }
 
 function isFileUpload(answer: Json): boolean {
-  if (answer === null || typeof answer !== 'object' || Array.isArray(answer)) {
-    return false
-  }
+  if (answer === null || typeof answer !== 'object' || Array.isArray(answer)) return false
   const obj = answer as Record<string, unknown>
-  // Check if it has name and either url or data (file upload signature)
-  return (
-    'name' in obj &&
-    typeof obj.name === 'string' &&
-    (('url' in obj && typeof obj.url === 'string') || 
-     ('data' in obj && typeof obj.data === 'string'))
-  )
+  return 'name' in obj && typeof obj.name === 'string' &&
+    (('url' in obj && typeof obj.url === 'string') || ('data' in obj && typeof obj.data === 'string'))
 }
 
 function asFileUpload(answer: Json): FileUpload {
@@ -90,7 +101,6 @@ function asFileUpload(answer: Json): FileUpload {
 }
 
 function getFileUrl(file: FileUpload): string {
-  // Prefer URL (R2) over data (base64)
   return file.url || file.data || ''
 }
 
@@ -99,10 +109,7 @@ function formatAnswer(answer: Json): string {
   if (typeof answer === 'boolean') return answer ? 'Sim' : 'Não'
   if (Array.isArray(answer)) return answer.join(', ')
   if (typeof answer === 'object') {
-    // Handle file uploads
-    if (isFileUpload(answer)) {
-      return asFileUpload(answer).name
-    }
+    if (isFileUpload(answer)) return asFileUpload(answer).name
     return JSON.stringify(answer)
   }
   return String(answer)
@@ -114,42 +121,232 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+// ─── Metric Card ─────────────────────────────────────────────────────────────
+
+function MetricCard({ icon, label, value, sub, color }: {
+  icon: React.ReactNode
+  label: string
+  value: string | number
+  sub?: string
+  color?: string
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Card className="p-5 flex items-start gap-4">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: color ? `${color}15` : undefined }}
+        >
+          <span style={{ color }}>{icon}</span>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{label}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-0.5">{value}</p>
+          {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+        </div>
+      </Card>
+    </motion.div>
+  )
+}
+
+// ─── Individual Response Dialog ───────────────────────────────────────────────
+
+function ResponseDetailDialog({
+  response,
+  questions,
+  onClose,
+}: {
+  response: Response | null
+  questions: QuestionConfig[]
+  onClose: () => void
+}) {
+  const [filePreview, setFilePreview] = useState<FileUpload | null>(null)
+
+  if (!response) return null
+  const answers = response.answers as Record<string, Json>
+
+  return (
+    <>
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" />
+              Resposta — {formatDate(response.submitted_at)}
+            </DialogTitle>
+            <DialogDescription className="flex items-center gap-2">
+              {response.completed ? (
+                <span className="inline-flex items-center gap-1 text-emerald-600">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Completa
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-amber-500">
+                  <Clock className="w-3.5 h-3.5" /> Parcial ({response.last_question_answered ?? 0}/{questions.length})
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 mt-4 pr-1">
+            <div className="space-y-5 pb-4">
+              {questions.map((q, idx) => {
+                const answer = answers[q.id]
+                return (
+                  <div key={q.id} className="border border-slate-100 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">
+                      Pergunta {idx + 1}
+                    </p>
+                    <p className="text-sm font-semibold text-slate-800 mb-2">{q.title}</p>
+                    {answer === undefined || answer === null || answer === '' ? (
+                      <p className="text-sm text-slate-400 italic">Não respondida</p>
+                    ) : isFileUpload(answer) ? (
+                      <button
+                        onClick={() => setFilePreview(asFileUpload(answer))}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm transition-colors"
+                      >
+                        {asFileUpload(answer).type?.startsWith('image/') ? (
+                          <ImageIcon className="w-4 h-4" />
+                        ) : (
+                          <File className="w-4 h-4" />
+                        )}
+                        {asFileUpload(answer).name}
+                        <Eye className="w-3.5 h-3.5 ml-1 opacity-60" />
+                      </button>
+                    ) : (
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{formatAnswer(answer)}</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={onClose}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* File preview inside response dialog */}
+      {filePreview && (
+        <Dialog open onOpenChange={() => setFilePreview(null)}>
+          <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {filePreview.type?.startsWith('image/') ? <ImageIcon className="w-5 h-5 text-blue-600" /> : <File className="w-5 h-5 text-blue-600" />}
+                <span className="truncate">{filePreview.name}</span>
+              </DialogTitle>
+              <DialogDescription>
+                {filePreview.size ? formatFileSize(filePreview.size) + ' • ' : ''}{filePreview.type}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-auto mt-4">
+              {filePreview.type?.startsWith('image/') ? (
+                <img src={getFileUrl(filePreview)} alt={filePreview.name} className="max-w-full h-auto rounded-lg mx-auto" />
+              ) : filePreview.type === 'application/pdf' ? (
+                <iframe src={getFileUrl(filePreview)} className="w-full h-[60vh] rounded-lg border" title={filePreview.name} />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                  <File className="w-16 h-16 mb-4 opacity-40" />
+                  <p className="text-sm">Preview não disponível para este tipo de arquivo</p>
+                </div>
+              )}
+            </div>
+            <DialogFooter className="mt-4">
+              <Button variant="outline" onClick={() => setFilePreview(null)}>Fechar</Button>
+              {filePreview.url ? (
+                <a href={filePreview.url} target="_blank" rel="noopener noreferrer" download={filePreview.name}>
+                  <Button className="bg-blue-600 hover:bg-blue-700"><Download className="w-4 h-4 mr-2" />Download</Button>
+                </a>
+              ) : filePreview.data ? (
+                <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => {
+                  const link = document.createElement('a')
+                  link.href = filePreview.data!
+                  link.download = filePreview.name
+                  link.click()
+                }}>
+                  <Download className="w-4 h-4 mr-2" />Download
+                </Button>
+              ) : null}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export function ResponsesDashboard({ form, responses: initialResponses }: ResponsesDashboardProps) {
-  const router = useRouter()
   const supabase = createClient()
   const questions = (form.questions as QuestionConfig[]) || []
 
   const [responses, setResponses] = useState(initialResponses)
   const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'complete' | 'partial'>('all')
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7d' | '30d'>('all')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [responseToDelete, setResponseToDelete] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [filePreview, setFilePreview] = useState<FileUpload | null>(null)
+  const [selectedResponse, setSelectedResponse] = useState<Response | null>(null)
 
-  // Filter responses based on search query
+  // ── Metrics ──
+  const metrics = useMemo(() => {
+    const total = responses.length
+    const completed = responses.filter(r => r.completed).length
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
+
+    // Group by day for recent activity
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const todayCount = responses.filter(r => new Date(r.submitted_at) >= today).length
+
+    return { total, completed, completionRate, todayCount }
+  }, [responses])
+
+  // ── Filters ──
   const filteredResponses = useMemo(() => {
-    if (!searchQuery.trim()) return responses
+    let list = responses
 
-    const query = searchQuery.toLowerCase()
-    return responses.filter(response => {
-      const answers = response.answers as Record<string, Json>
-      return Object.values(answers).some(answer => 
-        formatAnswer(answer).toLowerCase().includes(query)
-      )
-    })
-  }, [responses, searchQuery])
+    // Status filter
+    if (statusFilter === 'complete') list = list.filter(r => r.completed)
+    else if (statusFilter === 'partial') list = list.filter(r => !r.completed)
+
+    // Date filter
+    if (dateFilter !== 'all') {
+      const now = new Date()
+      const cutoff = new Date()
+      if (dateFilter === 'today') cutoff.setHours(0, 0, 0, 0)
+      else if (dateFilter === '7d') cutoff.setDate(now.getDate() - 7)
+      else if (dateFilter === '30d') cutoff.setDate(now.getDate() - 30)
+      list = list.filter(r => new Date(r.submitted_at) >= cutoff)
+    }
+
+    // Search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      list = list.filter(r => {
+        const ans = r.answers as Record<string, Json>
+        return Object.values(ans).some(a => formatAnswer(a).toLowerCase().includes(q))
+      })
+    }
+
+    return list
+  }, [responses, statusFilter, dateFilter, searchQuery])
+
+  const hasActiveFilters = statusFilter !== 'all' || dateFilter !== 'all' || searchQuery.trim() !== ''
 
   const handleDelete = async () => {
     if (!responseToDelete) return
-    
     setIsDeleting(true)
-    const { error } = await supabase
-      .from('responses')
-      .delete()
-      .eq('id', responseToDelete)
-
+    const { error } = await supabase.from('responses').delete().eq('id', responseToDelete)
     if (error) {
-      toast.error('Failed to delete response')
+      toast.error('Erro ao excluir resposta')
     } else {
       setResponses(prev => prev.filter(r => r.id !== responseToDelete))
       toast.success('Resposta excluída')
@@ -160,98 +357,69 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
   }
 
   const exportToCSV = () => {
-    if (responses.length === 0) {
-      toast.error('Nenhuma resposta para exportar')
-      return
-    }
-
-    // Build CSV header
-    const headers = ['Submitted At', ...questions.map(q => q.title || 'Untitled')]
-    
-    // Build CSV rows
-    const rows = responses.map(response => {
-      const answers = response.answers as Record<string, Json>
+    if (filteredResponses.length === 0) { toast.error('Nenhuma resposta para exportar'); return }
+    const headers = ['Enviado em', 'Status', ...questions.map(q => q.title || 'Sem título')]
+    const rows = filteredResponses.map(r => {
+      const ans = r.answers as Record<string, Json>
       return [
-        formatDate(response.submitted_at),
-        ...questions.map(q => formatAnswer(answers[q.id]))
+        formatDate(r.submitted_at),
+        r.completed ? 'Completa' : 'Parcial',
+        ...questions.map(q => formatAnswer(ans[q.id]))
       ]
     })
-
-    // Create CSV content
-    const csvContent = [
+    const csv = [
       headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
-      ...rows.map(row => 
-        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-      )
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     ].join('\n')
-
-    // Download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = `${form.title || 'form'}-respostas-${new Date().toISOString().split('T')[0]}.csv`
     link.click()
     URL.revokeObjectURL(link.href)
-    
-    toast.success('CSV exported successfully')
+    toast.success('CSV exportado com sucesso')
   }
 
   const copyFormLink = () => {
-    const link = `${window.location.origin}/f/${form.slug}`
-    navigator.clipboard.writeText(link)
-    toast.success('Link copied to clipboard')
+    navigator.clipboard.writeText(`${window.location.origin}/f/${form.slug}`)
+    toast.success('Link copiado!')
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-6 md:px-10 lg:px-12 py-8">
-      {/* Header */}
+    <div className="max-w-7xl mx-auto px-4 md:px-8 lg:px-12 py-8">
+
+      {/* ── Header ── */}
       <div className="mb-8">
         <div className="flex items-center gap-4 mb-4">
           <Link href="/dashboard">
             <Button variant="ghost" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Voltar
+              <ArrowLeft className="w-4 h-4 mr-2" />Voltar
             </Button>
           </Link>
         </div>
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold text-slate-900">{form.title}</h1>
-              {form.status === 'published' && (
-                <Badge className="bg-emerald-100 text-emerald-700">Publicado</Badge>
-              )}
-              {form.status === 'draft' && (
-                <Badge variant="secondary">Rascunho</Badge>
-              )}
-              {form.status === 'closed' && (
-                <Badge variant="secondary" className="bg-amber-100 text-amber-700">Encerrado</Badge>
-              )}
+              {form.status === 'published' && <Badge className="bg-emerald-100 text-emerald-700 border-0">Publicado</Badge>}
+              {form.status === 'draft' && <Badge variant="secondary">Rascunho</Badge>}
+              {form.status === 'closed' && <Badge className="bg-amber-100 text-amber-700 border-0">Encerrado</Badge>}
             </div>
-            <p className="text-slate-600 mt-1">
-              {responses.length} {responses.length === 1 ? 'resposta' : 'respostas'}
+            <p className="text-slate-500 mt-1 text-sm">
+              {responses.length} {responses.length === 1 ? 'resposta' : 'respostas'} no total
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Link href={`/forms/${form.id}/edit`}>
-              <Button variant="outline" size="sm">
-                <Pencil className="w-4 h-4 mr-2" />
-                Edit Form
-              </Button>
+              <Button variant="outline" size="sm"><Pencil className="w-4 h-4 mr-2" />Editar</Button>
             </Link>
             {form.status === 'published' && (
               <>
-                <Button variant="outline" size="sm" onClick={copyFormLink}>
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy Link
-                </Button>
+                <Button variant="outline" size="sm" onClick={copyFormLink}><Copy className="w-4 h-4 mr-2" />Copiar link</Button>
                 <Link href={`/f/${form.slug}`} target="_blank">
-                  <Button variant="outline" size="sm">
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    View Form
-                  </Button>
+                  <Button variant="outline" size="sm"><ExternalLink className="w-4 h-4 mr-2" />Ver formulário</Button>
                 </Link>
               </>
             )}
@@ -259,121 +427,206 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
         </div>
       </div>
 
-      {/* Responses section */}
+      {/* ── Metrics ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <MetricCard
+          icon={<Users className="w-5 h-5" />}
+          label="Total respostas"
+          value={metrics.total}
+          sub={`${metrics.todayCount} hoje`}
+          color="#3B82F6"
+        />
+        <MetricCard
+          icon={<CheckCircle2 className="w-5 h-5" />}
+          label="Completas"
+          value={metrics.completed}
+          color="#10B981"
+        />
+        <MetricCard
+          icon={<BarChart3 className="w-5 h-5" />}
+          label="Taxa de conclusão"
+          value={`${metrics.completionRate}%`}
+          color="#8B5CF6"
+        />
+        <MetricCard
+          icon={<Clock className="w-5 h-5" />}
+          label="Parciais"
+          value={metrics.total - metrics.completed}
+          color="#F59E0B"
+        />
+      </div>
+
+      {/* ── Empty state ── */}
       {responses.length === 0 ? (
         <Card className="p-12 text-center">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
             <FileText className="w-8 h-8 text-slate-400" />
           </div>
           <h2 className="text-xl font-semibold text-slate-900 mb-2">Nenhuma resposta ainda</h2>
-          <p className="text-slate-600 max-w-sm mx-auto">
-            {form.status === 'published' 
+          <p className="text-slate-500 max-w-sm mx-auto text-sm">
+            {form.status === 'published'
               ? 'Compartilhe seu formulário para começar a receber respostas'
-              : 'Publique seu formulário para começar a receber respostas'
-            }
+              : 'Publique seu formulário para começar a receber respostas'}
           </p>
           {form.status === 'published' && (
             <Button onClick={copyFormLink} className="mt-6 bg-blue-600 hover:bg-blue-700">
-              <Copy className="w-4 h-4 mr-2" />
-              Copy form link
+              <Copy className="w-4 h-4 mr-2" />Copiar link
             </Button>
           )}
         </Card>
       ) : (
         <>
-          {/* Toolbar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-            <div className="relative flex-1 max-w-md">
+          {/* ── Toolbar ── */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+            <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
-                placeholder="Buscar respostas..."
+                placeholder="Buscar nas respostas…"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-9"
               />
             </div>
-            <Button onClick={exportToCSV} variant="outline">
-              <Download className="w-4 h-4 mr-2" />
-              Export CSV
+
+            <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos status</SelectItem>
+                <SelectItem value="complete">Completas</SelectItem>
+                <SelectItem value="partial">Parciais</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={dateFilter} onValueChange={v => setDateFilter(v as typeof dateFilter)}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Período" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todo período</SelectItem>
+                <SelectItem value="today">Hoje</SelectItem>
+                <SelectItem value="7d">Últimos 7 dias</SelectItem>
+                <SelectItem value="30d">Últimos 30 dias</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setSearchQuery(''); setStatusFilter('all'); setDateFilter('all') }}
+                className="text-slate-500"
+              >
+                <X className="w-4 h-4 mr-1" />Limpar
+              </Button>
+            )}
+
+            <Button onClick={exportToCSV} variant="outline" className="ml-auto">
+              <Download className="w-4 h-4 mr-2" />Exportar CSV
             </Button>
           </div>
 
-          {/* Table */}
+          {/* Count */}
+          <p className="text-xs text-slate-400 mb-3">
+            {filteredResponses.length === responses.length
+              ? `${responses.length} respostas`
+              : `${filteredResponses.length} de ${responses.length} respostas`}
+          </p>
+
+          {/* ── Table ── */}
           <Card className="overflow-hidden">
             <ScrollArea className="w-full">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[180px] sticky left-0 bg-white z-10 pl-6">Submitted</TableHead>
-                    {questions.map((question, index) => (
-                      <TableHead key={question.id} className="min-w-[200px]">
-                        <span className="text-slate-400 mr-2">{index + 1}.</span>
-                        {question.title || 'Untitled'}
-                        {question.required && <span className="text-red-500 ml-1">*</span>}
+                  <TableRow className="bg-slate-50/80">
+                    <TableHead className="w-[160px] sticky left-0 bg-slate-50 z-10 pl-5 text-xs">Enviado em</TableHead>
+                    <TableHead className="w-[100px] text-xs">Status</TableHead>
+                    {questions.map((q, i) => (
+                      <TableHead key={q.id} className="min-w-[180px] text-xs">
+                        <span className="text-slate-400 mr-1">{i + 1}.</span>{q.title || 'Sem título'}
+                        {q.required && <span className="text-red-400 ml-0.5">*</span>}
                       </TableHead>
                     ))}
-                    <TableHead className="w-[60px] sticky right-0 bg-white z-10"></TableHead>
+                    <TableHead className="w-[80px] sticky right-0 bg-slate-50 z-10" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredResponses.map((response) => {
-                    const answers = response.answers as Record<string, Json>
+                  {filteredResponses.map(response => {
+                    const ans = response.answers as Record<string, Json>
                     return (
-                      <TableRow key={response.id}>
-                        <TableCell className="font-medium sticky left-0 bg-white z-10 pl-6">
-                          {formatDate(response.submitted_at)}
+                      <TableRow
+                        key={response.id}
+                        className="hover:bg-blue-50/30 cursor-pointer transition-colors"
+                        onClick={() => setSelectedResponse(response)}
+                      >
+                        <TableCell className="sticky left-0 bg-white z-10 pl-5 text-sm font-medium text-slate-700">
+                          {formatDateShort(response.submitted_at)}
+                          <br />
+                          <span className="text-xs text-slate-400">
+                            {new Date(response.submitted_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </TableCell>
-                        {questions.map((question) => {
-                          const answer = answers[question.id]
-                          
-                          // Special rendering for file uploads
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          {response.completed ? (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-0 text-xs">Completa</Badge>
+                          ) : (
+                            <Badge className="bg-amber-50 text-amber-600 border-0 text-xs">Parcial</Badge>
+                          )}
+                        </TableCell>
+                        {questions.map(q => {
+                          const answer = ans[q.id]
                           if (isFileUpload(answer)) {
                             const file = asFileUpload(answer)
-                            const isImage = file.type?.startsWith('image/')
                             return (
-                              <TableCell key={question.id} className="max-w-[300px]">
+                              <TableCell key={q.id} onClick={e => e.stopPropagation()}>
                                 <button
-                                  onClick={() => setFilePreview(file)}
-                                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors text-sm group"
+                                  onClick={() => {
+                                    // open file inline by selecting response + scrolling to question
+                                    setSelectedResponse(response)
+                                  }}
+                                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs transition-colors group"
                                 >
-                                  {isImage ? (
-                                    <ImageIcon className="w-4 h-4" />
-                                  ) : (
-                                    <File className="w-4 h-4" />
-                                  )}
-                                  <span className="truncate max-w-[150px]">{file.name}</span>
-                                  <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  {file.type?.startsWith('image/') ? <ImageIcon className="w-3.5 h-3.5" /> : <File className="w-3.5 h-3.5" />}
+                                  <span className="truncate max-w-[120px]">{file.name}</span>
+                                  <Eye className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
                                 </button>
                               </TableCell>
                             )
                           }
-                          
                           return (
-                            <TableCell key={question.id} className="max-w-[300px] truncate">
-                              {formatAnswer(answer)}
+                            <TableCell key={q.id} className="max-w-[240px]">
+                              <span className="line-clamp-2 text-sm text-slate-700">{formatAnswer(answer)}</span>
                             </TableCell>
                           )
                         })}
-                        <TableCell className="sticky right-0 bg-white z-10">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setResponseToDelete(response.id)
-                                  setDeleteDialogOpen(true)
-                                }}
-                                className="text-red-600 focus:text-red-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Excluir
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                        <TableCell className="sticky right-0 bg-white z-10" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => setSelectedResponse(response)}
+                              title="Ver resposta"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => { setResponseToDelete(response.id); setDeleteDialogOpen(true) }}
+                                  className="text-red-600 focus:text-red-600"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />Excluir
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )
@@ -384,106 +637,41 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
             </ScrollArea>
           </Card>
 
-          {filteredResponses.length === 0 && searchQuery && (
+          {filteredResponses.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-slate-500">Nenhuma resposta encontrada</p>
+              <p className="text-slate-500 text-sm">Nenhuma resposta encontrada para os filtros atuais</p>
+              <Button variant="link" className="mt-2 text-sm" onClick={() => { setSearchQuery(''); setStatusFilter('all'); setDateFilter('all') }}>
+                Limpar filtros
+              </Button>
             </div>
           )}
         </>
       )}
 
-      {/* Delete confirmation dialog */}
+      {/* ── Delete dialog ── */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Excluir resposta</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir esta resposta? Esta ação não pode ser desfeita.
+              Tem certeza? Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={handleDelete}
-              disabled={isDeleting}
-            >
-              {isDeleting ? 'Excluindo...' : 'Excluir'}
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
+              {isDeleting ? 'Excluindo…' : 'Excluir'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* File preview dialog */}
-      <Dialog open={!!filePreview} onOpenChange={() => setFilePreview(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {filePreview?.type?.startsWith('image/') ? (
-                <ImageIcon className="w-5 h-5 text-blue-600" />
-              ) : (
-                <File className="w-5 h-5 text-blue-600" />
-              )}
-              <span className="truncate">{filePreview?.name}</span>
-            </DialogTitle>
-            <DialogDescription>
-              {filePreview?.size ? formatFileSize(filePreview.size) + ' • ' : ''}{filePreview?.type}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="flex-1 overflow-auto min-h-0 mt-4">
-            {filePreview?.type?.startsWith('image/') ? (
-              <img 
-                src={getFileUrl(filePreview)} 
-                alt={filePreview.name}
-                className="max-w-full h-auto rounded-lg mx-auto"
-              />
-            ) : filePreview?.type === 'application/pdf' ? (
-              <iframe
-                src={getFileUrl(filePreview)}
-                className="w-full h-[60vh] rounded-lg border"
-                title={filePreview.name}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-                <File className="w-16 h-16 mb-4 opacity-50" />
-                <p>Preview not available for this file type</p>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setFilePreview(null)}>
-              Close
-            </Button>
-            {filePreview?.url ? (
-              <a href={filePreview.url} target="_blank" rel="noopener noreferrer" download={filePreview.name}>
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
-              </a>
-            ) : (
-              <Button
-                className="bg-blue-600 hover:bg-blue-700"
-                onClick={() => {
-                  if (filePreview?.data) {
-                    const link = document.createElement('a')
-                    link.href = filePreview.data
-                    link.download = filePreview.name
-                    link.click()
-                  }
-                }}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── Response detail dialog ── */}
+      <ResponseDetailDialog
+        response={selectedResponse}
+        questions={questions}
+        onClose={() => setSelectedResponse(null)}
+      />
     </div>
   )
 }

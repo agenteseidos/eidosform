@@ -78,6 +78,9 @@ export interface Database {
     Views: {
       [_ in never]: never
     }
+    Functions: {
+      [_ in never]: never
+    }
     Enums: {
       form_status: 'draft' | 'published' | 'closed'
       theme_preset: 'midnight' | 'ocean' | 'sunset' | 'forest' | 'lavender' | 'minimal'
@@ -107,6 +110,7 @@ export interface Database {
           avatar_url?: string | null
           updated_at?: string
         }
+        Relationships: []
       }
       forms: {
         Row: {
@@ -119,7 +123,6 @@ export interface Database {
           theme: ThemePreset
           questions: QuestionConfig[]
           thank_you_message: string
-          // New fields — Sprint Dia 2
           pixels: PixelConfig | null
           plan: PlanType
           redirect_url: string | null
@@ -155,6 +158,7 @@ export interface Database {
           redirect_url?: string | null
           updated_at?: string
         }
+        Relationships: []
       }
       responses: {
         Row: {
@@ -178,6 +182,7 @@ export interface Database {
           completed?: boolean
           last_question_answered?: number | null
         }
+        Relationships: []
       }
       answer_items: {
         Row: {
@@ -197,6 +202,7 @@ export interface Database {
         Update: {
           value?: string | null
         }
+        Relationships: []
       }
     }
   }

@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { QuestionConfig } from '@/lib/database.types'
+
+interface QuestionRow {
+  id: string
+  title: string
+}
+
+interface ResponseRow {
+  id: string
+  answers: Record<string, unknown>
+  completed: boolean
+  submitted_at: string
+}
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -21,22 +32,22 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     .select('id, title, questions')
     .eq('id', id)
     .eq('user_id', user.id)
-    .single()
+    .single() as { data: { id: string; title: string; questions: QuestionRow[] } | null; error: unknown }
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
-  const questions: QuestionConfig[] = Array.isArray(form.questions) ? form.questions : []
+  const questions: QuestionRow[] = Array.isArray(form.questions) ? form.questions : []
 
   const { data: responses, error: responsesError } = await supabase
     .from('responses')
     .select('id, answers, completed, submitted_at')
     .eq('form_id', id)
-    .order('submitted_at', { ascending: true })
+    .order('submitted_at', { ascending: true }) as { data: ResponseRow[] | null; error: { message: string } | null }
 
   if (responsesError) {
-    return NextResponse.json({ error: responsesError.message }, { status: 500 })
+    return NextResponse.json({ error: (responsesError as { message: string }).message }, { status: 500 })
   }
 
   const escapeCSV = (value: unknown): string => {
@@ -54,7 +65,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const rows: string[] = [headers.map(escapeCSV).join(',')]
 
   for (const response of (responses || [])) {
-    const answers = (response.answers as Record<string, unknown>) || {}
+    const answers = response.answers || {}
     const row = [
       response.id,
       new Date(response.submitted_at).toLocaleString('pt-BR'),
@@ -64,8 +75,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     rows.push(row.map(escapeCSV).join(','))
   }
 
-  // BOM UTF-8 para Excel reconhecer acentos
-  const csv = '\uFEFF' + rows.join('\r\n')
+  const csv = '\uFEFF' + rows.join('\r\n') // BOM UTF-8 para Excel
 
   return new NextResponse(csv, {
     status: 200,

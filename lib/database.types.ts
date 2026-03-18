@@ -75,6 +75,13 @@ export interface PixelConfig {
 // Database tables
 export interface Database {
   public: {
+    Views: {
+      [_ in never]: never
+    }
+    Enums: {
+      form_status: 'draft' | 'published' | 'closed'
+      theme_preset: 'midnight' | 'ocean' | 'sunset' | 'forest' | 'lavender' | 'minimal'
+    }
     Tables: {
       profiles: {
         Row: {
@@ -154,16 +161,41 @@ export interface Database {
           id: string
           form_id: string
           answers: Record<string, Json>
+          completed: boolean
+          last_question_answered: number | null
           submitted_at: string
         }
         Insert: {
           id?: string
           form_id: string
           answers: Record<string, Json>
+          completed?: boolean
+          last_question_answered?: number | null
           submitted_at?: string
         }
         Update: {
           answers?: Record<string, Json>
+          completed?: boolean
+          last_question_answered?: number | null
+        }
+      }
+      answer_items: {
+        Row: {
+          id: string
+          response_id: string
+          question_id: string
+          value: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          response_id: string
+          question_id: string
+          value?: string | null
+          created_at?: string
+        }
+        Update: {
+          value?: string | null
         }
       }
     }

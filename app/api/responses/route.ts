@@ -22,68 +22,54 @@ export async function POST(req: NextRequest) {
     .select('id, questions, status, user_id')
     .eq('id', form_id)
     .eq('status', 'published')
-    .single()
+    .single() as { data: { id: string; questions: unknown[]; status: string; user_id: string } | null; error: unknown }
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Form not found or not published' }, { status: 404 })
   }
 
-  // Verificar se há resposta parcial para atualizar (header X-Response-Id)
   const existingResponseId = req.headers.get('x-response-id')
-
   let responseId: string
 
   if (existingResponseId) {
     const { data: updated, error: updateError } = await supabase
       .from('responses')
-      .update({
-        answers,
-        completed,
-        last_question_answered: last_question_answered ?? null,
-      })
+      .update({ answers, completed, last_question_answered: last_question_answered ?? null } as never)
       .eq('id', existingResponseId)
       .eq('form_id', form_id)
       .select('id')
-      .single()
+      .single() as { data: { id: string } | null; error: unknown }
 
     if (updateError || !updated) {
       return NextResponse.json({ error: 'Response not found' }, { status: 404 })
     }
 
     responseId = updated.id
-    // Limpar answer_items antigos para reinserir atualizados
     await supabase.from('answer_items').delete().eq('response_id', responseId)
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
-      .insert({
-        form_id,
-        answers,
-        completed,
-        last_question_answered: last_question_answered ?? null,
-      })
+      .insert({ form_id, answers, completed, last_question_answered: last_question_answered ?? null } as never)
       .select('id')
-      .single()
+      .single() as { data: { id: string } | null; error: { message: string } | null }
 
     if (insertError || !newResponse) {
-      return NextResponse.json({ error: insertError?.message || 'Failed to save response' }, { status: 500 })
+      return NextResponse.json({ error: (insertError as { message: string } | null)?.message || 'Failed to save response' }, { status: 500 })
     }
 
     responseId = newResponse.id
   }
 
   // Inserir answer_items normalizados para analytics
-  const answerItems = Object.entries(answers).map(([questionId, value]) => ({
+  const answerItems = Object.entries(answers as Record<string, unknown>).map(([questionId, value]) => ({
     response_id: responseId,
     question_id: questionId,
     value: Array.isArray(value) ? value.join(', ') : String(value ?? ''),
   }))
 
   if (answerItems.length > 0) {
-    const { error: itemsError } = await supabase.from('answer_items').insert(answerItems)
-    if (itemsError) {
-      console.error('Failed to insert answer_items:', itemsError.message)
-    }
+    const { error: itemsError } = await supabase.from('answer_items').insert(answerItems as never)
+    if (itemsError) console.error('Failed to insert answer_items:', (itemsError as { message: string }).message)
   }
 
   // Notificar por email se resposta completa

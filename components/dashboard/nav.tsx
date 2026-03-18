@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { User } from '@supabase/supabase-js'
-import { LogOut, Settings, User as UserIcon } from 'lucide-react'
+import { LogOut, Settings, User as UserIcon, CreditCard } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DashboardNavProps {
@@ -87,6 +87,12 @@ export function DashboardNav({ user }: DashboardNavProps) {
                 <Link href="/dashboard" className="cursor-pointer">
                   <UserIcon className="mr-2 h-4 w-4" />
                   Meus Formulários
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/billing" className="cursor-pointer">
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Planos & Cobrança
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>

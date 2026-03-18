@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card'
 import { Plus, FileText } from 'lucide-react'
 import { Form } from '@/lib/database.types'
 import { FormCard } from '@/components/dashboard/form-card'
+import { TemplatesGallery } from '@/components/dashboard/templates-gallery'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,6 @@ export default async function DashboardPage() {
 
   const forms = (formsData || []) as Form[]
 
-  // Get response counts for each form
   const formIds = forms.map(f => f.id)
   const { data: responseCounts } = formIds.length > 0 
     ? await supabase
@@ -35,6 +35,8 @@ export default async function DashboardPage() {
     responseCountMap.set(r.form_id, count + 1)
   })
 
+  const isNewUser = forms.length === 0
+
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
       <div className="flex items-center justify-between mb-8">
@@ -42,12 +44,15 @@ export default async function DashboardPage() {
           <h1 className="text-2xl font-bold text-slate-900">Meus Formulários</h1>
           <p className="text-slate-600 mt-1">Crie e gerencie seus formulários</p>
         </div>
-        <Link href="/forms/new">
-          <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
-            <Plus className="w-4 h-4 mr-2" />
-            Criar Formulário
-          </Button>
-        </Link>
+        <div className="flex items-center gap-3">
+          <TemplatesGallery />
+          <Link href="/forms/new">
+            <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
+              <Plus className="w-4 h-4 mr-2" />
+              Criar Formulário
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {forms.length === 0 ? (
@@ -59,12 +64,15 @@ export default async function DashboardPage() {
           <p className="text-slate-600 mb-8 max-w-md mx-auto leading-relaxed">
             Crie formulários bonitos que as pessoas querem responder. Uma pergunta de cada vez.
           </p>
-          <Link href="/forms/new">
-            <Button size="lg" className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/25 transition-all hover:shadow-blue-600/35 hover:-translate-y-0.5">
-              <Plus className="w-5 h-5 mr-2" />
-              Crie seu primeiro formulário
-            </Button>
-          </Link>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <TemplatesGallery />
+            <Link href="/forms/new">
+              <Button size="lg" className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/25 transition-all hover:shadow-blue-600/35 hover:-translate-y-0.5">
+                <Plus className="w-5 h-5 mr-2" />
+                Criar do zero
+              </Button>
+            </Link>
+          </div>
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

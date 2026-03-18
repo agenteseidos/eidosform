@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
+import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 
 // POST /api/responses — submeter resposta (completa ou parcial)
 export async function POST(req: NextRequest) {
@@ -19,16 +21,27 @@ export async function POST(req: NextRequest) {
   // Verificar se o formulário existe e está publicado
   const { data: form, error: formError } = await supabase
     .from('forms')
-    .select('id, questions, status, user_id')
+    .select('id, questions, status, user_id, webhook_url')
     .eq('id', form_id)
     .eq('status', 'published')
-    .single() as { data: { id: string; questions: unknown[]; status: string; user_id: string } | null; error: unknown }
+    .single() as { data: { id: string; questions: unknown[]; status: string; user_id: string; webhook_url: string | null } | null; error: unknown }
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Form not found or not published' }, { status: 404 })
   }
 
+  // Checar limite de respostas do plano (apenas em novas respostas completas)
   const existingResponseId = req.headers.get('x-response-id')
+  if (!existingResponseId && completed) {
+    const limitCheck = await checkResponseLimit(form.user_id)
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Response limit reached for current plan', plan: limitCheck.plan, limit: limitCheck.limit },
+        { status: 429 }
+      )
+    }
+  }
+
   let responseId: string
 
   if (existingResponseId) {
@@ -72,13 +85,29 @@ export async function POST(req: NextRequest) {
     if (itemsError) console.error('Failed to insert answer_items:', (itemsError as { message: string }).message)
   }
 
-  // Notificar por email se resposta completa
+  // Notificar por email e disparar webhook se resposta completa
   if (completed) {
+    // Incrementa contador de respostas do dono do form
+    if (!existingResponseId) {
+      await incrementResponseCount(form.user_id).catch(console.error)
+    }
+
+    // Email de notificação
     try {
       const { sendNewResponseNotification } = await import('@/lib/email')
       await sendNewResponseNotification(form_id, form.user_id, responseId)
     } catch (e) {
       console.error('Email notification failed:', e)
+    }
+
+    // Webhook externo configurado pelo usuário
+    if (form.webhook_url) {
+      dispatchWebhook({
+        webhookUrl: form.webhook_url,
+        formId: form_id,
+        responseId,
+        responseData: answers as Record<string, unknown>,
+      }).catch(console.error) // fire-and-forget, não bloqueia resposta
     }
   }
 

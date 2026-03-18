@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ArrowLeft, User, CreditCard, Trash2, LogOut } from 'lucide-react'
 import Link from 'next/link'
+import { DomainSettings } from '@/components/settings/domain-settings'
+import { ApiKeySettings } from '@/components/settings/api-key-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +22,8 @@ export default async function SettingsPage() {
   const initials = user.email?.slice(0, 2).toUpperCase() || 'U'
   const avatarUrl = user.user_metadata?.avatar_url
   const fullName = user.user_metadata?.full_name || ''
-  const currentPlan = 'Free'
+  const currentPlan: string = 'Free'
+  const isProfessional = currentPlan === 'Professional' || currentPlan === 'Business'
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
@@ -110,6 +113,12 @@ export default async function SettingsPage() {
           </Link>
         </div>
       </Card>
+
+      {/* Domínio personalizado */}
+      <DomainSettings isProfessional={isProfessional} />
+
+      {/* API Key */}
+      <ApiKeySettings isProfessional={isProfessional} />
 
       {/* Zona de perigo */}
       <Card className="p-6 border-red-100">

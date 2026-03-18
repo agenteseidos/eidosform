@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
-  DialogDescrição,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -53,6 +53,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
   const supabase = createClient()
   
   const [form, setForm] = useState(initialForm)
+  const [pixels, setPixels] = useState(initialForm.pixels || {})
   const [questions, setQuestions] = useState<QuestionConfig[]>(
     (initialForm.questions as QuestionConfig[]) || []
   )
@@ -74,6 +75,8 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       theme: form.theme,
       questions: questions,
       thank_you_message: form.thank_you_message,
+      pixels: pixels,
+      redirect_url: form.redirect_url || null,
     }
     const { error } = await supabase
       .from('forms')
@@ -87,7 +90,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       setHasUnsavedChanges(false)
     }
     setIsSaving(false)
-  }, [supabase, form, questions])
+  }, [supabase, form, questions, pixels])
 
   const handlePublish = async () => {
     if (questions.length === 0) {
@@ -106,6 +109,8 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       slug: form.slug,
       theme: form.theme,
       thank_you_message: form.thank_you_message,
+      pixels: pixels,
+      redirect_url: form.redirect_url || null,
     }
     const { error } = await supabase
       .from('forms')
@@ -423,6 +428,100 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                     rows={3}
                   />
                 </div>
+
+                <div>
+                  <Label htmlFor="redirect_url" className="text-sm font-medium">
+                    URL de Redirecionamento
+                  </Label>
+                  <p className="text-xs text-slate-500 mt-0.5">Após envio, redirecionar para esta URL</p>
+                  <Input
+                    id="redirect_url"
+                    value={form.redirect_url || ''}
+                    onChange={(e) => {
+                      setForm({ ...form, redirect_url: e.target.value || null })
+                      setHasUnsavedChanges(true)
+                    }}
+                    className="mt-2"
+                    placeholder="https://exemplo.com/obrigado"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="h-px flex-1 bg-slate-100" />
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Pixels de Rastreamento</span>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="meta_pixel" className="text-sm font-medium">Meta Pixel ID</Label>
+                      <Input
+                        id="meta_pixel"
+                        value={pixels.metaPixelId || ''}
+                        onChange={(e) => {
+                          setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5"
+                        placeholder="123456789012345"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="google_ads_id" className="text-sm font-medium">Google Ads ID</Label>
+                        <Input
+                          id="google_ads_id"
+                          value={pixels.googleAdsId || ''}
+                          onChange={(e) => {
+                            setPixels({ ...pixels, googleAdsId: e.target.value || undefined })
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-1.5"
+                          placeholder="AW-XXXXXXXXX"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="google_ads_label" className="text-sm font-medium">Label</Label>
+                        <Input
+                          id="google_ads_label"
+                          value={pixels.googleAdsLabel || ''}
+                          onChange={(e) => {
+                            setPixels({ ...pixels, googleAdsLabel: e.target.value || undefined })
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-1.5"
+                          placeholder="AbCdEfGhIj"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="tiktok_pixel" className="text-sm font-medium">TikTok Pixel ID</Label>
+                      <Input
+                        id="tiktok_pixel"
+                        value={pixels.tiktokPixelId || ''}
+                        onChange={(e) => {
+                          setPixels({ ...pixels, tiktokPixelId: e.target.value || undefined })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5"
+                        placeholder="CXXXXXXXXXXXXXXXXX"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="gtm_id" className="text-sm font-medium">Google Tag Manager ID</Label>
+                      <Input
+                        id="gtm_id"
+                        value={pixels.gtmId || ''}
+                        onChange={(e) => {
+                          setPixels({ ...pixels, gtmId: e.target.value || undefined })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5"
+                        placeholder="GTM-XXXXXXX"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </TabsContent>
           </Tabs>
@@ -484,9 +583,9 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Adicionar Pergunta</DialogTitle>
-            <DialogDescrição>
+            <DialogDescription>
               Escolha o tipo de pergunta para adicionar
-            </DialogDescrição>
+            </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-3 gap-3 py-4">
             {questionTypes.map((qt) => (
@@ -511,12 +610,12 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
             <DialogTitle>
               {form.status === 'published' ? 'Despublicar formulário?' : 'Publicar formulário?'}
             </DialogTitle>
-            <DialogDescrição>
+            <DialogDescription>
               {form.status === 'published' 
                 ? 'Isso tornará seu formulário inacessível. As respostas existentes serão mantidas.'
                 : 'Seu formulário ficará acessível em:'
               }
-            </DialogDescrição>
+            </DialogDescription>
           </DialogHeader>
           {form.status !== 'published' && (
             <div className="p-3 bg-slate-50 rounded-lg">

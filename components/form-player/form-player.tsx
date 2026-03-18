@@ -15,6 +15,61 @@ interface FormPlayerProps {
   form: Form
 }
 
+function firePixels(form: Form) {
+  const pixels = form.pixels as Record<string, string> | null
+  if (!pixels) return
+
+  // Meta Pixel
+  if (pixels.metaPixelId) {
+    const script = document.createElement('script')
+    script.innerHTML = `
+      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '${pixels.metaPixelId}');
+      fbq('track', 'Lead');
+    `
+    document.head.appendChild(script)
+  }
+
+  // TikTok Pixel
+  if (pixels.tiktokPixelId) {
+    const script = document.createElement('script')
+    script.innerHTML = `
+      !function (w, d, t) {
+        w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=[page,track,identify,instances,debug,on,off,once,ready,alias,group,enableCookie,disableCookie],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
+        ttq.load('${pixels.tiktokPixelId}');
+        ttq.track('SubmitForm');
+      }(window, document, 'ttq');
+    `
+    document.head.appendChild(script)
+  }
+
+  // Google Ads conversion
+  if (pixels.googleAdsId && pixels.googleAdsLabel) {
+    const gtag = document.createElement('script')
+    gtag.src = `https://www.googletagmanager.com/gtag/js?id=${pixels.googleAdsId}`
+    gtag.async = true
+    document.head.appendChild(gtag)
+    const script = document.createElement('script')
+    script.innerHTML = `
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '${pixels.googleAdsId}');
+      gtag('event', 'conversion', {'send_to': '${pixels.googleAdsId}/${pixels.googleAdsLabel}'});
+    `
+    document.head.appendChild(script)
+  }
+
+  // GTM
+  if (pixels.gtmId) {
+    const script = document.createElement('script')
+    script.innerHTML = `
+      (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${pixels.gtmId}');
+    `
+    document.head.appendChild(script)
+  }
+}
+
 export function FormPlayer({ form }: FormPlayerProps) {
   const supabase = createClient()
   const questions = (form.questions as QuestionConfig[]) || []
@@ -123,6 +178,8 @@ export function FormPlayer({ form }: FormPlayerProps) {
       toast.error('Falha ao enviar resposta')
       setIsSubmitting(false)
     } else {
+      // Fire tracking pixels on successful submission
+      firePixels(form)
       setIsSubmitted(true)
     }
   }
@@ -206,6 +263,11 @@ export function FormPlayer({ form }: FormPlayerProps) {
 
   // Thank you screen
   if (isSubmitted) {
+    // Redirect if configured
+    if (form.redirect_url) {
+      window.location.href = form.redirect_url
+    }
+
     return (
       <div 
         className="min-h-screen flex items-center justify-center p-6"
@@ -218,7 +280,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-lg"
+          className="text-center max-w-lg w-full px-4"
         >
           <motion.div
             initial={{ scale: 0 }}
@@ -230,16 +292,16 @@ export function FormPlayer({ form }: FormPlayerProps) {
             <Check className="w-10 h-10" style={{ color: theme.primaryColor }} />
           </motion.div>
           <h1 
-            className="text-3xl md:text-4xl font-bold mb-4"
+            className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 leading-tight"
             style={{ color: theme.textColor }}
           >
-            {form.thank_you_message}
+            {form.thank_you_message || 'Obrigado!'}
           </h1>
           <p 
-            className="text-lg opacity-70"
+            className="text-base md:text-lg opacity-70"
             style={{ color: theme.textColor }}
           >
-            Your response has been recorded.
+            Sua resposta foi registrada com sucesso.
           </p>
           
           {/* EidosForm branding */}
@@ -256,7 +318,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
               className="inline-flex items-center gap-2 text-sm opacity-50 hover:opacity-70 transition-opacity"
               style={{ color: theme.textColor }}
             >
-              <span>Made with</span>
+              <span>Feito com</span>
               <span className="font-semibold">EidosForm</span>
             </a>
           </motion.div>
@@ -322,7 +384,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
       </div>
 
       {/* Main content */}
-      <main className="flex-1 flex items-center justify-center p-6 pt-12">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 pt-12 pb-24">
         <div className="w-full max-w-2xl">
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
@@ -355,7 +417,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 }}
-                className="text-2xl md:text-3xl lg:text-4xl font-bold mb-3"
+                className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-3"
                 style={{ color: theme.textColor }}
               >
                 {currentQuestion.title || 'Untitled question'}
@@ -369,7 +431,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="text-lg md:text-xl opacity-70 mb-8"
+                  className="text-base md:text-lg opacity-70 mb-6 sm:mb-8"
                   style={{ color: theme.textColor }}
                 >
                   {currentQuestion.description}
@@ -425,7 +487,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
-                className="mt-8 flex items-center gap-4"
+                className="mt-6 sm:mt-8 flex flex-wrap items-center gap-3 sm:gap-4"
               >
                 <Button
                   onClick={() => goToNext()}
@@ -496,7 +558,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
           className="text-sm opacity-50 hover:opacity-70 transition-opacity"
           style={{ color: theme.textColor }}
         >
-          Criado com <span className="font-semibold">EidosForm</span>
+          Feito com <span className="font-semibold">EidosForm</span>
         </a>
       </footer>
     </div>

@@ -65,10 +65,11 @@ export interface QuestionConfig {
 
 // Pixel tracking configuration
 export interface PixelConfig {
-  facebook?: string    // Facebook Pixel ID
-  google?: string      // Google Analytics / GTM ID
-  tiktok?: string      // TikTok Pixel ID
-  custom?: string[]    // Custom scripts/pixel codes
+  metaPixelId?: string       // Meta (Facebook) Pixel ID
+  googleAdsId?: string       // Google Ads Conversion ID (AW-XXXXXXXXX)
+  googleAdsLabel?: string    // Google Ads Conversion Label
+  tiktokPixelId?: string     // TikTok Pixel ID
+  gtmId?: string             // Google Tag Manager Container ID (GTM-XXXXXXX)
 }
 
 // Database tables

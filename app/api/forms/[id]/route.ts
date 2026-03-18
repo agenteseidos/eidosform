@@ -94,6 +94,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   return NextResponse.json({ form: data })
 }
 
+// PUT /api/forms/[id] — update form (alias for PATCH, used by frontend)
+export const PUT = PATCH
+
 // DELETE /api/forms/[id] — delete form
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const supabase = await createClient()

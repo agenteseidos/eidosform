@@ -56,7 +56,22 @@ export async function GET(req: NextRequest) {
     .single() as { data: { api_key: string | null; plan: string } | null }
 
   if (!profile) {
-    return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    // Create profile with free plan for new users
+    const { data: newProfile, error: createError } = await supabase
+      .from('profiles')
+      .insert({ user_id: user.id, plan: 'free' })
+      .select('api_key, plan')
+      .single() as { data: { api_key: string | null; plan: string } | null, error: any }
+
+    if (createError || !newProfile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      has_api_key: false,
+      api_key_preview: null,
+      plan: newProfile.plan,
+    })
   }
 
   const maskedKey = profile.api_key

@@ -113,3 +113,71 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ response_id: responseId }, { status: existingResponseId ? 200 : 201 })
 }
+
+// GET /api/responses — list responses for authenticated user
+export async function GET(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const url = new URL(req.url)
+  const formId = url.searchParams.get('form_id')
+  const page = parseInt(url.searchParams.get('page') ?? '1')
+  const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20'), 100)
+  const offset = (page - 1) * limit
+
+  // Validate that the form belongs to this user (if form_id provided)
+  if (formId) {
+    const { data: form } = await supabase
+      .from('forms')
+      .select('id')
+      .eq('id', formId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (!form) {
+      return NextResponse.json({ error: 'Form not found' }, { status: 404 })
+    }
+  }
+
+  let query = supabase
+    .from('responses')
+    .select('id, form_id, answers, completed, created_at, last_question_answered', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (formId) {
+    query = query.eq('form_id', formId)
+  } else {
+    // Get all responses for forms owned by this user
+    const { data: forms } = await supabase
+      .from('forms')
+      .select('id')
+      .eq('user_id', user.id)
+
+    const formIds = (forms ?? []).map((f: { id: string }) => f.id)
+    if (formIds.length === 0) {
+      return NextResponse.json({ responses: [], pagination: { page, limit, total: 0, total_pages: 0 } })
+    }
+    query = query.in('form_id', formIds)
+  }
+
+  const { data: responses, error, count } = await query
+
+  if (error) {
+    return NextResponse.json({ error: 'Failed to fetch responses' }, { status: 500 })
+  }
+
+  return NextResponse.json({
+    responses,
+    pagination: {
+      page,
+      limit,
+      total: count ?? 0,
+      total_pages: Math.ceil((count ?? 0) / limit),
+    },
+  })
+}

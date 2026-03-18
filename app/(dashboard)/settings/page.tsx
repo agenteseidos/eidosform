@@ -19,11 +19,19 @@ export default async function SettingsPage() {
 
   if (!user) redirect('/login')
 
+  // Fetch real plan from profiles table
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+
   const initials = user.email?.slice(0, 2).toUpperCase() || 'U'
   const avatarUrl = user.user_metadata?.avatar_url
   const fullName = user.user_metadata?.full_name || ''
-  const currentPlan: string = 'Free'
-  const isProfessional = currentPlan === 'Professional' || currentPlan === 'Business'
+  const planKey = (profile?.plan ?? 'free') as string
+  const currentPlan = planKey.charAt(0).toUpperCase() + planKey.slice(1)
+  const isProfessional = planKey === 'professional' || planKey === 'enterprise'
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
@@ -100,7 +108,7 @@ export default async function SettingsPage() {
         <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl mb-4">
           <div>
             <p className="font-semibold text-slate-900">Plano {currentPlan}</p>
-            <p className="text-sm text-slate-500">Gratuito para sempre</p>
+            <p className="text-sm text-slate-500">{planKey === 'free' ? 'Gratuito para sempre' : `R$ ${planKey === 'starter' ? '49' : planKey === 'plus' ? '127' : '257'}/mês`}</p>
           </div>
           <Badge className="bg-slate-100 text-slate-700">🌱 {currentPlan}</Badge>
         </div>

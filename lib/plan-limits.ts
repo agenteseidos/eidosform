@@ -1,6 +1,6 @@
 /**
  * lib/plan-limits.ts — Sistema de limites por plano
- * Sprint Dia 4-5 — EidosForm
+ * Single source of truth for plan pricing, features, and limits.
  */
 
 import { createClient } from '@/lib/supabase/server'
@@ -8,63 +8,179 @@ import { sendLimitAlert } from '@/lib/resend'
 
 export type PlanName = 'free' | 'starter' | 'plus' | 'professional'
 
-export interface PlanLimits {
-  maxResponses: number       // -1 = unlimited
-  maxForms: number           // -1 = unlimited
+export interface PlanConfig {
+  name: string
+  popular?: boolean
+  monthlyPrice: number
+  yearlyPrice: number
+  maxResponses: number   // -1 = unlimited
+  maxForms: number       // -1 = unlimited
+  maxUsers: number
   watermark: boolean
-  pixels: boolean            // FB Pixel, GTM etc.
+  pixels: boolean
+  customDomain: boolean
+  apiAccess: boolean
+  partialResponses: boolean
+  csvExport: boolean
+  webhooks: boolean
+  redirect: boolean
+  emailNotifications: boolean
+  prioritySupport: boolean
+  features: string[]
+}
+
+export const PLANS: Record<PlanName, PlanConfig> = {
+  free: {
+    name: 'Free',
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    maxResponses: 100,
+    maxForms: 3,
+    maxUsers: 1,
+    watermark: true,
+    pixels: false,
+    customDomain: false,
+    apiAccess: false,
+    partialResponses: false,
+    csvExport: false,
+    webhooks: false,
+    redirect: false,
+    emailNotifications: false,
+    prioritySupport: false,
+    features: [
+      '100 respostas/mês',
+      '3 formulários',
+      'Questões ilimitadas',
+      '1 usuário',
+      'Validação CPF/CNPJ',
+      'Busca automática de CEP',
+      'Lógica condicional',
+      'Tela de agradecimento',
+      'Suporte por email',
+      "Marca d'água EidosForm",
+    ],
+  },
+  starter: {
+    name: 'Starter',
+    monthlyPrice: 49,
+    yearlyPrice: 29,
+    maxResponses: 1000,
+    maxForms: 10,
+    maxUsers: 1,
+    watermark: true,
+    pixels: false,
+    customDomain: false,
+    apiAccess: false,
+    partialResponses: false,
+    csvExport: true,
+    webhooks: false,
+    redirect: true,
+    emailNotifications: false,
+    prioritySupport: false,
+    features: [
+      'Tudo do Free +',
+      '1.000 respostas/mês',
+      '10 formulários',
+      'Redirecionamento após envio',
+      'Exportação CSV',
+      "Marca d'água EidosForm",
+    ],
+  },
+  plus: {
+    name: 'Plus',
+    popular: true,
+    monthlyPrice: 127,
+    yearlyPrice: 97,
+    maxResponses: 5000,
+    maxForms: -1,
+    maxUsers: 1,
+    watermark: false,
+    pixels: true,
+    customDomain: false,
+    apiAccess: false,
+    partialResponses: true,
+    csvExport: true,
+    webhooks: true,
+    redirect: true,
+    emailNotifications: true,
+    prioritySupport: true,
+    features: [
+      'Tudo do Starter +',
+      '5.000 respostas/mês',
+      'Formulários ilimitados',
+      "Sem marca d'água",
+      'Respostas parciais',
+      'Taxa de abandono por pergunta',
+      'Notificação por email',
+      'Alerta de limite (80%)',
+      'Meta Pixel (Facebook)',
+      'Google Ads (Conversões)',
+      'Google Tag Manager (GTM)',
+      'TikTok Pixel',
+      'Webhooks para automações',
+      'Suporte prioritário',
+    ],
+  },
+  professional: {
+    name: 'Professional',
+    monthlyPrice: 257,
+    yearlyPrice: 197,
+    maxResponses: 15000,
+    maxForms: -1,
+    maxUsers: 10,
+    watermark: false,
+    pixels: true,
+    customDomain: true,
+    apiAccess: true,
+    partialResponses: true,
+    csvExport: true,
+    webhooks: true,
+    redirect: true,
+    emailNotifications: true,
+    prioritySupport: true,
+    features: [
+      'Tudo do Plus +',
+      '15.000 respostas/mês',
+      'Até 10 usuários',
+      'Domínio personalizado',
+      'Acesso à API v1',
+      'Chave de API dedicada',
+      'Exportação CSV avançada',
+      'Suporte prioritário com SLA',
+    ],
+  },
+}
+
+// Legacy alias — keeps backward compatibility
+export interface PlanLimits {
+  maxResponses: number
+  maxForms: number
+  watermark: boolean
+  pixels: boolean
   customDomain: boolean
   apiAccess: boolean
   maxUsers: number
 }
 
-export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
-  free: {
-    maxResponses: 100,
-    maxForms: 3,
-    watermark: true,
-    pixels: false,
-    customDomain: false,
-    apiAccess: false,
-    maxUsers: 1,
-  },
-  starter: {
-    maxResponses: 1000,
-    maxForms: 10,
-    watermark: true,
-    pixels: false,
-    customDomain: false,
-    apiAccess: false,
-    maxUsers: 1,
-  },
-  plus: {
-    maxResponses: 5000,
-    maxForms: -1,
-    watermark: false,
-    pixels: true,
-    customDomain: false,
-    apiAccess: false,
-    maxUsers: 1,
-  },
-  professional: {
-    maxResponses: 15000,
-    maxForms: -1,
-    watermark: false,
-    pixels: true,
-    customDomain: true,
-    apiAccess: true,
-    maxUsers: 10,
-  },
-}
+export const PLAN_LIMITS: Record<PlanName, PlanLimits> = Object.fromEntries(
+  (Object.entries(PLANS) as [PlanName, PlanConfig][]).map(([key, p]) => [
+    key,
+    {
+      maxResponses: p.maxResponses,
+      maxForms: p.maxForms,
+      watermark: p.watermark,
+      pixels: p.pixels,
+      customDomain: p.customDomain,
+      apiAccess: p.apiAccess,
+      maxUsers: p.maxUsers,
+    },
+  ])
+) as Record<PlanName, PlanLimits>
 
 export function getPlanLimits(plan: PlanName): PlanLimits {
   return PLAN_LIMITS[plan] ?? PLAN_LIMITS.free
 }
 
-/**
- * Checa se o usuário pode aceitar mais uma resposta.
- * Retorna { allowed, usage, limit }
- */
 export async function checkResponseLimit(userId: string): Promise<{
   allowed: boolean
   usage: number
@@ -74,7 +190,6 @@ export async function checkResponseLimit(userId: string): Promise<{
 }> {
   const supabase = await createClient()
 
-  // Busca perfil do usuário
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('plan, response_count, limit_alert_sent')
@@ -82,7 +197,6 @@ export async function checkResponseLimit(userId: string): Promise<{
     .single()
 
   if (error || !profile) {
-    // Fallback: negar por segurança
     return { allowed: false, usage: 0, limit: 0, plan: 'free', nearLimit: false }
   }
 
@@ -91,7 +205,6 @@ export async function checkResponseLimit(userId: string): Promise<{
   const usage = profile.response_count ?? 0
   const limit = limits.maxResponses
 
-  // Unlimited
   if (limit === -1) {
     return { allowed: true, usage, limit, plan, nearLimit: false }
   }
@@ -99,14 +212,12 @@ export async function checkResponseLimit(userId: string): Promise<{
   const allowed = usage < limit
   const nearLimit = !profile.limit_alert_sent && usage >= Math.floor(limit * 0.8)
 
-  // Se atingiu 80%, marca flag e envia alerta
   if (nearLimit) {
     await supabase
       .from('profiles')
       .update({ limit_alert_sent: true })
       .eq('id', userId)
 
-    // Busca email do usuário para notificação
     const { data: userData } = await supabase
       .from('profiles')
       .select('email, full_name')
@@ -120,24 +231,18 @@ export async function checkResponseLimit(userId: string): Promise<{
         usage,
         limit,
         plan,
-      }).catch(console.error) // não bloqueia o fluxo
+      }).catch(console.error)
     }
   }
 
   return { allowed, usage, limit, plan, nearLimit }
 }
 
-/**
- * Incrementa contador de respostas do usuário
- */
 export async function incrementResponseCount(userId: string): Promise<void> {
   const supabase = await createClient()
   await supabase.rpc('increment_response_count', { p_user_id: userId })
 }
 
-/**
- * Verifica se usuário pode criar mais um form
- */
 export async function checkFormLimit(userId: string): Promise<{ allowed: boolean; usage: number; limit: number }> {
   const supabase = await createClient()
 

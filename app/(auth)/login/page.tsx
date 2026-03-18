@@ -65,7 +65,7 @@ export default function LoginPage() {
           }}
         />
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={false}
           animate={{ opacity: 1, scale: 1 }}
           className="w-full max-w-md px-8 py-12 text-center relative z-10"
         >
@@ -111,7 +111,7 @@ export default function LoginPage() {
       />
       
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
         className="w-full max-w-md px-8 relative z-10"
@@ -128,7 +128,7 @@ export default function LoginPage() {
             onClick={handleGoogleLogin}
             disabled={isLoading}
             variant="outline"
-            className="w-full h-12 text-base font-medium border-slate-300 bg-white hover:bg-slate-50 hover:border-slate-400 text-slate-800 shadow-sm transition-all"
+            className="w-full h-12 text-base font-medium border-2 border-slate-300 bg-white hover:bg-slate-50 hover:border-slate-500 text-slate-800 shadow-sm transition-all"
           >
             <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -181,9 +181,9 @@ export default function LoginPage() {
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Ao continuar, você concorda com nossos{' '}
-          <a href="#" className="text-blue-600 hover:text-blue-700 transition-colors">Termos de Serviço</a>
+          <a href="/terms" className="text-blue-600 hover:text-blue-700 transition-colors">Termos de Serviço</a>
           {' '}e{' '}
-          <a href="#" className="text-blue-600 hover:text-blue-700 transition-colors">Política de Privacidade</a>
+          <a href="/privacy" className="text-blue-600 hover:text-blue-700 transition-colors">Política de Privacidade</a>
         </p>
       </motion.div>
     </div>

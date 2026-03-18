@@ -1,7 +1,9 @@
 import Link from 'next/link'
-import { ArrowRight, Zap, Shield, Globe, BarChart3, Palette, Code2, ChevronDown, Check, Star, Users, FileText, Sparkles } from 'lucide-react'
+import { ArrowRight, Zap, Shield, Globe, BarChart3, Palette, Code2, ChevronDown, Check, FileText, Sparkles, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { PricingSection } from '@/components/pricing-section'
+import { MobileMenu } from '@/components/mobile-menu'
 
 export default function LandingPage() {
   return (
@@ -22,16 +24,19 @@ export default function LandingPage() {
             <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/login">
-              <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white">
-                Entrar
-              </Button>
-            </Link>
-            <Link href="/login">
-              <Button size="sm" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-semibold shadow-lg shadow-[#F5B731]/20 transition-all hover:shadow-[#E8923A]/30">
-                Criar conta grátis
-              </Button>
-            </Link>
+            <div className="hidden md:flex items-center gap-3">
+              <Link href="/login">
+                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white">
+                  Entrar
+                </Button>
+              </Link>
+              <Link href="/login">
+                <Button size="sm" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-semibold shadow-lg shadow-[#F5B731]/20 transition-all hover:shadow-[#E8923A]/30">
+                  Criar conta grátis
+                </Button>
+              </Link>
+            </div>
+            <MobileMenu />
           </div>
         </div>
       </nav>
@@ -76,24 +81,6 @@ export default function LandingPage() {
           <p className="mt-6 text-sm text-slate-500">
             Grátis para sempre · Sem cartão de crédito · Setup em 30 segundos
           </p>
-
-          {/* Social proof */}
-          <div className="mt-14 flex flex-col sm:flex-row items-center justify-center gap-6 text-sm text-slate-500">
-            <div className="flex items-center gap-2">
-              <div className="flex -space-x-2">
-                {['bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-[#F5B731]'].map((color, i) => (
-                  <div key={i} className={`w-7 h-7 rounded-full ${color} border-2 border-[#0A0A0F] flex items-center justify-center text-xs text-white font-bold`}>
-                    {['A', 'B', 'C', 'D'][i]}
-                  </div>
-                ))}
-              </div>
-              <span>+2.400 usuários ativos</span>
-            </div>
-            <div className="flex items-center gap-1">
-              {[1,2,3,4,5].map(i => <Star key={i} className="w-4 h-4 fill-[#F5B731] text-[#F5B731]" />)}
-              <span className="ml-1">4.9/5 de avaliação</span>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -216,107 +203,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing */}
-      <section id="precos" className="py-24 px-4 sm:px-6 bg-white/[0.02]">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">Planos</Badge>
-            <h2 className="text-3xl sm:text-5xl font-black mb-4">
-              Preço justo,
-              <span className="block text-slate-400">sem surpresas</span>
-            </h2>
-            <p className="text-slate-400 text-lg">Comece grátis, escale quando precisar.</p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {[
-              {
-                name: 'Free',
-                emoji: '🌱',
-                price: 'R$ 0',
-                period: '/mês',
-                desc: 'Para começar',
-                highlight: false,
-                features: ['3 formulários', '100 respostas/mês', 'Templates básicos', 'Análises simples'],
-                cta: 'Começar grátis'
-              },
-              {
-                name: 'Starter',
-                emoji: '🚀',
-                price: 'R$ 29',
-                period: '/mês',
-                desc: 'Para freelancers',
-                highlight: false,
-                features: ['15 formulários', '1.000 respostas/mês', 'Todos os templates', 'Analytics avançado', 'Sem marca EidosForm'],
-                cta: 'Assinar Starter'
-              },
-              {
-                name: 'Professional',
-                emoji: '⚡',
-                price: 'R$ 79',
-                period: '/mês',
-                desc: 'Para equipes',
-                highlight: true,
-                features: ['Formulários ilimitados', '10.000 respostas/mês', 'Domínio personalizado', 'API & Webhooks', 'Pixels de rastreamento', 'Suporte prioritário'],
-                cta: 'Assinar Professional'
-              },
-              {
-                name: 'Business',
-                emoji: '🏢',
-                price: 'R$ 199',
-                period: '/mês',
-                desc: 'Para empresas',
-                highlight: false,
-                features: ['Tudo do Professional', 'Respostas ilimitadas', 'SSO / SAML', 'SLA garantido', 'Gerente dedicado', 'Faturamento PJ'],
-                cta: 'Falar com vendas'
-              }
-            ].map(({ name, emoji, price, period, desc, highlight, features, cta }) => (
-              <div
-                key={name}
-                className={`relative p-6 rounded-2xl border transition-all duration-300 ${
-                  highlight
-                    ? 'bg-gradient-to-b from-[#F5B731]/10 to-[#E8923A]/5 border-[#F5B731]/30 shadow-xl shadow-[#F5B731]/10 scale-[1.02]'
-                    : 'bg-white/[0.04] border-white/5 hover:bg-white/[0.07] hover:border-white/10'
-                }`}
-              >
-                {highlight && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-[#F5B731] text-black font-bold border-0 px-3 shadow-lg shadow-[#F5B731]/30">
-                      Mais popular
-                    </Badge>
-                  </div>
-                )}
-                <div className="text-2xl mb-2">{emoji}</div>
-                <h3 className="text-lg font-bold text-white">{name}</h3>
-                <p className="text-xs text-slate-500 mb-4">{desc}</p>
-                <div className="flex items-baseline gap-1 mb-6">
-                  <span className="text-3xl font-black text-white">{price}</span>
-                  <span className="text-slate-500 text-sm">{period}</span>
-                </div>
-                <ul className="space-y-2 mb-6">
-                  {features.map(f => (
-                    <li key={f} className="flex items-start gap-2 text-sm text-slate-300">
-                      <Check className="w-4 h-4 text-[#4BB678] mt-0.5 flex-shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/login" className="block">
-                  <Button
-                    className={`w-full font-semibold ${
-                      highlight
-                        ? 'bg-[#F5B731] hover:bg-[#E8923A] text-black shadow-lg shadow-[#F5B731]/25'
-                        : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
-                    }`}
-                  >
-                    {cta}
-                  </Button>
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Pricing — client component with toggle */}
+      <PricingSection />
 
       {/* FAQ */}
       <section id="faq" className="py-24 px-4 sm:px-6">
@@ -373,7 +261,7 @@ export default function LandingPage() {
             Pronto para começar?
           </h2>
           <p className="text-slate-400 text-lg mb-8">
-            Junte-se a milhares de empresas que já usam o EidosForm para coletar dados de forma inteligente.
+            Crie seu primeiro formulário gratuitamente e veja a diferença.
           </p>
           <Link href="/login">
             <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-lg px-10 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
@@ -413,15 +301,14 @@ export default function LandingPage() {
               <ul className="space-y-2 text-sm text-slate-500">
                 <li><a href="#faq" className="hover:text-white transition-colors">FAQ</a></li>
                 <li><a href="mailto:suporte@eidosform.com" className="hover:text-white transition-colors">Contato</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Documentação API</a></li>
+                <li><span className="text-slate-600 cursor-not-allowed">Documentação API</span></li>
               </ul>
             </div>
             <div>
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Legal</h4>
               <ul className="space-y-2 text-sm text-slate-500">
-                <li><a href="#" className="hover:text-white transition-colors">Privacidade</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Termos de uso</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">LGPD</a></li>
+                <li><Link href="/privacy" className="hover:text-white transition-colors">Privacidade</Link></li>
+                <li><Link href="/terms" className="hover:text-white transition-colors">Termos de uso</Link></li>
               </ul>
             </div>
           </div>

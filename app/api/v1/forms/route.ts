@@ -3,6 +3,18 @@ import { createClient } from '@/lib/supabase/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimit } from '@/lib/rate-limit'
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization',
+}
+
+// OPTIONS /api/v1/forms — CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
+}
+
+
 // Autenticar via X-API-Key header
 async function authenticateApiKey(req: NextRequest): Promise<{ userId: string; plan: string } | null> {
   const apiKey = req.headers.get('x-api-key')
@@ -63,7 +75,7 @@ export async function GET(req: NextRequest) {
     .range(offset, offset + limit - 1)
 
   if (error) {
-    return NextResponse.json({ error: 'Failed to fetch forms' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch forms' }, { status: 500, headers: CORS_HEADERS })
   }
 
   return NextResponse.json({
@@ -74,5 +86,5 @@ export async function GET(req: NextRequest) {
       total: count ?? 0,
       total_pages: Math.ceil((count ?? 0) / limit),
     },
-  })
+  }, { headers: CORS_HEADERS })
 }

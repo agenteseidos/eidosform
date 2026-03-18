@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { createClient } from '@/lib/supabase/server'
 
 // Check if R2 is configured
 function isR2Configured(): boolean {
@@ -26,6 +27,13 @@ function getR2Client(): S3Client | null {
 }
 
 export async function POST(request: NextRequest) {
+  // Require authentication
+  const supabase = await createClient()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -49,23 +57,19 @@ export async function POST(request: NextRequest) {
     const r2 = getR2Client()
     
     if (!r2) {
-      // R2 not configured - return error
       return NextResponse.json({ 
         error: 'File storage not configured. Please set R2 environment variables.',
         configured: false 
       }, { status: 503 })
     }
 
-    // Generate unique filename
     const timestamp = Date.now()
     const randomId = Math.random().toString(36).substring(2, 8)
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-    const key = `uploads/${timestamp}-${randomId}-${sanitizedName}`
+    const key = `uploads/${user.id}/${timestamp}-${randomId}-${sanitizedName}`
     
-    // Convert file to buffer
     const buffer = Buffer.from(await file.arrayBuffer())
     
-    // Upload to R2
     await r2.send(new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,
       Key: key,
@@ -73,7 +77,6 @@ export async function POST(request: NextRequest) {
       ContentType: file.type,
     }))
 
-    // Construct public URL
     const publicUrl = process.env.R2_PUBLIC_URL 
       ? `${process.env.R2_PUBLIC_URL}/${key}`
       : `https://${process.env.R2_BUCKET_NAME}.${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${key}`

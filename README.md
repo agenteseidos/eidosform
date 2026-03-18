@@ -1,63 +1,98 @@
 # EidosForm
 
-**Formulários conversacionais que convertem.**
+Plataforma SaaS de formulários conversacionais com analytics, integrações de pagamento e webhooks.
 
-EidosForm é uma alternativa open-source ao Typeform, desenvolvida pela Eidos. Crie formulários bonitos com experiência de uma pergunta por vez, dark mode nativo e interface 100% em português.
+## Stack
 
-## ✨ Funcionalidades
+- **Framework:** Next.js 15 (App Router)
+- **Banco de Dados:** Supabase (PostgreSQL + RLS)
+- **Autenticação:** Supabase Auth (OAuth Google, Magic Link)
+- **Storage:** Cloudflare R2 (uploads de arquivo)
+- **Pagamentos:** Asaas
+- **UI:** Tailwind CSS + shadcn/ui + Framer Motion
+- **Linguagem:** TypeScript
 
-- 🎯 **Uma pergunta por vez** — experiência focada e conversacional
-- 🌙 **Dark mode nativo** — padrão escuro, sem piscar
-- 🇧🇷 **Interface em PT-BR** — totalmente em português
-- 🎨 **Temas customizáveis** — paleta Eidos: amarelo #F5B731, verde #22C55E
-- 📊 **Dashboard de respostas** — visualize e exporte em CSV
-- 🔗 **URLs amigáveis** — /f/seu-formulario
-- 📁 **Upload de arquivos** — integração com Cloudflare R2
-- 🔒 **Autenticação segura** — Google OAuth + Magic Link via Supabase
-
-## 🚀 Começando
+## Como rodar localmente
 
 ### Pré-requisitos
 
 - Node.js 18+
-- Conta no Supabase (https://supabase.com)
+- Conta no Supabase
+- (Opcional) Conta no Cloudflare R2
 
-### Instalação
+### 1. Clonar o repositório
 
 ```bash
-git clone https://github.com/yourusername/eidosform.git
+git clone https://github.com/seu-usuario/eidosform.git
 cd eidosform
+```
+
+### 2. Instalar dependências
+
+```bash
 npm install
 ```
 
-### Configuração
+### 3. Configurar variáveis de ambiente
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=sua_url_supabase
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_anon
+Copie o arquivo de exemplo e preencha:
+
+```bash
+cp .env.local.example .env.local
 ```
 
-Execute o schema em supabase/schema.sql no seu projeto Supabase.
+Edite `.env.local` com suas credenciais (veja seção abaixo).
+
+### 4. Configurar banco de dados
+
+Execute as migrations no seu projeto Supabase:
+
+```bash
+# via Supabase CLI
+supabase db push
+
+# ou execute manualmente o arquivo:
+supabase/schema_eidosform.sql
+```
+
+### 5. Iniciar o servidor de desenvolvimento
 
 ```bash
 npm run dev
 ```
 
-Acesse http://localhost:3000
+Acesse: [http://localhost:3000](http://localhost:3000)
 
-## 🏗️ Stack
+## Variáveis de Ambiente
 
-- **Framework:** Next.js 15 (App Router)
-- **Estilo:** Tailwind CSS v4 + shadcn/ui
-- **Animações:** Framer Motion
-- **Auth + DB:** Supabase
-- **Storage:** Cloudflare R2 (opcional)
+| Variável | Obrigatória | Descrição |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | URL do projeto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Chave anônima do Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Chave de serviço do Supabase (server-side) |
+| `R2_ACCOUNT_ID` | ❌ | Account ID do Cloudflare R2 |
+| `R2_ACCESS_KEY_ID` | ❌ | Access Key ID do R2 |
+| `R2_SECRET_ACCESS_KEY` | ❌ | Secret Access Key do R2 |
+| `R2_BUCKET_NAME` | ❌ | Nome do bucket R2 |
+| `R2_PUBLIC_URL` | ❌ | URL pública do bucket R2 |
+| `RESEND_API_KEY` | ❌ | API Key do Resend (emails) |
+| `ASAAS_API_KEY` | ❌ | API Key do Asaas (pagamentos) |
+| `ASAAS_WEBHOOK_TOKEN` | ❌ | Token de verificação de webhooks Asaas |
+| `NEXT_PUBLIC_APP_URL` | ❌ | URL pública da aplicação |
 
-## 🎨 Cores Eidos
+## Scripts
 
-- Amarelo: #F5B731 (primária, CTAs)
-- Verde: #22C55E (acento, sucesso)
+```bash
+npm run dev      # Servidor de desenvolvimento
+npm run build    # Build de produção
+npm run start    # Iniciar servidor de produção
+npm run lint     # Linting
+```
 
-## 📄 Licença
+## Deploy
 
-MIT — feito com ❤️ pela Eidos.
+O projeto está configurado para deploy na Vercel. Veja [DEPLOY.md](./DEPLOY.md) para instruções detalhadas.
+
+## Licença
+
+Consulte [LICENSE.txt](./LICENSE.txt).

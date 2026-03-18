@@ -35,10 +35,10 @@ export function DeleteFormButton({ formId, formTitle }: DeleteFormButtonProps) {
       .eq('id', formId)
 
     if (error) {
-      toast.error('Failed to delete form')
+      toast.error('Falha ao excluir formulário')
       setIsDeleting(false)
     } else {
-      toast.success('Form deleted successfully')
+      toast.success('Formulário excluído com sucesso')
       setOpen(false)
       router.refresh()
     }
@@ -54,28 +54,28 @@ export function DeleteFormButton({ formId, formTitle }: DeleteFormButtonProps) {
         className="cursor-pointer text-red-600 focus:text-red-600"
       >
         <Trash2 className="mr-2 h-4 w-4" />
-        Delete
+        Excluir
       </DropdownMenuItem>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete form</DialogTitle>
+            <DialogTitle>Excluir formulário</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete &quot;{formTitle || 'Untitled Form'}&quot;? 
-              This action cannot be undone. All responses will also be deleted.
+              Tem certeza que deseja excluir &quot;{formTitle || 'Formulário sem título'}&quot;? 
+              Esta ação não pode ser desfeita. Todas as respostas também serão excluídas.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
+              Cancelar
             </Button>
             <Button 
               variant="destructive" 
               onClick={handleDelete}
               disabled={isDeleting}
             >
-              {isDeleting ? 'Deleting...' : 'Delete form'}
+              {isDeleting ? 'Excluindo...' : 'Excluir formulário'}
             </Button>
           </DialogFooter>
         </DialogContent>

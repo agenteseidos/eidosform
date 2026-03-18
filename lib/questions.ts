@@ -27,26 +27,26 @@ export interface QuestionTypeInfo {
 export const questionTypes: QuestionTypeInfo[] = [
   {
     type: 'short_text',
-    label: 'Short Text',
-    description: 'A single line text input',
+    label: 'Texto Curto',
+    description: 'Uma linha de texto',
     icon: Type,
     defaultConfig: {
-      placeholder: 'Type your answer here...',
+      placeholder: 'Digite sua resposta...',
     },
   },
   {
     type: 'long_text',
-    label: 'Long Text',
-    description: 'A multi-line text area',
+    label: 'Texto Longo',
+    description: 'Área de texto multilinha',
     icon: AlignLeft,
     defaultConfig: {
-      placeholder: 'Type your answer here...',
+      placeholder: 'Digite sua resposta...',
     },
   },
   {
     type: 'dropdown',
-    label: 'Dropdown',
-    description: 'Select one option from a list',
+    label: 'Lista Suspensa',
+    description: 'Selecione uma opção da lista',
     icon: List,
     defaultConfig: {
       options: ['Option 1', 'Option 2', 'Option 3'],
@@ -54,8 +54,8 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'checkboxes',
-    label: 'Checkboxes',
-    description: 'Select multiple options from a list',
+    label: 'Caixas de Seleção',
+    description: 'Selecione múltiplas opções',
     icon: CheckSquare,
     defaultConfig: {
       options: ['Option 1', 'Option 2', 'Option 3'],
@@ -64,16 +64,16 @@ export const questionTypes: QuestionTypeInfo[] = [
   {
     type: 'email',
     label: 'Email',
-    description: 'An email address input',
+    description: 'Campo de e-mail',
     icon: Mail,
     defaultConfig: {
-      placeholder: 'name@example.com',
+      placeholder: 'nome@exemplo.com',
     },
   },
   {
     type: 'phone',
-    label: 'Phone',
-    description: 'A phone number input',
+    label: 'Telefone',
+    description: 'Campo de telefone',
     icon: Phone,
     defaultConfig: {
       placeholder: '+1 (555) 000-0000',
@@ -81,8 +81,8 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'number',
-    label: 'Number',
-    description: 'A numeric input',
+    label: 'Número',
+    description: 'Campo numérico',
     icon: Hash,
     defaultConfig: {
       placeholder: '0',
@@ -90,15 +90,15 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'date',
-    label: 'Date',
-    description: 'A date picker',
+    label: 'Data',
+    description: 'Seletor de data',
     icon: Calendar,
     defaultConfig: {},
   },
   {
     type: 'rating',
-    label: 'Rating',
-    description: 'A star rating (1-5)',
+    label: 'Avaliação',
+    description: 'Avaliação com estrelas (1-5)',
     icon: Star,
     defaultConfig: {
       minValue: 1,
@@ -107,8 +107,8 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'opinion_scale',
-    label: 'Opinion Scale',
-    description: 'A numeric scale (1-10)',
+    label: 'Escala de Opinião',
+    description: 'Escala numérica (1-10)',
     icon: Gauge,
     defaultConfig: {
       minValue: 1,
@@ -117,15 +117,15 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'yes_no',
-    label: 'Yes / No',
-    description: 'A simple yes or no choice',
+    label: 'Sim / Não',
+    description: 'Escolha simples de sim ou não',
     icon: ThumbsUp,
     defaultConfig: {},
   },
   {
     type: 'file_upload',
-    label: 'File Upload',
-    description: 'Upload images or PDFs',
+    label: 'Upload de Arquivo',
+    description: 'Envie imagens ou PDFs',
     icon: Upload,
     defaultConfig: {
       allowedFileTypes: ['image/*', 'application/pdf'],
@@ -134,8 +134,8 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'url',
-    label: 'Website URL',
-    description: 'A URL input',
+    label: 'URL do Site',
+    description: 'Campo de URL',
     icon: Link,
     defaultConfig: {
       placeholder: 'https://example.com',

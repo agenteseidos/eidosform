@@ -20,19 +20,18 @@ export function Logo({ href = '/', size = 'md', className }: LogoProps) {
     <span
       className={cn(
         sizes[size],
-        'font-bold tracking-tight text-blue-600',
-        'hover:text-blue-500 transition-colors',
+        'font-bold tracking-tight',
         className
       )}
     >
-      Open
-      <span className="font-extrabold text-slate-900">Form</span>
+      <span style={{ color: '#F5C518' }}>Eidos</span>
+      <span className="font-extrabold text-foreground">Form</span>
     </span>
   )
 
   if (href) {
     return (
-      <Link href={href} className="focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
+      <Link href={href} className="focus:outline-none focus-visible:ring-2 rounded" style={{ '--tw-ring-color': '#F5C518' } as React.CSSProperties}>
         {content}
       </Link>
     )

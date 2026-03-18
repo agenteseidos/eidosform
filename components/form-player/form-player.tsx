@@ -43,12 +43,12 @@ export function FormPlayer({ form }: FormPlayerProps) {
     
     if (currentQuestion.required) {
       if (answer === undefined || answer === null || answer === '') {
-        setErrors({ ...errors, [currentQuestion.id]: 'This field is required' })
+        setErrors({ ...errors, [currentQuestion.id]: 'Este campo é obrigatório' })
         return false
       }
       
       if (Array.isArray(answer) && answer.length === 0) {
-        setErrors({ ...errors, [currentQuestion.id]: 'Please select at least one option' })
+        setErrors({ ...errors, [currentQuestion.id]: 'Selecione ao menos uma opção' })
         return false
       }
     }
@@ -57,7 +57,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
     if (answer && currentQuestion.type === 'email') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(String(answer))) {
-        setErrors({ ...errors, [currentQuestion.id]: 'Please enter a valid email address' })
+        setErrors({ ...errors, [currentQuestion.id]: 'Por favor, insira um e-mail válido' })
         return false
       }
     }
@@ -66,7 +66,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
       try {
         new URL(String(answer))
       } catch {
-        setErrors({ ...errors, [currentQuestion.id]: 'Please enter a valid URL' })
+        setErrors({ ...errors, [currentQuestion.id]: 'Por favor, insira uma URL válida' })
         return false
       }
     }
@@ -74,7 +74,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
     if (answer && currentQuestion.type === 'phone') {
       const phoneRegex = /^[+]?[\d\s\-().]+$/
       if (!phoneRegex.test(String(answer))) {
-        setErrors({ ...errors, [currentQuestion.id]: 'Please enter a valid phone number' })
+        setErrors({ ...errors, [currentQuestion.id]: 'Por favor, insira um telefone válido' })
         return false
       }
     }
@@ -120,7 +120,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
       .insert(insertData as never)
 
     if (error) {
-      toast.error('Failed to submit response')
+      toast.error('Falha ao enviar resposta')
       setIsSubmitting(false)
     } else {
       setIsSubmitted(true)
@@ -242,7 +242,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
             Your response has been recorded.
           </p>
           
-          {/* OpenForm branding */}
+          {/* EidosForm branding */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -257,7 +257,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
               style={{ color: theme.textColor }}
             >
               <span>Made with</span>
-              <span className="font-semibold">OpenForm</span>
+              <span className="font-semibold">EidosForm</span>
             </a>
           </motion.div>
         </motion.div>
@@ -437,10 +437,10 @@ export function FormPlayer({ form }: FormPlayerProps) {
                   }}
                 >
                   {isSubmitting ? (
-                    'Submitting...'
+                    'Enviando...'
                   ) : isLastQuestion ? (
                     <>
-                      Submit
+                      Enviar
                       <Check className="w-4 h-4 ml-2" />
                     </>
                   ) : (
@@ -455,7 +455,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
                   className="text-sm opacity-50"
                   style={{ color: theme.textColor }}
                 >
-                  press <kbd className="font-mono font-medium">Enter ↵</kbd>
+                  pressione <kbd className="font-mono font-medium">Enter ↵</kbd>
                 </span>
               </motion.div>
             </motion.div>
@@ -488,7 +488,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
           </Button>
         </div>
 
-        {/* OpenForm branding */}
+        {/* EidosForm branding */}
         <a 
           href="/"
           target="_blank"
@@ -496,7 +496,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
           className="text-sm opacity-50 hover:opacity-70 transition-opacity"
           style={{ color: theme.textColor }}
         >
-          Powered by <span className="font-semibold">OpenForm</span>
+          Criado com <span className="font-semibold">EidosForm</span>
         </a>
       </footer>
     </div>

@@ -54,7 +54,7 @@ interface ResponsesDashboardProps {
 }
 
 function formatDate(date: string) {
-  return new Date(date).toLocaleString('en-US', {
+  return new Date(date).toLocaleString('pt-BR', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -96,7 +96,7 @@ function getFileUrl(file: FileUpload): string {
 
 function formatAnswer(answer: Json): string {
   if (answer === null || answer === undefined) return '-'
-  if (typeof answer === 'boolean') return answer ? 'Yes' : 'No'
+  if (typeof answer === 'boolean') return answer ? 'Sim' : 'Não'
   if (Array.isArray(answer)) return answer.join(', ')
   if (typeof answer === 'object') {
     // Handle file uploads
@@ -152,7 +152,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
       toast.error('Failed to delete response')
     } else {
       setResponses(prev => prev.filter(r => r.id !== responseToDelete))
-      toast.success('Response deleted')
+      toast.success('Resposta excluída')
     }
     setIsDeleting(false)
     setDeleteDialogOpen(false)
@@ -161,7 +161,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
 
   const exportToCSV = () => {
     if (responses.length === 0) {
-      toast.error('No responses to export')
+      toast.error('Nenhuma resposta para exportar')
       return
     }
 
@@ -189,7 +189,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = `${form.title || 'form'}-responses-${new Date().toISOString().split('T')[0]}.csv`
+    link.download = `${form.title || 'form'}-respostas-${new Date().toISOString().split('T')[0]}.csv`
     link.click()
     URL.revokeObjectURL(link.href)
     
@@ -210,7 +210,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
           <Link href="/dashboard">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
+              Voltar
             </Button>
           </Link>
         </div>
@@ -220,17 +220,17 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-slate-900">{form.title}</h1>
               {form.status === 'published' && (
-                <Badge className="bg-emerald-100 text-emerald-700">Published</Badge>
+                <Badge className="bg-emerald-100 text-emerald-700">Publicado</Badge>
               )}
               {form.status === 'draft' && (
-                <Badge variant="secondary">Draft</Badge>
+                <Badge variant="secondary">Rascunho</Badge>
               )}
               {form.status === 'closed' && (
-                <Badge variant="secondary" className="bg-amber-100 text-amber-700">Closed</Badge>
+                <Badge variant="secondary" className="bg-amber-100 text-amber-700">Encerrado</Badge>
               )}
             </div>
             <p className="text-slate-600 mt-1">
-              {responses.length} {responses.length === 1 ? 'response' : 'responses'}
+              {responses.length} {responses.length === 1 ? 'resposta' : 'respostas'}
             </p>
           </div>
 
@@ -265,11 +265,11 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
             <FileText className="w-8 h-8 text-slate-400" />
           </div>
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">No responses yet</h2>
+          <h2 className="text-xl font-semibold text-slate-900 mb-2">Nenhuma resposta ainda</h2>
           <p className="text-slate-600 max-w-sm mx-auto">
             {form.status === 'published' 
-              ? 'Share your form to start collecting responses'
-              : 'Publish your form to start collecting responses'
+              ? 'Compartilhe seu formulário para começar a receber respostas'
+              : 'Publique seu formulário para começar a receber respostas'
             }
           </p>
           {form.status === 'published' && (
@@ -286,7 +286,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
-                placeholder="Search responses..."
+                placeholder="Buscar respostas..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
@@ -370,7 +370,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
                                 className="text-red-600 focus:text-red-600"
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
+                                Excluir
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -386,7 +386,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
 
           {filteredResponses.length === 0 && searchQuery && (
             <div className="text-center py-12">
-              <p className="text-slate-500">No responses match your search</p>
+              <p className="text-slate-500">Nenhuma resposta encontrada</p>
             </div>
           )}
         </>
@@ -396,21 +396,21 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete response</DialogTitle>
+            <DialogTitle>Excluir resposta</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this response? This action cannot be undone.
+              Tem certeza que deseja excluir esta resposta? Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              Cancel
+              Cancelar
             </Button>
             <Button 
               variant="destructive" 
               onClick={handleDelete}
               disabled={isDeleting}
             >
-              {isDeleting ? 'Deleting...' : 'Delete'}
+              {isDeleting ? 'Excluindo...' : 'Excluir'}
             </Button>
           </DialogFooter>
         </DialogContent>

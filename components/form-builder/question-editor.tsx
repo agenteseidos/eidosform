@@ -59,7 +59,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
       {/* Description */}
       <div>
         <Label htmlFor="description" className="text-sm font-medium">
-          Description <span className="text-slate-400 font-normal">(optional)</span>
+          Descrição <span className="text-slate-400 font-normal">(opcional)</span>
         </Label>
         <Textarea
           id="description"
@@ -76,7 +76,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
       {/* Type-specific settings */}
       {(question.type === 'dropdown' || question.type === 'checkboxes') && (
         <div>
-          <Label className="text-sm font-medium mb-3 block">Options</Label>
+          <Label className="text-sm font-medium mb-3 block">Opções</Label>
           <div className="space-y-2">
             {(question.options || []).map((option, index) => (
               <div
@@ -221,7 +221,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
       {/* Required toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <Label className="text-sm font-medium">Required</Label>
+          <Label className="text-sm font-medium">Obrigatório</Label>
           <p className="text-xs text-slate-500">Respondents must answer this question</p>
         </div>
         <Switch
@@ -239,7 +239,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
         className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
       >
         <Trash2 className="w-4 h-4 mr-2" />
-        Delete question
+        Excluir pergunta
       </Button>
     </div>
   )

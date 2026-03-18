@@ -56,14 +56,14 @@ function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQues
             setIsUploading(false)
           }
           reader.onerror = () => {
-            setUploadError('Failed to read file')
+            setUploadError('Falha ao ler arquivo')
             setIsUploading(false)
           }
           reader.readAsDataURL(file)
           return
         }
         
-        throw new Error(result.error || 'Upload failed')
+        throw new Error(result.error || 'Falha no upload')
       }
 
       // Success - store the R2 URL
@@ -74,7 +74,7 @@ function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQues
         url: result.url,
       })
     } catch (error) {
-      setUploadError(error instanceof Error ? error.message : 'Upload failed')
+      setUploadError(error instanceof Error ? error.message : 'Falha no upload')
     } finally {
       setIsUploading(false)
     }
@@ -156,7 +156,7 @@ function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQues
           >
             <Upload className="w-8 h-8 opacity-50" />
             <div className="text-center">
-              <p className="font-medium">Click to upload</p>
+              <p className="font-medium">Clique para enviar</p>
               <p className="text-sm opacity-50 mt-1">
                 Images & PDFs up to {question.maxFileSize || 10}MB
               </p>
@@ -470,7 +470,7 @@ export function QuestionRenderer({
     default:
       return (
         <p style={{ color: theme.textColor }} className="opacity-50">
-          Unsupported question type: {question.type}
+          Tipo de pergunta não suportado: {question.type}
         </p>
       )
   }

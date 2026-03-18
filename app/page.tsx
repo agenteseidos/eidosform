@@ -54,8 +54,8 @@ export default async function HomePage() {
           <div className="flex items-center gap-4">
             {user ? (
               <Link href="/dashboard">
-                <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
-                  Dashboard
+                <Button className="bg-[#F5C518] hover:bg-[#d4a914] text-slate-900 shadow-lg shadow-yellow-600/20 transition-all hover:shadow-yellow-600/30 hover:-translate-y-0.5">
+                  Painel
                   <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
@@ -63,12 +63,12 @@ export default async function HomePage() {
               <>
                 <Link href="/login">
                   <Button variant="ghost" className="text-slate-600 hover:text-slate-900">
-                    Sign in
+                    Entrar
                   </Button>
                 </Link>
                 <Link href="/login">
-                  <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
-                    Get Started
+                  <Button className="bg-[#F5C518] hover:bg-[#d4a914] text-slate-900 shadow-lg shadow-yellow-600/20 transition-all hover:shadow-yellow-600/30 hover:-translate-y-0.5">
+                    Começar
                     <ArrowRight className="ml-2 w-4 h-4" />
                   </Button>
                 </Link>
@@ -81,33 +81,33 @@ export default async function HomePage() {
       {/* Hero Section */}
       <section className="relative z-10 pt-32 pb-20 px-6">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 text-blue-700 text-sm font-medium mb-8 border border-blue-100">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-50 text-yellow-700 text-sm font-medium mb-8 border border-yellow-100">
             <Sparkles className="w-4 h-4" />
-            Free & Open Source
+            Gratuito & Open Source
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold text-slate-900 leading-tight mb-6 tracking-tight">
-            Forms that feel{' '}
-            <span className="text-blue-600">
+            Formulários que parecem{' '}
+            <span className="text-[#F5C518]">
               human
             </span>
           </h1>
           
           <p className="text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Create beautiful, engaging forms that people actually want to fill out. 
-            One question at a time, just like a conversation.
+            Crie formulários bonitos e envolventes que as pessoas realmente querem responder. 
+            Uma pergunta de cada vez, como uma conversa real.
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/login">
-              <Button size="lg" className="h-14 px-8 text-lg bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-600/25 transition-all hover:shadow-blue-600/35 hover:-translate-y-0.5">
-                Start creating for free
+              <Button size="lg" className="h-14 px-8 text-lg bg-[#F5C518] hover:bg-[#d4a914] text-slate-900 shadow-xl shadow-yellow-600/25 transition-all hover:shadow-blue-600/35 hover:-translate-y-0.5">
+                Comece gratuitamente
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
             </Link>
             <Link href="#features">
               <Button size="lg" variant="outline" className="h-14 px-8 text-lg border-slate-300 hover:border-slate-400 hover:bg-slate-50">
-                See how it works
+                Veja como funciona
               </Button>
             </Link>
           </div>
@@ -127,7 +127,7 @@ export default async function HomePage() {
               </div>
               <div className="flex-1 flex justify-center">
                 <div className="px-4 py-1 bg-white rounded-md text-xs text-slate-500 font-medium">
-                  openform.app/your-form
+                  eidosform.app/seu-formulario
                 </div>
               </div>
             </div>
@@ -137,9 +137,9 @@ export default async function HomePage() {
               <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-sky-400/10 rounded-full blur-3xl"></div>
               
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-8 max-w-lg text-center border border-white/20">
-                <h3 className="text-3xl font-bold text-white mb-4">What&apos;s your name?</h3>
+                <h3 className="text-3xl font-bold text-white mb-4">Qual é o seu nome?</h3>
                 <div className="bg-white/20 rounded-lg h-14 flex items-center px-4 border border-white/10">
-                  <span className="text-white/60 text-lg">Type your answer here...</span>
+                  <span className="text-white/60 text-lg">Digite sua resposta aqui...</span>
                 </div>
                 <div className="mt-6 flex items-center justify-center gap-3">
                   <span className="text-white/60 text-sm">Press</span>
@@ -156,21 +156,21 @@ export default async function HomePage() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4 tracking-tight">
-              Everything you need to create amazing forms
+              Tudo que você precisa para criar formulários incríveis
             </h2>
             <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-              Powerful features that make form building a breeze
+              Recursos poderosos que tornam a criação de formulários simples
             </p>
           </div>
           
           <div className="grid md:grid-cols-3 gap-8">
             <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-50 to-white border border-blue-100/60 hover:shadow-lg hover:shadow-blue-100/50 transition-all duration-300">
               <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center mb-4">
-                <Zap className="w-6 h-6 text-blue-600" />
+                <Zap className="w-6 h-6 text-[#F5C518]" />
               </div>
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">One at a Time</h3>
+              <h3 className="text-xl font-semibold text-slate-900 mb-2">Uma por Vez</h3>
               <p className="text-slate-600">
-                Questions appear one by one, creating a focused, distraction-free experience for respondents.
+                As perguntas aparecem uma a uma, criando uma experiência focada e sem distrações.
               </p>
             </div>
             
@@ -178,9 +178,9 @@ export default async function HomePage() {
               <div className="w-12 h-12 rounded-xl bg-sky-100 flex items-center justify-center mb-4">
                 <Palette className="w-6 h-6 text-sky-600" />
               </div>
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">Beautiful Themes</h3>
+              <h3 className="text-xl font-semibold text-slate-900 mb-2">Temas Incríveis</h3>
               <p className="text-slate-600">
-                Choose from stunning preset themes that make your forms look professional and on-brand.
+                Escolha entre temas predefinidos que tornam seus formulários profissionais e alinhados à sua marca.
               </p>
             </div>
             
@@ -188,9 +188,9 @@ export default async function HomePage() {
               <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center mb-4">
                 <Shield className="w-6 h-6 text-emerald-600" />
               </div>
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">Privacy First</h3>
+              <h3 className="text-xl font-semibold text-slate-900 mb-2">Privacidade em Primeiro</h3>
               <p className="text-slate-600">
-                Your data stays yours. Export responses anytime, delete when you want.
+                Seus dados são seus. Exporte respostas a qualquer hora, delete quando quiser.
               </p>
             </div>
           </div>
@@ -202,22 +202,22 @@ export default async function HomePage() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4 tracking-tight">
-              13 question types to choose from
+              13 tipos de perguntas disponíveis
             </h2>
             <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-              From simple text to file uploads, we&apos;ve got you covered
+              De texto simples a upload de arquivos, temos tudo que você precisa
             </p>
           </div>
           
           <div className="flex flex-wrap justify-center gap-3">
             {[
-              'Short Text', 'Long Text', 'Dropdown', 'Checkboxes',
-              'Email', 'Phone', 'Number', 'Date', 'Rating', 'Opinion Scale',
-              'Yes/No', 'File Upload', 'Website URL'
+              'Texto Curto', 'Texto Longo', 'Lista Suspensa', 'Caixas de Seleção',
+              'E-mail', 'Telefone', 'Número', 'Data', 'Avaliação', 'Escala de Opinião',
+              'Sim/Não', 'Upload de Arquivo', 'URL de Site'
             ].map((type) => (
               <span
                 key={type}
-                className="px-4 py-2 bg-white rounded-full border border-slate-200 text-slate-700 text-sm font-medium shadow-sm hover:border-blue-200 hover:bg-blue-50 transition-colors cursor-default"
+                className="px-4 py-2 bg-white rounded-full border border-slate-200 text-slate-700 text-sm font-medium shadow-sm hover:border-yellow-200 hover:bg-yellow-50 transition-colors cursor-default"
               >
                 {type}
               </span>
@@ -229,20 +229,20 @@ export default async function HomePage() {
       {/* CTA */}
       <section className="relative z-10 py-20 px-6 bg-white">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="bg-gradient-to-br from-blue-600 via-blue-600 to-sky-500 rounded-3xl p-12 md:p-16 text-white relative overflow-hidden">
+          <div className="bg-gradient-to-br from-[#F5C518] via-[#F5C518] to-[#22C55E] rounded-3xl p-12 md:p-16 text-white relative overflow-hidden">
             {/* Decorative elements */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
             
             <h2 className="text-3xl md:text-4xl font-bold mb-4 relative">
-              Ready to create your first form?
+              Pronto para criar seu primeiro formulário?
             </h2>
-            <p className="text-lg text-blue-100 mb-8 relative">
-              Join thousands of people using OpenForm to collect responses.
+            <p className="text-lg text-yellow-900 mb-8 relative">
+              Junte-se a milhares de pessoas que usam o EidosForm para coletar respostas.
             </p>
             <Link href="/login">
-              <Button size="lg" className="h-14 px-8 text-lg bg-white text-blue-600 hover:bg-blue-50 shadow-xl shadow-blue-900/20 relative transition-all hover:-translate-y-0.5">
-                Get started for free
+              <Button size="lg" className="h-14 px-8 text-lg bg-white text-[#F5C518] hover:bg-blue-50 shadow-xl shadow-blue-900/20 relative transition-all hover:-translate-y-0.5">
+                Comece gratuitamente
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
             </Link>
@@ -254,7 +254,7 @@ export default async function HomePage() {
       <footer className="relative z-10 py-8 px-6 border-t border-slate-100 bg-white">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-slate-600 text-sm">
-            © 2026 OpenForm. Open source and free forever.
+            © 2026 EidosForm. Open source e gratuito para sempre.
           </p>
           <div className="flex items-center gap-6">
             <a href="https://github.com" className="text-slate-500 hover:text-slate-700 text-sm transition-colors">

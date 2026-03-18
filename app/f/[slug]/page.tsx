@@ -23,11 +23,11 @@ export async function generateMetadata({ params }: FormPageProps) {
   const form = data as { title: string; description: string | null } | null
 
   if (!form) {
-    return { title: 'Form Not Found' }
+    return { title: 'Formulário Não Encontrado' }
   }
 
   return {
-    title: form.title || 'Form',
+    title: form.title || 'Formulário',
     description: form.description || 'Fill out this form',
   }
 }

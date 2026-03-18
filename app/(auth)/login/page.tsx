@@ -25,7 +25,7 @@ export default function LoginPage() {
       },
     })
     if (error) {
-      toast.error('Failed to sign in with Google')
+      toast.error('Falha ao entrar com Google')
       setIsLoading(false)
     }
   }
@@ -33,7 +33,7 @@ export default function LoginPage() {
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email) {
-      toast.error('Please enter your email')
+      toast.error('Por favor, insira seu e-mail')
       return
     }
     
@@ -46,7 +46,7 @@ export default function LoginPage() {
     })
 
     if (error) {
-      toast.error('Failed to send magic link')
+      toast.error('Falha ao enviar link mágico')
       setIsLoading(false)
     } else {
       setEmailSent(true)
@@ -74,18 +74,18 @@ export default function LoginPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h1>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Verifique seu e-mail</h1>
           <p className="text-slate-600 mb-6">
-            We&apos;ve sent a magic link to <strong className="text-slate-900">{email}</strong>
+            Enviamos um link mágico para <strong className="text-slate-900">{email}</strong>
           </p>
           <p className="text-sm text-slate-500">
-            Click the link in your email to sign in. You can close this tab.
+            Clique no link no seu e-mail para entrar. Você pode fechar esta aba.
           </p>
           <button
             onClick={() => setEmailSent(false)}
             className="mt-6 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
           >
-            Use a different email
+            Usar outro e-mail
           </button>
         </motion.div>
       </div>
@@ -120,7 +120,7 @@ export default function LoginPage() {
           <div className="flex justify-center">
             <Logo href="/" size="lg" />
           </div>
-          <p className="mt-3 text-slate-600">Create beautiful forms in minutes</p>
+          <p className="mt-3 text-slate-600">Crie formulários incríveis em minutos</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 p-8 border border-slate-100">
@@ -148,23 +148,23 @@ export default function LoginPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            Continue with Google
+            Continuar com Google
           </Button>
 
           <div className="relative my-6">
             <Separator />
             <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-sm text-slate-500">
-              or
+              ou
             </span>
           </div>
 
           <form onSubmit={handleMagicLink} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-slate-700">Email address</Label>
+              <Label htmlFor="email" className="text-slate-700">Endereço de e-mail</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="you@example.com"
+                placeholder="voce@exemplo.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
@@ -182,20 +182,20 @@ export default function LoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  Sending...
+                  Enviando...
                 </span>
               ) : (
-                'Send magic link'
+                'Enviar link mágico'
               )}
             </Button>
           </form>
         </div>
 
         <p className="mt-6 text-center text-sm text-slate-500">
-          By continuing, you agree to our{' '}
-          <a href="#" className="text-blue-600 hover:text-blue-700 transition-colors">Terms of Service</a>
-          {' '}and{' '}
-          <a href="#" className="text-blue-600 hover:text-blue-700 transition-colors">Privacy Policy</a>
+          Ao continuar, você concorda com nossos{' '}
+          <a href="#" className="text-blue-600 hover:text-blue-700 transition-colors">Termos de Serviço</a>
+          {' '}e{' '}
+          <a href="#" className="text-blue-600 hover:text-blue-700 transition-colors">Política de Privacidade</a>
         </p>
       </motion.div>
     </div>

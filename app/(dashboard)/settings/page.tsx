@@ -23,21 +23,21 @@ export default async function SettingsPage() {
         <Link href="/dashboard">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
+            Voltar
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-gray-600 mt-1">Manage your account settings</p>
+          <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
+          <p className="text-gray-600 mt-1">Gerencie as configurações da conta</p>
         </div>
       </div>
 
       <Card className="p-6">
-        <h2 className="text-lg font-semibold mb-4">Account</h2>
+        <h2 className="text-lg font-semibold mb-4">Conta</h2>
         
         <div className="space-y-4">
           <div>
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">E-mail</Label>
             <Input 
               id="email" 
               type="email" 
@@ -46,13 +46,13 @@ export default async function SettingsPage() {
               className="mt-2 bg-gray-50"
             />
             <p className="text-sm text-gray-500 mt-1">
-              Your email cannot be changed
+              Seu e-mail não pode ser alterado
             </p>
           </div>
 
           {user.user_metadata?.full_name && (
             <div>
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">Nome</Label>
               <Input 
                 id="name" 
                 value={user.user_metadata.full_name} 
@@ -65,9 +65,9 @@ export default async function SettingsPage() {
       </Card>
 
       <Card className="p-6 mt-6">
-        <h2 className="text-lg font-semibold mb-2">Account created</h2>
+        <h2 className="text-lg font-semibold mb-2">Conta criada</h2>
         <p className="text-gray-600">
-          {new Date(user.created_at).toLocaleDateString('en-US', {
+          {new Date(user.created_at).toLocaleDateString('pt-BR', {
             month: 'long',
             day: 'numeric',
             year: 'numeric',

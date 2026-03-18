@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Plus_Jakarta_Sans, Outfit, Sora, Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -29,8 +30,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "OpenForm - Create Beautiful Forms",
-  description: "Build stunning, TypeForm-style forms in minutes. Free and open source.",
+  title: "EidosForm - Crie Formulários Incríveis",
+  description: "Construa formulários bonitos e envolventes em minutos. Gratuito e open source pela Eidos.",
 };
 
 export default function RootLayout({
@@ -39,12 +40,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="pt-BR" suppressHydrationWarning>
       <body
         className={`${dmSans.variable} ${plusJakarta.variable} ${outfit.variable} ${sora.variable} ${inter.variable} antialiased`}
       >
-        {children}
-        <Toaster richColors position="top-center" />
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+          {children}
+          <Toaster richColors position="top-center" />
+        </ThemeProvider>
       </body>
     </html>
   );

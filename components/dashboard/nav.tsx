@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { User } from '@supabase/supabase-js'
-import { LogOut, Settings, User as UserIcon } from 'lucide-react'
+import { LogOut, Configurações, User as UserIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DashboardNavProps {
@@ -28,7 +28,7 @@ export function DashboardNav({ user }: DashboardNavProps) {
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut()
     if (error) {
-      toast.error('Failed to sign out')
+      toast.error('Falha ao sair')
     } else {
       router.push('/')
       router.refresh()
@@ -48,7 +48,7 @@ export function DashboardNav({ user }: DashboardNavProps) {
               href="/dashboard" 
               className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
             >
-              My Forms
+              Meus Formulários
             </Link>
           </div>
         </div>
@@ -56,7 +56,7 @@ export function DashboardNav({ user }: DashboardNavProps) {
         <div className="flex items-center gap-4">
           <Link href="/forms/new">
             <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
-              Create Form
+              Criar Formulário
             </Button>
           </Link>
 
@@ -86,19 +86,19 @@ export function DashboardNav({ user }: DashboardNavProps) {
               <DropdownMenuItem asChild>
                 <Link href="/dashboard" className="cursor-pointer">
                   <UserIcon className="mr-2 h-4 w-4" />
-                  My Forms
+                  Meus Formulários
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/settings" className="cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
+                  <Configurações className="mr-2 h-4 w-4" />
+                  Configurações
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-red-600">
                 <LogOut className="mr-2 h-4 w-4" />
-                Sign out
+                Sair
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

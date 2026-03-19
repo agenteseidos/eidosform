@@ -16,6 +16,12 @@ interface FormPlayerProps {
 }
 
 
+function ensureHttps(url: string): string {
+  if (!url) return url
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  return 'https://' + url
+}
+
 export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const questions = (form.questions as QuestionConfig[]) || []
   const theme = getTheme(form.theme)

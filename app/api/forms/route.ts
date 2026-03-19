@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     .select('plan')
     .eq('user_id', user.id)
     .single()
-  const userPlan = (profile as { plan: string } | null)?.plan || 'free'
+  const userPlan = ((profile as { plan: string } | null)?.plan || 'free') as import('@/lib/database.types').PlanType
 
   const insert: FormInsert = {
     user_id: user.id,

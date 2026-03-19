@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   const { data: form, error: formError } = await supabase
     .from('forms')
     .select('id, questions, status, user_id, webhook_url')
-    .eq('id', form_id)
+    .eq('id', form_id as string)
     .eq('status', 'published')
     .single() as { data: { id: string; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null } | null; error: unknown }
 
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       .from('responses')
       .update({ answers, completed, last_question_answered: last_question_answered ?? null } as never)
       .eq('id', existingResponseId)
-      .eq('form_id', form_id)
+      .eq('form_id', form_id as string)
       .select('id')
       .single() as { data: { id: string } | null; error: unknown }
 

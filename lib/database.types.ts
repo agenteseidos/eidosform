@@ -27,7 +27,7 @@ export type QuestionType =
 export type FormStatus = 'draft' | 'published' | 'closed'
 
 // Plan tiers
-export type PlanType = 'free' | 'pro' | 'enterprise'
+export type PlanType = 'free' | 'starter' | 'plus' | 'professional'
 
 // Theme presets
 export type ThemePreset = 

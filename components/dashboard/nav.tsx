@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -14,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { User } from '@supabase/supabase-js'
-import { LogOut, Settings, User as UserIcon, CreditCard } from 'lucide-react'
+import { LogOut, Settings, User as UserIcon, CreditCard, Menu, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DashboardNavProps {
@@ -35,11 +36,12 @@ export function DashboardNav({ user }: DashboardNavProps) {
     }
   }
 
+  const [mobileOpen, setMobileOpen] = useState(false)
   const initials = user.email?.slice(0, 2).toUpperCase() || 'U'
   const avatarUrl = user.user_metadata?.avatar_url
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/60">
+    <> className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/60">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <Logo href="/dashboard" />
@@ -59,6 +61,11 @@ export function DashboardNav({ user }: DashboardNavProps) {
               Criar Formulário
             </Button>
           </Link>
+
+          {/* Hamburger mobile */}
+          <Button variant="ghost" size="sm" className="md:hidden p-2" onClick={() => setMobileOpen(!mobileOpen)}>
+            {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -111,5 +118,24 @@ export function DashboardNav({ user }: DashboardNavProps) {
         </div>
       </div>
     </nav>
+
+    {/* Mobile menu */}
+    {mobileOpen && (
+      <div className="md:hidden fixed top-16 left-0 right-0 z-40 bg-white border-b border-slate-200 shadow-lg px-6 py-4 flex flex-col gap-3">
+        <Link href="/dashboard" className="text-sm font-medium text-slate-700 hover:text-slate-900" onClick={() => setMobileOpen(false)}>
+          Meus Formulários
+        </Link>
+        <Link href="/forms/new" className="text-sm font-medium text-blue-600 hover:text-blue-700" onClick={() => setMobileOpen(false)}>
+          + Criar Formulário
+        </Link>
+        <Link href="/settings" className="text-sm font-medium text-slate-700 hover:text-slate-900" onClick={() => setMobileOpen(false)}>
+          Configurações
+        </Link>
+        <button onClick={() => { setMobileOpen(false); handleSignOut() }} className="text-sm font-medium text-red-600 hover:text-red-700 text-left">
+          Sair
+        </button>
+      </div>
+    )}
+    </>
   )
 }

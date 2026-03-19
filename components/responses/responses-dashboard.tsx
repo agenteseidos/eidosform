@@ -536,7 +536,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
 
           {/* ── Table ── */}
           <Card className="overflow-hidden">
-            <ScrollArea className="w-full">
+            <ScrollArea className="w-full overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50/80">

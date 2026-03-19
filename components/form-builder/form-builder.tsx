@@ -165,9 +165,17 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
   const currentTheme = themes[form.theme as ThemePreset] || themes.minimal
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
+    <>
+    {/* FIX 1 — Mobile: aviso de tela pequena */}
+    <div className="md:hidden flex items-center justify-center h-screen p-8 text-center bg-slate-50">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900 mb-2">Use um computador</h2>
+        <p className="text-slate-600">O editor de formulários requer uma tela maior para funcionar corretamente.</p>
+      </div>
+    </div>
+    <div className="hidden md:flex flex-col h-screen bg-slate-50">
       {/* Header */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 shrink-0">
+      <header className="h-16 bg-white border-b border-slate-200 flex flex-wrap gap-2 items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-4">
           <Link href="/dashboard">
             <Button variant="ghost" size="sm">
@@ -643,5 +651,6 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   )
 }

@@ -77,10 +77,10 @@ export function DomainSettings({ isProfessional }: DomainSettingsProps) {
       <Card className="p-6 mb-6 border-dashed border-2 border-slate-200 dark:border-slate-700">
         <div className="flex items-center gap-3 mb-3">
           <Globe className="w-5 h-5 text-slate-400" />
-          <h2 className="text-lg font-semibold text-slate-400">Domínio Personalizado</h2>
+          <h2 className="text-lg font-semibold text-slate-700">Domínio Personalizado</h2>
           <Lock className="w-4 h-4 text-slate-400" />
         </div>
-        <p className="text-sm text-slate-400 mb-4">
+        <p className="text-sm text-slate-600 mb-4">
           Use seu próprio domínio para hospedar seus formulários. Disponível no plano Professional.
         </p>
         <Button disabled variant="outline" className="opacity-50 cursor-not-allowed">

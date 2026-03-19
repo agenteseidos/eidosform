@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { templates, FormTemplate } from '@/lib/templates'
+import { questionTypes } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -135,7 +136,7 @@ export function TemplatesGallery() {
                   <span className="text-xs text-slate-400 font-mono mt-0.5 w-4 flex-shrink-0">{i + 1}</span>
                   <div>
                     <p className="text-sm text-slate-800 font-medium leading-snug">{q.title}</p>
-                    <p className="text-xs text-slate-400 mt-0.5 capitalize">{q.type.replace('_', ' ')} {q.required ? '· obrigatória' : ''}</p>
+                    <p className="text-xs text-slate-400 mt-0.5 capitalize">{questionTypes.find(qt => qt.type === q.type)?.label ?? q.type.replace('_', ' ')} {q.required ? '· obrigatória' : ''}</p>
                   </div>
                 </div>
               ))}

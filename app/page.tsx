@@ -293,7 +293,7 @@ export default function LandingPage() {
               <ul className="space-y-2 text-sm text-slate-500">
                 <li><a href="#recursos" className="hover:text-white transition-colors">Recursos</a></li>
                 <li><a href="#precos" className="hover:text-white transition-colors">Preços</a></li>
-                <li><Link href="/login" className="hover:text-white transition-colors">Dashboard</Link></li>
+                <li><Link href="/login" className="hover:text-white transition-colors">Painel</Link></li>
               </ul>
             </div>
             <div>

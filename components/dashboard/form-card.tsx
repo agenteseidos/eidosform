@@ -30,11 +30,11 @@ interface FormCardProps {
 function getStatusBadge(status: FormStatus) {
   switch (status) {
     case 'published':
-      return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Published</Badge>
+      return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Publicado</Badge>
     case 'draft':
-      return <Badge variant="secondary" className="bg-slate-100 text-slate-600">Draft</Badge>
+      return <Badge variant="secondary" className="bg-slate-100 text-slate-600">Rascunho</Badge>
     case 'closed':
-      return <Badge variant="secondary" className="bg-amber-100 text-amber-700">Closed</Badge>
+      return <Badge variant="secondary" className="bg-amber-100 text-amber-700">Encerrado</Badge>
   }
 }
 

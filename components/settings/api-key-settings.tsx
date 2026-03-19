@@ -70,10 +70,10 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
       <Card className="p-6 mb-6 border-dashed border-2 border-slate-200">
         <div className="flex items-center gap-3 mb-3">
           <Key className="w-5 h-5 text-slate-400" />
-          <h2 className="text-lg font-semibold text-slate-400">API Key</h2>
+          <h2 className="text-lg font-semibold text-slate-700">API Key</h2>
           <Lock className="w-4 h-4 text-slate-400" />
         </div>
-        <p className="text-sm text-slate-400 mb-4">
+        <p className="text-sm text-slate-600 mb-4">
           Acesse a API do EidosForm programaticamente. Disponível no plano Professional.
         </p>
         <Button disabled variant="outline" className="opacity-50 cursor-not-allowed">
@@ -97,7 +97,7 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
       {!apiKey ? (
         <div>
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4 flex items-center gap-3">
-            <Key className="w-4 h-4 text-slate-300" />
+            <Key className="w-4 h-4 text-slate-500" />
             <span className="text-sm text-slate-400 font-mono">Nenhuma API Key gerada</span>
           </div>
           <Button

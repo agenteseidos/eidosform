@@ -195,6 +195,10 @@ export interface Database {
           theme: ThemePreset
           questions: QuestionConfig[]
           thank_you_message: string
+          thank_you_title: string | null
+          thank_you_description: string | null
+          thank_you_button_text: string | null
+          thank_you_button_url: string | null
           pixels: PixelConfig | null
           plan: PlanType
           redirect_url: string | null
@@ -212,6 +216,10 @@ export interface Database {
           theme?: ThemePreset
           questions?: QuestionConfig[]
           thank_you_message?: string
+          thank_you_title?: string | null
+          thank_you_description?: string | null
+          thank_you_button_text?: string | null
+          thank_you_button_url?: string | null
           pixels?: PixelConfig | null
           plan?: PlanType
           redirect_url?: string | null
@@ -227,6 +235,10 @@ export interface Database {
           theme?: ThemePreset
           questions?: QuestionConfig[]
           thank_you_message?: string
+          thank_you_title?: string | null
+          thank_you_description?: string | null
+          thank_you_button_text?: string | null
+          thank_you_button_url?: string | null
           pixels?: PixelConfig | null
           plan?: PlanType
           redirect_url?: string | null

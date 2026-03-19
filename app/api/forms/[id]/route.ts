@@ -54,7 +54,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const body = await req.json()
-  const { title, description, slug, status, theme, questions, thank_you_message, pixels, plan, redirect_url, webhook_url } = body
+  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url } = body
 
   // Validate slug if provided
   if (slug && !/^[a-z0-9-]+$/.test(slug)) {
@@ -80,6 +80,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(theme !== undefined && { theme }),
     ...(questions !== undefined && { questions }),
     ...(thank_you_message !== undefined && { thank_you_message }),
+    ...(thank_you_title !== undefined && { thank_you_title }),
+    ...(thank_you_description !== undefined && { thank_you_description }),
+    ...(thank_you_button_text !== undefined && { thank_you_button_text }),
+    ...(thank_you_button_url !== undefined && { thank_you_button_url }),
     ...(pixels !== undefined && { pixels }),
     ...(plan !== undefined && { plan }),
     ...(redirect_url !== undefined && { redirect_url }),

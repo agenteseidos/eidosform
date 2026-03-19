@@ -245,7 +245,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 leading-tight"
             style={{ color: theme.textColor }}
           >
-            {(form as unknown as Record<string,string>).thank_you_title || form.thank_you_message || 'Obrigado! 🎉'}
+            {form.thank_you_title || form.thank_you_message || 'Obrigado! 🎉'}
           </motion.h1>
 
           <motion.p
@@ -255,8 +255,27 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             className="text-base md:text-lg opacity-70"
             style={{ color: theme.textColor }}
           >
-            {(form as unknown as Record<string,string>).thank_you_description || 'Sua resposta foi registrada com sucesso.'}
+            {form.thank_you_description || 'Sua resposta foi registrada com sucesso.'}
           </motion.p>
+
+          {form.thank_you_button_text && form.thank_you_button_url && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.58 }}
+              className="mt-6"
+            >
+              <a
+                href={form.thank_you_button_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block px-6 py-3 rounded-full font-semibold text-sm transition-opacity hover:opacity-80"
+                style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
+              >
+                {form.thank_you_button_text}
+              </a>
+            </motion.div>
+          )}
 
           {form.redirect_url && (
             <motion.p

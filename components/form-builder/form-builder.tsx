@@ -76,6 +76,10 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       theme: form.theme,
       questions: questions,
       thank_you_message: form.thank_you_message,
+      thank_you_title: form.thank_you_title || null,
+      thank_you_description: form.thank_you_description || null,
+      thank_you_button_text: form.thank_you_button_text || null,
+      thank_you_button_url: form.thank_you_button_url || null,
       pixels: pixels,
       redirect_url: form.redirect_url || null,
     }
@@ -110,6 +114,10 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       slug: form.slug,
       theme: form.theme,
       thank_you_message: form.thank_you_message,
+      thank_you_title: form.thank_you_title || null,
+      thank_you_description: form.thank_you_description || null,
+      thank_you_button_text: form.thank_you_button_text || null,
+      thank_you_button_url: form.thank_you_button_url || null,
       pixels: pixels,
       redirect_url: form.redirect_url || null,
     }
@@ -436,6 +444,60 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                     placeholder="Obrigado pela sua resposta!"
                     rows={3}
                   />
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-100" />
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Tela de Agradecimento</span>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-slate-700">Título</Label>
+                    <Input
+                      value={form.thank_you_title || ''}
+                      onChange={(e) => {
+                        setForm({ ...form, thank_you_title: e.target.value || null })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="mt-2 text-slate-900 placeholder:text-slate-400"
+                      placeholder="Obrigado! 🎉"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-slate-700">Mensagem</Label>
+                    <Textarea
+                      value={form.thank_you_description || ''}
+                      onChange={(e) => {
+                        setForm({ ...form, thank_you_description: e.target.value || null })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="mt-2 text-slate-900 placeholder:text-slate-400"
+                      placeholder="Sua resposta foi registrada com sucesso."
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-slate-700">Botão (opcional)</Label>
+                    <Input
+                      value={form.thank_you_button_text || ''}
+                      onChange={(e) => {
+                        setForm({ ...form, thank_you_button_text: e.target.value || null })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="mt-2 mb-2 text-slate-900 placeholder:text-slate-400"
+                      placeholder="Ex: Voltar ao site"
+                    />
+                    <Input
+                      value={form.thank_you_button_url || ''}
+                      onChange={(e) => {
+                        setForm({ ...form, thank_you_button_url: e.target.value || null })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="text-slate-900 placeholder:text-slate-400"
+                      placeholder="https://seusite.com.br"
+                    />
+                  </div>
                 </div>
 
                 <div>

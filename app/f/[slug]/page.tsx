@@ -28,7 +28,7 @@ export async function generateMetadata({ params }: FormPageProps) {
 
   return {
     title: form.title || 'Formulário',
-    description: form.description || 'Fill out this form',
+    description: form.description || 'Preencha este formulário',
   }
 }
 

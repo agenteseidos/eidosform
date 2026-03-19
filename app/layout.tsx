@@ -30,6 +30,14 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://eidosform.com.br'),
+  openGraph: {
+    title: 'EidosForm — Formulários que convertem',
+    description: 'Crie formulários conversacionais com rastreamento de pixels, validação de CPF/CNPJ e preço em real.',
+    url: 'https://eidosform.com.br',
+    siteName: 'EidosForm',
+    type: 'website',
+  },
   title: "EidosForm - Crie Formulários Incríveis",
   description: "Construa formulários bonitos e envolventes em minutos. Gratuito e open source pela Eidos.",
 };

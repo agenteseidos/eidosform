@@ -66,6 +66,14 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Bug #11: Inherit plan from user profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('user_id', user.id)
+    .single()
+  const userPlan = (profile as { plan: string } | null)?.plan || 'free'
+
   const insert: FormInsert = {
     user_id: user.id,
     title,
@@ -76,7 +84,7 @@ export async function POST(req: NextRequest) {
     questions: questions || [],
     thank_you_message: thank_you_message || 'Obrigado pela sua resposta!',
     pixels: pixels || null,
-    plan: plan || 'free',
+    plan: userPlan,
     redirect_url: redirect_url || null,
   }
 

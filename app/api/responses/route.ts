@@ -3,14 +3,60 @@ import { createClient } from '@/lib/supabase/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
+import { checkResponseRateLimit } from '@/lib/response-rate-limit'
+
+// Sanitize string: strip HTML tags to prevent stored XSS (Bug #9)
+function sanitizeValue(val: unknown): unknown {
+  if (typeof val === 'string') return val.replace(/<[^>]*>/g, '')
+  if (Array.isArray(val)) return val.map(sanitizeValue)
+  if (val && typeof val === 'object') {
+    return Object.fromEntries(
+      Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, sanitizeValue(v)])
+    )
+  }
+  return val
+}
+
+// Check if all required questions are answered (Bug #5)
+function isResponseComplete(
+  answers: Record<string, unknown>,
+  questions: Array<{ id: string; required?: boolean }>
+): boolean {
+  const requiredIds = questions.filter((q) => q.required).map((q) => q.id)
+  if (requiredIds.length === 0) return true
+  return requiredIds.every((id) => {
+    const val = answers[id]
+    if (val === undefined || val === null || val === '') return false
+    if (Array.isArray(val) && val.length === 0) return false
+    return true
+  })
+}
 
 // POST /api/responses — submeter resposta (completa ou parcial)
 export async function POST(req: NextRequest) {
+  // Bug #2: Rate limit — max 10 per minute per IP
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
+  const rateCheck = checkResponseRateLimit(ip)
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Try again later.', retryAfter: Math.ceil(rateCheck.resetIn / 1000) },
+      { status: 429 }
+    )
+  }
+
   // Use service-role client for anonymous submissions (no auth required)
   const supabase = createPublicClient()
 
-  const body = await req.json()
-  const { form_id, answers, completed = false, last_question_answered } = body
+  // Bug #6: Catch invalid JSON
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+  const { form_id, last_question_answered } = body
+  // Bug #9: Sanitize answers
+  const answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
 
   if (!form_id) {
     return NextResponse.json({ error: 'form_id is required' }, { status: 400 })
@@ -26,15 +72,18 @@ export async function POST(req: NextRequest) {
     .select('id, questions, status, user_id, webhook_url')
     .eq('id', form_id)
     .eq('status', 'published')
-    .single() as { data: { id: string; questions: unknown[]; status: string; user_id: string; webhook_url: string | null } | null; error: unknown }
+    .single() as { data: { id: string; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null } | null; error: unknown }
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Form not found or not published' }, { status: 404 })
   }
 
-  // Checar limite de respostas do plano (apenas em novas respostas completas)
+  // Bug #5: Auto-detect completed based on required questions
+  const completed = isResponseComplete(answers, form.questions ?? [])
+
+  // Bug #1: ALWAYS check response limit before accepting (not just completed)
   const existingResponseId = req.headers.get('x-response-id')
-  if (!existingResponseId && completed) {
+  if (!existingResponseId) {
     const limitCheck = await checkResponseLimit(form.user_id)
     if (!limitCheck.allowed) {
       return NextResponse.json(
@@ -73,6 +122,9 @@ export async function POST(req: NextRequest) {
     }
 
     responseId = newResponse.id
+
+    // Bug #1: Always increment response count on new responses
+    await incrementResponseCount(form.user_id).catch(console.error)
   }
 
   // Inserir answer_items normalizados para analytics
@@ -89,15 +141,10 @@ export async function POST(req: NextRequest) {
 
   // Notificar por email e disparar webhook se resposta completa
   if (completed) {
-    // Incrementa contador de respostas do dono do form
-    if (!existingResponseId) {
-      await incrementResponseCount(form.user_id).catch(console.error)
-    }
-
     // Email de notificação
     try {
       const { sendNewResponseNotification } = await import('@/lib/email')
-      await sendNewResponseNotification(form_id, form.user_id, responseId)
+      await sendNewResponseNotification(form_id as string, form.user_id, responseId)
     } catch (e) {
       console.error('Email notification failed:', e)
     }
@@ -106,14 +153,14 @@ export async function POST(req: NextRequest) {
     if (form.webhook_url) {
       dispatchWebhook({
         webhookUrl: form.webhook_url,
-        formId: form_id,
+        formId: form_id as string,
         responseId,
         responseData: answers as Record<string, unknown>,
       }).catch(console.error) // fire-and-forget, não bloqueia resposta
     }
   }
 
-  return NextResponse.json({ response_id: responseId }, { status: existingResponseId ? 200 : 201 })
+  return NextResponse.json({ response_id: responseId, completed }, { status: existingResponseId ? 200 : 201 })
 }
 
 // GET /api/responses — list responses for authenticated user

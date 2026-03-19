@@ -12,11 +12,12 @@ import { toast } from 'sonner'
 import { PixelInjector } from '@/components/pixels/pixel-injector'
 
 interface FormPlayerProps {
+  ownerPlan?: string
   form: Form
 }
 
 
-export function FormPlayer({ form }: FormPlayerProps) {
+export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const supabase = createClient()
   const questions = (form.questions as QuestionConfig[]) || []
   const theme = getTheme(form.theme)
@@ -334,7 +335,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
     >
 
       {/* Pixel tracking */}
-      {form.pixels && (
+      {form.pixels && (ownerPlan === 'plus' || ownerPlan === 'professional') && (
         <PixelInjector
           config={{
             meta_pixel_id: (form.pixels as Record<string, string>).metaPixelId || null,

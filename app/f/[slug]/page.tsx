@@ -43,11 +43,24 @@ export default async function FormPage({ params }: FormPageProps) {
     .eq('status', 'published')
     .single()
 
-  const form = data as Form | null
+  const form = data as (Form & { user_id: string }) | null
 
   if (error || !form) {
     notFound()
   }
 
-  return <FormPlayer form={form} />
+  // Bug #3: Fetch owner's plan to gate pixel rendering
+  let ownerPlan = 'free'
+  if (form.user_id) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('user_id', form.user_id)
+      .single() as { data: { plan: string } | null }
+    if (profile?.plan) {
+      ownerPlan = profile.plan
+    }
+  }
+
+  return <FormPlayer form={form} ownerPlan={ownerPlan} />
 }

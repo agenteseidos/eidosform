@@ -239,11 +239,11 @@ export default function RegisterPage() {
               />
               <label htmlFor="terms" className="text-sm text-slate-400">
                 Aceito os{' '}
-                <Link href="/terms" className="text-[#F5B731] hover:text-[#E8923A] transition-colors">
+                <Link href="/terms" className="text-[#F5B731] hover:text-[#E8923A] transition-colors py-2 inline-block">
                   termos de uso
                 </Link>{' '}
                 e a{' '}
-                <Link href="/privacy" className="text-[#F5B731] hover:text-[#E8923A] transition-colors">
+                <Link href="/privacy" className="text-[#F5B731] hover:text-[#E8923A] transition-colors py-2 inline-block">
                   política de privacidade
                 </Link>
               </label>
@@ -293,7 +293,7 @@ export default function RegisterPage() {
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Já tem conta?{' '}
-          <Link href="/login" className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors">
+          <Link href="/login" className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors py-2 inline-block">
             Entrar
           </Link>
         </p>

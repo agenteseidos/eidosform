@@ -126,7 +126,7 @@ function LoginForm() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-slate-300">Senha</Label>
-                <Link href="/forgot-password" className="text-sm text-[#F5B731] hover:text-[#E8923A] transition-colors">
+                <Link href="/forgot-password" className="text-sm text-[#F5B731] hover:text-[#E8923A] transition-colors py-2 inline-block">
                   Esqueci minha senha
                 </Link>
               </div>
@@ -193,7 +193,7 @@ function LoginForm() {
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Não tem conta?{' '}
-          <Link href="/register" className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors">
+          <Link href="/register" className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors py-2 inline-block">
             Cadastre-se
           </Link>
         </p>

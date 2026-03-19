@@ -370,7 +370,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       </motion.div>
 
       {/* ── Main content ── */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 pt-14 pb-24">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 pt-8 sm:pt-14 pb-24">
         <div className="w-full max-w-2xl">
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
@@ -491,7 +491,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                   )}
                 </Button>
 
-                <span className="text-sm opacity-40" style={{ color: theme.textColor }}>
+                <span className="hidden sm:inline text-sm opacity-40" style={{ color: theme.textColor }}>
                   Pressione <kbd className="font-mono font-semibold">Enter ↵</kbd>
                 </span>
               </motion.div>
@@ -508,7 +508,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             size="sm"
             onClick={goToPrevious}
             disabled={isFirstQuestion}
-            className="h-9 w-9 p-0 rounded-lg"
+            className="h-11 w-11 p-0 rounded-lg"
             style={{ color: theme.textColor }}
             aria-label="Pergunta anterior"
           >
@@ -519,7 +519,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             size="sm"
             onClick={() => goToNext()}
             disabled={isSubmitting}
-            className="h-9 w-9 p-0 rounded-lg"
+            className="h-11 w-11 p-0 rounded-lg"
             style={{ color: theme.textColor }}
             aria-label="Próxima pergunta"
           >

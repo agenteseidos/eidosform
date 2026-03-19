@@ -229,13 +229,13 @@ export default function RegisterPage() {
               )}
             </div>
 
-            <div className="flex items-start gap-3 pt-1">
+            <div className="flex items-start gap-3 py-1">
               <input
                 id="terms"
                 type="checkbox"
                 checked={acceptTerms}
                 onChange={(e) => setAcceptTerms(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-white/20 bg-[#1a1a1a] text-[#F5B731] focus:ring-[#F5B731]/20 accent-[#F5B731]"
+                className="mt-1 h-5 w-5 rounded border-white/20 bg-[#1a1a1a] text-[#F5B731] focus:ring-[#F5B731]/20 accent-[#F5B731]"
               />
               <label htmlFor="terms" className="text-sm text-slate-400">
                 Aceito os{' '}

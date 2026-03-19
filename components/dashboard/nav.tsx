@@ -59,7 +59,8 @@ export function DashboardNav({ user }: DashboardNavProps) {
         <div className="flex items-center gap-4">
           <Link href="/forms/new">
             <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
-              Criar Formulário
+              <span className="hidden sm:inline">Criar Formulário</span>
+              <span className="sm:hidden">+</span>
             </Button>
           </Link>
 

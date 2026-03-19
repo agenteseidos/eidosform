@@ -168,7 +168,7 @@ export function PricingSection() {
 
                 <div className="text-2xl mb-2">{plan.emoji}</div>
                 <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-                <p className="text-xs text-slate-500 mb-4">{plan.desc}</p>
+                <p className="text-sm text-slate-500 mb-4">{plan.desc}</p>
 
                 <div className="mb-6">
                   {price === 0 ? (

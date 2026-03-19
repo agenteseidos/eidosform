@@ -25,7 +25,7 @@ export function Logo({ href = '/', size = 'md', className }: LogoProps) {
       )}
     >
       <span style={{ color: '#F5B731' }} className="font-bold">Eidos</span>
-      <span style={{ color: 'var(--eidos-navy)' }} className="font-extrabold dark:text-white">Form</span>
+      <span style={{ color: 'var(--eidos-navy)' }} className="font-extrabold ">Form</span>
     </span>
   )
 

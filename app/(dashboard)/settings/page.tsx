@@ -10,6 +10,7 @@ import { ArrowLeft, User, CreditCard, Trash2, LogOut } from 'lucide-react'
 import Link from 'next/link'
 import { DomainSettings } from '@/components/settings/domain-settings'
 import { ApiKeySettings } from '@/components/settings/api-key-settings'
+import { PasswordSettings } from '@/components/settings/password-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -97,6 +98,9 @@ export default async function SettingsPage() {
           </Button>
         </div>
       </Card>
+
+      {/* Alterar Senha */}
+      <PasswordSettings />
 
       {/* Plano atual */}
       <Card className="p-6 mb-6">

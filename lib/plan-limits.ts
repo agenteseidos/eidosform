@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
+import { createPublicClient } from '@/lib/supabase/public'
 import { sendLimitAlert } from '@/lib/resend'
 
 export type PlanName = 'free' | 'starter' | 'plus' | 'professional'
@@ -188,7 +189,7 @@ export async function checkResponseLimit(userId: string): Promise<{
   plan: PlanName
   nearLimit: boolean
 }> {
-  const supabase = await createClient()
+  const supabase = createPublicClient()
 
   const { data: profile, error } = await supabase
     .from('profiles')
@@ -238,7 +239,7 @@ export async function checkResponseLimit(userId: string): Promise<{
 }
 
 export async function incrementResponseCount(userId: string): Promise<void> {
-  const supabase = await createClient()
+  const supabase = createPublicClient()
   await supabase.rpc('increment_responses_used', { p_user_id: userId })
 }
 

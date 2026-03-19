@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { event, payment, subscription } = body
+  const { event, payment, subscription } = body as any
 
   console.log('[asaas-webhook]', event, body)
 

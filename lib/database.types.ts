@@ -22,6 +22,18 @@ export type QuestionType =
   | 'file_upload'
   | 'nps'
   | 'url'
+  | 'address'
+  | 'address'
+
+// Conditional logic operators
+export type ConditionalOperator = 'equals' | 'not_equals' | 'contains' | 'not_empty' | 'is_empty'
+
+// Conditional logic rule
+export interface ConditionalRule {
+  questionId: string
+  operator: ConditionalOperator
+  value?: string
+}
 
 // Form status
 export type FormStatus = 'draft' | 'published' | 'closed'
@@ -62,6 +74,7 @@ export interface QuestionConfig {
   allowedFileTypes?: string[] // For file_upload
   maxFileSize?: number // In MB
   placeholder?: string
+  conditionalLogic?: ConditionalRule
 }
 
 // Pixel tracking configuration

@@ -45,12 +45,12 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
 
       {/* Question Title */}
       <div>
-        <Label htmlFor="title" className="text-sm font-medium">Question</Label>
+        <Label htmlFor="title" className="text-sm font-medium">Pergunta</Label>
         <Textarea
           id="title"
           value={question.title}
           onChange={(e) => onUpdate({ title: e.target.value })}
-          placeholder="Type your question here..."
+          placeholder="Digite sua pergunta aqui..."
           className="mt-2 resize-none"
           rows={2}
         />
@@ -65,7 +65,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
           id="description"
           value={question.description || ''}
           onChange={(e) => onUpdate({ description: e.target.value })}
-          placeholder="Add a description..."
+          placeholder="Adicione uma descrição..."
           className="mt-2 resize-none"
           rows={2}
         />
@@ -111,7 +111,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
             className="mt-3 w-full"
           >
             <Plus className="w-4 h-4 mr-2" />
-            Add option
+            Adicionar opção
           </Button>
         </div>
       )}
@@ -125,7 +125,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
             id="placeholder"
             value={question.placeholder || ''}
             onChange={(e) => onUpdate({ placeholder: e.target.value })}
-            placeholder="Placeholder text..."
+            placeholder="Texto do placeholder..."
             className="mt-2"
           />
         </div>
@@ -133,7 +133,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
 
       {question.type === 'rating' && (
         <div>
-          <Label className="text-sm font-medium mb-3 block">Rating Scale</Label>
+          <Label className="text-sm font-medium mb-3 block">Escala de Avaliação</Label>
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <Label htmlFor="minValue" className="text-xs text-slate-500">Min</Label>
@@ -165,7 +165,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
 
       {question.type === 'opinion_scale' && (
         <div>
-          <Label className="text-sm font-medium mb-3 block">Scale Range</Label>
+          <Label className="text-sm font-medium mb-3 block">Faixa da Escala</Label>
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <Label htmlFor="minValue" className="text-xs text-slate-500">Min</Label>
@@ -197,18 +197,18 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
 
       {question.type === 'nps' && (
         <div>
-          <Label className="text-sm font-medium mb-3 block">NPS Scale (0-10)</Label>
-          <p className="text-sm text-slate-500">Net Promoter Score: 0-6 Detractors, 7-8 Passives, 9-10 Promoters</p>
+          <Label className="text-sm font-medium mb-3 block">Escala NPS (0-10)</Label>
+          <p className="text-sm text-slate-500">Net Promoter Score: 0-6 Detratores, 7-8 Passivos, 9-10 Promotores</p>
         </div>
       )}
       {question.type === 'file_upload' && (
         <div className="space-y-4">
           <div>
-            <Label className="text-sm font-medium mb-2 block">Allowed file types</Label>
-            <p className="text-sm text-slate-500">Images and PDFs are allowed</p>
+            <Label className="text-sm font-medium mb-2 block">Tipos de arquivo permitidos</Label>
+            <p className="text-sm text-slate-500">Imagens e PDFs são permitidos</p>
           </div>
           <div>
-            <Label htmlFor="maxFileSize" className="text-sm font-medium">Max file size (MB)</Label>
+            <Label htmlFor="maxFileSize" className="text-sm font-medium">Tamanho máximo (MB)</Label>
             <Input
               id="maxFileSize"
               type="number"
@@ -228,7 +228,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
       <div className="flex items-center justify-between">
         <div>
           <Label className="text-sm font-medium">Obrigatório</Label>
-          <p className="text-xs text-slate-500">Respondents must answer this question</p>
+          <p className="text-xs text-slate-500">Respondentes devem responder esta pergunta</p>
         </div>
         <Switch
           checked={question.required}

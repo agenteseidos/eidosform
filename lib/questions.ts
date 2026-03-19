@@ -13,7 +13,8 @@ import {
   ThumbsUp, 
   Upload, 
   Link,
-  LucideIcon
+  LucideIcon,
+  MapPin
 } from 'lucide-react'
 
 export interface QuestionTypeInfo {
@@ -49,7 +50,7 @@ export const questionTypes: QuestionTypeInfo[] = [
     description: 'Selecione uma opção da lista',
     icon: List,
     defaultConfig: {
-      options: ['Option 1', 'Option 2', 'Option 3'],
+      options: ['Opção 1', 'Opção 2', 'Opção 3'],
     },
   },
   {
@@ -58,7 +59,7 @@ export const questionTypes: QuestionTypeInfo[] = [
     description: 'Selecione múltiplas opções',
     icon: CheckSquare,
     defaultConfig: {
-      options: ['Option 1', 'Option 2', 'Option 3'],
+      options: ['Opção 1', 'Opção 2', 'Opção 3'],
     },
   },
   {
@@ -76,7 +77,7 @@ export const questionTypes: QuestionTypeInfo[] = [
     description: 'Campo de telefone',
     icon: Phone,
     defaultConfig: {
-      placeholder: '+1 (555) 000-0000',
+      placeholder: '(00) 00000-0000',
     },
   },
   {
@@ -148,7 +149,16 @@ export const questionTypes: QuestionTypeInfo[] = [
     description: 'Campo de URL',
     icon: Link,
     defaultConfig: {
-      placeholder: 'https://example.com',
+      placeholder: 'https://exemplo.com',
+    },
+  },
+  {
+    type: 'address',
+    label: 'Endereço / CEP',
+    description: 'Endereço completo com busca por CEP',
+    icon: MapPin,
+    defaultConfig: {
+      placeholder: '00000-000',
     },
   },
 ]

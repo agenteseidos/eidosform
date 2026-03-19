@@ -139,7 +139,7 @@ function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQues
           }}
         >
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: theme.primaryColor }} />
-          <p className="font-medium">Uploading...</p>
+          <p className="font-medium">Enviando...</p>
         </div>
       ) : (
         <div>
@@ -158,7 +158,7 @@ function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQues
             <div className="text-center">
               <p className="font-medium">Clique para enviar</p>
               <p className="text-sm opacity-50 mt-1">
-                Images & PDFs up to {question.maxFileSize || 10}MB
+                Imagens e PDFs até {question.maxFileSize || 10}MB
               </p>
             </div>
           </motion.button>
@@ -170,6 +170,115 @@ function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQues
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+
+interface AddressQuestionProps {
+  question: QuestionConfig
+  value: Record<string, string> | null
+  onChange: (value: Record<string, string>) => void
+  theme: ThemeConfig
+  error?: string
+}
+
+function AddressQuestion({ question, value, onChange, theme, error }: AddressQuestionProps) {
+  const [isLoadingCep, setIsLoadingCep] = useState(false)
+  const [cepError, setCepError] = useState<string | null>(null)
+  const addr = value || { cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '' }
+
+  const updateField = (field: string, val: string) => {
+    const updated = { ...addr, [field]: val }
+    onChange(updated)
+  }
+
+  const handleCepChange = async (cepValue: string) => {
+    const clean = cepValue.replace(/\D/g, '')
+    updateField('cep', cepValue)
+    setCepError(null)
+
+    if (clean.length === 8) {
+      setIsLoadingCep(true)
+      try {
+        const res = await fetch(`/api/cep/${clean}`)
+        if (res.ok) {
+          const data = await res.json()
+          onChange({
+            ...addr,
+            cep: cepValue,
+            rua: data.rua || '',
+            bairro: data.bairro || '',
+            cidade: data.cidade || '',
+            estado: data.estado || '',
+          })
+        } else {
+          setCepError('CEP não encontrado')
+        }
+      } catch {
+        setCepError('Erro ao buscar CEP')
+      } finally {
+        setIsLoadingCep(false)
+      }
+    }
+  }
+
+  const fieldStyle = {
+    borderColor: `${theme.textColor}30`,
+    color: theme.textColor,
+    backgroundColor: 'transparent',
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-3">
+        <div className="w-40">
+          <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>CEP</label>
+          <div className="relative">
+            <Input
+              value={addr.cep}
+              onChange={(e) => handleCepChange(e.target.value)}
+              placeholder="00000-000"
+              className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+              style={fieldStyle}
+              maxLength={9}
+              autoFocus
+            />
+            {isLoadingCep && (
+              <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2" style={{ color: theme.primaryColor }} />
+            )}
+          </div>
+          {cepError && <p className="text-xs mt-1" style={{ color: '#EF4444' }}>{cepError}</p>}
+        </div>
+      </div>
+      <div>
+        <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Rua</label>
+        <Input value={addr.rua} onChange={(e) => updateField('rua', e.target.value)} placeholder="Rua / Avenida" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
+      </div>
+      <div className="flex gap-3">
+        <div className="w-32">
+          <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Número</label>
+          <Input value={addr.numero} onChange={(e) => updateField('numero', e.target.value)} placeholder="Nº" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
+        </div>
+        <div className="flex-1">
+          <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Complemento</label>
+          <Input value={addr.complemento} onChange={(e) => updateField('complemento', e.target.value)} placeholder="Apto, Sala..." className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
+        </div>
+      </div>
+      <div>
+        <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Bairro</label>
+        <Input value={addr.bairro} onChange={(e) => updateField('bairro', e.target.value)} placeholder="Bairro" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
+      </div>
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Cidade</label>
+          <Input value={addr.cidade} onChange={(e) => updateField('cidade', e.target.value)} placeholder="Cidade" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
+        </div>
+        <div className="w-24">
+          <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Estado</label>
+          <Input value={addr.estado} onChange={(e) => updateField('estado', e.target.value)} placeholder="UF" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} maxLength={2} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -214,7 +323,7 @@ export function QuestionRenderer({
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          placeholder={question.placeholder || 'Type your answer here...'}
+          placeholder={question.placeholder || 'Digite sua resposta aqui...'}
           className="text-xl md:text-2xl h-auto py-3 px-0 border-0 border-b-2 rounded-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-40"
           style={inputStyles}
           autoFocus
@@ -228,7 +337,7 @@ export function QuestionRenderer({
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          placeholder={question.placeholder || 'Type your answer here...'}
+          placeholder={question.placeholder || 'Digite sua resposta aqui...'}
           className="text-lg md:text-xl min-h-[150px] p-4 border-2 rounded-xl bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-40 resize-none"
           style={inputStyles}
           autoFocus
@@ -340,7 +449,7 @@ export function QuestionRenderer({
             )
           })}
           <p className="text-sm opacity-50 mt-2" style={{ color: theme.textColor }}>
-            Select all that apply
+            Selecione todas que se aplicam
           </p>
         </div>
       )
@@ -348,7 +457,7 @@ export function QuestionRenderer({
     case 'yes_no':
       return (
         <div className="flex gap-4">
-          {['Yes', 'No'].map((option) => {
+          {['Sim', 'Não'].map((option) => {
             const isSelected = value === option
             return (
               <motion.button
@@ -509,6 +618,17 @@ export function QuestionRenderer({
           value={value as FileUploadValue | null}
           onChange={(v) => onChange(v as Json)}
           theme={theme}
+        />
+      )
+
+    case 'address':
+      return (
+        <AddressQuestion
+          question={question}
+          value={value as Record<string, string> | null}
+          onChange={(v) => onChange(v as Json)}
+          theme={theme}
+          error={error}
         />
       )
 

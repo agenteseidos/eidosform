@@ -1,3 +1,4 @@
+import { validateWebhookUrl } from '@/lib/webhook-validator'
 /**
  * app/api/forms/[id]/webhook/route.ts — Gerenciar webhook_url do form
  * GET: retorna configuração atual
@@ -39,8 +40,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const body = await req.json()
   const { webhook_url } = body
 
-  if (webhook_url && !webhook_url.startsWith('https://')) {
-    return NextResponse.json({ error: 'webhook_url deve usar HTTPS' }, { status: 400 })
+  if (webhook_url) {
+    const urlCheck = validateWebhookUrl(webhook_url)
+    if (!urlCheck.safe) {
+      return NextResponse.json({ error: urlCheck.reason }, { status: 400 })
+    }
   }
 
   const { error } = await supabase

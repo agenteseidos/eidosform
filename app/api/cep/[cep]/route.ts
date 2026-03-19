@@ -1,72 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// Cache simples em memória
-const cepCache = new Map<string, ViaCEPResponse>()
+type Params = { params: Promise<{ cep: string }> }
 
-interface ViaCEPResponse {
-  logradouro: string
-  bairro: string
-  localidade: string
-  uf: string
-  erro?: boolean
-}
-
-export interface CEPResult {
-  cep: string
-  rua: string
-  bairro: string
-  cidade: string
-  estado: string
-}
-
-interface RouteParams {
-  params: Promise<{ cep: string }>
-}
-
-// GET /api/cep/[cep] — consulta endereço por CEP via ViaCEP
-export async function GET(req: NextRequest, { params }: RouteParams) {
+export async function GET(_req: NextRequest, { params }: Params) {
   const { cep } = await params
-  const cleanCep = cep.replace(/\D/g, '')
+  const cleaned = cep.replace(/\D/g, '')
 
-  if (cleanCep.length !== 8) {
-    return NextResponse.json({ error: 'CEP inválido. Informe 8 dígitos.' }, { status: 400 })
-  }
-
-  if (cepCache.has(cleanCep)) {
-    const cached = cepCache.get(cleanCep)!
-    if (cached.erro) {
-      return NextResponse.json({ error: 'CEP não encontrado' }, { status: 404 })
-    }
-    return NextResponse.json(formatResult(cleanCep, cached))
+  if (!/^\d{8}$/.test(cleaned)) {
+    return NextResponse.json({ error: 'CEP must be 8 digits' }, { status: 400 })
   }
 
   try {
-    const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`)
-
-    if (!res.ok) {
-      return NextResponse.json({ error: 'Erro ao consultar ViaCEP' }, { status: 502 })
-    }
-
-    const data: ViaCEPResponse = await res.json()
-    cepCache.set(cleanCep, data)
+    const res = await fetch(`https://viacep.com.br/ws/${cleaned}/json/`, {
+      signal: AbortSignal.timeout(5000),
+    })
+    const data = await res.json()
 
     if (data.erro) {
-      return NextResponse.json({ error: 'CEP não encontrado' }, { status: 404 })
+      return NextResponse.json({ error: 'CEP not found' }, { status: 404 })
     }
 
-    return NextResponse.json(formatResult(cleanCep, data))
-  } catch (err) {
-    console.error('ViaCEP fetch error:', err)
-    return NextResponse.json({ error: 'Erro ao consultar ViaCEP' }, { status: 502 })
-  }
-}
-
-function formatResult(cep: string, data: ViaCEPResponse): CEPResult {
-  return {
-    cep,
-    rua: data.logradouro || '',
-    bairro: data.bairro || '',
-    cidade: data.localidade || '',
-    estado: data.uf || '',
+    return NextResponse.json({
+      cep: data.cep,
+      street: data.logradouro || '',
+      complement: data.complemento || '',
+      neighborhood: data.bairro || '',
+      city: data.localidade || '',
+      state: data.uf || '',
+    })
+  } catch {
+    return NextResponse.json({ error: 'Failed to fetch CEP' }, { status: 502 })
   }
 }

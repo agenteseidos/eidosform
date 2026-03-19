@@ -540,7 +540,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
         <div className={`${mobilePanel !== 'questions' ? 'flex' : 'hidden'} md:flex flex-1 overflow-hidden`}>
           {/* Question Editor */}
           {selectedQuestion && (
-            <div className={`${mobilePanel === 'editor' ? 'flex flex-col' : 'hidden'} md:flex md:flex-col w-full md:w-96 bg-white border-r border-slate-200 overflow-auto`}>
+            <div className={`${mobilePanel === 'editor' ? 'flex flex-col' : 'hidden'} md:flex md:flex-col flex-1 min-w-0 bg-white border-r border-slate-200 overflow-auto`}>
               <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                 <h3 className="font-medium">Editar Pergunta</h3>
                 <Button 
@@ -561,7 +561,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
           )}
 
           {/* Preview */}
-          <div className={`${mobilePanel === 'preview' || !selectedQuestion ? 'flex' : 'hidden'} md:flex flex-col flex-1 overflow-auto bg-slate-100 p-8`}>
+          <div className={`${mobilePanel === 'preview' || !selectedQuestion ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0 overflow-auto bg-slate-100 p-8`}>
             <div className="max-w-2xl mx-auto">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-4">
                 <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">

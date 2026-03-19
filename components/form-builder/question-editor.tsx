@@ -121,12 +121,12 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
         question.type === 'email' || question.type === 'phone' || 
         question.type === 'url' || question.type === 'number') && (
         <div>
-          <Label htmlFor="placeholder" className="text-sm font-medium text-slate-700">Placeholder</Label>
+          <Label htmlFor="placeholder" className="text-sm font-medium text-slate-700">Texto de exemplo</Label>
           <Input
             id="placeholder"
             value={question.placeholder || ''}
             onChange={(e) => onUpdate({ placeholder: e.target.value })}
-            placeholder="Texto do placeholder..."
+            placeholder="Ex: Digite seu nome completo..."
             className="mt-2"
           />
         </div>

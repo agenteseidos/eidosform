@@ -59,8 +59,8 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
 
       {/* Description */}
       <div>
-        <Label htmlFor="description" className="text-sm font-medium">
-          Descrição <span className="text-slate-400 font-normal">(opcional)</span>
+        <Label htmlFor="description" className="text-sm font-medium text-slate-700">
+          Descrição <span className="text-slate-500 font-normal">(opcional)</span>
         </Label>
         <Textarea
           id="description"
@@ -77,7 +77,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
       {/* Type-specific settings */}
       {(question.type === 'dropdown' || question.type === 'checkboxes') && (
         <div>
-          <Label className="text-sm font-medium mb-3 block">Opções</Label>
+          <Label className="text-sm font-medium text-slate-700 mb-3 block">Opções</Label>
           <div className="space-y-2">
             {(question.options || []).map((option, index) => (
               <div
@@ -121,7 +121,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
         question.type === 'email' || question.type === 'phone' || 
         question.type === 'url' || question.type === 'number') && (
         <div>
-          <Label htmlFor="placeholder" className="text-sm font-medium">Placeholder</Label>
+          <Label htmlFor="placeholder" className="text-sm font-medium text-slate-700">Placeholder</Label>
           <Input
             id="placeholder"
             value={question.placeholder || ''}
@@ -134,7 +134,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
 
       {question.type === 'rating' && (
         <div>
-          <Label className="text-sm font-medium mb-3 block">Escala de Avaliação</Label>
+          <Label className="text-sm font-medium text-slate-700 mb-3 block">Escala de Avaliação</Label>
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <Label htmlFor="minValue" className="text-xs text-slate-500">Min</Label>
@@ -166,7 +166,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
 
       {question.type === 'opinion_scale' && (
         <div>
-          <Label className="text-sm font-medium mb-3 block">Faixa da Escala</Label>
+          <Label className="text-sm font-medium text-slate-700 mb-3 block">Faixa da Escala</Label>
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <Label htmlFor="minValue" className="text-xs text-slate-500">Min</Label>
@@ -198,18 +198,18 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
 
       {question.type === 'nps' && (
         <div>
-          <Label className="text-sm font-medium mb-3 block">Escala NPS (0-10)</Label>
+          <Label className="text-sm font-medium text-slate-700 mb-3 block">Escala NPS (0-10)</Label>
           <p className="text-sm text-slate-500">Net Promoter Score: 0-6 Detratores, 7-8 Passivos, 9-10 Promotores</p>
         </div>
       )}
       {question.type === 'file_upload' && (
         <div className="space-y-4">
           <div>
-            <Label className="text-sm font-medium mb-2 block">Tipos de arquivo permitidos</Label>
+            <Label className="text-sm font-medium text-slate-700 mb-2 block">Tipos de arquivo permitidos</Label>
             <p className="text-sm text-slate-500">Imagens e PDFs são permitidos</p>
           </div>
           <div>
-            <Label htmlFor="maxFileSize" className="text-sm font-medium">Tamanho máximo (MB)</Label>
+            <Label htmlFor="maxFileSize" className="text-sm font-medium text-slate-700">Tamanho máximo (MB)</Label>
             <Input
               id="maxFileSize"
               type="number"
@@ -228,7 +228,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
       {/* Required toggle */}
       <div className="flex items-center justify-between">
         <div>
-          <Label className="text-sm font-medium">Obrigatório</Label>
+          <Label className="text-sm font-medium text-slate-700">Obrigatório</Label>
           <p className="text-xs text-slate-500">Respondentes devem responder esta pergunta</p>
         </div>
         <Switch
@@ -245,7 +245,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-slate-500" />
-            <Label className="text-sm font-medium">Lógica Condicional</Label>
+            <Label className="text-sm font-medium text-slate-700">Lógica Condicional</Label>
           </div>
         </div>
         {question.conditionalLogic ? (

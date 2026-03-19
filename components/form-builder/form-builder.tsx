@@ -279,7 +279,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                     <div className="text-center py-8 px-4">
                       <FileText className="w-12 h-12 mx-auto text-slate-300 mb-3" />
                       <p className="text-sm text-slate-500">Nenhuma pergunta ainda</p>
-                      <p className="text-xs text-slate-400 mt-1">Adicione sua primeira pergunta para começar</p>
+                      <p className="text-xs text-slate-500 mt-1">Adicione sua primeira pergunta para começar</p>
                     </div>
                   ) : (
                     <Reorder.Group axis="y" values={questions} onReorder={handleReorder}>
@@ -306,10 +306,10 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs font-medium text-slate-400">
+                                    <span className="text-xs font-medium text-slate-600">
                                       {index + 1}
                                     </span>
-                                    <span className="text-xs text-slate-400">
+                                    <span className="text-xs text-slate-600">
                                       {getQuestionTypeInfo(question.type)?.label || question.type}
                                     </span>
                                     {question.required && (
@@ -449,7 +449,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                 <div className="pt-2">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="h-px flex-1 bg-slate-100" />
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Pixels de Rastreamento</span>
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Pixels de Rastreamento</span>
                     <div className="h-px flex-1 bg-slate-100" />
                   </div>
                   <div className="space-y-4">

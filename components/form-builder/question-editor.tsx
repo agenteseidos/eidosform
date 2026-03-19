@@ -1,6 +1,6 @@
 'use client'
 
-import { QuestionConfig } from '@/lib/database.types'
+import { QuestionConfig, ConditionalRule, ConditionalOperator } from '@/lib/database.types'
 import { getQuestionTypeInfo } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,20 +8,21 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Trash2, Plus, GripVertical, X } from 'lucide-react'
+import { Trash2, Plus, GripVertical, X, GitBranch } from 'lucide-react'
 
 interface QuestionEditorProps {
   question: QuestionConfig
+  allQuestions?: QuestionConfig[]
   onUpdate: (updates: Partial<QuestionConfig>) => void
   onDelete: () => void
 }
 
-export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorProps) {
+export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete }: QuestionEditorProps) {
   const typeInfo = getQuestionTypeInfo(question.type)
 
   const addOption = () => {
     const options = question.options || []
-    onUpdate({ options: [...options, `Option ${options.length + 1}`] })
+    onUpdate({ options: [...options, `Opção ${options.length + 1}`] })
   }
 
   const updateOption = (index: number, value: string) => {
@@ -45,7 +46,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
 
       {/* Question Title */}
       <div>
-        <Label htmlFor="title" className="text-sm font-medium">Pergunta</Label>
+        <Label htmlFor="title" className="text-sm font-medium text-slate-900">Pergunta</Label>
         <Textarea
           id="title"
           value={question.title}
@@ -89,7 +90,7 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
                 <Input
                   value={option}
                   onChange={(e) => updateOption(index, e.target.value)}
-                  placeholder={`Option ${index + 1}`}
+                  placeholder={`Opção ${index + 1}`}
                   className="flex-1"
                 />
                 <Button
@@ -234,6 +235,72 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
           checked={question.required}
           onCheckedChange={(checked) => onUpdate({ required: checked })}
         />
+      </div>
+
+      <Separator />
+
+
+      {/* Conditional Logic */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-slate-500" />
+            <Label className="text-sm font-medium">Lógica Condicional</Label>
+          </div>
+        </div>
+        {question.conditionalLogic ? (
+          <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
+            <p className="text-xs text-slate-500 font-medium">Mostrar esta pergunta se:</p>
+            <select
+              value={question.conditionalLogic.questionId || ''}
+              onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
+              className="w-full text-sm border rounded-md px-2 py-1.5 bg-white"
+            >
+              <option value="">Selecione uma pergunta</option>
+              {allQuestions.filter(q => q.id !== question.id).map(q => (
+                <option key={q.id} value={q.id}>{q.title || 'Pergunta sem título'}</option>
+              ))}
+            </select>
+            <select
+              value={question.conditionalLogic.operator || 'equals'}
+              onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
+              className="w-full text-sm border rounded-md px-2 py-1.5 bg-white"
+            >
+              <option value="equals">é igual a</option>
+              <option value="not_equals">é diferente de</option>
+              <option value="contains">contém</option>
+              <option value="not_empty">não está vazio</option>
+              <option value="is_empty">está vazio</option>
+            </select>
+            {!['not_empty', 'is_empty'].includes(question.conditionalLogic.operator) && (
+              <Input
+                value={question.conditionalLogic.value || ''}
+                onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, value: e.target.value } })}
+                placeholder="Valor esperado"
+                className="text-sm"
+              />
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onUpdate({ conditionalLogic: undefined })}
+              className="text-red-500 hover:text-red-600 text-xs w-full"
+            >
+              <X className="w-3 h-3 mr-1" />
+              Remover condição
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onUpdate({ conditionalLogic: { questionId: '', operator: 'equals', value: '' } })}
+            className="w-full text-xs"
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Adicionar condição
+          </Button>
+        )}
       </div>
 
       <Separator />

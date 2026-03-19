@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const rateCheck = checkResponseRateLimit(ip)
   if (!rateCheck.allowed) {
     return NextResponse.json(
-      { error: 'Too many requests. Try again later.', retryAfter: Math.ceil(rateCheck.resetIn / 1000) },
+      { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter: Math.ceil(rateCheck.resetIn / 1000) },
       { status: 429 }
     )
   }
@@ -52,18 +52,18 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
   }
   const { form_id, last_question_answered } = body
   // Bug #9: Sanitize answers
   const answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
 
   if (!form_id) {
-    return NextResponse.json({ error: 'form_id is required' }, { status: 400 })
+    return NextResponse.json({ error: 'ID do formulário é obrigatório' }, { status: 400 })
   }
 
   if (!answers || typeof answers !== 'object') {
-    return NextResponse.json({ error: 'answers must be an object' }, { status: 400 })
+    return NextResponse.json({ error: 'Respostas em formato inválido' }, { status: 400 })
   }
 
   // Verificar se o formulário existe e está publicado
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     .single() as { data: { id: string; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null } | null; error: unknown }
 
   if (formError || !form) {
-    return NextResponse.json({ error: 'Form not found or not published' }, { status: 404 })
+    return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404 })
   }
 
   // Bug #5: Auto-detect completed based on required questions
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
     const limitCheck = await checkResponseLimit(form.user_id)
     if (!limitCheck.allowed) {
       return NextResponse.json(
-        { error: 'Response limit reached for current plan', plan: limitCheck.plan, limit: limitCheck.limit },
+        { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit },
         { status: 429 }
       )
     }
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
       .single() as { data: { id: string } | null; error: unknown }
 
     if (updateError || !updated) {
-      return NextResponse.json({ error: 'Response not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404 })
     }
 
     responseId = updated.id
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
       .single() as { data: { id: string } | null; error: { message: string } | null }
 
     if (insertError || !newResponse) {
-      return NextResponse.json({ error: (insertError as { message: string } | null)?.message || 'Failed to save response' }, { status: 500 })
+      return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500 })
     }
 
     responseId = newResponse.id
@@ -217,7 +217,7 @@ export async function GET(req: NextRequest) {
   const { data: responses, error, count } = await query
 
   if (error) {
-    return NextResponse.json({ error: 'Failed to fetch responses' }, { status: 500 })
+    return NextResponse.json({ error: 'Falha ao buscar respostas' }, { status: 500 })
   }
 
   return NextResponse.json({

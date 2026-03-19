@@ -491,7 +491,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 </Button>
 
                 <span className="text-sm opacity-40" style={{ color: theme.textColor }}>
-                  pressione <kbd className="font-mono font-semibold">Enter ↵</kbd>
+                  Pressione <kbd className="font-mono font-semibold">Enter ↵</kbd>
                 </span>
               </motion.div>
             </motion.div>

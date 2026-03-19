@@ -23,7 +23,6 @@ export type QuestionType =
   | 'nps'
   | 'url'
   | 'address'
-  | 'address'
 
 // Conditional logic operators
 export type ConditionalOperator = 'equals' | 'not_equals' | 'contains' | 'not_empty' | 'is_empty'

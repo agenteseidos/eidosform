@@ -260,7 +260,7 @@ function ResponseDetailDialog({
               <Button variant="outline" onClick={() => setFilePreview(null)}>Fechar</Button>
               {filePreview.url ? (
                 <a href={filePreview.url} target="_blank" rel="noopener noreferrer" download={filePreview.name}>
-                  <Button className="bg-blue-600 hover:bg-blue-700"><Download className="w-4 h-4 mr-2" />Download</Button>
+                  <Button className="bg-blue-600 hover:bg-blue-700"><Download className="w-4 h-4 mr-2" />Baixar</Button>
                 </a>
               ) : filePreview.data ? (
                 <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => {
@@ -269,7 +269,7 @@ function ResponseDetailDialog({
                   link.download = filePreview.name
                   link.click()
                 }}>
-                  <Download className="w-4 h-4 mr-2" />Download
+                  <Download className="w-4 h-4 mr-2" />Baixar
                 </Button>
               ) : null}
             </DialogFooter>

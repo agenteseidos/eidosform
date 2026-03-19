@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
-import { questionTypes, createDefaultQuestion } from '@/lib/questions'
+import { questionTypes, createDefaultQuestion, getQuestionTypeInfo } from '@/lib/questions'
 import { themes, themeList } from '@/lib/themes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -309,8 +309,8 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                                     <span className="text-xs font-medium text-slate-400">
                                       {index + 1}
                                     </span>
-                                    <span className="text-xs text-slate-400 capitalize">
-                                      {question.type.replace('_', ' ')}
+                                    <span className="text-xs text-slate-400">
+                                      {getQuestionTypeInfo(question.type)?.label || question.type}
                                     </span>
                                     {question.required && (
                                       <span className="text-xs text-red-500">*</span>
@@ -544,6 +544,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
               </div>
               <QuestionEditor
                 question={selectedQuestion}
+                allQuestions={questions}
                 onUpdate={(updates) => updateQuestion(selectedQuestion.id, updates)}
                 onDelete={() => deleteQuestion(selectedQuestion.id)}
               />
@@ -580,14 +581,14 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
 
       {/* Add Question Dialog */}
       <Dialog open={showAddQuestion} onOpenChange={setShowAddQuestion}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Adicionar Pergunta</DialogTitle>
             <DialogDescription>
               Escolha o tipo de pergunta para adicionar
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-3 gap-3 py-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 py-4 overflow-y-auto max-h-[60vh] pr-1">
             {questionTypes.map((qt) => (
               <button
                 key={qt.type}

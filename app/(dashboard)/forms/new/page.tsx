@@ -25,7 +25,7 @@ export default async function NewFormPage() {
   const newForm: FormInsert = {
     id: formId,
     user_id: user.id,
-    title: 'Untitled Form',
+    title: 'Formulário sem título',
     slug: slug,
     status: 'draft',
     theme: 'minimal',

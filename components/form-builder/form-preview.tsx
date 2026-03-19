@@ -23,7 +23,7 @@ export function FormPreview({
       <div className="flex items-center justify-center min-h-[400px] p-8">
         <div className="text-center">
           <p style={{ color: theme.textColor }} className="opacity-50">
-            Add questions to see a preview
+            Adicione perguntas para ver a visualização
           </p>
         </div>
       </div>
@@ -64,7 +64,7 @@ export function FormPreview({
             className="text-xl font-semibold mb-2"
             style={{ color: theme.textColor }}
           >
-            {question.title || 'Untitled question'}
+            {question.title || 'Pergunta sem título'}
             {question.required && (
               <span style={{ color: theme.primaryColor }} className="ml-1">*</span>
             )}
@@ -91,7 +91,7 @@ export function FormPreview({
                   color: theme.textColor 
                 }}
               >
-                {question.placeholder || 'Type your answer here...'}
+                {question.placeholder || 'Digite sua resposta aqui...'}
               </div>
             )}
 
@@ -103,7 +103,7 @@ export function FormPreview({
                   color: theme.textColor 
                 }}
               >
-                {question.placeholder || 'Type your answer here...'}
+                {question.placeholder || 'Digite sua resposta aqui...'}
               </div>
             )}
 
@@ -115,7 +115,7 @@ export function FormPreview({
                   color: theme.textColor 
                 }}
               >
-                MM / DD / YYYY
+                DD / MM / AAAA
               </div>
             )}
 
@@ -146,7 +146,7 @@ export function FormPreview({
 
             {question.type === 'yes_no' && (
               <div className="flex gap-3">
-                {['Yes', 'No'].map((option, i) => (
+                {['Sim', 'Não'].map((option, i) => (
                   <div 
                     key={i}
                     className="flex items-center gap-3 p-3 rounded-lg border-2 flex-1 justify-center transition-colors"
@@ -206,17 +206,32 @@ export function FormPreview({
                   color: theme.textColor 
                 }}
               >
-                <p className="text-sm">Drop files here or click to upload</p>
+                <p className="text-sm">Arraste arquivos ou clique para enviar</p>
                 <p className="text-xs opacity-60 mt-1">
-                  Images & PDFs up to {question.maxFileSize || 10}MB
+                  Imagens e PDFs até {question.maxFileSize || 10}MB
                 </p>
               </div>
             )}
           </div>
 
+
+            {question.type === 'address' && (
+              <div className="space-y-2">
+                {['CEP', 'Rua', 'Número', 'Complemento', 'Bairro', 'Cidade', 'Estado'].map((field, i) => (
+                  <div
+                    key={i}
+                    className="border-b-2 py-1.5 text-sm opacity-50"
+                    style={{ borderColor: `${theme.primaryColor}40`, color: theme.textColor }}
+                  >
+                    {field}
+                  </div>
+                ))}
+              </div>
+            )}
+
           {/* Keyboard hint */}
           <div className="mt-6 flex items-center gap-2 opacity-50">
-            <span className="text-xs" style={{ color: theme.textColor }}>Press</span>
+            <span className="text-xs" style={{ color: theme.textColor }}>Pressione</span>
             <kbd 
               className="px-2 py-1 rounded text-xs font-medium"
               style={{ 

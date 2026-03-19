@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
       .from('profiles')
       .insert({ user_id: user.id, email: user.email ?? '', plan: 'free' })
       .select('api_key, plan')
-      .single() as { data: { api_key: string | null; plan: string } | null, error: any }
+      .single() as { data: { api_key: string | null; plan: string } | null, error: unknown }
 
     if (createError || !newProfile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })

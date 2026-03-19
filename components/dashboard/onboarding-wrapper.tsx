@@ -14,7 +14,7 @@ export function OnboardingWrapper({ isNewUser }: OnboardingWrapperProps) {
     if (!isNewUser) return
     const dismissed = localStorage.getItem('eidosform_onboarding_done')
     if (!dismissed) {
-      setShowOnboarding(true)
+      setTimeout(() => setShowOnboarding(true), 0)
     }
   }, [isNewUser])
 

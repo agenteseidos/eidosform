@@ -7,17 +7,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
-// Mapa de valor de assinatura → nome do plano
 const VALUE_TO_PLAN: Record<number, string> = {
   49: 'starter',
   127: 'plus',
   257: 'professional',
-  470.4: 'starter',   // yearly
+  470.4: 'starter',
   1219.2: 'plus',
   2467.2: 'professional',
 }
@@ -27,6 +28,7 @@ function detectPlan(value: number): string {
 }
 
 async function getUserByCustomerId(asaasCustomerId: string) {
+  const supabase = getSupabase()
   const { data } = await supabase
     .from('profiles')
     .select('id, email, full_name, plan')
@@ -52,7 +54,6 @@ interface AsaasWebhookBody {
 }
 
 export async function POST(req: NextRequest) {
-  // Validação do token Asaas
   const headerToken = req.headers.get('asaas-access-token')
   const url = new URL(req.url)
   const queryToken = url.searchParams.get('accessToken')
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { event, payment, subscription } = body
+  const supabase = getSupabase()
 
   console.log('[asaas-webhook]', event, body)
 

@@ -140,7 +140,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       triggerPixelSubmitRef.current?.()
       setIsSubmitted(true)
       if (form.redirect_url) {
-        setTimeout(() => { window.location.href = form.redirect_url! }, 2800)
+        setTimeout(() => { window.location.href = ensureHttps(form.redirect_url!) }, 2800)
       }
     } catch (e) {
       toast.error('Falha ao enviar resposta')
@@ -266,7 +266,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
               className="mt-6"
             >
               <a
-                href={form.thank_you_button_url}
+                href={ensureHttps(form.thank_you_button_url!)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-block px-6 py-3 rounded-full font-semibold text-sm transition-opacity hover:opacity-80"

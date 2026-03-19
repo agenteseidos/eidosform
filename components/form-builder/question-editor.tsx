@@ -195,6 +195,12 @@ export function QuestionEditor({ question, onUpdate, onDelete }: QuestionEditorP
         </div>
       )}
 
+      {question.type === 'nps' && (
+        <div>
+          <Label className="text-sm font-medium mb-3 block">NPS Scale (0-10)</Label>
+          <p className="text-sm text-slate-500">Net Promoter Score: 0-6 Detractors, 7-8 Passives, 9-10 Promoters</p>
+        </div>
+      )}
       {question.type === 'file_upload' && (
         <div className="space-y-4">
           <div>

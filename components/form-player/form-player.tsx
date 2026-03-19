@@ -9,61 +9,12 @@ import { Button } from '@/components/ui/button'
 import { ChevronUp, ChevronDown, Check, ArrowRight } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
+import { PixelInjector } from '@/components/pixels/pixel-injector'
 
 interface FormPlayerProps {
   form: Form
 }
 
-function firePixels(form: Form) {
-  const pixels = form.pixels as Record<string, string> | null
-  if (!pixels) return
-
-  if (pixels.metaPixelId) {
-    const script = document.createElement('script')
-    script.innerHTML = `
-      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', '${pixels.metaPixelId}');
-      fbq('track', 'Lead');
-    `
-    document.head.appendChild(script)
-  }
-
-  if (pixels.tiktokPixelId) {
-    const script = document.createElement('script')
-    script.innerHTML = `
-      !function (w, d, t) {
-        w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
-        ttq.load('${pixels.tiktokPixelId}');
-        ttq.track('SubmitForm');
-      }(window, document, 'ttq');
-    `
-    document.head.appendChild(script)
-  }
-
-  if (pixels.googleAdsId && pixels.googleAdsLabel) {
-    const gtag = document.createElement('script')
-    gtag.src = `https://www.googletagmanager.com/gtag/js?id=${pixels.googleAdsId}`
-    gtag.async = true
-    document.head.appendChild(gtag)
-    const script = document.createElement('script')
-    script.innerHTML = `
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', '${pixels.googleAdsId}');
-      gtag('event', 'conversion', {'send_to': '${pixels.googleAdsId}/${pixels.googleAdsLabel}'});
-    `
-    document.head.appendChild(script)
-  }
-
-  if (pixels.gtmId) {
-    const script = document.createElement('script')
-    script.innerHTML = `
-      (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${pixels.gtmId}');
-    `
-    document.head.appendChild(script)
-  }
-}
 
 export function FormPlayer({ form }: FormPlayerProps) {
   const supabase = createClient()
@@ -81,6 +32,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
   const [responseId, setResponseId] = useState<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerPixelSubmitRef = useRef<(() => void) | null>(null)
   const skipNextValidationRef = useRef(false)
 
   const currentQuestion = questions[currentIndex]
@@ -186,7 +138,7 @@ export function FormPlayer({ form }: FormPlayerProps) {
         return
       }
 
-      firePixels(form)
+      triggerPixelSubmitRef.current?.()
       setIsSubmitted(true)
       if (form.redirect_url) {
         setTimeout(() => { window.location.href = form.redirect_url! }, 2800)
@@ -380,6 +332,21 @@ export function FormPlayer({ form }: FormPlayerProps) {
       className="min-h-screen flex flex-col"
       style={{ ...themeStyles, backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
     >
+
+      {/* Pixel tracking */}
+      {form.pixels && (
+        <PixelInjector
+          config={{
+            meta_pixel_id: (form.pixels as Record<string, string>).metaPixelId || null,
+            google_ads_id: (form.pixels as Record<string, string>).googleAdsId || null,
+            google_ads_label: (form.pixels as Record<string, string>).googleAdsLabel || null,
+            tiktok_pixel_id: (form.pixels as Record<string, string>).tiktokPixelId || null,
+            gtm_id: (form.pixels as Record<string, string>).gtmId || null,
+          }}
+          onReady={(trigger) => { triggerPixelSubmitRef.current = trigger }}
+        />
+      )}
+
       {/* ── Progress bar ── */}
       <div className="fixed top-0 left-0 right-0 z-50 h-1" style={{ backgroundColor: `${theme.primaryColor}20` }}>
         <motion.div

@@ -9,6 +9,8 @@ export type ConditionOperator =
   | 'contains'
   | 'greater_than'
   | 'less_than'
+  | 'not_empty'
+  | 'is_empty'
 
 export interface Condition {
   questionId: string
@@ -28,6 +30,15 @@ export type AnswersMap = Record<string, string | number | boolean | null>
 
 function evaluateCondition(condition: Condition, answers: AnswersMap): boolean {
   const rawAnswer = answers[condition.questionId]
+
+  // Handle is_empty/not_empty before null check
+  if (condition.operator === 'is_empty') {
+    return rawAnswer === undefined || rawAnswer === null || String(rawAnswer).trim().length === 0
+  }
+  if (condition.operator === 'not_empty') {
+    return rawAnswer !== undefined && rawAnswer !== null && String(rawAnswer).trim().length > 0
+  }
+
   if (rawAnswer === undefined || rawAnswer === null) return false
 
   const answerStr = String(rawAnswer).toLowerCase().trim()

@@ -133,6 +133,16 @@ export const questionTypes: QuestionTypeInfo[] = [
     },
   },
   {
+    type: 'nps',
+    label: 'NPS',
+    description: 'Net Promoter Score (0-10)',
+    icon: Gauge,
+    defaultConfig: {
+      minValue: 0,
+      maxValue: 10,
+    },
+  },
+  {
     type: 'url',
     label: 'URL do Site',
     description: 'Campo de URL',

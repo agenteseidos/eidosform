@@ -37,8 +37,14 @@ async function getUserByCustomerId(asaasCustomerId: string) {
 
 export async function POST(req: NextRequest) {
   // Validação do token Asaas
-  const token = req.headers.get('asaas-access-token')
+  // Asaas pode enviar o token via header 'asaas-access-token' ou query param 'accessToken'
+  const headerToken = req.headers.get('asaas-access-token')
+  const url = new URL(req.url)
+  const queryToken = url.searchParams.get('accessToken')
+  const token = headerToken || queryToken
+
   if (process.env.ASAAS_WEBHOOK_TOKEN && token !== process.env.ASAAS_WEBHOOK_TOKEN) {
+    console.warn('[asaas-webhook] Token mismatch. Header:', headerToken, 'Query:', queryToken)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

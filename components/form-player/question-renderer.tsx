@@ -457,6 +457,51 @@ export function QuestionRenderer({
         </div>
       )
 
+    case 'nps':
+      const npsValue = typeof value === 'number' ? value : null
+      return (
+        <div>
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: 11 }).map((_, index) => {
+              const isSelected = npsValue === index
+              let borderHint = `${theme.textColor}30`
+              if (!isSelected) {
+                if (index <= 6) borderHint = `${theme.textColor}20`
+                else if (index <= 8) borderHint = `${theme.textColor}25`
+                else borderHint = `${theme.textColor}30`
+              }
+              return (
+                <motion.button
+                  key={index}
+                  type="button"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onChange(index)
+                    onClearError?.()
+                    onSubmit(true)
+                  }}
+                  className="w-12 h-12 md:w-14 md:h-14 rounded-xl border-2 flex items-center justify-center text-lg font-medium transition-all"
+                  style={{
+                    borderColor: isSelected ? theme.primaryColor : borderHint,
+                    backgroundColor: isSelected ? theme.primaryColor : 'transparent',
+                    color: isSelected ? theme.backgroundColor : theme.textColor,
+                  }}
+                >
+                  {index}
+                </motion.button>
+              )
+            })}
+          </div>
+          <div className="flex justify-between mt-3 text-sm opacity-50" style={{ color: theme.textColor }}>
+            <span>Nada provável</span>
+            <span>Muito provável</span>
+          </div>
+        </div>
+      )
+
     case 'file_upload':
       return (
         <FileUploadQuestion

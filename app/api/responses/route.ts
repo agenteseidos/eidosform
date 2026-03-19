@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createPublicClient } from '@/lib/supabase/public'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 
 // POST /api/responses — submeter resposta (completa ou parcial)
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
+  // Use service-role client for anonymous submissions (no auth required)
+  const supabase = createPublicClient()
 
   const body = await req.json()
   const { form_id, answers, completed = false, last_question_answered } = body
@@ -145,8 +147,8 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('responses')
-    .select('id, form_id, answers, completed, created_at, last_question_answered', { count: 'exact' })
-    .order('created_at', { ascending: false })
+    .select('id, form_id, answers, completed, submitted_at, last_question_answered', { count: 'exact' })
+    .order('submitted_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
   if (formId) {

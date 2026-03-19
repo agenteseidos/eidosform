@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createPublicClient } from '@/lib/supabase/public'
 import { FormPlayer } from '@/components/form-player/form-player'
 import { Form } from '@/lib/database.types'
 
@@ -11,7 +11,7 @@ interface FormPageProps {
 
 export async function generateMetadata({ params }: FormPageProps) {
   const { slug } = await params
-  const supabase = await createClient()
+  const supabase = createPublicClient()
 
   const { data } = await supabase
     .from('forms')
@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: FormPageProps) {
 
 export default async function FormPage({ params }: FormPageProps) {
   const { slug } = await params
-  const supabase = await createClient()
+  const supabase = createPublicClient()
 
   const { data, error } = await supabase
     .from('forms')
@@ -51,4 +51,3 @@ export default async function FormPage({ params }: FormPageProps) {
 
   return <FormPlayer form={form} />
 }
-

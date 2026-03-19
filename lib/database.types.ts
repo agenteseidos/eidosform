@@ -20,6 +20,7 @@ export type QuestionType =
   | 'opinion_scale'
   | 'yes_no'
   | 'file_upload'
+  | 'nps'
   | 'url'
 
 // Form status

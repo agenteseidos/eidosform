@@ -55,7 +55,7 @@ export default async function FormPage({ params }: FormPageProps) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('plan')
-      .eq('user_id', form.user_id)
+      .eq('id', form.user_id)
       .single() as { data: { plan: string } | null }
     if (profile?.plan) {
       ownerPlan = profile.plan

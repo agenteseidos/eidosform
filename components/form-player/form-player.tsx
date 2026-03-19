@@ -448,7 +448,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.27 }}
-                className="mt-6 sm:mt-8 flex flex-wrap items-center gap-3 sm:gap-4"
+                className="mt-6 sm:mt-8 flex flex-wrap items-center gap-3 sm:gap-4 relative z-10"
               >
                 <Button
                   onClick={() => goToNext()}

@@ -213,23 +213,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [currentQuestion, goToNext, goToPrevious, isSubmitted, isSubmitting])
 
-  // Wheel navigation
-  useEffect(() => {
-    let lastScrollTime = 0
-    const handleWheel = (e: WheelEvent) => {
-      if (isSubmitted || isSubmitting) return
-      const target = e.target as HTMLElement
-      if (target.tagName === 'TEXTAREA') return
-      const now = Date.now()
-      if (now - lastScrollTime < 500) return
-      if (Math.abs(e.deltaY) < 50) return
-      if (e.deltaY > 0) goToNext()
-      else goToPrevious()
-      lastScrollTime = now
-    }
-    window.addEventListener('wheel', handleWheel, { passive: true })
-    return () => window.removeEventListener('wheel', handleWheel)
-  }, [goToNext, goToPrevious, isSubmitted, isSubmitting])
+  // Wheel navigation removido — navegação apenas via botões ou resposta
 
   // ─── Thank you screen ────────────────────────────────────────────────────────
   if (isSubmitted) {

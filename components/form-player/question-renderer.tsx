@@ -208,10 +208,10 @@ function AddressQuestion({ question, value, onChange, theme, error }: AddressQue
           onChange({
             ...addr,
             cep: cepValue,
-            rua: data.rua || '',
-            bairro: data.bairro || '',
-            cidade: data.cidade || '',
-            estado: data.estado || '',
+            rua: data.street || data.rua || '',
+            bairro: data.neighborhood || data.bairro || '',
+            cidade: data.city || data.cidade || '',
+            estado: data.state || data.estado || '',
           })
         } else {
           setCepError('CEP não encontrado')

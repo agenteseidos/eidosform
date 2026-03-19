@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { FormInsert, FormStatus } from '@/lib/database.types'
+import { validateWebhookUrl } from '@/lib/webhook-validator'
 
 // GET /api/forms — list all forms for authenticated user
 export async function GET(req: NextRequest) {
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { title, description, slug, theme, questions, thank_you_message, pixels, plan, redirect_url } = body
+  const { title, description, slug, theme, questions, thank_you_message, pixels, plan, redirect_url, webhook_url } = body
 
   if (!title || !slug) {
     return NextResponse.json({ error: 'title and slug are required' }, { status: 400 })
@@ -64,6 +65,14 @@ export async function POST(req: NextRequest) {
       { error: 'slug must contain only lowercase letters, numbers, and hyphens' },
       { status: 400 }
     )
+  }
+
+  // Validate webhook_url if provided
+  if (webhook_url) {
+    const webhookCheck = validateWebhookUrl(webhook_url)
+    if (!webhookCheck.safe) {
+      return NextResponse.json({ error: `Invalid webhook_url: ${webhookCheck.reason}` }, { status: 400 })
+    }
   }
 
   // Bug #11: Inherit plan from user profile
@@ -86,6 +95,7 @@ export async function POST(req: NextRequest) {
     pixels: pixels || null,
     plan: userPlan,
     redirect_url: redirect_url || null,
+    webhook_url: webhook_url || null,
   }
 
   const { data, error } = await supabase

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { FormUpdate } from '@/lib/database.types'
+import { validateWebhookUrl } from '@/lib/webhook-validator'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -53,7 +54,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const body = await req.json()
-  const { title, description, slug, status, theme, questions, thank_you_message, pixels, plan, redirect_url } = body
+  const { title, description, slug, status, theme, questions, thank_you_message, pixels, plan, redirect_url, webhook_url } = body
 
   // Validate slug if provided
   if (slug && !/^[a-z0-9-]+$/.test(slug)) {
@@ -61,6 +62,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       { error: 'slug must contain only lowercase letters, numbers, and hyphens' },
       { status: 400 }
     )
+  }
+
+  // Validate webhook_url if provided
+  if (webhook_url) {
+    const webhookCheck = validateWebhookUrl(webhook_url)
+    if (!webhookCheck.safe) {
+      return NextResponse.json({ error: `Invalid webhook_url: ${webhookCheck.reason}` }, { status: 400 })
+    }
   }
 
   const update: FormUpdate = {
@@ -74,6 +83,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(pixels !== undefined && { pixels }),
     ...(plan !== undefined && { plan }),
     ...(redirect_url !== undefined && { redirect_url }),
+    ...(webhook_url !== undefined && { webhook_url }),
     updated_at: new Date().toISOString(),
   }
 

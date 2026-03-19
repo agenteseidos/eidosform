@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, Json } from '@/lib/database.types'
 import { getTheme, getThemeCSSVariables } from '@/lib/themes'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -18,7 +17,6 @@ interface FormPlayerProps {
 
 
 export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
-  const supabase = createClient()
   const questions = (form.questions as QuestionConfig[]) || []
   const theme = getTheme(form.theme)
   const themeStyles = getThemeCSSVariables(theme)

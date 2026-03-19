@@ -35,9 +35,24 @@ async function getUserByCustomerId(asaasCustomerId: string) {
   return data
 }
 
+interface AsaasPayment {
+  customer?: string
+  value: number
+  subscription?: string
+}
+
+interface AsaasSubscription {
+  customer?: string
+}
+
+interface AsaasWebhookBody {
+  event: string
+  payment?: AsaasPayment
+  subscription?: AsaasSubscription
+}
+
 export async function POST(req: NextRequest) {
   // Validação do token Asaas
-  // Asaas pode enviar o token via header 'asaas-access-token' ou query param 'accessToken'
   const headerToken = req.headers.get('asaas-access-token')
   const url = new URL(req.url)
   const queryToken = url.searchParams.get('accessToken')
@@ -48,14 +63,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: Record<string, unknown>
+  let body: AsaasWebhookBody
   try {
-    body = await req.json()
+    body = await req.json() as AsaasWebhookBody
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { event, payment, subscription } = body as any
+  const { event, payment, subscription } = body
 
   console.log('[asaas-webhook]', event, body)
 
@@ -63,7 +78,6 @@ export async function POST(req: NextRequest) {
     switch (event) {
       case 'PAYMENT_CONFIRMED':
       case 'PAYMENT_RECEIVED': {
-        // Ativar/renovar plano
         const customerId = payment?.customer
         if (!customerId) break
 
@@ -77,8 +91,8 @@ export async function POST(req: NextRequest) {
           .update({
             plan,
             plan_status: 'active',
-            plan_expires_at: null, // renovação contínua
-            limit_alert_sent: false, // reset alerta
+            plan_expires_at: null,
+            limit_alert_sent: false,
             asaas_subscription_id: payment.subscription ?? user.plan,
           })
           .eq('id', user.id)
@@ -88,7 +102,6 @@ export async function POST(req: NextRequest) {
       }
 
       case 'PAYMENT_OVERDUE': {
-        // Downgrade warning — não muda plano ainda, apenas flag
         const customerId = payment?.customer
         if (!customerId) break
 
@@ -100,7 +113,6 @@ export async function POST(req: NextRequest) {
       }
 
       case 'SUBSCRIPTION_DELETED': {
-        // Voltar para Free
         const customerId = subscription?.customer
         if (!customerId) break
 
@@ -124,7 +136,6 @@ export async function POST(req: NextRequest) {
       }
 
       default:
-        // Evento não tratado — retorna 200 assim mesmo
         break
     }
   } catch (err) {

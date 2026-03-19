@@ -58,7 +58,7 @@ export default async function SettingsPage() {
 
         <div className="flex items-center gap-4 mb-6">
           <Avatar className="h-16 w-16">
-            <AvatarImage src={avatarUrl} alt={user.email || 'User'} />
+            <AvatarImage src={avatarUrl} alt={user.email || 'Usuário'} />
             <AvatarFallback className="bg-blue-600 text-white text-xl font-semibold">
               {initials}
             </AvatarFallback>

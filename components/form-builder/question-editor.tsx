@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Trash2, Plus, GripVertical, X, GitBranch } from 'lucide-react'
+import { countries } from '@/lib/countries'
 
 interface QuestionEditorProps {
   question: QuestionConfig
@@ -202,6 +203,23 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
           <p className="text-sm text-slate-500">Net Promoter Score: 0-6 Detratores, 7-8 Passivos, 9-10 Promotores</p>
         </div>
       )}
+      {question.type === 'phone' && (
+        <div>
+          <Label className="text-sm font-medium text-slate-700 mb-2 block">País padrão</Label>
+          <select
+            value={question.defaultCountry || 'BR'}
+            onChange={(e) => onUpdate({ defaultCountry: e.target.value })}
+            className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+          >
+            {countries.map(c => (
+              <option key={c.code} value={c.code}>
+                {c.flag} {c.name} ({c.dial})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {question.type === 'file_upload' && (
         <div className="space-y-4">
           <div>

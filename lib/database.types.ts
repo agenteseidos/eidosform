@@ -73,6 +73,7 @@ export interface QuestionConfig {
   allowedFileTypes?: string[] // For file_upload
   maxFileSize?: number // In MB
   placeholder?: string
+  defaultCountry?: string // Country code for phone type (default: BR)
   conditionalLogic?: ConditionalRule
 }
 

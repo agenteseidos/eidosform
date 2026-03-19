@@ -4,6 +4,7 @@ import { QuestionConfig } from '@/lib/database.types'
 import { ThemeConfig } from '@/lib/database.types'
 import { motion } from 'framer-motion'
 import { Star, Check } from 'lucide-react'
+import { getCountryByCode } from '@/lib/countries'
 
 interface FormPreviewProps {
   questions: QuestionConfig[]
@@ -81,8 +82,30 @@ export function FormPreview({
 
           {/* Preview of input types */}
           <div className="mt-4">
+            {question.type === 'phone' && (() => {
+              const country = getCountryByCode(question.defaultCountry || 'BR')
+              return (
+                <div className="flex items-end gap-2">
+                  <div
+                    className="border-b-2 py-2 text-lg opacity-50 flex items-center gap-1.5 whitespace-nowrap"
+                    style={{ borderColor: theme.primaryColor, color: theme.textColor }}
+                  >
+                    <span>{country.flag}</span>
+                    <span className="text-base">{country.dial}</span>
+                    <span className="text-xs">▾</span>
+                  </div>
+                  <div
+                    className="flex-1 border-b-2 py-2 text-lg opacity-50"
+                    style={{ borderColor: theme.primaryColor, color: theme.textColor }}
+                  >
+                    {country.format}
+                  </div>
+                </div>
+              )
+            })()}
+
             {(question.type === 'short_text' || question.type === 'email' || 
-              question.type === 'phone' || question.type === 'url' || 
+              question.type === 'url' || 
               question.type === 'number') && (
               <div 
                 className="border-b-2 py-2 text-lg opacity-50"

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import { QuestionConfig, ThemeConfig, Json } from '@/lib/database.types'
 import { Input } from '@/components/ui/input'
+import { countries, getCountryByCode } from '@/lib/countries'
 import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
 import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react'
@@ -283,6 +284,115 @@ function AddressQuestion({ question, value, onChange, theme, error }: AddressQue
   )
 }
 
+
+interface PhoneQuestionProps {
+  question: QuestionConfig
+  value: string
+  onChange: (value: string) => void
+  theme: ThemeConfig
+  error?: string
+}
+
+function PhoneQuestion({ question, value, onChange, theme, error }: PhoneQuestionProps) {
+  const defaultCode = question.defaultCountry || 'BR'
+  const [selectedCountry, setSelectedCountry] = useState(() => getCountryByCode(defaultCode))
+  const [phoneNumber, setPhoneNumber] = useState(() => {
+    // Extract number part if value starts with dial code
+    if (value) {
+      const country = countries.find(c => value.startsWith(c.dial))
+      if (country) {
+        return value.slice(country.dial.length)
+      }
+    }
+    return value || ''
+  })
+  const [isOpen, setIsOpen] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
+  const dropdownRef = React.useRef<HTMLDivElement>(null)
+
+  // Close dropdown on outside click
+  React.useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [isOpen])
+
+  const handlePhoneChange = (num: string) => {
+    const clean = num.replace(/[^\d]/g, '')
+    setPhoneNumber(clean)
+    onChange(clean ? selectedCountry.dial + clean : '')
+  }
+
+  const handleCountrySelect = (country: typeof selectedCountry) => {
+    setSelectedCountry(country)
+    setIsOpen(false)
+    if (phoneNumber) {
+      onChange(country.dial + phoneNumber)
+    }
+  }
+
+  return (
+    <div className="flex items-end gap-2">
+      <div className="relative" ref={dropdownRef}>
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center gap-1.5 text-xl md:text-2xl py-3 px-1 border-0 border-b-2 rounded-none bg-transparent whitespace-nowrap transition-colors"
+          style={{
+            borderColor: error ? '#EF4444' : isFocused ? theme.primaryColor : `${theme.textColor}30`,
+            color: theme.textColor,
+          }}
+        >
+          <span>{selectedCountry.flag}</span>
+          <span className="text-lg md:text-xl">{selectedCountry.dial}</span>
+          <span className="text-xs opacity-50">▾</span>
+        </button>
+        {isOpen && (
+          <div
+            className="absolute top-full left-0 mt-1 z-50 min-w-[220px] max-h-[280px] overflow-y-auto rounded-xl border shadow-lg"
+            style={{ backgroundColor: theme.backgroundColor, borderColor: `${theme.textColor}20` }}
+          >
+            {countries.map((country) => (
+              <button
+                key={country.code}
+                type="button"
+                onClick={() => handleCountrySelect(country)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:opacity-80"
+                style={{
+                  color: theme.textColor,
+                  backgroundColor: country.code === selectedCountry.code ? `${theme.primaryColor}15` : 'transparent',
+                }}
+              >
+                <span className="text-lg">{country.flag}</span>
+                <span className="text-sm flex-1">{country.name}</span>
+                <span className="text-sm opacity-60">{country.dial}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <Input
+        type="tel"
+        value={phoneNumber}
+        onChange={(e) => handlePhoneChange(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        placeholder={selectedCountry.format}
+        className="flex-1 text-xl md:text-2xl h-auto py-3 px-0 border-0 border-b-2 rounded-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-40"
+        style={{
+          borderColor: error ? '#EF4444' : isFocused ? theme.primaryColor : `${theme.textColor}30`,
+          color: theme.textColor,
+        }}
+        autoFocus
+      />
+    </div>
+  )
+}
+
 interface QuestionRendererProps {
   question: QuestionConfig
   value: Json
@@ -311,9 +421,19 @@ export function QuestionRenderer({
   }
 
   switch (question.type) {
+    case 'phone':
+      return (
+        <PhoneQuestion
+          question={question}
+          value={String(value || '')}
+          onChange={(v) => onChange(v)}
+          theme={theme}
+          error={error}
+        />
+      )
+
     case 'short_text':
     case 'email':
-    case 'phone':
     case 'url':
     case 'number':
       return (

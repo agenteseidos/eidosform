@@ -77,7 +77,7 @@ export const questionTypes: QuestionTypeInfo[] = [
     description: 'Campo de telefone',
     icon: Phone,
     defaultConfig: {
-      placeholder: '(00) 00000-0000',
+      placeholder: '(11) 99999-0000',
     },
   },
   {

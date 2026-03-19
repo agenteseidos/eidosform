@@ -15,7 +15,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen relative">
+    <div className="light min-h-screen relative" data-theme="light">
       {/* Sophisticated gradient background */}
       <div 
         className="fixed inset-0 z-0"

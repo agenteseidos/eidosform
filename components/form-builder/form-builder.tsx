@@ -545,7 +545,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="google_ads_label" className="text-sm font-medium text-slate-700">Label</Label>
+                        <Label htmlFor="google_ads_label" className="text-sm font-medium text-slate-700">Rótulo de Conversão</Label>
                         <Input
                           id="google_ads_label"
                           value={pixels.googleAdsLabel || ''}

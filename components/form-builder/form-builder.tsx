@@ -255,9 +255,9 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                   <Palette className="w-3 h-3 mr-1" />
                   Design
                 </TabsTrigger>
-                <TabsTrigger value="settings" className="text-xs">
-                  <Settings className="w-3 h-3 mr-1" />
-                  Configurações
+                <TabsTrigger value="settings" className="text-xs px-1">
+                  <Settings className="w-3 h-3 mr-0.5 shrink-0" />
+                  <span className="truncate">Configurações</span>
                 </TabsTrigger>
               </TabsList>
             </div>

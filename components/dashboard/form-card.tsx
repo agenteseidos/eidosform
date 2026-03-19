@@ -103,7 +103,7 @@ export function FormCard({ form, responseCount }: FormCardProps) {
               </DropdownMenuItem>
             )}
             <DropdownMenuItem asChild>
-              <Link href={`/forms/${form.id}/respostas`} className="cursor-pointer">
+              <Link href={`/forms/${form.id}/responses`} className="cursor-pointer">
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Respostas
               </Link>
@@ -136,7 +136,7 @@ export function FormCard({ form, responseCount }: FormCardProps) {
             Editar
           </Button>
         </Link>
-        <Link href={`/forms/${form.id}/respostas`} className="flex-1">
+        <Link href={`/forms/${form.id}/responses`} className="flex-1">
           <Button variant="outline" size="sm" className="w-full hover:bg-sky-50 hover:text-sky-700 hover:border-sky-200 transition-colors">
             <BarChart3 className="w-3 h-3 mr-2" />
             Respostas

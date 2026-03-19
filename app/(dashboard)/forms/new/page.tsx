@@ -30,7 +30,7 @@ export default async function NewFormPage() {
     status: 'draft',
     theme: 'minimal',
     questions: [],
-    thank_you_message: 'Thank you for your response!',
+    thank_you_message: 'Obrigado pela sua resposta!',
   }
 
   const { error } = await supabase

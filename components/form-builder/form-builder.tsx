@@ -382,9 +382,9 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
             <TabsContent value="settings" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
               <div className="p-4 space-y-6">
                 <div>
-                  <Label htmlFor="slug" className="text-sm font-medium">URL do Formulário</Label>
+                  <Label htmlFor="slug" className="text-sm font-medium text-slate-700">URL do Formulário</Label>
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="text-sm text-slate-500">/f/</span>
+                    <span className="text-sm font-medium text-slate-600">/f/</span>
                     <Input
                       id="slug"
                       value={form.slug}
@@ -393,14 +393,14 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                         setForm({ ...form, slug })
                         setHasUnsavedChanges(true)
                       }}
-                      className="flex-1"
-                      placeholder="my-form"
+                      className="flex-1 text-slate-900 placeholder:text-slate-400"
+                      placeholder="meu-formulario"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <Label htmlFor="description" className="text-sm font-medium">Descrição</Label>
+                  <Label htmlFor="description" className="text-sm font-medium text-slate-700">Descrição</Label>
                   <Textarea
                     id="description"
                     value={form.description || ''}
@@ -408,14 +408,14 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                       setForm({ ...form, description: e.target.value })
                       setHasUnsavedChanges(true)
                     }}
-                    className="mt-2"
+                    className="mt-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="Descrição opcional..."
                     rows={3}
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="thank_you" className="text-sm font-medium">Mensagem de Agradecimento</Label>
+                  <Label htmlFor="thank_you" className="text-sm font-medium text-slate-700">Mensagem de Agradecimento</Label>
                   <Textarea
                     id="thank_you"
                     value={form.thank_you_message}
@@ -423,14 +423,14 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                       setForm({ ...form, thank_you_message: e.target.value })
                       setHasUnsavedChanges(true)
                     }}
-                    className="mt-2"
+                    className="mt-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="Obrigado pela sua resposta!"
                     rows={3}
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="redirect_url" className="text-sm font-medium">
+                  <Label htmlFor="redirect_url" className="text-sm font-medium text-slate-700">
                     URL de Redirecionamento
                   </Label>
                   <p className="text-xs text-slate-500 mt-0.5">Após envio, redirecionar para esta URL</p>
@@ -441,7 +441,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                       setForm({ ...form, redirect_url: e.target.value || null })
                       setHasUnsavedChanges(true)
                     }}
-                    className="mt-2"
+                    className="mt-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="https://exemplo.com/obrigado"
                   />
                 </div>
@@ -454,7 +454,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                   </div>
                   <div className="space-y-4">
                     <div>
-                      <Label htmlFor="meta_pixel" className="text-sm font-medium">Meta Pixel ID</Label>
+                      <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Meta Pixel ID</Label>
                       <Input
                         id="meta_pixel"
                         value={pixels.metaPixelId || ''}
@@ -462,13 +462,13 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                           setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
                           setHasUnsavedChanges(true)
                         }}
-                        className="mt-1.5"
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                         placeholder="123456789012345"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label htmlFor="google_ads_id" className="text-sm font-medium">Google Ads ID</Label>
+                        <Label htmlFor="google_ads_id" className="text-sm font-medium text-slate-700">Google Ads ID</Label>
                         <Input
                           id="google_ads_id"
                           value={pixels.googleAdsId || ''}
@@ -476,12 +476,12 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                             setPixels({ ...pixels, googleAdsId: e.target.value || undefined })
                             setHasUnsavedChanges(true)
                           }}
-                          className="mt-1.5"
+                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                           placeholder="AW-XXXXXXXXX"
                         />
                       </div>
                       <div>
-                        <Label htmlFor="google_ads_label" className="text-sm font-medium">Label</Label>
+                        <Label htmlFor="google_ads_label" className="text-sm font-medium text-slate-700">Label</Label>
                         <Input
                           id="google_ads_label"
                           value={pixels.googleAdsLabel || ''}
@@ -489,13 +489,13 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                             setPixels({ ...pixels, googleAdsLabel: e.target.value || undefined })
                             setHasUnsavedChanges(true)
                           }}
-                          className="mt-1.5"
+                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                           placeholder="AbCdEfGhIj"
                         />
                       </div>
                     </div>
                     <div>
-                      <Label htmlFor="tiktok_pixel" className="text-sm font-medium">TikTok Pixel ID</Label>
+                      <Label htmlFor="tiktok_pixel" className="text-sm font-medium text-slate-700">TikTok Pixel ID</Label>
                       <Input
                         id="tiktok_pixel"
                         value={pixels.tiktokPixelId || ''}
@@ -503,12 +503,12 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                           setPixels({ ...pixels, tiktokPixelId: e.target.value || undefined })
                           setHasUnsavedChanges(true)
                         }}
-                        className="mt-1.5"
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                         placeholder="CXXXXXXXXXXXXXXXXX"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="gtm_id" className="text-sm font-medium">Google Tag Manager ID</Label>
+                      <Label htmlFor="gtm_id" className="text-sm font-medium text-slate-700">Google Tag Manager ID</Label>
                       <Input
                         id="gtm_id"
                         value={pixels.gtmId || ''}
@@ -516,7 +516,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                           setPixels({ ...pixels, gtmId: e.target.value || undefined })
                           setHasUnsavedChanges(true)
                         }}
-                        className="mt-1.5"
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                         placeholder="GTM-XXXXXXX"
                       />
                     </div>

@@ -145,7 +145,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
                 onChange={(e) => onUpdate({ minValue: parseInt(e.target.value) || 1 })}
                 min={1}
                 max={4}
-                className="mt-1"
+                className="mt-1 text-slate-900"
               />
             </div>
             <div className="flex-1">
@@ -157,7 +157,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
                 onChange={(e) => onUpdate({ maxValue: parseInt(e.target.value) || 5 })}
                 min={2}
                 max={10}
-                className="mt-1"
+                className="mt-1 text-slate-900"
               />
             </div>
           </div>
@@ -177,7 +177,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
                 onChange={(e) => onUpdate({ minValue: parseInt(e.target.value) || 1 })}
                 min={0}
                 max={1}
-                className="mt-1"
+                className="mt-1 text-slate-900"
               />
             </div>
             <div className="flex-1">
@@ -189,7 +189,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
                 onChange={(e) => onUpdate({ maxValue: parseInt(e.target.value) || 10 })}
                 min={5}
                 max={10}
-                className="mt-1"
+                className="mt-1 text-slate-900"
               />
             </div>
           </div>
@@ -217,7 +217,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
               onChange={(e) => onUpdate({ maxFileSize: parseInt(e.target.value) || 10 })}
               min={1}
               max={25}
-              className="mt-2"
+              className="mt-2 text-slate-900"
             />
           </div>
         </div>
@@ -254,7 +254,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             <select
               value={question.conditionalLogic.questionId || ''}
               onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
-              className="w-full text-sm border rounded-md px-2 py-1.5 bg-white"
+              className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
             >
               <option value="">Selecione uma pergunta</option>
               {allQuestions.filter(q => q.id !== question.id).map(q => (
@@ -264,7 +264,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             <select
               value={question.conditionalLogic.operator || 'equals'}
               onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
-              className="w-full text-sm border rounded-md px-2 py-1.5 bg-white"
+              className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
             >
               <option value="equals">é igual a</option>
               <option value="not_equals">é diferente de</option>
@@ -295,7 +295,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             variant="outline"
             size="sm"
             onClick={() => onUpdate({ conditionalLogic: { questionId: '', operator: 'equals', value: '' } })}
-            className="w-full text-xs"
+            className="w-full text-xs text-slate-700"
           >
             <Plus className="w-3 h-3 mr-1" />
             Adicionar condição

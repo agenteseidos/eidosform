@@ -192,7 +192,7 @@ export async function checkResponseLimit(userId: string): Promise<{
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('plan, response_count, limit_alert_sent')
+    .select('plan, responses_used, responses_limit, limit_alert_sent')
     .eq('id', userId)
     .single()
 
@@ -201,9 +201,8 @@ export async function checkResponseLimit(userId: string): Promise<{
   }
 
   const plan = (profile.plan ?? 'free') as PlanName
-  const limits = getPlanLimits(plan)
-  const usage = profile.response_count ?? 0
-  const limit = limits.maxResponses
+  const usage = profile.responses_used ?? 0
+  const limit = profile.responses_limit ?? PLANS[plan]?.maxResponses ?? 100
 
   if (limit === -1) {
     return { allowed: true, usage, limit, plan, nearLimit: false }
@@ -240,7 +239,7 @@ export async function checkResponseLimit(userId: string): Promise<{
 
 export async function incrementResponseCount(userId: string): Promise<void> {
   const supabase = await createClient()
-  await supabase.rpc('increment_response_count', { p_user_id: userId })
+  await supabase.rpc('increment_responses_used', { p_user_id: userId })
 }
 
 export async function checkFormLimit(userId: string): Promise<{ allowed: boolean; usage: number; limit: number }> {

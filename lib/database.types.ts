@@ -88,6 +88,10 @@ export interface Database {
         Args: { p_user_id: string }
         Returns: void
       }
+      increment_responses_used: {
+        Args: { p_user_id: string }
+        Returns: void
+      }
     }
     Enums: {
       form_status: 'draft' | 'published' | 'closed'
@@ -104,6 +108,8 @@ export interface Database {
           plan: string
           api_key: string | null
           response_count: number
+          responses_used: number
+          responses_limit: number
           limit_alert_sent: boolean
           created_at: string
           updated_at: string
@@ -117,6 +123,8 @@ export interface Database {
           plan?: string
           api_key?: string | null
           response_count?: number
+          responses_used?: number
+          responses_limit?: number
           limit_alert_sent?: boolean
           created_at?: string
           updated_at?: string
@@ -130,6 +138,8 @@ export interface Database {
           plan?: string
           api_key?: string | null
           response_count?: number
+          responses_used?: number
+          responses_limit?: number
           limit_alert_sent?: boolean
           updated_at?: string
         }

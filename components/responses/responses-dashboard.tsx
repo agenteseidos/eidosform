@@ -431,7 +431,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
                 </Link>
               </>
             )}
-            <Button onClick={exportCSVFromAPI} variant="outline" size="sm">
+            <Button onClick={exportCSVFromAPI} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
               <Download className="w-4 h-4 mr-2" />Exportar CSV
             </Button>
           </div>

@@ -9,18 +9,40 @@ interface FormPageProps {
   params: Promise<{ slug: string }>
 }
 
+// UUID v4 regex
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient>, slugOrId: string) {
+  // Try by slug first
+  const { data: bySlug } = await supabase
+    .from('forms')
+    .select('*')
+    .eq('slug', slugOrId)
+    .eq('status', 'published')
+    .single()
+
+  if (bySlug) return bySlug
+
+  // If it looks like a UUID, also try by id
+  if (UUID_RE.test(slugOrId)) {
+    const { data: byId } = await supabase
+      .from('forms')
+      .select('*')
+      .eq('id', slugOrId)
+      .eq('status', 'published')
+      .single()
+
+    if (byId) return byId
+  }
+
+  return null
+}
+
 export async function generateMetadata({ params }: FormPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
 
-  const { data } = await supabase
-    .from('forms')
-    .select('title, description')
-    .eq('slug', slug)
-    .eq('status', 'published')
-    .single()
-
-  const form = data as { title: string; description: string | null } | null
+  const form = await fetchPublishedForm(supabase, slug) as { title: string; description: string | null } | null
 
   if (!form) {
     return { title: 'Formulário Não Encontrado' }
@@ -36,20 +58,14 @@ export default async function FormPage({ params }: FormPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
 
-  const { data, error } = await supabase
-    .from('forms')
-    .select('*')
-    .eq('slug', slug)
-    .eq('status', 'published')
-    .single()
-
+  const data = await fetchPublishedForm(supabase, slug)
   const form = data as (Form & { user_id: string }) | null
 
-  if (error || !form) {
+  if (!form) {
     notFound()
   }
 
-  // Bug #3: Fetch owner's plan to gate pixel rendering
+  // Fetch owner's plan to gate pixel rendering
   let ownerPlan = 'free'
   if (form.user_id) {
     const { data: profile } = await supabase

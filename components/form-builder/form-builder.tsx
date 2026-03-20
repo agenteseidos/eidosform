@@ -109,6 +109,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
     
     const updateData = {
       status: newStatus,
+      is_published: newStatus === 'published',
       questions: questions,
       title: form.title,
       description: form.description,
@@ -123,13 +124,15 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       redirect_url: form.redirect_url || null,
       webhook_url: form.webhook_url || null,
     }
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('forms')
       .update(updateData as never)
       .eq('id', form.id)
+      .select('id, status, is_published')
 
-    if (error) {
+    if (error || !updated || updated.length === 0) {
       toast.error('Falha ao atualizar status')
+      console.error('Publish update failed:', error, 'rows:', updated)
     } else {
       setForm(prev => ({ ...prev, status: newStatus }))
       toast.success(newStatus === 'published' ? 'Formulário publicado!' : 'Formulário despublicado')
@@ -252,10 +255,11 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
           </Button>
           <Button
             size="sm"
+            variant={null as never}
             onClick={() => setShowPublishDialog(true)}
             className={form.status === 'published' 
-              ? 'bg-emerald-600 hover:bg-emerald-700' 
-              : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20'
+              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-400/30' 
+              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
             }
           >
             <Globe className="w-4 h-4 mr-2" />

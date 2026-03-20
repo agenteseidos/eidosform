@@ -385,9 +385,9 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       })()}
 
       {/* ── Progress bar ── */}
-      <div className="fixed top-0 left-0 right-0 z-50 h-1" style={{ backgroundColor: `${theme.primaryColor}20` }}>
+      <div className="fixed top-0 left-0 right-0 z-50 h-[4px]" style={{ backgroundColor: `${theme.primaryColor}20` }}>
         <motion.div
-          className="h-full"
+          className="h-full rounded-r-full"
           style={{ backgroundColor: theme.primaryColor }}
           animate={{ width: `${progressAnim}%` }}
           transition={{ duration: 0.45, ease: 'easeInOut' }}
@@ -425,11 +425,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 className="mb-5 flex items-center gap-2"
               >
                 <span className="text-sm font-bold tabular-nums" style={{ color: theme.primaryColor }}>
-                  {currentIndex + 1}
-                </span>
-                <ArrowRight className="w-3.5 h-3.5" style={{ color: theme.primaryColor }} />
-                <span className="text-xs opacity-40" style={{ color: theme.textColor }}>
-                  de {visibleQuestions.length}
+                  Pergunta {currentIndex + 1} de {visibleQuestions.length}
                 </span>
               </motion.div>
 
@@ -502,12 +498,12 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.27 }}
-                className="mt-6 sm:mt-8 flex flex-wrap items-center gap-3 sm:gap-4 relative z-10"
+                className="mt-6 sm:mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-4 relative z-10"
               >
                 <Button
                   onClick={() => goToNext()}
                   disabled={isSubmitting}
-                  className="h-12 px-7 text-base font-semibold rounded-xl transition-transform active:scale-95"
+                  className="h-12 px-7 text-base font-semibold rounded-xl transition-transform active:scale-95 w-full sm:w-auto"
                   style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
                 >
                   {isSubmitting ? (
@@ -547,7 +543,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             style={{ color: theme.textColor }}
             aria-label="Pergunta anterior"
           >
-            <ChevronUp className="w-4 h-4" />
+            <ChevronUp className="w-5 h-5" />
           </Button>
           <Button
             variant="ghost"
@@ -558,7 +554,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             style={{ color: theme.textColor }}
             aria-label="Próxima pergunta"
           >
-            <ChevronDown className="w-4 h-4" />
+            <ChevronDown className="w-5 h-5" />
           </Button>
         </div>
 
@@ -566,7 +562,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
           href="/"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs opacity-40 hover:opacity-60 transition-opacity"
+          className="text-[13px] opacity-40 hover:opacity-60 transition-opacity"
           style={{ color: theme.textColor }}
         >
           Feito com <span className="font-semibold">EidosForm</span>

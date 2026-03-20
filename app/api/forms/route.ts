@@ -3,6 +3,15 @@ import { createClient } from '@/lib/supabase/server'
 import { FormInsert, FormStatus } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
 
+// T2: Ensure URLs have protocol before persisting
+function ensureHttps(url: string): string {
+  if (!url) return url
+  const trimmed = url.trim()
+  if (!trimmed) return trimmed
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
 // GET /api/forms — list all forms for authenticated user
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
@@ -20,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('forms')
-    .select('id, title, description, slug, status, theme, plan, redirect_url, pixels, created_at, updated_at', { count: 'exact' })
+    .select('id, title, description, slug, status, theme, plan, redirect_url, webhook_url, pixels, created_at, updated_at', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
@@ -94,7 +103,7 @@ export async function POST(req: NextRequest) {
     thank_you_message: thank_you_message || 'Obrigado pela sua resposta!',
     pixels: pixels || null,
     plan: userPlan,
-    redirect_url: redirect_url || null,
+    redirect_url: redirect_url ? ensureHttps(redirect_url) : null,
     webhook_url: webhook_url || null,
   }
 

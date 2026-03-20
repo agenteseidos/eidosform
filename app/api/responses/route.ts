@@ -5,6 +5,18 @@ import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkResponseRateLimit } from '@/lib/response-rate-limit'
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Response-Id',
+  'Access-Control-Max-Age': '86400',
+}
+
+// OPTIONS /api/responses — CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
+}
+
 // Sanitize string: strip HTML tags to prevent stored XSS (Bug #9)
 function sanitizeValue(val: unknown): unknown {
   if (typeof val === 'string') return val.replace(/<[^>]*>/g, '')
@@ -40,7 +52,7 @@ export async function POST(req: NextRequest) {
   if (!rateCheck.allowed) {
     return NextResponse.json(
       { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter: Math.ceil(rateCheck.resetIn / 1000) },
-      { status: 429 }
+      { status: 429, headers: CORS_HEADERS }
     )
   }
 
@@ -52,18 +64,18 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
+    return NextResponse.json({ error: 'Dados inválidos' }, { status: 400, headers: CORS_HEADERS })
   }
   const { form_id, last_question_answered } = body
   // Bug #9: Sanitize answers
   const answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
 
   if (!form_id) {
-    return NextResponse.json({ error: 'ID do formulário é obrigatório' }, { status: 400 })
+    return NextResponse.json({ error: 'ID do formulário é obrigatório' }, { status: 400, headers: CORS_HEADERS })
   }
 
   if (!answers || typeof answers !== 'object') {
-    return NextResponse.json({ error: 'Respostas em formato inválido' }, { status: 400 })
+    return NextResponse.json({ error: 'Respostas em formato inválido' }, { status: 400, headers: CORS_HEADERS })
   }
 
   // Verificar se o formulário existe e está publicado
@@ -75,7 +87,7 @@ export async function POST(req: NextRequest) {
     .single() as { data: { id: string; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null } | null; error: unknown }
 
   if (formError || !form) {
-    return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404 })
+    return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404, headers: CORS_HEADERS })
   }
 
   // Bug #5: Auto-detect completed based on required questions
@@ -88,7 +100,7 @@ export async function POST(req: NextRequest) {
     if (!limitCheck.allowed) {
       return NextResponse.json(
         { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit },
-        { status: 429 }
+        { status: 429, headers: CORS_HEADERS }
       )
     }
   }
@@ -105,7 +117,7 @@ export async function POST(req: NextRequest) {
       .single() as { data: { id: string } | null; error: unknown }
 
     if (updateError || !updated) {
-      return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404 })
+      return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
     }
 
     responseId = updated.id
@@ -118,7 +130,7 @@ export async function POST(req: NextRequest) {
       .single() as { data: { id: string } | null; error: { message: string } | null }
 
     if (insertError || !newResponse) {
-      return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500 })
+      return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
     }
 
     responseId = newResponse.id
@@ -160,7 +172,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ response_id: responseId, completed }, { status: existingResponseId ? 200 : 201 })
+  return NextResponse.json({ response_id: responseId, completed }, { status: existingResponseId ? 200 : 201, headers: CORS_HEADERS })
 }
 
 // GET /api/responses — list responses for authenticated user

@@ -3,6 +3,15 @@ import { createClient } from '@/lib/supabase/server'
 import { FormUpdate } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
 
+// T1/T2: Ensure URLs have protocol before persisting
+function ensureHttps(url: string): string {
+  if (!url) return url
+  const trimmed = url.trim()
+  if (!trimmed) return trimmed
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
 interface RouteParams {
   params: Promise<{ id: string }>
 }
@@ -83,10 +92,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(thank_you_title !== undefined && { thank_you_title }),
     ...(thank_you_description !== undefined && { thank_you_description }),
     ...(thank_you_button_text !== undefined && { thank_you_button_text }),
-    ...(thank_you_button_url !== undefined && { thank_you_button_url }),
+    ...(thank_you_button_url !== undefined && { thank_you_button_url: ensureHttps(thank_you_button_url) }),
     ...(pixels !== undefined && { pixels }),
     ...(plan !== undefined && { plan }),
-    ...(redirect_url !== undefined && { redirect_url }),
+    ...(redirect_url !== undefined && { redirect_url: ensureHttps(redirect_url) }),
     ...(webhook_url !== undefined && { webhook_url }),
     updated_at: new Date().toISOString(),
   }

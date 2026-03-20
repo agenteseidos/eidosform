@@ -155,6 +155,18 @@ export default function LandingPage() {
         </div>
       </section>
 
+
+      {/* CTA intermediário */}
+      <div className="text-center py-12 px-4">
+        <Link href="/login">
+          <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
+            Criar conta grátis
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+        </Link>
+        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
+      </div>
+
       {/* How it works */}
       <section id="como-funciona" className="py-24 px-4 sm:px-6">
         <div className="max-w-4xl mx-auto">
@@ -202,6 +214,18 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+
+      {/* CTA intermediário */}
+      <div className="text-center py-12 px-4">
+        <Link href="/login">
+          <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
+            Criar conta grátis
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+        </Link>
+        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
+      </div>
 
       {/* Pricing — client component with toggle */}
       <PricingSection />

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowRight,
@@ -143,12 +144,6 @@ function NavBar() {
           </div>
           <span className="text-lg font-bold tracking-tight">EidosForm</span>
         </div>
-        <div className="hidden md:flex items-center gap-8 text-sm text-slate-400">
-          <a href="#feito-brasil" className="hover:text-white transition-colors">Diferenciais</a>
-          <a href="#recursos" className="hover:text-white transition-colors">Recursos</a>
-          <a href="#precos" className="hover:text-white transition-colors">Preços</a>
-          <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
-        </div>
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-3">
             <Link href="/login">
@@ -174,11 +169,6 @@ function NavBar() {
             className="md:hidden overflow-hidden border-t border-white/5 bg-[#0A0A0F]"
           >
             <div className="px-4 py-4 flex flex-col gap-3 text-sm">
-              <a href="#feito-brasil" onClick={() => setOpen(false)} className="text-slate-400 hover:text-white py-2">Diferenciais</a>
-              <a href="#recursos" onClick={() => setOpen(false)} className="text-slate-400 hover:text-white py-2">Recursos</a>
-              <a href="#precos" onClick={() => setOpen(false)} className="text-slate-400 hover:text-white py-2">Preços</a>
-              <a href="#faq" onClick={() => setOpen(false)} className="text-slate-400 hover:text-white py-2">FAQ</a>
-              <Link href="/login" className="text-slate-400 hover:text-white py-2">Entrar</Link>
               <Link href="/login">
                 <button className="w-full text-sm font-semibold bg-[#F5B731] hover:bg-[#E8923A] text-black px-4 py-2.5 rounded-lg mt-1">
                   Criar conta grátis
@@ -374,6 +364,18 @@ export default function PgbLandingPage() {
         </div>
       </section>
 
+
+      {/* CTA intermediário */}
+      <div className="text-center py-12 px-4">
+        <Link href="/register">
+          <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
+            Criar conta grátis
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+        </Link>
+        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
+      </div>
+
       {/* ══════ FEATURES COMO BENEFÍCIOS ══════ */}
       <section id="recursos" className="py-24 px-4 sm:px-6 bg-white/[0.02]">
         <div className="max-w-6xl mx-auto">
@@ -478,6 +480,18 @@ export default function PgbLandingPage() {
         </div>
       </section>
 
+
+      {/* CTA intermediário */}
+      <div className="text-center py-12 px-4">
+        <Link href="/register">
+          <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
+            Criar conta grátis
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+        </Link>
+        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
+      </div>
+
       {/* ══════ SEGMENTAÇÃO POR PERSONA ══════ */}
       <section className="py-24 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto">
@@ -553,6 +567,18 @@ export default function PgbLandingPage() {
           </Reveal>
         </div>
       </section>
+
+
+      {/* CTA intermediário */}
+      <div className="text-center py-12 px-4">
+        <Link href="/register">
+          <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
+            Criar conta grátis
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+        </Link>
+        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
+      </div>
 
       {/* ══════ PLANOS E PREÇOS ══════ */}
       <section id="precos" className="py-24 px-4 sm:px-6">

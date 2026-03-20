@@ -120,7 +120,7 @@ export function PricingSection() {
             </button>
             <button
               onClick={() => setBilling('annual')}
-              className={`relative px-5 py-2 rounded-full text-sm font-semibold transition-all flex items-center gap-2 ${
+              className={`relative px-5 py-2 rounded-full text-sm font-semibold transition-all flex items-center gap-2.5 ${
                 billing === 'annual'
                   ? 'bg-[#F5B731] text-black shadow'
                   : 'text-slate-400 hover:text-white'
@@ -141,7 +141,7 @@ export function PricingSection() {
           )}
         </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 px-1">
           {plans.map((plan, idx) => {
             const price = billing === 'annual' ? plan.price.annual : plan.price.monthly
             const originalPrice = plan.price.monthly
@@ -154,12 +154,12 @@ export function PricingSection() {
                 transition={{ duration: 0.2 }}
                 className={`relative flex flex-col p-6 rounded-2xl border transition-all duration-300 ${
                   plan.highlight
-                    ? 'bg-slate-900 border-[#F5B731]/60 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/20'
+                    ? 'bg-slate-900 border-[#F5B731]/60 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/20 mt-4 sm:mt-0'
                     : 'bg-slate-900/60 border-white/[0.08] hover:border-white/15'
                 }`}
               >
                 {plan.highlight && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap z-10">
                     <Badge className="bg-[#F5B731] text-black font-bold border-0 px-3 shadow-lg shadow-[#F5B731]/30">
                       ✨ Mais Popular
                     </Badge>
@@ -181,7 +181,7 @@ export function PricingSection() {
                       </div>
                       {billing === 'annual' && originalPrice !== price && (
                         <p className="text-xs text-slate-500 mt-0.5">
-                          <span className="line-through">R${originalPrice}/mês</span>
+                          <span className="line-through text-slate-400 text-sm">R${originalPrice}/mês</span>
                           <span className="text-[#4BB678] ml-1">no plano anual</span>
                         </p>
                       )}

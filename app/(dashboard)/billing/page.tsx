@@ -20,7 +20,7 @@ export default async function BillingPage() {
   const planLimit = 100
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex items-center gap-4 mb-8">
         <Link href="/dashboard">
           <Button variant="ghost" size="sm">

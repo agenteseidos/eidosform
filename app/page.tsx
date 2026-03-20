@@ -71,7 +71,7 @@ export default function LandingPage() {
               </Button>
             </Link>
             <a href="#como-funciona">
-              <Button variant="outline" size="lg" className="w-full sm:w-auto border-white/20 text-slate-200 hover:bg-white/10 hover:text-white hover:border-white/30 px-8 py-6 text-base">
+              <Button variant="ghost" size="lg" className="w-full sm:w-auto border border-white/30 text-slate-200 hover:bg-white/10 hover:text-white hover:border-white/50 px-8 py-6 text-base rounded-xl">
                 Ver como funciona
                 <ChevronDown className="w-4 h-4 ml-2" />
               </Button>

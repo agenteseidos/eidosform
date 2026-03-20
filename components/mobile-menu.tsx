@@ -19,7 +19,7 @@ export function MobileMenu() {
       </button>
 
       {open && (
-        <div className="fixed inset-0 top-16 z-40 bg-[#0A0A0F]/95 backdrop-blur-xl border-t border-white/5">
+        <div className="fixed inset-0 top-16 z-[9999] bg-[#0A0A0F]/95 backdrop-blur-xl border-t border-white/5">
           <div className="flex flex-col p-6 gap-6">
             <nav className="flex flex-col gap-4">
               <a

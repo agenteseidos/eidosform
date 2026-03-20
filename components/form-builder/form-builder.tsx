@@ -160,6 +160,18 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
     setHasUnsavedChanges(true)
   }
 
+  const duplicateQuestion = (id: string) => {
+    const idx = questions.findIndex(q => q.id === id)
+    if (idx === -1) return
+    const source = questions[idx]
+    const clone: QuestionConfig = { ...source, id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()) }
+    const newQuestions = [...questions]
+    newQuestions.splice(idx + 1, 0, clone)
+    setQuestions(newQuestions)
+    setSelectedQuestionId(clone.id)
+    setHasUnsavedChanges(true)
+  }
+
   const handleReorder = (newOrder: QuestionConfig[]) => {
     setQuestions(newOrder)
     setHasUnsavedChanges(true)
@@ -240,12 +252,12 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
             size="sm"
             onClick={() => setShowPublishDialog(true)}
             className={form.status === 'published' 
-              ? 'bg-amber-500 hover:bg-amber-600' 
+              ? 'bg-emerald-600 hover:bg-emerald-700' 
               : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20'
             }
           >
             <Globe className="w-4 h-4 mr-2" />
-            {form.status === 'published' ? 'Despublicar' : 'Publicar'}
+            {form.status === 'published' ? 'Publicado ✓' : 'Publicar'}
           </Button>
         </div>
       </header>
@@ -611,6 +623,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                 allQuestions={questions}
                 onUpdate={(updates) => updateQuestion(selectedQuestion.id, updates)}
                 onDelete={() => deleteQuestion(selectedQuestion.id)}
+                onDuplicate={() => duplicateQuestion(selectedQuestion.id)}
               />
             </div>
           )}

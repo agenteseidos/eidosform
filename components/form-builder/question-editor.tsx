@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Trash2, Plus, GripVertical, X, GitBranch } from 'lucide-react'
+import { Trash2, Plus, GripVertical, X, GitBranch, Copy } from 'lucide-react'
 import { countries } from '@/lib/countries'
 
 interface QuestionEditorProps {
@@ -16,9 +16,10 @@ interface QuestionEditorProps {
   allQuestions?: QuestionConfig[]
   onUpdate: (updates: Partial<QuestionConfig>) => void
   onDelete: () => void
+  onDuplicate?: () => void
 }
 
-export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete }: QuestionEditorProps) {
+export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete, onDuplicate }: QuestionEditorProps) {
   const typeInfo = getQuestionTypeInfo(question.type)
 
   const addOption = () => {
@@ -323,7 +324,17 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
 
       <Separator />
 
-      {/* Delete button */}
+      {/* Action buttons */}
+      {onDuplicate && (
+        <Button
+          variant="outline"
+          onClick={onDuplicate}
+          className="w-full text-slate-700 hover:text-slate-900 hover:bg-slate-50"
+        >
+          <Copy className="w-4 h-4 mr-2" />
+          Duplicar pergunta
+        </Button>
+      )}
       <Button
         variant="outline"
         onClick={onDelete}

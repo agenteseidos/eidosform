@@ -113,6 +113,7 @@ export default function RegisterPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md px-6 sm:px-8 py-8 relative z-10"
       >
+        <Link href="/" className="absolute top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
         <div className="text-center mb-8">
           <div className="flex justify-center">
             <Logo href="/" size="lg" />
@@ -131,7 +132,7 @@ export default function RegisterPage() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 disabled={isLoading}
-                className="h-12 text-base bg-[#1a1a1a] border-white/10 text-white placeholder:text-slate-500 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
+                className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
               />
             </div>
 
@@ -144,7 +145,7 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
-                className="h-12 text-base bg-[#1a1a1a] border-white/10 text-white placeholder:text-slate-500 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
+                className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
               />
             </div>
 
@@ -158,12 +159,12 @@ export default function RegisterPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isLoading}
-                  className="h-12 text-base bg-[#1a1a1a] border-white/10 text-white placeholder:text-slate-500 focus:border-[#F5B731] focus:ring-[#F5B731]/20 pr-12"
+                  className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20 pr-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors w-11 h-11 flex items-center justify-center"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -202,12 +203,12 @@ export default function RegisterPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   disabled={isLoading}
-                  className="h-12 text-base bg-[#1a1a1a] border-white/10 text-white placeholder:text-slate-500 focus:border-[#F5B731] focus:ring-[#F5B731]/20 pr-12"
+                  className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20 pr-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors w-11 h-11 flex items-center justify-center"
                 >
                   {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -269,7 +270,7 @@ export default function RegisterPage() {
           </form>
 
           <div className="relative my-6">
-            <Separator className="bg-white/10" />
+            <Separator className="bg-slate-500" />
             <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#111111] px-3 text-sm text-slate-500">
               ou
             </span>
@@ -279,7 +280,7 @@ export default function RegisterPage() {
             onClick={handleGoogleLogin}
             disabled={isLoading}
             variant="outline"
-            className="w-full h-12 text-base font-medium border border-white/10 bg-[#1a1a1a] hover:bg-[#222222] hover:border-white/20 text-white shadow-sm transition-all"
+            className="w-full h-12 text-base font-medium border border-slate-500 bg-[#1a1a1a] hover:bg-[#222222] hover:border-white/30 text-white shadow-sm transition-all"
           >
             <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -291,7 +292,7 @@ export default function RegisterPage() {
           </Button>
         </div>
 
-        <p className="mt-6 text-center text-sm text-slate-500">
+        <p className="mt-6 pb-8 text-center text-sm text-slate-500">
           Já tem conta?{' '}
           <Link href="/login" className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors py-2 inline-block">
             Entrar

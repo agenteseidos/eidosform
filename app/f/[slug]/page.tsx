@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import Script from 'next/script'
 import { createPublicClient } from '@/lib/supabase/public'
 import { FormPlayer } from '@/components/form-player/form-player'
 import { Form } from '@/lib/database.types'
@@ -78,5 +79,34 @@ export default async function FormPage({ params }: FormPageProps) {
     }
   }
 
-  return <FormPlayer form={form} ownerPlan={ownerPlan} />
+  // Extract Meta Pixel ID from form pixels config
+  const px = (form.pixels as Record<string, string> | null) ?? {}
+  const metaPixelId = px.metaPixelId || px.meta_pixel_id || px.pixel_meta || null
+
+  return (
+    <>
+      {/* Meta Pixel — injected server-side for reliable detection */}
+      {metaPixelId && (
+        <Script
+          id="meta-pixel"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              !function(f,b,e,v,n,t,s)
+              {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+              n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+              if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+              n.queue=[];t=b.createElement(e);t.async=!0;
+              t.src=v;s=b.getElementsByTagName(e)[0];
+              s.parentNode.insertBefore(t,s)}(window, document,'script',
+              'https://connect.facebook.net/en_US/fbevents.js');
+              fbq('init', '${metaPixelId}');
+              fbq('track', 'PageView');
+            `,
+          }}
+        />
+      )}
+      <FormPlayer form={form} ownerPlan={ownerPlan} />
+    </>
+  )
 }

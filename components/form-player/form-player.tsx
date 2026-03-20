@@ -40,10 +40,30 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const triggerPixelSubmitRef = useRef<(() => void) | null>(null)
   const skipNextValidationRef = useRef(false)
 
-  const currentQuestion = questions[currentIndex]
-  const isLastQuestion = currentIndex === questions.length - 1
+  // Lógica condicional: avalia se uma pergunta deve ser exibida baseado nas respostas atuais
+  const isQuestionVisible = (question: QuestionConfig, currentAnswers: Record<string, Json>): boolean => {
+    const logic = question.conditionalLogic
+    if (!logic) return true
+    const { questionId, operator, value } = logic
+    const answer = currentAnswers[questionId]
+    const answerStr = Array.isArray(answer) ? answer.join(', ') : String(answer ?? '')
+    switch (operator) {
+      case 'equals': return answerStr === (value ?? '')
+      case 'not_equals': return answerStr !== (value ?? '')
+      case 'contains': return answerStr.includes(value ?? '')
+      case 'not_empty': return answerStr.trim() !== ''
+      case 'is_empty': return answerStr.trim() === ''
+      default: return true
+    }
+  }
+
+  // Lista de perguntas visíveis com base nas respostas atuais
+  const visibleQuestions = questions.filter(q => isQuestionVisible(q, answers))
+
+  const currentQuestion = visibleQuestions[currentIndex]
+  const isLastQuestion = currentIndex === visibleQuestions.length - 1
   const isFirstQuestion = currentIndex === 0
-  const progressFull = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0
+  const progressFull = visibleQuestions.length > 0 ? ((currentIndex + 1) / visibleQuestions.length) * 100 : 0
 
   // Animate progress on question change
   useEffect(() => {
@@ -107,10 +127,10 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
         savePartialResponse(updatedAnswers, currentQuestion.id).catch(console.warn)
       }
       setDirection(1)
-      setCurrentIndex(prev => Math.min(prev + 1, questions.length - 1))
+      setCurrentIndex(prev => Math.min(prev + 1, visibleQuestions.length - 1))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLastQuestion, questions.length, validateCurrentQuestion])
+  }, [isLastQuestion, visibleQuestions.length, validateCurrentQuestion, answers])
 
   const goToPrevious = useCallback(() => {
     setDirection(-1)
@@ -317,7 +337,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   }
 
   // ─── Empty form ──────────────────────────────────────────────────────────────
-  if (questions.length === 0) {
+  if (visibleQuestions.length === 0) {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-6"
@@ -400,7 +420,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 </span>
                 <ArrowRight className="w-3.5 h-3.5" style={{ color: theme.primaryColor }} />
                 <span className="text-xs opacity-40" style={{ color: theme.textColor }}>
-                  de {questions.length}
+                  de {visibleQuestions.length}
                 </span>
               </motion.div>
 

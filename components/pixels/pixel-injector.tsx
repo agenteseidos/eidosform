@@ -114,8 +114,10 @@ export function PixelInjector({ config, onReady }: PixelInjectorProps) {
       {/* ── Meta Pixel ── */}
       {meta_pixel_id && (
         <>
-          <Script id="meta-pixel" strategy="afterInteractive">
-            {`
+          <script
+            id="meta-pixel"
+            dangerouslySetInnerHTML={{
+              __html: `
               !function(f,b,e,v,n,t,s){
                 if(f.fbq)return;n=f.fbq=function(){n.callMethod?
                 n.callMethod.apply(n,arguments):n.queue.push(arguments)};
@@ -125,8 +127,9 @@ export function PixelInjector({ config, onReady }: PixelInjectorProps) {
                 s.parentNode.insertBefore(t,s)}(window,document,'script',
                 'https://connect.facebook.net/en_US/fbevents.js');
               fbq('init', '${meta_pixel_id}');
-            `}
-          </Script>
+            `,
+            }}
+          />
           <noscript>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

@@ -257,6 +257,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
             size="sm"
             variant={null as never}
             onClick={() => setShowPublishDialog(true)}
+            data-testid="publish-btn"
             className={form.status === 'published' 
               ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-400/30' 
               : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
@@ -348,6 +349,19 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                                     {question.title || 'Pergunta sem título'}
                                   </p>
                                 </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
+                                  data-testid="duplicate-question-btn"
+                                  title="Duplicar pergunta"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    duplicateQuestion(question.id)
+                                  }}
+                                >
+                                  <Copy className="w-4 h-4 text-slate-400 hover:text-blue-500" />
+                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"

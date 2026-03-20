@@ -409,7 +409,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
         <div className="w-full max-w-2xl">
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
-              key={currentIndex}
+              key={currentQuestion?.id ?? currentIndex}
               custom={direction}
               variants={slideVariants}
               initial="enter"

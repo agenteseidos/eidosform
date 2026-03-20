@@ -361,19 +361,28 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       style={{ ...themeStyles, backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
     >
 
-      {/* Pixel tracking */}
-      {form.pixels && (ownerPlan === 'plus' || ownerPlan === 'professional') && (
-        <PixelInjector
-          config={{
-            meta_pixel_id: (form.pixels as Record<string, string>).metaPixelId || null,
-            google_ads_id: (form.pixels as Record<string, string>).googleAdsId || null,
-            google_ads_label: (form.pixels as Record<string, string>).googleAdsLabel || null,
-            tiktok_pixel_id: (form.pixels as Record<string, string>).tiktokPixelId || null,
-            gtm_id: (form.pixels as Record<string, string>).gtmId || null,
-          }}
-          onReady={(trigger) => { triggerPixelSubmitRef.current = trigger }}
-        />
-      )}
+      {/* Pixel tracking — suporta camelCase (metaPixelId) e snake_case (pixel_meta) */}
+      {form.pixels && (ownerPlan === 'plus' || ownerPlan === 'professional') && (() => {
+        const px = form.pixels as Record<string, string>
+        const metaId = px.metaPixelId || px.pixel_meta || null
+        const googleAdsId = px.googleAdsId || px.google_ads_id || null
+        const googleAdsLabel = px.googleAdsLabel || px.google_ads_label || null
+        const tiktokId = px.tiktokPixelId || px.tiktok_pixel_id || null
+        const gtmId = px.gtmId || px.gtm_id || null
+        if (!metaId && !googleAdsId && !tiktokId && !gtmId) return null
+        return (
+          <PixelInjector
+            config={{
+              meta_pixel_id: metaId,
+              google_ads_id: googleAdsId,
+              google_ads_label: googleAdsLabel,
+              tiktok_pixel_id: tiktokId,
+              gtm_id: gtmId,
+            }}
+            onReady={(trigger) => { triggerPixelSubmitRef.current = trigger }}
+          />
+        )
+      })()}
 
       {/* ── Progress bar ── */}
       <div className="fixed top-0 left-0 right-0 z-50 h-1" style={{ backgroundColor: `${theme.primaryColor}20` }}>

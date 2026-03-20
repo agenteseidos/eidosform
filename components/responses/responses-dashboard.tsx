@@ -651,7 +651,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0"
+                              className="h-11 w-11 p-0"
                               onClick={() => setSelectedResponse(response)}
                               title="Ver resposta"
                             >
@@ -659,7 +659,7 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Button variant="ghost" size="sm" className="h-11 w-11 p-0">
                                   <MoreVertical className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>

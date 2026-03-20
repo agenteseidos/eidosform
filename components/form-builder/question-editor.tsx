@@ -99,7 +99,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
                   variant="ghost"
                   size="sm"
                   onClick={() => deleteOption(index)}
-                  className="h-8 w-8 p-0"
+                  className="h-11 w-11 p-0"
                   disabled={(question.options?.length || 0) <= 1}
                 >
                   <X className="w-4 h-4 text-slate-400" />

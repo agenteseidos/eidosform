@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Check } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
@@ -26,6 +27,7 @@ const plans = [
       "Marca d'água EidosForm",
     ],
     cta: 'Plano atual',
+    checkoutUrl: null,
   },
   {
     id: 'starter',
@@ -43,6 +45,7 @@ const plans = [
       "Marca d'água EidosForm",
     ],
     cta: 'Assinar Starter',
+    checkoutUrl: '/checkout/starter',
   },
   {
     id: 'plus',
@@ -68,6 +71,7 @@ const plans = [
       'Suporte prioritário',
     ],
     cta: 'Assinar Plus',
+    checkoutUrl: '/checkout/plus',
   },
   {
     id: 'professional',
@@ -87,6 +91,7 @@ const plans = [
       'Suporte prioritário com SLA',
     ],
     cta: 'Assinar Professional',
+    checkoutUrl: '/checkout/professional',
   },
 ]
 
@@ -196,6 +201,11 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                     : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
                 }`}
                 disabled={isCurrentPlan}
+                onClick={() => {
+                  if (!isCurrentPlan && plan.checkoutUrl) {
+                    window.location.href = plan.checkoutUrl
+                  }
+                }}
               >
                 {isCurrentPlan ? '✓ Plano atual' : plan.cta}
               </Button>

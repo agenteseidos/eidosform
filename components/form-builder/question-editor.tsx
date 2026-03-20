@@ -329,6 +329,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
         <Button
           variant="outline"
           onClick={onDuplicate}
+          data-testid="duplicate-question-btn"
           className="w-full text-slate-700 hover:text-slate-900 hover:bg-slate-50"
         >
           <Copy className="w-4 h-4 mr-2" />

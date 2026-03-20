@@ -1,3 +1,5 @@
+import { PixelEventRule } from "@/types/pixel-events"
+
 export type Json =
   | string
   | number
@@ -75,6 +77,7 @@ export interface QuestionConfig {
   placeholder?: string
   defaultCountry?: string // Country code for phone type (default: BR)
   conditionalLogic?: ConditionalRule
+  pixelEvents?: PixelEventRule[]
 }
 
 // Pixel tracking configuration
@@ -203,6 +206,8 @@ export interface Database {
           plan: PlanType
           redirect_url: string | null
           webhook_url: string | null
+          pixel_event_on_start: string | null
+          pixel_event_on_complete: string | null
           created_at: string
           updated_at: string
         }
@@ -225,6 +230,8 @@ export interface Database {
           redirect_url?: string | null
           webhook_url?: string | null
           created_at?: string
+          pixel_event_on_start?: string | null
+          pixel_event_on_complete?: string | null
           updated_at?: string
         }
         Update: {
@@ -244,6 +251,8 @@ export interface Database {
           redirect_url?: string | null
           webhook_url?: string | null
           updated_at?: string
+          pixel_event_on_start?: string | null
+          pixel_event_on_complete?: string | null
         }
         Relationships: []
       }

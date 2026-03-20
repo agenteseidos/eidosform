@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { PLANS, PlanName } from '@/lib/plan-limits'
 import { createClient } from '@/lib/supabase/server'
 import { FormUpdate } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
@@ -63,7 +64,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const body = await req.json()
-  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url } = body
+  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete } = body
 
   // Validate slug if provided
   if (slug && !/^[a-z0-9-]+$/.test(slug)) {
@@ -81,7 +82,25 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
   }
 
-  const update: FormUpdate = {
+  // Validar plano para pixel events condicionais
+  if (pixel_event_on_start !== undefined || pixel_event_on_complete !== undefined || hasPixelEventRules(questions)) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', user.id)
+      .single()
+
+    const userPlan = (profile?.plan ?? 'free') as PlanName
+    const planConfig = PLANS[userPlan]
+    if (!planConfig?.pixels) {
+      return NextResponse.json(
+        { error: 'Eventos de pixel condicionais disponíveis a partir do plano Plus' },
+        { status: 403 }
+      )
+    }
+  }
+
+    const update: FormUpdate = {
     ...(title !== undefined && { title }),
     ...(description !== undefined && { description }),
     ...(slug !== undefined && { slug }),
@@ -97,6 +116,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(plan !== undefined && { plan }),
     ...(redirect_url !== undefined && { redirect_url: ensureHttps(redirect_url) }),
     ...(webhook_url !== undefined && { webhook_url }),
+    ...(pixel_event_on_start !== undefined && { pixel_event_on_start }),
+    ...(pixel_event_on_complete !== undefined && { pixel_event_on_complete }),
     updated_at: new Date().toISOString(),
   }
 
@@ -152,4 +173,11 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   }
 
   return NextResponse.json({ success: true }, { status: 200 })
+}
+
+
+// Verifica se alguma pergunta tem regras de pixelEvents
+function hasPixelEventRules(questions: unknown): boolean {
+  if (!Array.isArray(questions)) return false
+  return questions.some((q: { pixelEvents?: unknown[] }) => q.pixelEvents && q.pixelEvents.length > 0)
 }

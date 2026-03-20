@@ -15,6 +15,7 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const supabase = createClient()
   const router = useRouter()
@@ -94,15 +95,24 @@ export default function ResetPasswordPage() {
 
             <div className="space-y-2">
               <Label htmlFor="confirmPassword" className="text-slate-300">Confirmar nova senha</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="Repita a senha"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={isLoading}
-                className="h-12 text-base bg-[#1a1a1a] border-white/10 text-white placeholder:text-slate-500 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
-              />
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="Repita a senha"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isLoading}
+                  className="h-12 text-base bg-[#1a1a1a] border-white/10 text-white placeholder:text-slate-500 focus:border-[#F5B731] focus:ring-[#F5B731]/20 pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
 
             <Button

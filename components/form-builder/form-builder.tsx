@@ -574,7 +574,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                       <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Meta Pixel ID</Label>
                       <Input
                         id="meta_pixel"
-                        value={pixels.metaPixelId || pixels.facebook || ''}
+                        value={pixels.metaPixelId || ''}
                         onChange={(e) => {
                           setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
                           setHasUnsavedChanges(true)

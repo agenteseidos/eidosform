@@ -385,7 +385,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       {/* Pixel tracking — suporta camelCase (metaPixelId) e snake_case (pixel_meta) */}
       {form.pixels && (ownerPlan === 'plus' || ownerPlan === 'professional') && (() => {
         const px = form.pixels as Record<string, string>
-        const metaId = px.metaPixelId || px.pixel_meta || null
+        const metaId = px.metaPixelId || px.facebook || px.pixel_meta || null
         const googleAdsId = px.googleAdsId || px.google_ads_id || null
         const googleAdsLabel = px.googleAdsLabel || px.google_ads_label || null
         const tiktokId = px.tiktokPixelId || px.tiktok_pixel_id || null

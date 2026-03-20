@@ -131,7 +131,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
     if (error) {
       toast.error('Falha ao atualizar status')
     } else {
-      setForm({ ...form, status: newStatus })
+      setForm(prev => ({ ...prev, status: newStatus }))
       toast.success(newStatus === 'published' ? 'Formulário publicado!' : 'Formulário despublicado')
       setShowPublishDialog(false)
       setHasUnsavedChanges(false)

@@ -380,6 +380,14 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
     toast.success('CSV exportado com sucesso')
   }
 
+  const exportCSVFromAPI = () => {
+    const url = `/api/forms/${form.id}/export?format=csv`
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${form.title || 'form'}-respostas.csv`
+    link.click()
+  }
+
   const copyFormLink = () => {
     navigator.clipboard.writeText(`${window.location.origin}/f/${form.slug}`)
     toast.success('Link copiado!')
@@ -423,6 +431,9 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
                 </Link>
               </>
             )}
+            <Button onClick={exportCSVFromAPI} variant="outline" size="sm">
+              <Download className="w-4 h-4 mr-2" />Exportar CSV
+            </Button>
           </div>
         </div>
       </div>

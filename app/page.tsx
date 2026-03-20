@@ -42,16 +42,16 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero */}
-      <section className="pt-32 pb-24 px-4 sm:px-6 relative">
+      <section className="pt-24 sm:pt-32 pb-16 sm:pb-24 px-4 sm:px-6 relative">
         {/* Background glow */}
         <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-[#F5B731]/5 rounded-full blur-3xl pointer-events-none" />
         <div className="max-w-4xl mx-auto text-center relative">
-          <Badge className="mb-6 bg-[#F5B731]/10 text-[#F5B731] border border-[#F5B731]/20 px-4 py-1.5 text-sm font-medium">
+          <Badge className="mb-6 bg-[#F5B731]/10 text-[#F5B731] border border-[#F5B731]/20 px-3 py-1.5 text-sm font-medium max-w-fit">
             <Sparkles className="w-3.5 h-3.5 mr-1.5" />
             A nova geração de formulários
           </Badge>
 
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight mb-6 leading-none">
+          <h1 className="text-[28px] sm:text-6xl lg:text-7xl font-black tracking-tight mb-4 sm:mb-6 leading-none">
             Formulários que
             <span className="block bg-gradient-to-r from-[#F5B731] to-[#E8923A] bg-clip-text text-transparent">
               as pessoas querem
@@ -71,14 +71,14 @@ export default function LandingPage() {
               </Button>
             </Link>
             <a href="#como-funciona">
-              <Button variant="outline" size="lg" className="w-full sm:w-auto border-white/10 text-slate-300 hover:bg-white/5 hover:text-white px-8 py-6 text-base">
+              <Button variant="outline" size="lg" className="w-full sm:w-auto border-white/20 text-slate-200 hover:bg-white/10 hover:text-white hover:border-white/30 px-8 py-6 text-base">
                 Ver como funciona
                 <ChevronDown className="w-4 h-4 ml-2" />
               </Button>
             </a>
           </div>
 
-          <p className="mt-6 text-sm text-slate-500">
+          <p className="mt-6 text-sm sm:text-sm text-[14px] text-slate-400">
             Grátis para sempre · Sem cartão de crédito · Setup em 30 segundos
           </p>
         </div>

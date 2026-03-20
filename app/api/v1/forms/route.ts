@@ -3,20 +3,16 @@ import { createClient } from '@/lib/supabase/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimit } from '@/lib/rate-limit'
 
-const ALLOWED_ORIGINS = [
-  'https://eidosform.com.br',
-  'https://www.eidosform.com.br',
-  process.env.NEXT_PUBLIC_APP_URL,
-].filter(Boolean) as string[]
-
+// API pública: CORS aberto para permitir chamadas de qualquer domínio
 function getAllowedOrigin(): string {
-  return ALLOWED_ORIGINS[0] || 'https://eidosform.com.br'
+  return '*'
 }
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': getAllowedOrigin(),
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization',
+  'Access-Control-Max-Age': '86400',
 }
 
 // OPTIONS /api/v1/forms — CORS preflight

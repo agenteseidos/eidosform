@@ -83,6 +83,8 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       pixels: pixels,
       redirect_url: form.redirect_url || null,
       webhook_url: form.webhook_url || null,
+      pixel_event_on_start: (form as any).pixel_event_on_start || null,
+      pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
     }
     const { error } = await supabase
       .from('forms')
@@ -123,6 +125,8 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       pixels: pixels,
       redirect_url: form.redirect_url || null,
       webhook_url: form.webhook_url || null,
+      pixel_event_on_start: (form as any).pixel_event_on_start || null,
+      pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
     }
     const { data: updated, error } = await supabase
       .from('forms')
@@ -635,6 +639,53 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                     </div>
                   </div>
                 </div>
+                <div className="pt-2">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="h-px flex-1 bg-slate-100" />
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Eventos do Pixel Meta</span>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+                  {(form as any).plan === 'plus' || (form as any).plan === 'professional' ? (
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Ao iniciar o formulário</Label>
+                        <Input
+                          id="pixel_event_start"
+                          value={(form as any).pixel_event_on_start || ''}
+                          onChange={(e) => {
+                            setForm({ ...form, pixel_event_on_start: e.target.value || null } as any)
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                          placeholder="ex: FormStarted"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="pixel_event_complete" className="text-sm font-medium text-slate-700">Ao completar o formulário</Label>
+                        <Input
+                          id="pixel_event_complete"
+                          value={(form as any).pixel_event_on_complete || ''}
+                          onChange={(e) => {
+                            setForm({ ...form, pixel_event_on_complete: e.target.value || null } as any)
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                          placeholder="ex: Lead"
+                        />
+                      </div>
+                      <p className="text-xs text-slate-400">ℹ️ Requer Pixel Meta configurado acima.</p>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 opacity-60">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-500">Eventos do Pixel Meta</span>
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
+                      <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                    </div>
+                  )}
+                </div>
               </div>
             </TabsContent>
           </Tabs>
@@ -661,6 +712,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                 onUpdate={(updates) => updateQuestion(selectedQuestion.id, updates)}
                 onDelete={() => deleteQuestion(selectedQuestion.id)}
                 onDuplicate={() => duplicateQuestion(selectedQuestion.id)}
+                ownerPlan={form.plan}
               />
             </div>
           )}

@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Trash2, Plus, GripVertical, X, GitBranch, Copy } from 'lucide-react'
 import { countries } from '@/lib/countries'
+import { PixelEventRulesEditor } from './pixel-event-rules-editor'
 
 interface QuestionEditorProps {
   question: QuestionConfig
@@ -17,9 +18,10 @@ interface QuestionEditorProps {
   onUpdate: (updates: Partial<QuestionConfig>) => void
   onDelete: () => void
   onDuplicate?: () => void
+  ownerPlan?: string
 }
 
-export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete, onDuplicate }: QuestionEditorProps) {
+export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete, onDuplicate, ownerPlan = 'free' }: QuestionEditorProps) {
   const typeInfo = getQuestionTypeInfo(question.type)
 
   const addOption = () => {
@@ -324,6 +326,14 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
 
       <Separator />
 
+      {/* Pixel Events Condicionais */}
+      <PixelEventRulesEditor
+        rules={question.pixelEvents || []}
+        onChange={(pixelEvents) => onUpdate({ pixelEvents })}
+        hasPixelPlan={ownerPlan === 'plus' || ownerPlan === 'professional'}
+      />
+
+      <Separator />
       {/* Action buttons */}
       {onDuplicate && (
         <Button

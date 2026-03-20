@@ -9,6 +9,7 @@ import { ChevronUp, ChevronDown, Check, ArrowRight } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
 import { PixelInjector } from '@/components/pixels/pixel-injector'
+import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
 
 interface FormPlayerProps {
   ownerPlan?: string
@@ -125,6 +126,11 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       const updatedAnswers = { ...answers }
       if (currentQuestion) {
         savePartialResponse(updatedAnswers, currentQuestion.id).catch(console.warn)
+        // Avaliar pixel events condicionais da pergunta atual
+        if (currentQuestion.pixelEvents) {
+          const answer = String(updatedAnswers[currentQuestion.id] ?? '')
+          evaluatePixelEvents(currentQuestion.pixelEvents, answer)
+        }
       }
       setDirection(1)
       setCurrentIndex(prev => Math.min(prev + 1, visibleQuestions.length - 1))
@@ -164,6 +170,14 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       }
 
       triggerPixelSubmitRef.current?.()
+      // Pixel events condicionais da última pergunta
+      if (currentQuestion?.pixelEvents) {
+        const answer = String(answers[currentQuestion.id] ?? '')
+        evaluatePixelEvents(currentQuestion.pixelEvents, answer)
+      }
+      // Pixel event global de conclusão
+      const completeEvent = (form as any).pixel_event_on_complete
+      if (completeEvent) fireNamedPixelEvent(completeEvent)
       setIsSubmitted(true)
       if (form.redirect_url) {
         setTimeout(() => { window.location.href = ensureHttps(form.redirect_url!) }, 2800)
@@ -209,6 +223,13 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       console.warn('Partial save failed:', e)
     }
   }, [form.id, responseId])
+
+  // Pixel event: ao iniciar formulário
+  useEffect(() => {
+    const startEvent = (form as any).pixel_event_on_start
+    if (startEvent) fireNamedPixelEvent(startEvent)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Keyboard navigation
   useEffect(() => {

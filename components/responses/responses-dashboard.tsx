@@ -136,7 +136,7 @@ function MetricCard({ icon, label, value, sub, color }: {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <Card className="p-5 flex items-start gap-4">
+      <Card className="p-5 flex items-start gap-4 min-h-[90px]">
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
           style={{ backgroundColor: color ? `${color}15` : undefined }}
@@ -533,20 +533,14 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
               </Button>
             )}
 
-            <Button onClick={exportToCSV} variant="outline" className="ml-auto">
-              <Download className="w-4 h-4 mr-2" />Exportar CSV
-            </Button>
+            
           </div>
 
           {/* Count */}
-          <p className="text-xs text-slate-400 mb-3">
-            {filteredResponses.length === responses.length
-              ? `${responses.length} respostas`
-              : `${filteredResponses.length} de ${responses.length} respostas`}
-          </p>
+          
 
           {/* ── Table ── */}
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden relative">
             <ScrollArea className="w-full overflow-x-auto">
               <Table>
                 <TableHeader>

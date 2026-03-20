@@ -194,7 +194,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
     <>
     <div className="flex flex-col h-screen bg-slate-50">
       {/* Header */}
-      <header className="h-16 bg-white border-b border-slate-200 flex flex-wrap gap-2 items-center justify-between px-4 shrink-0">
+      <header className="min-h-16 bg-white border-b border-slate-200 flex flex-wrap gap-2 items-center justify-between px-3 sm:px-4 py-2 shrink-0">
         <div className="flex items-center gap-4">
           <Link href="/dashboard">
             <Button variant="ghost" size="sm">
@@ -329,8 +329,8 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                               onClick={() => { setSelectedQuestionId(question.id); setMobilePanel('editor'); }}
                             >
                               <div className="flex items-start gap-2">
-                                <div className="mt-1 cursor-grab active:cursor-grabbing">
-                                  <GripVertical className="w-4 h-4 text-slate-300" />
+                                <div className="mt-0 cursor-grab active:cursor-grabbing p-2 -m-2">
+                                  <GripVertical className="w-5 h-5 text-slate-300" />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">

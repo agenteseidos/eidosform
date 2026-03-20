@@ -82,6 +82,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       thank_you_button_url: form.thank_you_button_url || null,
       pixels: pixels,
       redirect_url: form.redirect_url || null,
+      webhook_url: form.webhook_url || null,
     }
     const { error } = await supabase
       .from('forms')
@@ -120,6 +121,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
       thank_you_button_url: form.thank_you_button_url || null,
       pixels: pixels,
       redirect_url: form.redirect_url || null,
+      webhook_url: form.webhook_url || null,
     }
     const { error } = await supabase
       .from('forms')
@@ -519,6 +521,23 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                     }}
                     className="mt-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="https://exemplo.com/obrigado"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="webhook_url" className="text-sm font-medium text-slate-700">
+                    URL de Webhook
+                  </Label>
+                  <p className="text-xs text-slate-500 mt-0.5">Notificação POST enviada com os dados da resposta ao submeter</p>
+                  <Input
+                    id="webhook_url"
+                    value={form.webhook_url || ''}
+                    onChange={(e) => {
+                      setForm({ ...form, webhook_url: e.target.value || null })
+                      setHasUnsavedChanges(true)
+                    }}
+                    className="mt-2 text-slate-900 placeholder:text-slate-400"
+                    placeholder="https://webhook.site/seu-endpoint"
                   />
                 </div>
 

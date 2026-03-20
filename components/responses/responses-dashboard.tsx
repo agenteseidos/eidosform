@@ -104,15 +104,56 @@ function getFileUrl(file: FileUpload): string {
   return file.url || file.data || ''
 }
 
+function formatResponseValue(value: unknown): string {
+  if (value === null || value === undefined) return '-'
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        return formatResponseValue(parsed)
+      }
+    } catch { /* não é JSON */ }
+    return value
+  }
+  if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
+  if (Array.isArray(value)) return value.map(v => formatResponseValue(v)).join(', ')
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    const addressKeys = ['cep', 'rua', 'street', 'logradouro', 'bairro', 'neighborhood', 'cidade', 'city', 'estado', 'state', 'uf', 'numero', 'number', 'complemento']
+    const keys = Object.keys(obj)
+    const isAddress = keys.some(k => ['cep', 'rua', 'street', 'logradouro'].includes(k.toLowerCase())) &&
+                      keys.some(k => addressKeys.includes(k.toLowerCase()))
+    if (isAddress) {
+      const rua = obj.rua || obj.street || obj.logradouro || ''
+      const numero = obj.numero || obj.number || ''
+      const complemento = obj.complemento || ''
+      const bairro = obj.bairro || obj.neighborhood || ''
+      const cep = obj.cep ? String(obj.cep).replace(/^(\d{5})(\d{3})$/, '$1-$2') : ''
+      const cidade = obj.cidade || obj.city || ''
+      const estado = obj.estado || obj.state || obj.uf || ''
+      const parts: string[] = []
+      if (rua) parts.push(String(rua) + (numero ? `, ${numero}` : '') + (complemento ? ` — ${complemento}` : ''))
+      if (bairro) parts.push(String(bairro))
+      const location: string[] = []
+      if (cep) location.push(`CEP ${cep}`)
+      if (cidade || estado) location.push([cidade, estado].filter(Boolean).join('/'))
+      if (location.length) parts.push(location.join(' — '))
+      return parts.join(', ') || Object.values(obj).filter(Boolean).join(', ')
+    }
+    return Object.values(obj).filter(v => v !== null && v !== undefined && v !== '').map(v => String(v)).join(', ')
+  }
+  return String(value)
+}
+
 function formatAnswer(answer: Json): string {
   if (answer === null || answer === undefined) return '-'
   if (typeof answer === 'boolean') return answer ? 'Sim' : 'Não'
   if (Array.isArray(answer)) return answer.join(', ')
   if (typeof answer === 'object') {
     if (isFileUpload(answer)) return asFileUpload(answer).name
-    return JSON.stringify(answer)
+    return formatResponseValue(answer)
   }
-  return String(answer)
+  return formatResponseValue(answer)
 }
 
 function formatFileSize(bytes: number): string {

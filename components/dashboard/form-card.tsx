@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,10 +17,14 @@ import {
   ExternalLink,
   BarChart3,
   Pencil,
-  Copy
+  Copy,
+  FilePlus2,
+  Trash2,
+  Type
 } from 'lucide-react'
 import { Form, FormStatus } from '@/lib/database.types'
 import { DeleteFormButton } from './delete-form-button'
+import { useState } from 'react'
 import { toast } from 'sonner'
 
 interface FormCardProps {
@@ -58,13 +63,54 @@ function getStatusColor(status: FormStatus) {
 }
 
 export function FormCard({ form, responseCount }: FormCardProps) {
+  const router = useRouter()
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(form.title || '')
+
   const copyFormLink = () => {
     const link = `${window.location.origin}/f/${form.slug}`
     navigator.clipboard.writeText(link)
     toast.success('Link copiado!')
   }
 
+  const duplicateForm = async () => {
+    try {
+      const res = await fetch(`/api/forms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `${form.title || 'Formulário'} (cópia)`,
+          questions: [],
+          status: 'draft',
+        }),
+      })
+      if (!res.ok) throw new Error('Falha ao duplicar')
+      toast.success('Formulário duplicado!')
+      router.refresh()
+    } catch {
+      toast.error('Erro ao duplicar formulário')
+    }
+  }
+
+  const renameForm = async () => {
+    if (!renameValue.trim()) return
+    try {
+      const res = await fetch(`/api/forms/${form.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: renameValue.trim() }),
+      })
+      if (!res.ok) throw new Error('Falha ao renomear')
+      toast.success('Formulário renomeado!')
+      setIsRenaming(false)
+      router.refresh()
+    } catch {
+      toast.error('Erro ao renomear formulário')
+    }
+  }
+
   return (
+    <>
     <Card className="overflow-hidden hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 hover:-translate-y-0.5 bg-white/80 backdrop-blur-sm border-slate-200/60">
       {/* Color accent bar */}
       <div className={`h-1 bg-gradient-to-r ${getStatusColor(form.status)}`} />
@@ -115,6 +161,20 @@ export function FormCard({ form, responseCount }: FormCardProps) {
               <Copy className="mr-2 h-4 w-4" />
               Copiar link
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={duplicateForm}
+              className="cursor-pointer"
+            >
+              <FilePlus2 className="mr-2 h-4 w-4" />
+              Duplicar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => { setRenameValue(form.title || ''); setIsRenaming(true) }}
+              className="cursor-pointer"
+            >
+              <Type className="mr-2 h-4 w-4" />
+              Renomear
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DeleteFormButton formId={form.id} formTitle={form.title} />
           </DropdownMenuContent>
@@ -145,5 +205,25 @@ export function FormCard({ form, responseCount }: FormCardProps) {
       </div>
       </div>
     </Card>
+
+    {isRenaming && (
+      <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={() => setIsRenaming(false)}>
+        <div className="bg-white rounded-xl shadow-xl p-6 w-80" onClick={(e) => e.stopPropagation()}>
+          <h3 className="text-base font-semibold text-slate-900 mb-4">Renomear formulário</h3>
+          <input
+            autoFocus
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') renameForm(); if (e.key === 'Escape') setIsRenaming(false) }}
+          />
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={() => setIsRenaming(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancelar</button>
+            <button onClick={renameForm} className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors">Salvar</button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   )
 }

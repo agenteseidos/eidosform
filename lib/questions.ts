@@ -14,7 +14,8 @@ import {
   Upload, 
   Link,
   LucideIcon,
-  MapPin
+  MapPin,
+  Fingerprint
 } from 'lucide-react'
 
 export interface QuestionTypeInfo {
@@ -159,6 +160,15 @@ export const questionTypes: QuestionTypeInfo[] = [
     icon: MapPin,
     defaultConfig: {
       placeholder: '00000-000',
+    },
+  },
+  {
+    type: 'cpf',
+    label: 'CPF',
+    description: 'Campo de CPF com máscara e validação',
+    icon: Fingerprint,
+    defaultConfig: {
+      placeholder: '000.000.000-00',
     },
   },
 ]

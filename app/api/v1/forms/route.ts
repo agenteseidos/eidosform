@@ -23,7 +23,17 @@ export async function OPTIONS() {
 
 // Autenticar via X-API-Key header
 async function authenticateApiKey(req: NextRequest): Promise<{ userId: string; plan: string } | null> {
-  const apiKey = req.headers.get('x-api-key')
+  // Tenta X-API-Key primeiro (retrocompatível)
+  let apiKey = req.headers.get('x-api-key')
+
+  // Fallback: Authorization: Bearer <api_key>
+  if (!apiKey) {
+    const authHeader = req.headers.get('authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      apiKey = authHeader.slice(7)
+    }
+  }
+
   if (!apiKey) return null
 
   const supabase = createServerClient(

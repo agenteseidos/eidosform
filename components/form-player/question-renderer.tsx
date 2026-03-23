@@ -3,6 +3,7 @@
 import React, { useState, useRef, useCallback } from 'react'
 import { QuestionConfig, ThemeConfig, Json } from '@/lib/database.types'
 import { Input } from '@/components/ui/input'
+import { formatCPF, validateCPF } from '@/lib/validators'
 import { countries, getCountryByCode } from '@/lib/countries'
 import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
@@ -176,6 +177,49 @@ function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQues
 }
 
 
+
+// ── CPF Question ──
+interface CpfQuestionProps {
+  question: QuestionConfig
+  value: string
+  onChange: (value: string) => void
+  theme: ThemeConfig
+  error?: string | null
+}
+
+function CpfQuestion({ question, value, onChange, theme, error }: CpfQuestionProps) {
+  const [cpfError, setCpfError] = useState<string | null>(null)
+
+  const handleChange = (raw: string) => {
+    const formatted = formatCPF(raw)
+    onChange(formatted)
+    const clean = raw.replace(/\D/g, '')
+    if (clean.length === 11) {
+      setCpfError(validateCPF(clean) ? null : 'CPF inválido')
+    } else {
+      setCpfError(null)
+    }
+  }
+
+  return (
+    <div>
+      <Input
+        value={value || ''}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder={question.placeholder || '000.000.000-00'}
+        maxLength={14}
+        className="text-lg md:text-xl h-auto py-3 bg-transparent border-0 border-b-2 rounded-none px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+        style={{
+          borderColor: error || cpfError ? '#EF4444' : `${theme.textColor}50`,
+          color: theme.textColor,
+        }}
+        autoFocus
+      />
+      {cpfError && <p className="text-xs mt-1" style={{ color: '#EF4444' }}>{cpfError}</p>}
+    </div>
+  )
+}
+
 interface AddressQuestionProps {
   question: QuestionConfig
   value: Record<string, string> | null
@@ -195,8 +239,9 @@ function AddressQuestion({ question, value, onChange, theme, error }: AddressQue
   }
 
   const handleCepChange = async (cepValue: string) => {
-    const clean = cepValue.replace(/\D/g, '')
-    updateField('cep', cepValue)
+    const clean = cepValue.replace(/\D/g, '').slice(0, 8)
+    const formatted = clean.length > 5 ? `${clean.slice(0, 5)}-${clean.slice(5)}` : clean
+    updateField('cep', formatted)
     setCepError(null)
 
     if (clean.length === 8) {
@@ -207,7 +252,7 @@ function AddressQuestion({ question, value, onChange, theme, error }: AddressQue
           const data = await res.json()
           onChange({
             ...addr,
-            cep: cepValue,
+            cep: formatted,
             rua: data.street || data.rua || '',
             bairro: data.neighborhood || data.bairro || '',
             cidade: data.city || data.cidade || '',
@@ -738,6 +783,17 @@ export function QuestionRenderer({
           value={value as FileUploadValue | null}
           onChange={(v) => onChange(v as Json)}
           theme={theme}
+        />
+      )
+
+    case 'cpf':
+      return (
+        <CpfQuestion
+          question={question}
+          value={value as string}
+          onChange={(v) => onChange(v as Json)}
+          theme={theme}
+          error={error}
         />
       )
 

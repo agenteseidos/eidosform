@@ -25,6 +25,7 @@ export type QuestionType =
   | 'nps'
   | 'url'
   | 'address'
+  | 'cpf'
 
 // Conditional logic operators
 export type ConditionalOperator = 'equals' | 'not_equals' | 'contains' | 'not_empty' | 'is_empty'

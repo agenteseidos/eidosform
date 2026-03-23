@@ -75,12 +75,20 @@ export function FormCard({ form, responseCount }: FormCardProps) {
 
   const duplicateForm = async () => {
     try {
+      const newSlug = `${form.slug}-copia-${Date.now().toString(36)}`
       const res = await fetch(`/api/forms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: `${form.title || 'Formulário'} (cópia)`,
-          questions: [],
+          slug: newSlug,
+          description: form.description || null,
+          theme: form.theme || 'midnight',
+          questions: form.questions || [],
+          thank_you_message: form.thank_you_message || 'Obrigado pela sua resposta!',
+          pixels: form.pixels || null,
+          redirect_url: form.redirect_url || null,
+          webhook_url: form.webhook_url || null,
           status: 'draft',
         }),
       })

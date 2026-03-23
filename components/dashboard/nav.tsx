@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { User } from '@supabase/supabase-js'
-import { LogOut, Settings, User as UserIcon, CreditCard, Menu, X } from 'lucide-react'
+import { LogOut, Settings, User as UserIcon, CreditCard, Menu, X, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DashboardNavProps {
@@ -57,10 +57,15 @@ export function DashboardNav({ user }: DashboardNavProps) {
         </div>
 
         <div className="flex items-center gap-4">
-          <Link href="/forms/new">
+          <Link href="/forms/new" className="hidden sm:flex">
             <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
-              <span className="hidden sm:inline">Criar Formulário</span>
-              <span className="sm:hidden">+</span>
+              <Plus className="w-4 h-4 mr-2" />
+              Criar Formulário
+            </Button>
+          </Link>
+          <Link href="/forms/new" className="flex sm:hidden">
+            <Button size="icon" className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20">
+              <Plus className="w-5 h-5" />
             </Button>
           </Link>
 

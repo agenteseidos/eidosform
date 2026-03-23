@@ -35,7 +35,7 @@ export default async function SettingsPage() {
   const isProfessional = planKey === 'professional' || planKey === 'enterprise'
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8">
+    <div className="max-w-2xl mx-auto px-6 py-8 overflow-x-hidden">
       <div className="flex items-center gap-4 mb-8">
         <Link href="/dashboard">
           <Button variant="ghost" size="sm">

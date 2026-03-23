@@ -39,7 +39,7 @@ export default async function DashboardPage() {
   const isNewUser = forms.length === 0
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
+    <div className="max-w-7xl mx-auto px-6 py-8 overflow-x-hidden">
       <OnboardingWrapper isNewUser={isNewUser} />
       <div className="flex items-center justify-between mb-8">
         <div>

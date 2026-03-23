@@ -132,35 +132,29 @@ export default async function SettingsPage() {
       {/* API Key */}
       <ApiKeySettings isProfessional={isProfessional} />
 
-      {/* Zona de perigo */}
-      <Card className="p-6 border-red-100">
-        <h2 className="text-lg font-semibold text-slate-900 mb-1">Zona de perigo</h2>
-        <p className="text-sm text-slate-500 mb-5">Ações irreversíveis — tenha cuidado</p>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+      {/* Ações da conta */}
+      <div className="pt-4 border-t border-slate-100">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium text-slate-900 text-sm">Cancelar assinatura</p>
-              <p className="text-xs text-slate-500">Você continuará no plano Free</p>
+              <p className="text-xs text-slate-400">Cancelar assinatura</p>
+              <p className="text-xs text-slate-300">Você continuará no plano Free</p>
             </div>
-            <Button variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-50">
-              <LogOut className="w-3.5 h-3.5 mr-1.5" />
-              Cancelar
-            </Button>
+            <button className="text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors">
+              Cancelar assinatura
+            </button>
           </div>
-
-          <div className="flex items-center justify-between p-4 bg-red-50 rounded-xl border border-red-100">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium text-red-700 text-sm">Deletar conta</p>
-              <p className="text-xs text-red-500">Apaga todos os seus formulários e respostas permanentemente</p>
+              <p className="text-xs text-slate-400">Deletar conta</p>
+              <p className="text-xs text-slate-300">Remove todos os dados permanentemente</p>
             </div>
-            <Button variant="outline" size="sm" className="border-red-300 text-red-700 hover:bg-red-100 bg-white">
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              Deletar
-            </Button>
+            <button className="text-xs text-slate-400 hover:text-red-500 underline underline-offset-2 transition-colors">
+              Deletar conta
+            </button>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   )
 }

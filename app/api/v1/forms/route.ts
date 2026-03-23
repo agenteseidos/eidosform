@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   if (!auth) {
     return NextResponse.json(
       { error: 'Unauthorized. Provide a valid X-API-Key header. Professional plan required.' },
-      { status: 401 }
+      { status: 401, headers: CORS_HEADERS }
     )
   }
 

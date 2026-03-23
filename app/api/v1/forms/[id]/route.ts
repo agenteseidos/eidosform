@@ -23,15 +23,46 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-async function authenticateApiKey(req: NextRequest): Promise<{ userId: string; plan: string; apiKey: string } | null> {
-  const apiKey = req.headers.get('x-api-key')
-  if (!apiKey) return null
-
-  const supabase = createServerClient(
+function getServiceClient() {
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { cookies: { getAll: () => [], setAll: () => {} } }
   )
+}
+
+// BUG-003 fix: Authenticate via Bearer JWT token (Supabase JWT)
+async function authenticateBearer(req: NextRequest): Promise<{ userId: string; plan: string } | null> {
+  const authHeader = req.headers.get('authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+
+  const token = authHeader.slice(7)
+  if (!token) return null
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => [], setAll: () => {} } }
+  )
+
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user) return null
+
+  const serviceClient = getServiceClient()
+  const { data: profile } = await serviceClient
+    .from('profiles')
+    .select('plan')
+    .eq('user_id', user.id)
+    .single() as { data: { plan: string } | null }
+
+  return { userId: user.id, plan: profile?.plan ?? 'free' }
+}
+
+async function authenticateApiKey(req: NextRequest): Promise<{ userId: string; plan: string; apiKey: string } | null> {
+  const apiKey = req.headers.get('x-api-key')
+  if (!apiKey) return null
+
+  const supabase = getServiceClient()
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -48,20 +79,17 @@ async function authenticateApiKey(req: NextRequest): Promise<{ userId: string; p
   return { userId: profile.user_id, plan: profile.plan, apiKey }
 }
 
-function getServiceClient() {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => {} } }
-  )
+// BUG-003: Try API key first (cross-account), then Bearer JWT (own account)
+async function authenticate(req: NextRequest): Promise<{ userId: string; plan: string } | null> {
+  return (await authenticateApiKey(req)) ?? (await authenticateBearer(req))
 }
 
 // GET /api/v1/forms/[id]
 export async function GET(req: NextRequest, { params }: RouteParams) {
-  const auth = await authenticateApiKey(req)
+  const auth = await authenticate(req)
   if (!auth) {
     return NextResponse.json(
-      { error: 'Unauthorized. Professional plan required.' },
+      { error: 'Unauthorized. Provide a valid X-API-Key (Professional plan) or Bearer JWT token.' },
       { status: 401, headers: CORS_HEADERS }
     )
   }
@@ -140,10 +168,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
 // POST /api/v1/forms/[id]
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  const auth = await authenticateApiKey(req)
+  const auth = await authenticate(req)
   if (!auth) {
     return NextResponse.json(
-      { error: 'Unauthorized. Professional plan required.' },
+      { error: 'Unauthorized. Provide a valid X-API-Key (Professional plan) or Bearer JWT token.' },
       { status: 401, headers: CORS_HEADERS }
     )
   }

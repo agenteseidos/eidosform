@@ -39,12 +39,24 @@ const securityHeaders = [
   },
 ];
 
+const corsHeaders = [
+  { key: 'Access-Control-Allow-Origin', value: '*' },
+  { key: 'Access-Control-Allow-Methods', value: 'GET, POST, PUT, DELETE, OPTIONS' },
+  { key: 'Access-Control-Allow-Headers', value: 'Content-Type, X-API-Key, Authorization' },
+  { key: 'Access-Control-Max-Age', value: '86400' },
+];
+
 const nextConfig: NextConfig = {
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: securityHeaders,
+      },
+      // BUG-002 fix: CORS headers for public API routes
+      {
+        source: '/api/v1/:path*',
+        headers: corsHeaders,
       },
     ];
   },

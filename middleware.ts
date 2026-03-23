@@ -14,8 +14,8 @@ export const config = {
      * - favicon.ico (favicon file)
      * - public folder
      * - f/ (public form pages)
+     * - api/v1/ (public API — CORS + auth handled in route handlers)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|f/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|f/|api/v1/).*)',
   ],
 }
-

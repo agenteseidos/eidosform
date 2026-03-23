@@ -554,18 +554,20 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
       {/* ── Nav footer ── */}
       <footer className="fixed bottom-0 left-0 right-0 p-4 flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={goToPrevious}
-            disabled={isFirstQuestion}
-            className="h-11 w-11 p-0 rounded-lg"
-            style={{ color: theme.textColor }}
-            aria-label="Pergunta anterior"
-          >
-            <ChevronUp className="w-5 h-5" />
-          </Button>
+        <div className="flex items-center gap-2">
+          {!isFirstQuestion && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={goToPrevious}
+              className="h-9 px-3 rounded-lg flex items-center gap-1.5 text-sm font-medium opacity-80 hover:opacity-100"
+              style={{ color: theme.textColor }}
+              aria-label="Pergunta anterior"
+            >
+              <ChevronUp className="w-4 h-4" />
+              Anterior
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"

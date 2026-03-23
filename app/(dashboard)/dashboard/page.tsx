@@ -39,19 +39,19 @@ export default async function DashboardPage() {
   const isNewUser = forms.length === 0
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 overflow-x-hidden">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 overflow-x-hidden w-full">
       <OnboardingWrapper isNewUser={isNewUser} />
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Meus Formulários</h1>
-          <p className="text-slate-600 mt-1">Crie e gerencie seus formulários</p>
+      <div className="flex items-center justify-between mb-8 gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-bold text-slate-900 truncate max-w-[200px] sm:max-w-none">Meus Formulários</h1>
+          <p className="text-slate-600 mt-1 hidden sm:block">Crie e gerencie seus formulários</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
           <TemplatesGallery />
           <Link href="/forms/new">
             <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
-              <Plus className="w-4 h-4 mr-2" />
-              Criar Formulário
+              <Plus className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Criar Formulário</span>
             </Button>
           </Link>
         </div>

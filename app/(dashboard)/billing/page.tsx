@@ -9,15 +9,30 @@ import { BillingPlans } from '@/components/billing-plans'
 
 export const dynamic = 'force-dynamic'
 
+const planLabels: Record<string, { label: string; emoji: string }> = {
+  free: { label: 'Free', emoji: '🌱' },
+  starter: { label: 'Starter', emoji: '⚡' },
+  plus: { label: 'Plus', emoji: '🚀' },
+  professional: { label: 'Professional', emoji: '👑' },
+}
+
 export default async function BillingPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
 
-  const currentPlan = 'free'
-  const usedResponses = 23
-  const planLimit = 100
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan, responses_used, responses_limit')
+    .eq('id', user.id)
+    .single()
+
+  const currentPlan = profile?.plan ?? 'free'
+  const usedResponses = profile?.responses_used ?? 0
+  const planLimit = profile?.responses_limit ?? 100
+
+  const planInfo = planLabels[currentPlan] ?? planLabels.free
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
@@ -38,10 +53,10 @@ export default async function BillingPage() {
       <Card className="p-6 mb-8 bg-slate-900/60 border-white/10">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-semibold">Uso atual — Plano Free</h2>
+            <h2 className="font-semibold">Uso atual — Plano {planInfo.label}</h2>
             <p className="text-sm text-slate-500 mt-0.5">Ciclo reinicia em 1 de abril</p>
           </div>
-          <Badge className="bg-slate-800 text-slate-300 font-medium">🌱 Free</Badge>
+          <Badge className="bg-slate-800 text-slate-300 font-medium">{planInfo.emoji} {planInfo.label}</Badge>
         </div>
         <div>
           <div className="flex justify-between text-sm mb-1.5">

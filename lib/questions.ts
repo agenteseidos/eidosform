@@ -1,5 +1,5 @@
 import { QuestionType, QuestionConfig } from './database.types'
-import { 
+import { CreditCard, 
   Type, 
   AlignLeft, 
   List, 
@@ -159,6 +159,24 @@ export const questionTypes: QuestionTypeInfo[] = [
     icon: MapPin,
     defaultConfig: {
       placeholder: '00000-000',
+    },
+  },
+  {
+    type: 'cep',
+    label: 'CEP',
+    description: 'Campo de CEP com busca automática de endereço',
+    icon: MapPin,
+    defaultConfig: {
+      placeholder: '00000-000',
+    },
+  },
+  {
+    type: 'cpf',
+    label: 'CPF',
+    description: 'Campo de CPF com formatação automática',
+    icon: CreditCard,
+    defaultConfig: {
+      placeholder: '000.000.000-00',
     },
   },
 ]

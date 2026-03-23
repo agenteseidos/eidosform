@@ -741,6 +741,7 @@ export function QuestionRenderer({
         />
       )
 
+    case 'cep':
     case 'address':
       return (
         <AddressQuestion
@@ -751,6 +752,29 @@ export function QuestionRenderer({
           error={error}
         />
       )
+
+    case 'cpf': {
+      const formatCPF = (v: string) => {
+        const digits = v.replace(/\D/g, '').slice(0, 11)
+        return digits
+          .replace(/(\d{3})(\d)/, '$1.$2')
+          .replace(/(\d{3})(\d)/, '$1.$2')
+          .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+      }
+      return (
+        <Input
+          type="text"
+          inputMode="numeric"
+          value={formatCPF(String(value || ''))}
+          onChange={(e) => onChange(formatCPF(e.target.value))}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          placeholder={question.placeholder || '000.000.000-00'}
+          style={inputStyle}
+          className="text-lg h-12 border-0 border-b-2 rounded-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 px-0"
+        />
+      )
+    }
 
     default:
       return (

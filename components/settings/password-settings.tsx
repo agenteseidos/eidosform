@@ -11,8 +11,10 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 
 export function PasswordSettings() {
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -22,12 +24,12 @@ export function PasswordSettings() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!newPassword || !confirmPassword) {
+    if (!currentPassword || !newPassword || !confirmPassword) {
       toast.error('Preencha todos os campos')
       return
     }
     if (newPassword.length < 8) {
-      toast.error('A senha deve ter no mínimo 8 caracteres')
+      toast.error('A nova senha deve ter no mínimo 8 caracteres')
       return
     }
     if (newPassword !== confirmPassword) {
@@ -36,6 +38,21 @@ export function PasswordSettings() {
     }
 
     setIsLoading(true)
+
+    // Verifica a senha atual re-autenticando
+    const { data: { user } } = await supabase.auth.getUser()
+    const email = user?.email ?? ''
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password: currentPassword,
+    })
+
+    if (signInError) {
+      setIsLoading(false)
+      toast.error('Senha atual incorreta')
+      return
+    }
+
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     setIsLoading(false)
 
@@ -43,6 +60,7 @@ export function PasswordSettings() {
       toast.error('Falha ao alterar senha. Tente novamente.')
     } else {
       toast.success('Senha alterada com sucesso!')
+      setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
     }
@@ -56,6 +74,28 @@ export function PasswordSettings() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <Label htmlFor="currentPassword">Senha atual</Label>
+          <div className="relative mt-1.5">
+            <Input
+              id="currentPassword"
+              type={showCurrent ? 'text' : 'password'}
+              placeholder="Digite sua senha atual"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              disabled={isLoading}
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowCurrent(!showCurrent)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
         <div>
           <Label htmlFor="newPassword">Nova senha</Label>
           <div className="relative mt-1.5">

@@ -213,6 +213,7 @@ export interface Database {
           welcome_title: string | null
           welcome_description: string | null
           welcome_button_text: string | null
+          welcome_image_url: string | null
           created_at: string
           updated_at: string
         }
@@ -241,6 +242,7 @@ export interface Database {
           welcome_title?: string | null
           welcome_description?: string | null
           welcome_button_text?: string | null
+          welcome_image_url?: string | null
           updated_at?: string
         }
         Update: {
@@ -266,6 +268,7 @@ export interface Database {
           welcome_title?: string | null
           welcome_description?: string | null
           welcome_button_text?: string | null
+          welcome_image_url?: string | null
         }
         Relationships: []
       }

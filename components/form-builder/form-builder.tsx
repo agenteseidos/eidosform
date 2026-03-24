@@ -85,17 +85,17 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       pixels: pixels,
       redirect_url: form.redirect_url || null,
       webhook_url: form.webhook_url || null,
-      pixel_event_on_start: (form as any).pixel_event_on_start || null,
-      pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
-      welcome_enabled: (form as any).welcome_enabled || false,
-      welcome_title: (form as any).welcome_title || null,
-      welcome_description: (form as any).welcome_description || null,
-      welcome_button_text: (form as any).welcome_button_text || null,
-      welcome_image_url: (form as any).welcome_image_url || null,
+      pixel_event_on_start: form.pixel_event_on_start || null,
+      pixel_event_on_complete: form.pixel_event_on_complete || null,
+      welcome_enabled: form.welcome_enabled || false,
+      welcome_title: form.welcome_title || null,
+      welcome_description: form.welcome_description || null,
+      welcome_button_text: form.welcome_button_text || null,
+      welcome_image_url: form.welcome_image_url || null,
     }
     const { error } = await supabase
       .from('forms')
-      .update(updateData as never)
+      .update(updateData)
       .eq('id', form.id)
 
     if (error) {
@@ -132,17 +132,17 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       pixels: pixels,
       redirect_url: form.redirect_url || null,
       webhook_url: form.webhook_url || null,
-      pixel_event_on_start: (form as any).pixel_event_on_start || null,
-      pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
-      welcome_enabled: (form as any).welcome_enabled || false,
-      welcome_title: (form as any).welcome_title || null,
-      welcome_description: (form as any).welcome_description || null,
-      welcome_button_text: (form as any).welcome_button_text || null,
-      welcome_image_url: (form as any).welcome_image_url || null,
+      pixel_event_on_start: form.pixel_event_on_start || null,
+      pixel_event_on_complete: form.pixel_event_on_complete || null,
+      welcome_enabled: form.welcome_enabled || false,
+      welcome_title: form.welcome_title || null,
+      welcome_description: form.welcome_description || null,
+      welcome_button_text: form.welcome_button_text || null,
+      welcome_image_url: form.welcome_image_url || null,
     }
     const { data: updated, error } = await supabase
       .from('forms')
-      .update(updateData as never)
+      .update(updateData)
       .eq('id', form.id)
       .select('id, status, is_published')
 
@@ -271,7 +271,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
           </Button>
           <Button
             size="sm"
-            variant={null as never}
+            variant="ghost"
             onClick={() => setShowPublishDialog(true)}
             data-testid="publish-button"
             className={form.status === 'published' 
@@ -448,21 +448,21 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                   <div className="flex items-center justify-between">
                     <Label className="text-sm font-medium text-slate-700">Ativar tela de boas vindas</Label>
                     <Switch
-                      checked={(form as any).welcome_enabled || false}
+                      checked={form.welcome_enabled || false}
                       onCheckedChange={(checked) => {
-                        setForm({ ...form, welcome_enabled: checked } as any)
+                        setForm({ ...form, welcome_enabled: checked })
                         setHasUnsavedChanges(true)
                       }}
                     />
                   </div>
-                  {(form as any).welcome_enabled && (
+                  {form.welcome_enabled && (
                     <>
                       <div>
                         <Label className="text-sm font-medium text-slate-700">Título</Label>
                         <Input
-                          value={(form as any).welcome_title || ''}
+                          value={form.welcome_title || ''}
                           onChange={(e) => {
-                            setForm({ ...form, welcome_title: e.target.value || null } as any)
+                            setForm({ ...form, welcome_title: e.target.value || null })
                             setHasUnsavedChanges(true)
                           }}
                           className="mt-2 text-slate-900 placeholder:text-slate-400"
@@ -472,9 +472,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                       <div>
                         <Label className="text-sm font-medium text-slate-700">Descrição</Label>
                         <Textarea
-                          value={(form as any).welcome_description || ''}
+                          value={form.welcome_description || ''}
                           onChange={(e) => {
-                            setForm({ ...form, welcome_description: e.target.value || null } as any)
+                            setForm({ ...form, welcome_description: e.target.value || null })
                             setHasUnsavedChanges(true)
                           }}
                           className="mt-2 text-slate-900 placeholder:text-slate-400"
@@ -485,9 +485,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                       <div>
                         <Label className="text-sm font-medium text-slate-700">Imagem (URL)</Label>
                         <Input
-                          value={(form as any).welcome_image_url || ''}
+                          value={form.welcome_image_url || ''}
                           onChange={(e) => {
-                            setForm({ ...form, welcome_image_url: e.target.value || null } as any)
+                            setForm({ ...form, welcome_image_url: e.target.value || null })
                             setHasUnsavedChanges(true)
                           }}
                           className="mt-2 text-slate-900 placeholder:text-slate-400"
@@ -497,9 +497,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                       <div>
                         <Label className="text-sm font-medium text-slate-700">Texto do botão</Label>
                         <Input
-                          value={(form as any).welcome_button_text || ''}
+                          value={form.welcome_button_text || ''}
                           onChange={(e) => {
-                            setForm({ ...form, welcome_button_text: e.target.value || null } as any)
+                            setForm({ ...form, welcome_button_text: e.target.value || null })
                             setHasUnsavedChanges(true)
                           }}
                           className="mt-2 text-slate-900 placeholder:text-slate-400"
@@ -734,9 +734,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                         <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Ao iniciar o formulário</Label>
                         <Input
                           id="pixel_event_start"
-                          value={(form as any).pixel_event_on_start || ''}
+                          value={form.pixel_event_on_start || ''}
                           onChange={(e) => {
-                            setForm({ ...form, pixel_event_on_start: e.target.value || null } as any)
+                            setForm({ ...form, pixel_event_on_start: e.target.value || null })
                             setHasUnsavedChanges(true)
                           }}
                           className="mt-1.5 text-slate-900 placeholder:text-slate-400"
@@ -747,9 +747,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                         <Label htmlFor="pixel_event_complete" className="text-sm font-medium text-slate-700">Ao completar o formulário</Label>
                         <Input
                           id="pixel_event_complete"
-                          value={(form as any).pixel_event_on_complete || ''}
+                          value={form.pixel_event_on_complete || ''}
                           onChange={(e) => {
-                            setForm({ ...form, pixel_event_on_complete: e.target.value || null } as any)
+                            setForm({ ...form, pixel_event_on_complete: e.target.value || null })
                             setHasUnsavedChanges(true)
                           }}
                           className="mt-1.5 text-slate-900 placeholder:text-slate-400"

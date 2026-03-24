@@ -91,6 +91,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       welcome_title: (form as any).welcome_title || null,
       welcome_description: (form as any).welcome_description || null,
       welcome_button_text: (form as any).welcome_button_text || null,
+      welcome_image_url: (form as any).welcome_image_url || null,
     }
     const { error } = await supabase
       .from('forms')
@@ -137,6 +138,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       welcome_title: (form as any).welcome_title || null,
       welcome_description: (form as any).welcome_description || null,
       welcome_button_text: (form as any).welcome_button_text || null,
+      welcome_image_url: (form as any).welcome_image_url || null,
     }
     const { data: updated, error } = await supabase
       .from('forms')
@@ -478,6 +480,18 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                           className="mt-2 text-slate-900 placeholder:text-slate-400"
                           placeholder="Uma breve descrição do formulário..."
                           rows={3}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium text-slate-700">Imagem (URL)</Label>
+                        <Input
+                          value={(form as any).welcome_image_url || ''}
+                          onChange={(e) => {
+                            setForm({ ...form, welcome_image_url: e.target.value || null } as any)
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-2 text-slate-900 placeholder:text-slate-400"
+                          placeholder="https://exemplo.com/logo.png"
                         />
                       </div>
                       <div>

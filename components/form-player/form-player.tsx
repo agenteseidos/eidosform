@@ -397,9 +397,12 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}
-            className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 leading-tight"
+            className="text-2xl sm:text-3xl font-bold mb-4 leading-tight"
             style={{ color: theme.textColor }}
           >
+            {(form as any).welcome_image_url && (
+              <img src={(form as any).welcome_image_url} className="max-h-20 object-contain mx-auto mb-4" alt="" />
+            )}
             {(form as any).welcome_title || form.title}
           </motion.h1>
 

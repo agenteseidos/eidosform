@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
@@ -40,6 +40,9 @@ import {
   Palette,
   FileText,
   Pencil,
+  Upload,
+  Loader2,
+  ImageIcon,
 } from 'lucide-react'
 import Link from 'next/link'
 import { QuestionEditor } from './question-editor'
@@ -66,8 +69,45 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
   const [activeTab, setActiveTab] = useState('questions')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<'questions' | 'editor' | 'preview'>('questions')
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
+
+  const handleWelcomeImageUpload = useCallback(async (file: File) => {
+    if (!file) return
+    const allowedTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/gif']
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Formato não suportado. Use SVG, PNG, JPG ou GIF.')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Arquivo muito grande. Máximo 2MB.')
+      return
+    }
+    setIsUploadingImage(true)
+    try {
+      const ext = file.name.split('.').pop() || 'png'
+      const filename = `${Date.now()}.${ext}`
+      const path = `welcome/${form.id}/${filename}`
+      const { error } = await supabase.storage.from('form-images').upload(path, file, { upsert: true })
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from('form-images').getPublicUrl(path)
+      setForm(prev => ({ ...prev, welcome_image_url: publicUrl }))
+      setHasUnsavedChanges(true)
+      toast.success('Imagem enviada com sucesso!')
+    } catch (err) {
+      console.error(err)
+      toast.error('Erro ao enviar imagem.')
+    } finally {
+      setIsUploadingImage(false)
+    }
+  }, [form.id, supabase, setForm, setHasUnsavedChanges])
+
+  const handleRemoveWelcomeImage = useCallback(async () => {
+    setForm(prev => ({ ...prev, welcome_image_url: null }))
+    setHasUnsavedChanges(true)
+  }, [setForm, setHasUnsavedChanges])
 
   const handleSave = useCallback(async () => {
     setIsSaving(true)
@@ -483,16 +523,63 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                         />
                       </div>
                       <div>
-                        <Label className="text-sm font-medium text-slate-700">Imagem (URL)</Label>
-                        <Input
-                          value={form.welcome_image_url || ''}
-                          onChange={(e) => {
-                            setForm({ ...form, welcome_image_url: e.target.value || null })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="mt-2 text-slate-900 placeholder:text-slate-400"
-                          placeholder="https://exemplo.com/logo.png"
-                        />
+                        <Label className="text-sm font-medium text-slate-700">Imagem</Label>
+                        {form.welcome_image_url ? (
+                          <div className="mt-2 space-y-2">
+                            <div className="relative rounded-lg overflow-hidden border border-slate-200">
+                              <img
+                                src={form.welcome_image_url}
+                                alt="Welcome"
+                                className="w-full h-32 object-contain bg-slate-50"
+                              />
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleRemoveWelcomeImage}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" />
+                              Remover
+                            </Button>
+                          </div>
+                        ) : (
+                          <div
+                            className="mt-2 border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-slate-400 hover:bg-slate-50 transition-colors"
+                            onClick={() => fileInputRef.current?.click()}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
+                            onDrop={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const file = e.dataTransfer.files?.[0]
+                              if (file) handleWelcomeImageUpload(file)
+                            }}
+                          >
+                            {isUploadingImage ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
+                                <span className="text-sm text-slate-500">Enviando...</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-2">
+                                <Upload className="w-6 h-6 text-slate-400" />
+                                <span className="text-sm text-slate-500">Clique para enviar ou arraste aqui</span>
+                                <span className="text-xs text-slate-400">SVG, PNG, JPG, GIF (até 2MB)</span>
+                              </div>
+                            )}
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept=".svg,.png,.jpg,.jpeg,.gif"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) handleWelcomeImageUpload(file)
+                                e.target.value = ''
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                       <div>
                         <Label className="text-sm font-medium text-slate-700">Texto do botão</Label>

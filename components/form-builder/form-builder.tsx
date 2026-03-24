@@ -713,7 +713,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                 onUpdate={(updates) => updateQuestion(selectedQuestion.id, updates)}
                 onDelete={() => deleteQuestion(selectedQuestion.id)}
                 onDuplicate={() => duplicateQuestion(selectedQuestion.id)}
-                ownerPlan={form.plan}
+                ownerPlan={userPlan}
               />
             </div>
           )}

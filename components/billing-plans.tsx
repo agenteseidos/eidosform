@@ -100,7 +100,7 @@ interface BillingPlansProps {
 }
 
 export function BillingPlans({ currentPlan }: BillingPlansProps) {
-  const [billing, setBilling] = useState<'annual' | 'monthly'>('annual')
+  const [billing, setBilling] = useState<'annual' | 'monthly'>('monthly')
 
   return (
     <div>
@@ -142,6 +142,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
           const price = billing === 'annual' ? plan.price.annual : plan.price.monthly
           const originalPrice = plan.price.monthly
           const isCurrentPlan = plan.id === currentPlan
+          const shouldHighlight = isCurrentPlan || (plan.highlight && currentPlan === 'free' && plan.id === 'plus')
 
           return (
             <div
@@ -152,7 +153,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                   : 'bg-slate-900/60 border-white/[0.08]'
               } ${isCurrentPlan ? 'opacity-70' : ''}`}
             >
-              {plan.highlight && (
+              {shouldHighlight && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap">
                   <Badge className="bg-[#F5B731] text-black font-bold border-0 px-3 shadow-lg shadow-[#F5B731]/30">
                     ✨ Mais Popular
@@ -196,7 +197,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                 className={`w-full font-semibold transition-all mt-auto ${
                   isCurrentPlan
                     ? 'bg-white/5 text-slate-500 border border-white/10 cursor-default'
-                    : plan.highlight
+                    : shouldHighlight
                     ? 'bg-[#F5B731] hover:bg-[#E8923A] text-black shadow-lg shadow-[#F5B731]/25'
                     : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
                 }`}

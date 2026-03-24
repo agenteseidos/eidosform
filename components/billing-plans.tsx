@@ -99,6 +99,8 @@ interface BillingPlansProps {
   currentPlan: string
 }
 
+const PLAN_ORDER = ['free', 'starter', 'plus', 'professional']
+
 export function BillingPlans({ currentPlan }: BillingPlansProps) {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('monthly')
 
@@ -142,6 +144,9 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
           const price = billing === 'annual' ? plan.price.annual : plan.price.monthly
           const originalPrice = plan.price.monthly
           const isCurrentPlan = plan.id === currentPlan
+          const currentPlanIndex = PLAN_ORDER.indexOf(currentPlan)
+          const thisPlanIndex = PLAN_ORDER.indexOf(plan.id)
+          const isLowerPlan = thisPlanIndex < currentPlanIndex
           const shouldHighlight = isCurrentPlan || (plan.highlight && currentPlan === 'free' && plan.id === 'plus')
 
           return (
@@ -195,20 +200,20 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
 
               <Button
                 className={`w-full font-semibold transition-all mt-auto ${
-                  isCurrentPlan
+                  isCurrentPlan || isLowerPlan
                     ? 'bg-white/5 text-slate-500 border border-white/10 cursor-default'
                     : shouldHighlight
                     ? 'bg-[#F5B731] hover:bg-[#E8923A] text-black shadow-lg shadow-[#F5B731]/25'
                     : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
                 }`}
-                disabled={isCurrentPlan}
+                disabled={isCurrentPlan || isLowerPlan}
                 onClick={() => {
                   if (!isCurrentPlan && plan.checkoutUrl) {
                     window.location.href = plan.checkoutUrl
                   }
                 }}
               >
-                {isCurrentPlan ? '✓ Plano atual' : plan.cta}
+                {isCurrentPlan ? '✓ Plano atual' : isLowerPlan ? '✓ Incluído' : plan.cta}
               </Button>
             </div>
           )

@@ -136,7 +136,7 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'nps',
-    label: 'NPS',
+    label: 'Avaliação (0-10)',
     description: 'Net Promoter Score (0-10)',
     icon: Gauge,
     defaultConfig: {

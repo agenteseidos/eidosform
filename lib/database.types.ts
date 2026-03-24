@@ -1,3 +1,4 @@
+import { JumpRule } from "@/lib/jump-logic"
 import { PixelEventRule } from "@/types/pixel-events"
 
 export type Json =
@@ -79,6 +80,7 @@ export interface QuestionConfig {
   defaultCountry?: string // Country code for phone type (default: BR)
   conditionalLogic?: ConditionalRule
   pixelEvents?: PixelEventRule[]
+  jumpRules?: JumpRule[]
 }
 
 // Pixel tracking configuration

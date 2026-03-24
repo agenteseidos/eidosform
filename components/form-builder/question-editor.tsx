@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { Trash2, Plus, GripVertical, X, GitBranch, Copy } from 'lucide-react'
 import { countries } from '@/lib/countries'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
+import { JumpRulesEditor } from './jump-rules-editor'
 
 interface QuestionEditorProps {
   question: QuestionConfig
@@ -322,6 +323,18 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             Adicionar condição
           </Button>
         )}
+      </div>
+
+      <Separator />
+
+      {/* Lógica de Navegação (Jump Logic) */}
+      <div>
+        <JumpRulesEditor
+          rules={question.jumpRules || []}
+          questionId={question.id}
+          allQuestions={allQuestions}
+          onChange={(jumpRules) => onUpdate({ jumpRules })}
+        />
       </div>
 
       <Separator />

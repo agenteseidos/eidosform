@@ -10,6 +10,7 @@ import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
 import { PixelInjector } from '@/components/pixels/pixel-injector'
 import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
+import { evaluateJumpRules } from '@/lib/jump-logic'
 
 interface FormPlayerProps {
   ownerPlan?: string
@@ -36,6 +37,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const [direction, setDirection] = useState(0)
   const [progressAnim, setProgressAnim] = useState(0)
   const [responseId, setResponseId] = useState<string | null>(null)
+  const [navigationHistory, setNavigationHistory] = useState<number[]>([])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerPixelSubmitRef = useRef<(() => void) | null>(null)
@@ -64,7 +66,11 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const currentQuestion = visibleQuestions[currentIndex]
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
   const isFirstQuestion = form.welcome_enabled ? currentIndex === -1 : currentIndex === 0
-  const progressFull = visibleQuestions.length > 0 ? ((currentIndex + 1) / visibleQuestions.length) * 100 : 0
+  // Com jump logic, progresso baseado em perguntas respondidas + posição atual
+  const answeredCount = visibleQuestions.filter(q => answers[q.id] !== undefined && answers[q.id] !== '').length
+  const progressFull = visibleQuestions.length > 0
+    ? Math.max(((currentIndex + 1) / visibleQuestions.length) * 100, (answeredCount / visibleQuestions.length) * 100)
+    : 0
 
   // Animate progress on question change
   useEffect(() => {
@@ -119,19 +125,41 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
     if (!shouldSkip && !validateCurrentQuestion()) return
 
+    // Salvar progresso parcial antes de avançar
+    const updatedAnswers = { ...answers }
+    if (currentQuestion) {
+      savePartialResponse(updatedAnswers, currentQuestion.id).catch(console.warn)
+      // Avaliar pixel events condicionais da pergunta atual
+      if (currentQuestion.pixelEvents) {
+        const answer = String(updatedAnswers[currentQuestion.id] ?? '')
+        evaluatePixelEvents(currentQuestion.pixelEvents, answer)
+      }
+
+      // Avaliar jump rules
+      if (currentQuestion.jumpRules && currentQuestion.jumpRules.length > 0) {
+        const jumpAction = evaluateJumpRules(currentQuestion.jumpRules, currentQuestion.id, updatedAnswers)
+        if (jumpAction) {
+          if (jumpAction.type === 'submit') {
+            handleSubmit()
+            return
+          }
+          if (jumpAction.type === 'jump' && jumpAction.targetQuestionId) {
+            const targetIdx = visibleQuestions.findIndex(q => q.id === jumpAction.targetQuestionId)
+            if (targetIdx !== -1) {
+              setNavigationHistory(prev => [...prev, currentIndex])
+              setDirection(1)
+              setCurrentIndex(targetIdx)
+              return
+            }
+          }
+        }
+      }
+    }
+
     if (isLastQuestion) {
       handleSubmit()
     } else {
-      // Salvar progresso parcial antes de avançar
-      const updatedAnswers = { ...answers }
-      if (currentQuestion) {
-        savePartialResponse(updatedAnswers, currentQuestion.id).catch(console.warn)
-        // Avaliar pixel events condicionais da pergunta atual
-        if (currentQuestion.pixelEvents) {
-          const answer = String(updatedAnswers[currentQuestion.id] ?? '')
-          evaluatePixelEvents(currentQuestion.pixelEvents, answer)
-        }
-      }
+      setNavigationHistory(prev => [...prev, currentIndex])
       setDirection(1)
       setCurrentIndex(prev => Math.min(prev + 1, visibleQuestions.length - 1))
     }
@@ -140,9 +168,15 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
   const goToPrevious = useCallback(() => {
     setDirection(-1)
-    const minIndex = form.welcome_enabled ? -1 : 0
-    setCurrentIndex(prev => Math.max(prev - 1, minIndex))
-  }, [form])
+    if (navigationHistory.length > 0) {
+      const prevIndex = navigationHistory[navigationHistory.length - 1]
+      setNavigationHistory(prev => prev.slice(0, -1))
+      setCurrentIndex(prevIndex)
+    } else {
+      const minIndex = form.welcome_enabled ? -1 : 0
+      setCurrentIndex(prev => Math.max(prev - 1, minIndex))
+    }
+  }, [form, navigationHistory])
 
   const handleSubmit = async () => {
     if (!validateCurrentQuestion()) return

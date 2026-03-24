@@ -28,7 +28,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const theme = getTheme(form.theme)
   const themeStyles = getThemeCSSVariables(theme)
 
-  const [currentIndex, setCurrentIndex] = useState((form as any).welcome_enabled ? -1 : 0)
+  const [currentIndex, setCurrentIndex] = useState(form.welcome_enabled ? -1 : 0)
   const [answers, setAnswers] = useState<Record<string, Json>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
@@ -63,7 +63,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
   const currentQuestion = visibleQuestions[currentIndex]
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
-  const isFirstQuestion = (form as any).welcome_enabled ? currentIndex === -1 : currentIndex === 0
+  const isFirstQuestion = form.welcome_enabled ? currentIndex === -1 : currentIndex === 0
   const progressFull = visibleQuestions.length > 0 ? ((currentIndex + 1) / visibleQuestions.length) * 100 : 0
 
   // Animate progress on question change
@@ -140,7 +140,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
   const goToPrevious = useCallback(() => {
     setDirection(-1)
-    const minIndex = (form as any).welcome_enabled ? -1 : 0
+    const minIndex = form.welcome_enabled ? -1 : 0
     setCurrentIndex(prev => Math.max(prev - 1, minIndex))
   }, [form])
 
@@ -177,7 +177,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
         evaluatePixelEvents(currentQuestion.pixelEvents, answer)
       }
       // Pixel event global de conclusão
-      const completeEvent = (form as any).pixel_event_on_complete
+      const completeEvent = form.pixel_event_on_complete
       if (completeEvent) fireNamedPixelEvent(completeEvent)
       setIsSubmitted(true)
       if (form.redirect_url) {
@@ -225,10 +225,11 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     }
   }, [form.id, responseId])
 
-  // Pixel event: ao iniciar formulário
+  // Pixel event: ao iniciar formulário (sem welcome screen)
   useEffect(() => {
-    const startEvent = (form as any).pixel_event_on_start
-    if (startEvent) fireNamedPixelEvent(startEvent)
+    if (!form.welcome_enabled && form.pixel_event_on_start) {
+      fireNamedPixelEvent(form.pixel_event_on_start)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -360,7 +361,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
 
   // ─── Welcome screen ──────────────────────────────────────────────────────────
-  if (currentIndex === -1 && (form as any).welcome_enabled) {
+  if (currentIndex === -1 && form.welcome_enabled) {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-6"
@@ -400,13 +401,13 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             className="text-2xl sm:text-3xl font-bold mb-4 leading-tight"
             style={{ color: theme.textColor }}
           >
-            {(form as any).welcome_image_url && (
-              <img src={(form as any).welcome_image_url} className="max-h-20 object-contain mx-auto mb-4" alt="" />
+            {form.welcome_image_url && (
+              <img src={form.welcome_image_url} className="max-h-20 object-contain mx-auto mb-4" alt="" />
             )}
-            {(form as any).welcome_title || form.title}
+            {form.welcome_title || form.title}
           </motion.h1>
 
-          {(form as any).welcome_description && (
+          {form.welcome_description && (
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -414,7 +415,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
               className="text-base md:text-lg opacity-70 mb-8"
               style={{ color: theme.textColor }}
             >
-              {(form as any).welcome_description}
+              {form.welcome_description}
             </motion.p>
           )}
 
@@ -427,11 +428,12 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
               onClick={() => {
                 setDirection(1)
                 setCurrentIndex(0)
+                if (form.pixel_event_on_start) fireNamedPixelEvent(form.pixel_event_on_start)
               }}
               className="h-14 px-10 text-lg font-semibold rounded-xl transition-transform active:scale-95"
               style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
             >
-              {(form as any).welcome_button_text || 'Começar'}
+              {form.welcome_button_text || 'Começar'}
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </motion.div>

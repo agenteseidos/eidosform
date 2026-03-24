@@ -37,10 +37,16 @@ export function firePixelEvent(event: PixelEventConfig) {
   }
 }
 
-export function fireNamedPixelEvent(name: string) {
+export function fireNamedPixelEvent(name: string, retries = 10) {
   if (!name || typeof window === 'undefined') return
   const fbq = (window as any).fbq
-  if (!fbq) return
+  if (!fbq) {
+    // fbq ainda não carregou — tentar novamente em 300ms (até 10x = 3s)
+    if (retries > 0) {
+      setTimeout(() => fireNamedPixelEvent(name, retries - 1), 300)
+    }
+    return
+  }
   const standardEvents = ['Lead', 'Purchase', 'CompleteRegistration', 'Contact', 'InitiateCheckout', 'ViewContent', 'AddToCart', 'AddPaymentInfo', 'Subscribe']
   if (standardEvents.includes(name)) {
     fbq('track', name)

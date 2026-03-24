@@ -209,6 +209,10 @@ export interface Database {
           webhook_url: string | null
           pixel_event_on_start: string | null
           pixel_event_on_complete: string | null
+          welcome_enabled: boolean
+          welcome_title: string | null
+          welcome_description: string | null
+          welcome_button_text: string | null
           created_at: string
           updated_at: string
         }
@@ -233,6 +237,10 @@ export interface Database {
           created_at?: string
           pixel_event_on_start?: string | null
           pixel_event_on_complete?: string | null
+          welcome_enabled?: boolean
+          welcome_title?: string | null
+          welcome_description?: string | null
+          welcome_button_text?: string | null
           updated_at?: string
         }
         Update: {
@@ -254,6 +262,10 @@ export interface Database {
           updated_at?: string
           pixel_event_on_start?: string | null
           pixel_event_on_complete?: string | null
+          welcome_enabled?: boolean
+          welcome_title?: string | null
+          welcome_description?: string | null
+          welcome_button_text?: string | null
         }
         Relationships: []
       }

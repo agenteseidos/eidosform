@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const body = await req.json()
-  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete } = body
+  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text } = body
 
   // Validate slug if provided
   if (slug && !/^[a-z0-9-]+$/.test(slug)) {
@@ -118,6 +118,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(webhook_url !== undefined && { webhook_url }),
     ...(pixel_event_on_start !== undefined && { pixel_event_on_start }),
     ...(pixel_event_on_complete !== undefined && { pixel_event_on_complete }),
+    ...(welcome_enabled !== undefined && { welcome_enabled }),
+    ...(welcome_title !== undefined && { welcome_title }),
+    ...(welcome_description !== undefined && { welcome_description }),
+    ...(welcome_button_text !== undefined && { welcome_button_text }),
     updated_at: new Date().toISOString(),
   }
 

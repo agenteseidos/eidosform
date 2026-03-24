@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -86,6 +87,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       webhook_url: form.webhook_url || null,
       pixel_event_on_start: (form as any).pixel_event_on_start || null,
       pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
+      welcome_enabled: (form as any).welcome_enabled || false,
+      welcome_title: (form as any).welcome_title || null,
+      welcome_description: (form as any).welcome_description || null,
+      welcome_button_text: (form as any).welcome_button_text || null,
     }
     const { error } = await supabase
       .from('forms')
@@ -128,6 +133,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       webhook_url: form.webhook_url || null,
       pixel_event_on_start: (form as any).pixel_event_on_start || null,
       pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
+      welcome_enabled: (form as any).welcome_enabled || false,
+      welcome_title: (form as any).welcome_title || null,
+      welcome_description: (form as any).welcome_description || null,
+      welcome_button_text: (form as any).welcome_button_text || null,
     }
     const { data: updated, error } = await supabase
       .from('forms')
@@ -428,6 +437,65 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
 
             <TabsContent value="settings" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
               <div className="p-4 space-y-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-100" />
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Tela de Boas Vindas</span>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium text-slate-700">Ativar tela de boas vindas</Label>
+                    <Switch
+                      checked={(form as any).welcome_enabled || false}
+                      onCheckedChange={(checked) => {
+                        setForm({ ...form, welcome_enabled: checked } as any)
+                        setHasUnsavedChanges(true)
+                      }}
+                    />
+                  </div>
+                  {(form as any).welcome_enabled && (
+                    <>
+                      <div>
+                        <Label className="text-sm font-medium text-slate-700">Título</Label>
+                        <Input
+                          value={(form as any).welcome_title || ''}
+                          onChange={(e) => {
+                            setForm({ ...form, welcome_title: e.target.value || null } as any)
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-2 text-slate-900 placeholder:text-slate-400"
+                          placeholder={form.title || 'Bem-vindo!'}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium text-slate-700">Descrição</Label>
+                        <Textarea
+                          value={(form as any).welcome_description || ''}
+                          onChange={(e) => {
+                            setForm({ ...form, welcome_description: e.target.value || null } as any)
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-2 text-slate-900 placeholder:text-slate-400"
+                          placeholder="Uma breve descrição do formulário..."
+                          rows={3}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium text-slate-700">Texto do botão</Label>
+                        <Input
+                          value={(form as any).welcome_button_text || ''}
+                          onChange={(e) => {
+                            setForm({ ...form, welcome_button_text: e.target.value || null } as any)
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-2 text-slate-900 placeholder:text-slate-400"
+                          placeholder="Começar"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div>
                   <Label htmlFor="slug" className="text-sm font-medium text-slate-700">URL do Formulário</Label>
                   <div className="mt-2 flex items-center gap-2">

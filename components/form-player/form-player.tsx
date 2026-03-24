@@ -28,7 +28,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const theme = getTheme(form.theme)
   const themeStyles = getThemeCSSVariables(theme)
 
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [currentIndex, setCurrentIndex] = useState((form as any).welcome_enabled ? -1 : 0)
   const [answers, setAnswers] = useState<Record<string, Json>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
@@ -63,7 +63,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
   const currentQuestion = visibleQuestions[currentIndex]
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
-  const isFirstQuestion = currentIndex === 0
+  const isFirstQuestion = (form as any).welcome_enabled ? currentIndex === -1 : currentIndex === 0
   const progressFull = visibleQuestions.length > 0 ? ((currentIndex + 1) / visibleQuestions.length) * 100 : 0
 
   // Animate progress on question change
@@ -140,8 +140,9 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
   const goToPrevious = useCallback(() => {
     setDirection(-1)
-    setCurrentIndex(prev => Math.max(prev - 1, 0))
-  }, [])
+    const minIndex = (form as any).welcome_enabled ? -1 : 0
+    setCurrentIndex(prev => Math.max(prev - 1, minIndex))
+  }, [form])
 
   const handleSubmit = async () => {
     if (!validateCurrentQuestion()) return
@@ -340,6 +341,102 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.8 }}
+            className="mt-12"
+          >
+            <a
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
+              style={{ color: theme.textColor }}
+            >
+              Feito com <span className="font-semibold">EidosForm</span>
+            </a>
+          </motion.div>
+        </motion.div>
+      </div>
+    )
+  }
+
+
+  // ─── Welcome screen ──────────────────────────────────────────────────────────
+  if (currentIndex === -1 && (form as any).welcome_enabled) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-6"
+        style={{ ...themeStyles, backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
+      >
+        {form.pixels && (ownerPlan === 'plus' || ownerPlan === 'professional') && (() => {
+          const px = form.pixels as Record<string, string>
+          const metaId = px.metaPixelId || px.facebook || px.pixel_meta || null
+          const googleAdsId = px.googleAdsId || px.google_ads_id || null
+          const googleAdsLabel = px.googleAdsLabel || px.google_ads_label || null
+          const tiktokId = px.tiktokPixelId || px.tiktok_pixel_id || null
+          const gtmId = px.gtmId || px.gtm_id || null
+          if (!metaId && !googleAdsId && !tiktokId && !gtmId) return null
+          return (
+            <PixelInjector
+              config={{
+                meta_pixel_id: metaId,
+                google_ads_id: googleAdsId,
+                google_ads_label: googleAdsLabel,
+                tiktok_pixel_id: tiktokId,
+                gtm_id: gtmId,
+              }}
+              onReady={(trigger) => { triggerPixelSubmitRef.current = trigger }}
+            />
+          )
+        })()}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.92, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-lg w-full px-4"
+        >
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 leading-tight"
+            style={{ color: theme.textColor }}
+          >
+            {(form as any).welcome_title || form.title}
+          </motion.h1>
+
+          {(form as any).welcome_description && (
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.28 }}
+              className="text-base md:text-lg opacity-70 mb-8"
+              style={{ color: theme.textColor }}
+            >
+              {(form as any).welcome_description}
+            </motion.p>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            <Button
+              onClick={() => {
+                setDirection(1)
+                setCurrentIndex(0)
+              }}
+              className="h-14 px-10 text-lg font-semibold rounded-xl transition-transform active:scale-95"
+              style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
+            >
+              {(form as any).welcome_button_text || 'Começar'}
+              <ArrowRight className="w-5 h-5 ml-2" />
+            </Button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.7 }}
             className="mt-12"
           >
             <a

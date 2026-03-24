@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   const { data: profile } = await supabase
     .from('profiles')
     .select('plan')
-    .eq('user_id', user.id)
+    .eq('id', user.id)
     .single() as { data: { plan: string } | null }
 
   if (!profile || (profile.plan !== 'professional' && profile.plan !== 'enterprise')) {
@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
 
   const { error: updateError } = await supabase
     .from('profiles')
-    .update({ api_key: newKey } as never)
-    .eq('user_id', user.id)
+    .update({ api_key: newKey, api_key_created_at: new Date().toISOString() } as never)
+    .eq('id', user.id)
 
   if (updateError) {
     return NextResponse.json({ error: 'Failed to generate API key' }, { status: 500 })
@@ -52,14 +52,14 @@ export async function GET(req: NextRequest) {
   const { data: profile } = await supabase
     .from('profiles')
     .select('api_key, plan')
-    .eq('user_id', user.id)
+    .eq('id', user.id)
     .single() as { data: { api_key: string | null; plan: string } | null }
 
   if (!profile) {
     // Create profile with free plan for new users
     const { data: newProfile, error: createError } = await supabase
       .from('profiles')
-      .insert({ user_id: user.id, email: user.email ?? '', plan: 'free' })
+      .insert({ id: user.id, email: user.email ?? '', plan: 'free' })
       .select('api_key, plan')
       .single() as { data: { api_key: string | null; plan: string } | null, error: unknown }
 

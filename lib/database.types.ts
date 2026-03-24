@@ -118,46 +118,58 @@ export interface Database {
       profiles: {
         Row: {
           id: string
-          user_id: string
           email: string
           full_name: string | null
           avatar_url: string | null
           plan: string
           api_key: string | null
+          api_key_created_at: string | null
           response_count: number
           responses_used: number
           responses_limit: number
           limit_alert_sent: boolean
+          plan_status: string | null
+          plan_expires_at: string | null
+          asaas_customer_id: string | null
+          asaas_subscription_id: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
-          id?: string
-          user_id: string
+          id: string
           email: string
           full_name?: string | null
           avatar_url?: string | null
           plan?: string
           api_key?: string | null
+          api_key_created_at?: string | null
           response_count?: number
           responses_used?: number
           responses_limit?: number
           limit_alert_sent?: boolean
+          plan_status?: string | null
+          plan_expires_at?: string | null
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
-          user_id?: string
           email?: string
           full_name?: string | null
           avatar_url?: string | null
           plan?: string
           api_key?: string | null
+          api_key_created_at?: string | null
           response_count?: number
           responses_used?: number
           responses_limit?: number
           limit_alert_sent?: boolean
+          plan_status?: string | null
+          plan_expires_at?: string | null
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -196,6 +208,7 @@ export interface Database {
           description: string | null
           slug: string
           status: FormStatus
+          is_published: boolean
           theme: ThemePreset
           questions: QuestionConfig[]
           thank_you_message: string
@@ -224,6 +237,7 @@ export interface Database {
           description?: string | null
           slug: string
           status?: FormStatus
+          is_published?: boolean
           theme?: ThemePreset
           questions?: QuestionConfig[]
           thank_you_message?: string
@@ -250,6 +264,7 @@ export interface Database {
           description?: string | null
           slug?: string
           status?: FormStatus
+          is_published?: boolean
           theme?: ThemePreset
           questions?: QuestionConfig[]
           thank_you_message?: string

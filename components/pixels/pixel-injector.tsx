@@ -64,16 +64,19 @@ export function PixelInjector({ config, onReady }: PixelInjectorProps) {
 
   /* ---------- onLoad events ---------- */
   useEffect(() => {
-    // Meta PageView
-    if (meta_pixel_id && typeof window.fbq === 'function') {
-      window.fbq('track', 'PageView')
+    // TikTok ViewContent (com polling para aguardar ttq carregar)
+    if (tiktok_pixel_id) {
+      const tryTikTok = () => {
+        if (window.ttq) {
+          window.ttq.page()
+          window.ttq.track('ViewContent')
+        } else {
+          setTimeout(tryTikTok, 300)
+        }
+      }
+      setTimeout(tryTikTok, 500)
     }
-
-    // TikTok ViewContent
-    if (tiktok_pixel_id && window.ttq) {
-      window.ttq.page()
-      window.ttq.track('ViewContent')
-    }
+    // Meta PageView já é disparado inline no script de init
   }, [meta_pixel_id, tiktok_pixel_id])
 
   /* ---------- expose triggerSubmit ---------- */
@@ -127,6 +130,7 @@ export function PixelInjector({ config, onReady }: PixelInjectorProps) {
                 s.parentNode.insertBefore(t,s)}(window,document,'script',
                 'https://connect.facebook.net/en_US/fbevents.js');
               fbq('init', '${meta_pixel_id}');
+              fbq('track', 'PageView');
             `,
             }}
           />

@@ -9,15 +9,28 @@ import { BillingPlans } from '@/components/billing-plans'
 
 export const dynamic = 'force-dynamic'
 
+const PLAN_LABELS: Record<string, string> = {
+  free: '🌱 Free',
+  starter: '⚡ Starter',
+  plus: '🚀 Plus',
+  professional: '👑 Professional',
+}
+
 export default async function BillingPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
 
-  const currentPlan = 'free'
-  const usedResponses = 23
-  const planLimit = 100
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan, responses_used, responses_limit')
+    .eq('id', user.id)
+    .single()
+
+  const currentPlan = (profile?.plan as string) || 'free'
+  const usedResponses = profile?.responses_used ?? 0
+  const planLimit = profile?.responses_limit ?? 100
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
@@ -38,10 +51,12 @@ export default async function BillingPage() {
       <Card className="p-6 mb-8 bg-slate-900/60 border-white/10">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-semibold">Uso atual — Plano Free</h2>
+            <h2 className="font-semibold">Uso atual — Plano {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}</h2>
             <p className="text-sm text-slate-500 mt-0.5">Ciclo reinicia em 1 de abril</p>
           </div>
-          <Badge className="bg-slate-800 text-slate-300 font-medium">🌱 Free</Badge>
+          <Badge className="bg-slate-800 text-slate-300 font-medium">
+            {PLAN_LABELS[currentPlan] || currentPlan}
+          </Badge>
         </div>
         <div>
           <div className="flex justify-between text-sm mb-1.5">

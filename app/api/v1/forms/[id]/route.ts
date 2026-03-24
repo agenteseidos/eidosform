@@ -1,3 +1,4 @@
+import type { ResponseInsert, AnswerItemInsert } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -187,7 +188,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   const { data: response, error } = await supabase
     .from('responses')
-    .insert({ form_id: id, answers, completed } as never)
+    .insert({ form_id: id, answers, completed } as ResponseInsert)
     .select('id')
     .single() as { data: { id: string } | null; error: unknown }
 
@@ -205,7 +206,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }))
 
   if (answerItems.length > 0) {
-    await supabase.from('answer_items').insert(answerItems as never)
+    await supabase.from('answer_items').insert(answerItems as AnswerItemInsert[])
   }
 
   return NextResponse.json({ response_id: response.id }, { status: 201, headers: CORS_HEADERS })

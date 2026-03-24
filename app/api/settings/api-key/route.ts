@@ -1,3 +1,4 @@
+import type { ProfileUpdate } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   const { error: updateError } = await supabase
     .from('profiles')
-    .update({ api_key: newKey, api_key_created_at: new Date().toISOString() } as never)
+    .update({ api_key: newKey, api_key_created_at: new Date().toISOString() } as ProfileUpdate)
     .eq('id', user.id)
 
   if (updateError) {

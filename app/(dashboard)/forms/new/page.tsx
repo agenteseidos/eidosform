@@ -35,7 +35,7 @@ export default async function NewFormPage() {
 
   const { error } = await supabase
     .from('forms')
-    .insert(newForm as never)
+    .insert(newForm as FormInsert)
 
   if (error) {
     console.error('Error creating form:', error)

@@ -1,3 +1,4 @@
+import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createPublicClient } from '@/lib/supabase/public'
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
   if (existingResponseId) {
     const { data: updated, error: updateError } = await supabase
       .from('responses')
-      .update({ answers, completed, last_question_answered: last_question_answered ?? null } as never)
+      .update({ answers, completed, last_question_answered: last_question_answered ?? null } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
       .select('id')
@@ -125,7 +126,7 @@ export async function POST(req: NextRequest) {
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
-      .insert({ form_id, answers, completed, last_question_answered: last_question_answered ?? null } as never)
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, completed, last_question_answered: last_question_answered as string ?? null } as ResponseInsert)
       .select('id')
       .single() as { data: { id: string } | null; error: { message: string } | null }
 
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
   }))
 
   if (answerItems.length > 0) {
-    const { error: itemsError } = await supabase.from('answer_items').insert(answerItems as never)
+    const { error: itemsError } = await supabase.from('answer_items').insert(answerItems as AnswerItemInsert[])
     if (itemsError) console.error('Failed to insert answer_items:', (itemsError as { message: string }).message)
   }
 

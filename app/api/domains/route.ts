@@ -1,3 +1,4 @@
+import type { CustomDomainInsert, CustomDomainUpdate } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { addDomain, removeDomain, checkDomainStatus } from '@/lib/custom-domain'
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
       form_id,
       user_id: user.id,
       verified: result.verified ?? false,
-    } as never)
+    } as CustomDomainInsert)
 
   if (dbError) {
     console.error('Failed to save domain to DB:', dbError)
@@ -148,7 +149,7 @@ export async function PATCH(req: NextRequest) {
   if (result.verified) {
     await supabase
       .from('custom_domains')
-      .update({ verified: true } as never)
+      .update({ verified: true } as CustomDomainInsert)
       .eq('domain', domain)
       .eq('user_id', user.id)
   }

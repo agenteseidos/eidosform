@@ -31,6 +31,14 @@ export default async function EditFormPage({ params }: EditFormPageProps) {
     notFound()
   }
 
-  return <FormBuilder form={form} />
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+
+  const userPlan = (profile?.plan as string) || 'free'
+
+  return <FormBuilder form={form} userPlan={userPlan} />
 }
 

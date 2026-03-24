@@ -46,9 +46,10 @@ import { FormPreview } from './form-preview'
 
 interface FormBuilderProps {
   form: Form
+  userPlan?: string
 }
 
-export function FormBuilder({ form: initialForm }: FormBuilderProps) {
+export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilderProps) {
   const router = useRouter()
   const supabase = createClient()
   
@@ -645,7 +646,7 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
                     <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Eventos do Pixel Meta</span>
                     <div className="h-px flex-1 bg-slate-100" />
                   </div>
-                  {(form as any).plan === 'plus' || (form as any).plan === 'professional' ? (
+                  {userPlan === 'plus' || userPlan === 'professional' ? (
                     <div className="space-y-4">
                       <div>
                         <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Ao iniciar o formulário</Label>

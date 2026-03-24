@@ -29,11 +29,11 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.facebook.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.facebook.com https://connect.facebook.net https://snap.licdn.com https://www.googleadservices.com https://analytics.tiktok.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: https: blob:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.asaas.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.asaas.com https://www.facebook.com https://connect.facebook.net https://*.facebook.net https://*.facebook.com https://analytics.tiktok.com",
       "frame-ancestors 'self'",
     ].join('; '),
   },

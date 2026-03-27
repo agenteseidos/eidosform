@@ -1,19 +1,14 @@
 import type { ResponseInsert, AnswerItemInsert } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { checkRateLimitAsync } from '@/lib/rate-limit'
-
-// API pública: CORS aberto para permitir chamadas de qualquer domínio
-function getAllowedOrigin(): string {
-  return '*'
-}
+import { authenticateApiKey } from '@/lib/api-key-auth'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': getAllowedOrigin(),
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization',
   'Access-Control-Max-Age': '86400',
@@ -22,57 +17,6 @@ const CORS_HEADERS = {
 // OPTIONS — CORS preflight
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
-}
-
-async function authenticateApiKey(req: NextRequest): Promise<
-  | { ok: true; userId: string; plan: string; apiKey: string }
-  | { ok: false; status: 401 | 429; error: string; retryAfter?: number }
-> {
-  // Tenta X-API-Key primeiro (retrocompatível)
-  let apiKey = req.headers.get('x-api-key')
-
-  // Fallback: Authorization: Bearer <api_key>
-  if (!apiKey) {
-    const authHeader = req.headers.get('authorization')
-    if (authHeader?.startsWith('Bearer ')) {
-      apiKey = authHeader.slice(7)
-    }
-  }
-
-  if (!apiKey) {
-    return { ok: false, status: 401, error: 'Unauthorized. Provide a valid X-API-Key header.' }
-  }
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll: () => [], setAll: () => {} } }
-  )
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, plan, api_key')
-    .eq('api_key', apiKey)
-    .single() as { data: { id: string; plan: string; api_key: string } | null }
-
-  if (!profile) {
-    return { ok: false, status: 401, error: 'Unauthorized. Invalid API key.' }
-  }
-  if (profile.plan !== 'professional' && profile.plan !== 'enterprise') {
-    return { ok: false, status: 401, error: 'Unauthorized. Professional plan required.' }
-  }
-
-  const limit = await checkRateLimitAsync(apiKey)
-  if (!limit.allowed) {
-    return {
-      ok: false,
-      status: 429,
-      error: 'Rate limit exceeded for this API key.',
-      retryAfter: Math.ceil(limit.resetIn / 1000),
-    }
-  }
-
-  return { ok: true, userId: profile.id, plan: profile.plan, apiKey }
 }
 
 function getServiceClient() {

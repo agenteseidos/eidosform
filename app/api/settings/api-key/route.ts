@@ -25,9 +25,15 @@ export async function POST() {
     )
   }
 
-  // Gerar nova API key
+  // Gerar nova API key (RPC generates prefixed key; fallback ensures ek_ prefix)
   const { data: keyData } = await supabase.rpc('generate_api_key') as { data: string | null }
-  const newKey = keyData ?? ('ek_' + Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b => b.toString(16).padStart(2, '0')).join(''))
+  let newKey = keyData ?? null
+
+  // Ensure key always has ek_ prefix (required by API v1 auth validation)
+  if (!newKey || !newKey.startsWith('ek_')) {
+    newKey = 'ek_' + Array.from(crypto.getRandomValues(new Uint8Array(24)))
+      .map(b => b.toString(16).padStart(2, '0')).join('')
+  }
 
   const { error: updateError } = await supabase
     .from('profiles')

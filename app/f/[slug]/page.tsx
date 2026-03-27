@@ -43,15 +43,34 @@ export async function generateMetadata({ params }: FormPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
 
-  const form = await fetchPublishedForm(supabase, slug) as { title: string; description: string | null } | null
+  const form = await fetchPublishedForm(supabase, slug) as { title: string; description: string | null; slug: string } | null
 
   if (!form) {
     return { title: 'Formulário Não Encontrado' }
   }
 
+  const title = form.title || 'Formulário'
+  const description = form.description || 'Preencha este formulário'
+  const url = `https://eidosform.com.br/f/${form.slug}`
+
   return {
-    title: form.title || 'Formulário',
-    description: form.description || 'Preencha este formulário',
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url,
+      siteName: 'EidosForm',
+      type: 'website',
+      images: [
+        {
+          url: '/og-image.png',
+          width: 1200,
+          height: 630,
+          alt: title,
+        },
+      ],
+    },
   }
 }
 

@@ -30,7 +30,7 @@ export default function LandingPage() {
                   Entrar
                 </Button>
               </Link>
-              <Link href="/login">
+              <Link href="/register">
                 <Button size="sm" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-semibold shadow-lg shadow-[#F5B731]/20 transition-all hover:shadow-[#E8923A]/30">
                   Criar conta grátis
                 </Button>
@@ -64,7 +64,7 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/login">
+            <Link href="/register">
               <Button size="lg" className="w-full sm:w-auto bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
                 Criar conta grátis
                 <ArrowRight className="w-5 h-5 ml-2" />
@@ -158,7 +158,7 @@ export default function LandingPage() {
 
       {/* CTA intermediário */}
       <div className="text-center py-12 px-4">
-        <Link href="/login">
+        <Link href="/register">
           <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
             Criar conta grátis
             <ArrowRight className="w-5 h-5 ml-2" />
@@ -218,7 +218,7 @@ export default function LandingPage() {
 
       {/* CTA intermediário */}
       <div className="text-center py-12 px-4">
-        <Link href="/login">
+        <Link href="/register">
           <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
             Criar conta grátis
             <ArrowRight className="w-5 h-5 ml-2" />
@@ -287,7 +287,7 @@ export default function LandingPage() {
           <p className="text-slate-400 text-lg mb-8">
             Crie seu primeiro formulário gratuitamente e veja a diferença.
           </p>
-          <Link href="/login">
+          <Link href="/register">
             <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-lg px-10 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
               Criar conta grátis
               <ArrowRight className="w-5 h-5 ml-2" />

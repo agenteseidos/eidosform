@@ -37,6 +37,14 @@ export const metadata: Metadata = {
     url: 'https://eidosform.com.br',
     siteName: 'EidosForm',
     type: 'website',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'EidosForm — Formulários que convertem',
+      },
+    ],
   },
   title: "EidosForm - Crie Formulários Incríveis",
   description: "Construa formulários bonitos e envolventes em minutos. Gratuito e open source pela Eidos.",

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
@@ -70,9 +70,23 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<'questions' | 'editor' | 'preview'>('questions')
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
+
+  // Warn user about unsaved changes when leaving the page
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+        // Modern browsers ignore custom messages but still show the prompt
+        e.returnValue = 'Você tem alterações não salvas. Deseja sair?'
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsavedChanges])
 
   const handleWelcomeImageUpload = useCallback(async (file: File) => {
     if (!file) return
@@ -252,12 +266,20 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       {/* Header */}
       <header className="min-h-16 bg-white border-b border-slate-200 flex flex-wrap gap-2 items-center justify-between px-3 sm:px-4 py-2 shrink-0">
         <div className="flex items-center gap-4">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Voltar
-            </Button>
-          </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              if (hasUnsavedChanges) {
+                setShowLeaveDialog(true)
+              } else {
+                router.push('/dashboard')
+              }
+            }}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Voltar
+          </Button>
           <Separator orientation="vertical" className="h-6" />
           <div className="group relative flex items-center">
             <Input
@@ -962,6 +984,40 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
               </button>
             ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Leave Confirmation Dialog */}
+      <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Alterações não salvas</DialogTitle>
+            <DialogDescription>
+              Você tem alterações que ainda não foram salvas. Deseja salvar antes de sair?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowLeaveDialog(false)
+                router.push('/dashboard')
+              }}
+              className="border-red-200 text-red-600 hover:bg-red-50"
+            >
+              Sair sem salvar
+            </Button>
+            <Button
+              onClick={async () => {
+                await handleSave()
+                setShowLeaveDialog(false)
+                router.push('/dashboard')
+              }}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Salvar e sair
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

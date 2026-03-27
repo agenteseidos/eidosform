@@ -1,10 +1,22 @@
 // lib/response-rate-limit.ts — Rate limit for POST /api/responses (10 req/min per IP)
-// Uses Supabase persistent rate limiting with in-memory fallback for cold starts
+// Uses Supabase persistent rate limiting via check_rate_limit RPC with in-memory fallback.
+//
+// ARCHITECTURE NOTE:
+// Primary: Supabase RPC check_rate_limit (persistent, works across serverless invocations)
+// Fallback: In-memory Map (per-isolate, resets on cold start — best-effort only)
+//
+// The Supabase RPC uses an atomic upsert with sliding window, so it's safe for
+// concurrent requests. In-memory is only used when RPC is unavailable.
+//
+// TODO [SCALE]: For high-traffic forms (>500 submissions/min), migrate to Upstash Redis:
+//   npm install @upstash/ratelimit @upstash/redis
+//   Benefits: sub-ms latency, no DB load, sliding window built-in.
 
 import { createPublicClient } from '@/lib/supabase/public'
 
 const WINDOW_MS = 60_000
 const MAX_REQUESTS = 10
+const MAX_STORE_SIZE = 50_000 // Prevent unbounded memory growth
 
 // In-memory fallback (works within same invocation only on serverless)
 interface RateLimitEntry {
@@ -28,6 +40,11 @@ function checkMemoryFallback(ip: string): { allowed: boolean; remaining: number;
   const entry = memoryStore.get(ip)
 
   if (!entry || now - entry.windowStart > WINDOW_MS) {
+    // Prevent unbounded memory growth from IP spray attacks
+    if (memoryStore.size >= MAX_STORE_SIZE) {
+      const oldest = memoryStore.keys().next().value
+      if (oldest) memoryStore.delete(oldest)
+    }
     memoryStore.set(ip, { count: 1, windowStart: now })
     return { allowed: true, remaining: MAX_REQUESTS - 1, resetIn: WINDOW_MS }
   }

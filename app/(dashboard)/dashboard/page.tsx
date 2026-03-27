@@ -7,6 +7,8 @@ import { Form } from '@/lib/database.types'
 import { FormCard } from '@/components/dashboard/form-card'
 import { TemplatesGallery } from '@/components/dashboard/templates-gallery'
 import { OnboardingWrapper } from '@/components/dashboard/onboarding-wrapper'
+import { ErrorToast } from '@/components/dashboard/error-toast'
+import { Suspense } from 'react'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +42,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
+      <Suspense><ErrorToast /></Suspense>
       <OnboardingWrapper isNewUser={isNewUser} />
       <div className="flex items-center justify-between mb-8">
         <div>

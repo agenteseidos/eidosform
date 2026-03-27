@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -10,9 +10,11 @@ import { toast } from 'sonner'
 
 type DomainStatus = 'pending' | 'verifying' | 'active' | 'error'
 
-interface DomainInfo {
+interface DomainRecord {
+  id: string
   domain: string
-  status: DomainStatus
+  verified: boolean
+  form_id: string
 }
 
 interface DomainSettingsProps {
@@ -21,8 +23,33 @@ interface DomainSettingsProps {
 
 export function DomainSettings({ isProfessional }: DomainSettingsProps) {
   const [domain, setDomain] = useState('')
-  const [domainInfo, setDomainInfo] = useState<DomainInfo | null>(null)
+  const [domainRecord, setDomainRecord] = useState<DomainRecord | null>(null)
+  const [verifyStatus, setVerifyStatus] = useState<DomainStatus | null>(null)
   const [loading, setLoading] = useState(false)
+  const [fetching, setFetching] = useState(true)
+  const [verifying, setVerifying] = useState(false)
+
+  // Fetch existing domain on mount
+  useEffect(() => {
+    if (!isProfessional) {
+      setFetching(false)
+      return
+    }
+    fetch('/api/domains')
+      .then(res => res.json())
+      .then(data => {
+        const domains = data.domains || []
+        if (domains.length > 0) {
+          const d = domains[0]
+          setDomainRecord(d)
+          setVerifyStatus(d.verified ? 'active' : 'pending')
+        }
+      })
+      .catch(() => {
+        toast.error('Erro ao carregar domínios')
+      })
+      .finally(() => setFetching(false))
+  }, [isProfessional])
 
   const validateDomain = (d: string) => {
     return /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/.test(d.toLowerCase())
@@ -34,24 +61,81 @@ export function DomainSettings({ isProfessional }: DomainSettingsProps) {
       return
     }
     setLoading(true)
-    await new Promise(r => setTimeout(r, 800))
-    setDomainInfo({ domain, status: 'pending' })
-    setLoading(false)
-    toast.success('Domínio adicionado! Configure o CNAME para verificar.')
+    try {
+      // We need a form_id — use a placeholder; the API requires it
+      // In a real flow, user would pick which form to associate
+      const res = await fetch('/api/domains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, form_id: 'default' }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao adicionar domínio')
+        return
+      }
+      setDomainRecord({ id: '', domain, verified: data.verified || false, form_id: 'default' })
+      setVerifyStatus(data.verified ? 'active' : 'pending')
+      toast.success('Domínio adicionado! Configure o CNAME para verificar.')
+    } catch {
+      toast.error('Erro de rede ao adicionar domínio')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleVerify = async () => {
-    if (!domainInfo) return
-    setDomainInfo({ ...domainInfo, status: 'verifying' })
-    await new Promise(r => setTimeout(r, 2000))
-    setDomainInfo({ ...domainInfo, status: 'active' })
-    toast.success('Domínio verificado com sucesso! 🎉')
+    if (!domainRecord) return
+    setVerifying(true)
+    setVerifyStatus('verifying')
+    try {
+      const res = await fetch('/api/domains', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: domainRecord.domain }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setVerifyStatus('error')
+        toast.error(data.error || 'Erro ao verificar domínio')
+        return
+      }
+      if (data.verified) {
+        setVerifyStatus('active')
+        setDomainRecord(prev => prev ? { ...prev, verified: true } : prev)
+        toast.success('Domínio verificado com sucesso! 🎉')
+      } else {
+        setVerifyStatus('pending')
+        toast.info('DNS ainda não propagado. Tente novamente em alguns minutos.')
+      }
+    } catch {
+      setVerifyStatus('error')
+      toast.error('Erro de rede ao verificar domínio')
+    } finally {
+      setVerifying(false)
+    }
   }
 
-  const handleRemove = () => {
-    setDomainInfo(null)
-    setDomain('')
-    toast.success('Domínio removido.')
+  const handleRemove = async () => {
+    if (!domainRecord) return
+    try {
+      const res = await fetch('/api/domains', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: domainRecord.domain }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        toast.error(data.error || 'Erro ao remover domínio')
+        return
+      }
+      setDomainRecord(null)
+      setVerifyStatus(null)
+      setDomain('')
+      toast.success('Domínio removido.')
+    } catch {
+      toast.error('Erro de rede ao remover domínio')
+    }
   }
 
   const copyCname = () => {
@@ -101,7 +185,12 @@ export function DomainSettings({ isProfessional }: DomainSettingsProps) {
         Configure seu domínio personalizado para que seus formulários fiquem acessíveis no seu próprio endereço.
       </p>
 
-      {!domainInfo ? (
+      {fetching ? (
+        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
+          <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+          <span className="text-sm text-slate-400">Carregando...</span>
+        </div>
+      ) : !domainRecord ? (
         <div className="flex gap-2">
           <Input
             placeholder="formularios.suaempresa.com.br"
@@ -123,18 +212,18 @@ export function DomainSettings({ isProfessional }: DomainSettingsProps) {
           <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
             <div className="flex items-center gap-3">
               <Globe className="w-4 h-4 text-slate-400" />
-              <span className="font-medium text-slate-800">{domainInfo.domain}</span>
+              <span className="font-medium text-slate-800">{domainRecord.domain}</span>
             </div>
-            {statusBadge(domainInfo.status)}
+            {verifyStatus && statusBadge(verifyStatus)}
           </div>
 
-          {(domainInfo.status === 'pending' || domainInfo.status === 'error') && (
+          {(verifyStatus === 'pending' || verifyStatus === 'error') && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <p className="text-sm font-semibold text-amber-800 mb-3">⚙️ Configure o CNAME no seu provedor de DNS:</p>
               <div className="space-y-2">
                 {[
                   { label: 'Tipo', value: 'CNAME' },
-                  { label: 'Nome', value: domainInfo.domain.split('.')[0] },
+                  { label: 'Nome', value: domainRecord.domain.split('.')[0] },
                   { label: 'Valor', value: 'cname.eidosform.com', copyable: true },
                 ].map(({ label, value, copyable }) => (
                   <div key={label} className="flex items-center justify-between bg-white rounded-lg p-3 border border-amber-100">
@@ -155,26 +244,27 @@ export function DomainSettings({ isProfessional }: DomainSettingsProps) {
             </div>
           )}
 
-          {domainInfo.status === 'active' && (
+          {verifyStatus === 'active' && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
               <p className="text-sm text-emerald-700 font-medium">
                 ✅ Domínio ativo! Formulários acessíveis em{' '}
-                <a href={`https://${domainInfo.domain}`} target="_blank" rel="noopener noreferrer" className="underline font-semibold">
-                  {domainInfo.domain}
+                <a href={`https://${domainRecord.domain}`} target="_blank" rel="noopener noreferrer" className="underline font-semibold">
+                  {domainRecord.domain}
                 </a>
               </p>
             </div>
           )}
 
           <div className="flex gap-2">
-            {domainInfo.status === 'pending' && (
-              <Button onClick={handleVerify} className="bg-[#F5B731] hover:bg-[#E8923A] text-white">
-                Verificar DNS
-              </Button>
-            )}
-            {domainInfo.status === 'verifying' && (
-              <Button disabled className="bg-[#F5B731] text-white opacity-80">
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />Verificando...
+            {(verifyStatus === 'pending' || verifyStatus === 'error') && (
+              <Button
+                onClick={handleVerify}
+                disabled={verifying}
+                className="bg-[#F5B731] hover:bg-[#E8923A] text-white"
+              >
+                {verifying
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Verificando...</>
+                  : 'Verificar DNS'}
               </Button>
             )}
             <Button variant="outline" onClick={handleRemove} className="border-red-200 text-red-600 hover:bg-red-50">

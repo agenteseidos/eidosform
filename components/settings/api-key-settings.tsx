@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,35 +13,59 @@ interface ApiKeySettingsProps {
 }
 
 export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
-  const [apiKey, setApiKey] = useState<string | null>(null)
+  const [hasKey, setHasKey] = useState(false)
+  const [keyPreview, setKeyPreview] = useState<string | null>(null)
   const [newKey, setNewKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [fetching, setFetching] = useState(true)
   const [revoking, setRevoking] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
 
-  const generateKey = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-    const part = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-    return `ef_live_${part(8)}_${part(32)}`
-  }
+  // Fetch current API key status on mount
+  useEffect(() => {
+    if (!isProfessional) {
+      setFetching(false)
+      return
+    }
+    fetch('/api/settings/api-key')
+      .then(res => res.json())
+      .then(data => {
+        setHasKey(data.has_api_key || false)
+        setKeyPreview(data.api_key_preview || null)
+      })
+      .catch(() => {
+        toast.error('Erro ao carregar status da API Key')
+      })
+      .finally(() => setFetching(false))
+  }, [isProfessional])
 
   const handleGenerate = async () => {
     setLoading(true)
-    await new Promise(r => setTimeout(r, 1000))
-    const key = generateKey()
-    setApiKey(key)
-    setNewKey(key)
-    setShowKey(true)
-    setLoading(false)
-    toast.success('API Key gerada! Copie agora — não será exibida novamente.', {
-      duration: 6000,
-    })
+    try {
+      const res = await fetch('/api/settings/api-key', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao gerar API Key')
+        return
+      }
+      setHasKey(true)
+      setNewKey(data.api_key)
+      setKeyPreview(data.api_key.slice(0, 8) + '*'.repeat(Math.max(0, data.api_key.length - 12)) + data.api_key.slice(-4))
+      setShowKey(true)
+      toast.success('API Key gerada! Copie agora — não será exibida novamente.', {
+        duration: 6000,
+      })
+    } catch {
+      toast.error('Erro de rede ao gerar API Key')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const copyKey = () => {
-    if (apiKey) {
-      navigator.clipboard.writeText(apiKey)
+    if (newKey) {
+      navigator.clipboard.writeText(newKey)
       toast.success('API Key copiada!')
     }
   }
@@ -52,18 +76,25 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
       return
     }
     setRevoking(true)
-    await new Promise(r => setTimeout(r, 800))
-    setApiKey(null)
-    setNewKey(null)
-    setShowKey(false)
-    setConfirmRevoke(false)
-    setRevoking(false)
-    toast.success('API Key revogada com sucesso.')
+    try {
+      const res = await fetch('/api/settings/api-key', { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json()
+        toast.error(data.error || 'Erro ao revogar API Key')
+        return
+      }
+      setHasKey(false)
+      setNewKey(null)
+      setKeyPreview(null)
+      setShowKey(false)
+      setConfirmRevoke(false)
+      toast.success('API Key revogada com sucesso.')
+    } catch {
+      toast.error('Erro de rede ao revogar API Key')
+    } finally {
+      setRevoking(false)
+    }
   }
-
-  const maskedKey = apiKey
-    ? `${apiKey.slice(0, 15)}${'•'.repeat(24)}${apiKey.slice(-4)}`
-    : null
 
   if (!isProfessional) {
     return (
@@ -94,7 +125,12 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
         Use sua API Key para acessar o EidosForm programaticamente. Guarde em local seguro — ela não será exibida novamente após geração.
       </p>
 
-      {!apiKey ? (
+      {fetching ? (
+        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
+          <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+          <span className="text-sm text-slate-400">Carregando...</span>
+        </div>
+      ) : !hasKey ? (
         <div>
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4 flex items-center gap-3">
             <Key className="w-4 h-4 text-slate-500" />
@@ -120,7 +156,7 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
               <div className="flex items-center gap-2">
                 <Input
                   readOnly
-                  value={showKey ? newKey : maskedKey || ''}
+                  value={showKey ? newKey : (keyPreview || '')}
                   className="font-mono text-xs flex-1 bg-white border-[#F5B731]/40"
                 />
                 <Button variant="outline" size="sm" onClick={() => setShowKey(v => !v)} className="border-[#F5B731]/40">
@@ -133,10 +169,10 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
             </div>
           )}
 
-          {!newKey && (
+          {!newKey && keyPreview && (
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
               <Key className="w-4 h-4 text-slate-400" />
-              <span className="text-sm text-slate-600 font-mono">{maskedKey}</span>
+              <span className="text-sm text-slate-600 font-mono">{keyPreview}</span>
             </div>
           )}
 

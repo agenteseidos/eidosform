@@ -85,3 +85,24 @@ export async function GET(req: NextRequest) {
     plan: profile.plan,
   })
 }
+
+// DELETE /api/settings/api-key — revogar API key
+export async function DELETE(req: NextRequest) {
+  const supabase = await createClient()
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ api_key: null, api_key_created_at: null } as ProfileUpdate)
+    .eq('id', user.id)
+
+  if (updateError) {
+    return NextResponse.json({ error: 'Failed to revoke API key' }, { status: 500 })
+  }
+
+  return NextResponse.json({ message: 'API key revoked' })
+}

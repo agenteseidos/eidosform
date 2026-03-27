@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createServerClient } from '@supabase/ssr'
-import { checkRateLimit, checkRateLimitAsync } from '@/lib/rate-limit'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 // API pública: CORS aberto para permitir chamadas de qualquer domínio
 function getAllowedOrigin(): string {
@@ -22,7 +21,10 @@ export async function OPTIONS() {
 
 
 // Autenticar via X-API-Key header
-async function authenticateApiKey(req: NextRequest): Promise<{ userId: string; plan: string } | null> {
+async function authenticateApiKey(req: NextRequest): Promise<
+  | { ok: true; userId: string; plan: string }
+  | { ok: false; status: 401 | 429; error: string; retryAfter?: number }
+> {
   // Tenta X-API-Key primeiro (retrocompatível)
   let apiKey = req.headers.get('x-api-key')
 
@@ -34,7 +36,9 @@ async function authenticateApiKey(req: NextRequest): Promise<{ userId: string; p
     }
   }
 
-  if (!apiKey) return null
+  if (!apiKey) {
+    return { ok: false, status: 401, error: 'Unauthorized. Provide a valid X-API-Key header.' }
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,31 +48,38 @@ async function authenticateApiKey(req: NextRequest): Promise<{ userId: string; p
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('user_id, plan, api_key')
+    .select('id, plan, api_key')
     .eq('api_key', apiKey)
-    .single() as { data: { user_id: string; plan: string; api_key: string } | null }
+    .single() as { data: { id: string; plan: string; api_key: string } | null }
 
-  if (!profile) return null
-
-  // Verificar plano Professional
-  if (profile.plan !== 'professional' && profile.plan !== 'enterprise') {
-    return null
+  if (!profile) {
+    return { ok: false, status: 401, error: 'Unauthorized. Invalid API key.' }
   }
 
-  // Rate limit por API key
-  const limit = checkRateLimit(apiKey)
-  if (!limit.allowed) return null
+  if (profile.plan !== 'professional' && profile.plan !== 'enterprise') {
+    return { ok: false, status: 401, error: 'Unauthorized. Professional plan required.' }
+  }
 
-  return { userId: profile.user_id, plan: profile.plan }
+  const limit = await checkRateLimitAsync(apiKey)
+  if (!limit.allowed) {
+    return {
+      ok: false,
+      status: 429,
+      error: 'Rate limit exceeded for this API key.',
+      retryAfter: Math.ceil(limit.resetIn / 1000),
+    }
+  }
+
+  return { ok: true, userId: profile.id, plan: profile.plan }
 }
 
 // GET /api/v1/forms — listar formulários do usuário autenticado por API key
 export async function GET(req: NextRequest) {
   const auth = await authenticateApiKey(req)
-  if (!auth) {
+  if (!auth.ok) {
     return NextResponse.json(
-      { error: 'Unauthorized. Provide a valid X-API-Key header. Professional plan required.' },
-      { status: 401 }
+      { error: auth.error, retryAfter: auth.retryAfter },
+      { status: auth.status, headers: CORS_HEADERS }
     )
   }
 

@@ -13,31 +13,32 @@ interface ApiKeySettingsProps {
 }
 
 export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
-  const [hasKey, setHasKey] = useState(false)
-  const [keyPreview, setKeyPreview] = useState<string | null>(null)
+  const [hasApiKey, setHasApiKey] = useState(false)
+  const [apiKeyPreview, setApiKeyPreview] = useState<string | null>(null)
   const [newKey, setNewKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [fetching, setFetching] = useState(true)
   const [revoking, setRevoking] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
 
-  // Fetch current API key status on mount
+  // Load current API key status on mount
   useEffect(() => {
     if (!isProfessional) {
-      setFetching(false)
+      setInitialLoading(false)
       return
     }
+
     fetch('/api/settings/api-key')
-      .then(res => res.json())
-      .then(data => {
-        setHasKey(data.has_api_key || false)
-        setKeyPreview(data.api_key_preview || null)
+      .then((res) => res.json())
+      .then((data) => {
+        setHasApiKey(data.has_api_key ?? false)
+        setApiKeyPreview(data.api_key_preview ?? null)
       })
       .catch(() => {
-        toast.error('Erro ao carregar status da API Key')
+        // silently fail
       })
-      .finally(() => setFetching(false))
+      .finally(() => setInitialLoading(false))
   }, [isProfessional])
 
   const handleGenerate = async () => {
@@ -45,19 +46,20 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
     try {
       const res = await fetch('/api/settings/api-key', { method: 'POST' })
       const data = await res.json()
+
       if (!res.ok) {
         toast.error(data.error || 'Erro ao gerar API Key')
         return
       }
-      setHasKey(true)
+
       setNewKey(data.api_key)
-      setKeyPreview(data.api_key.slice(0, 8) + '*'.repeat(Math.max(0, data.api_key.length - 12)) + data.api_key.slice(-4))
+      setHasApiKey(true)
       setShowKey(true)
       toast.success('API Key gerada! Copie agora — não será exibida novamente.', {
         duration: 6000,
       })
     } catch {
-      toast.error('Erro de rede ao gerar API Key')
+      toast.error('Erro ao gerar API Key. Tente novamente.')
     } finally {
       setLoading(false)
     }
@@ -83,14 +85,14 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
         toast.error(data.error || 'Erro ao revogar API Key')
         return
       }
-      setHasKey(false)
+      setHasApiKey(false)
+      setApiKeyPreview(null)
       setNewKey(null)
-      setKeyPreview(null)
       setShowKey(false)
       setConfirmRevoke(false)
       toast.success('API Key revogada com sucesso.')
     } catch {
-      toast.error('Erro de rede ao revogar API Key')
+      toast.error('Erro ao revogar API Key. Tente novamente.')
     } finally {
       setRevoking(false)
     }
@@ -114,6 +116,17 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
     )
   }
 
+  if (initialLoading) {
+    return (
+      <Card className="p-6 mb-6">
+        <div className="flex items-center gap-3">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+          <span className="text-sm text-slate-500">Carregando configurações de API...</span>
+        </div>
+      </Card>
+    )
+  }
+
   return (
     <Card className="p-6 mb-6">
       <div className="flex items-center gap-3 mb-4">
@@ -125,12 +138,7 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
         Use sua API Key para acessar o EidosForm programaticamente. Guarde em local seguro — ela não será exibida novamente após geração.
       </p>
 
-      {fetching ? (
-        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
-          <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
-          <span className="text-sm text-slate-400">Carregando...</span>
-        </div>
-      ) : !hasKey ? (
+      {!hasApiKey ? (
         <div>
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4 flex items-center gap-3">
             <Key className="w-4 h-4 text-slate-500" />
@@ -148,7 +156,7 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
         </div>
       ) : (
         <div className="space-y-4">
-          {newKey && (
+          {newKey ? (
             <div className="bg-[#F5B731]/10 border border-[#F5B731]/30 rounded-xl p-4">
               <p className="text-xs font-semibold text-[#E8923A] mb-2">
                 ⚠️ Copie agora! Esta key não será exibida novamente.
@@ -156,7 +164,7 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
               <div className="flex items-center gap-2">
                 <Input
                   readOnly
-                  value={showKey ? newKey : (keyPreview || '')}
+                  value={showKey ? newKey : `${newKey.slice(0, 8)}${'•'.repeat(24)}${newKey.slice(-4)}`}
                   className="font-mono text-xs flex-1 bg-white border-[#F5B731]/40"
                 />
                 <Button variant="outline" size="sm" onClick={() => setShowKey(v => !v)} className="border-[#F5B731]/40">
@@ -167,14 +175,25 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
                 </Button>
               </div>
             </div>
-          )}
-
-          {!newKey && keyPreview && (
+          ) : (
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
               <Key className="w-4 h-4 text-slate-400" />
-              <span className="text-sm text-slate-600 font-mono">{keyPreview}</span>
+              <span className="text-sm text-slate-600 font-mono">{apiKeyPreview ?? '••••••••'}</span>
             </div>
           )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleGenerate}
+              disabled={loading}
+              variant="outline"
+              size="sm"
+            >
+              {loading
+                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Regenerando...</>
+                : <><RefreshCw className="w-3 h-3 mr-1" />Regenerar Key</>}
+            </Button>
+          </div>
 
           <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
             <ShieldAlert className="w-4 h-4 text-red-400" />

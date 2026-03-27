@@ -19,9 +19,10 @@ interface DomainRecord {
 
 interface DomainSettingsProps {
   isProfessional: boolean
+  defaultFormId?: string | null
 }
 
-export function DomainSettings({ isProfessional }: DomainSettingsProps) {
+export function DomainSettings({ isProfessional, defaultFormId }: DomainSettingsProps) {
   const [domain, setDomain] = useState('')
   const [domainRecord, setDomainRecord] = useState<DomainRecord | null>(null)
   const [verifyStatus, setVerifyStatus] = useState<DomainStatus | null>(null)
@@ -60,21 +61,25 @@ export function DomainSettings({ isProfessional }: DomainSettingsProps) {
       toast.error('Domínio inválido. Ex: formularios.suaempresa.com.br')
       return
     }
+
+    if (!defaultFormId) {
+      toast.error('Crie ao menos um formulário antes de configurar um domínio personalizado.')
+      return
+    }
+
     setLoading(true)
     try {
-      // We need a form_id — use a placeholder; the API requires it
-      // In a real flow, user would pick which form to associate
       const res = await fetch('/api/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain, form_id: 'default' }),
+        body: JSON.stringify({ domain, form_id: defaultFormId }),
       })
       const data = await res.json()
       if (!res.ok) {
         toast.error(data.error || 'Erro ao adicionar domínio')
         return
       }
-      setDomainRecord({ id: '', domain, verified: data.verified || false, form_id: 'default' })
+      setDomainRecord({ id: '', domain, verified: data.verified || false, form_id: defaultFormId })
       setVerifyStatus(data.verified ? 'active' : 'pending')
       toast.success('Domínio adicionado! Configure o CNAME para verificar.')
     } catch {
@@ -191,21 +196,28 @@ export function DomainSettings({ isProfessional }: DomainSettingsProps) {
           <span className="text-sm text-slate-400">Carregando...</span>
         </div>
       ) : !domainRecord ? (
-        <div className="flex gap-2">
-          <Input
-            placeholder="formularios.suaempresa.com.br"
-            value={domain}
-            onChange={e => setDomain(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            className="flex-1"
-          />
-          <Button
-            onClick={handleAdd}
-            disabled={loading || !domain}
-            className="bg-[#F5B731] hover:bg-[#E8923A] text-white font-medium"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Adicionar'}
-          </Button>
+        <div className="space-y-3">
+          {!defaultFormId && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Crie pelo menos um formulário para vincular o domínio personalizado.
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Input
+              placeholder="formularios.suaempresa.com.br"
+              value={domain}
+              onChange={e => setDomain(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              className="flex-1"
+            />
+            <Button
+              onClick={handleAdd}
+              disabled={loading || !domain || !defaultFormId}
+              className="bg-[#F5B731] hover:bg-[#E8923A] text-white font-medium"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Adicionar'}
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

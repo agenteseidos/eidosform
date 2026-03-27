@@ -25,12 +25,20 @@ export default async function SettingsPage() {
     .eq('id', user.id)
     .single()
 
+  const { data: forms } = await supabase
+    .from('forms')
+    .select('id')
+    .eq('user_id', user.id)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
   const initials = user.email?.slice(0, 2).toUpperCase() || 'U'
   const avatarUrl = user.user_metadata?.avatar_url
   const fullName = user.user_metadata?.full_name || ''
   const planKey = (profile?.plan ?? 'free') as string
   const currentPlan = planKey.charAt(0).toUpperCase() + planKey.slice(1)
   const isProfessional = planKey === 'professional' || planKey === 'enterprise'
+  const defaultDomainFormId = forms?.[0]?.id ?? null
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
@@ -84,7 +92,10 @@ export default async function SettingsPage() {
       </Card>
 
       {/* Domínio personalizado */}
-      <DomainSettings isProfessional={isProfessional} />
+      <DomainSettings
+        isProfessional={isProfessional}
+        defaultFormId={defaultDomainFormId}
+      />
 
       {/* API Key */}
       <ApiKeySettings isProfessional={isProfessional} />

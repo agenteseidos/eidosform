@@ -1,9 +1,9 @@
 import type { ProfileUpdate } from '@/lib/database.types'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 // POST /api/settings/api-key — gerar/regenerar API key
-export async function POST(req: NextRequest) {
+export async function POST() {
   const supabase = await createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/settings/api-key — obter status da API key
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = await createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
 }
 
 // DELETE /api/settings/api-key — revogar API key
-export async function DELETE(req: NextRequest) {
+export async function DELETE() {
   const supabase = await createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()

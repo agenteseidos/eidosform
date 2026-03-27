@@ -33,9 +33,14 @@ export async function updateSession(request: NextRequest) {
   )
 
   // Do not run code between createServerClient and supabase.auth.getUser()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data?.user ?? null
+  } catch {
+    // Auth check failed — treat as unauthenticated
+    user = null
+  }
 
   // Define protected routes
   const protectedRoutes = ['/dashboard', '/forms']
@@ -48,7 +53,7 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('redirect', request.nextUrl.pathname)
-    return NextResponse.redirect(url)
+    return NextResponse.redirect(url, 307)
   }
 
   // Redirect to dashboard if already logged in and accessing login page

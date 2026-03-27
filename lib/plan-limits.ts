@@ -260,7 +260,7 @@ export async function checkFormLimit(userId: string): Promise<{ allowed: boolean
   const { count } = await supabase
     .from('forms')
     .select('id', { count: 'exact', head: true })
-    .eq('id', userId)
+    .eq('user_id', userId)
 
   const usage = count ?? 0
   return { allowed: usage < limits.maxForms, usage, limit: limits.maxForms }

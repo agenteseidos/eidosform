@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
 import { questionTypes, createDefaultQuestion, getQuestionTypeInfo } from '@/lib/questions'
 import { themes, themeList } from '@/lib/themes'
@@ -50,7 +49,6 @@ interface FormBuilderProps {
 
 export function FormBuilder({ form: initialForm }: FormBuilderProps) {
   const router = useRouter()
-  const supabase = createClient()
   
   const [form, setForm] = useState(initialForm)
   const [pixels, setPixels] = useState(initialForm.pixels || {})
@@ -69,36 +67,52 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
 
   const handleSave = useCallback(async () => {
     setIsSaving(true)
-    const updateData = {
-      title: form.title,
-      description: form.description,
-      slug: form.slug,
-      theme: form.theme,
-      questions: questions,
-      thank_you_message: form.thank_you_message,
-      thank_you_title: form.thank_you_title || null,
-      thank_you_description: form.thank_you_description || null,
-      thank_you_button_text: form.thank_you_button_text || null,
-      thank_you_button_url: form.thank_you_button_url || null,
-      pixels: pixels,
-      redirect_url: form.redirect_url || null,
-      webhook_url: form.webhook_url || null,
-      pixel_event_on_start: (form as any).pixel_event_on_start || null,
-      pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
-    }
-    const { error } = await supabase
-      .from('forms')
-      .update(updateData as never)
-      .eq('id', form.id)
 
-    if (error) {
-      toast.error('Falha ao salvar formulário')
-    } else {
+    try {
+      const updateData = {
+        title: form.title,
+        description: form.description,
+        slug: form.slug,
+        theme: form.theme,
+        questions,
+        thank_you_message: form.thank_you_message,
+        thank_you_title: form.thank_you_title || null,
+        thank_you_description: form.thank_you_description || null,
+        thank_you_button_text: form.thank_you_button_text || null,
+        thank_you_button_url: form.thank_you_button_url || null,
+        pixels,
+        redirect_url: form.redirect_url || null,
+        webhook_url: form.webhook_url || null,
+        pixel_event_on_start: (form as any).pixel_event_on_start || null,
+        pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
+      }
+
+      const res = await fetch(`/api/forms/${form.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData),
+      })
+
+      const data = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        toast.error(data?.error ?? 'Falha ao salvar formulário')
+        return
+      }
+
+      if (data?.form) {
+        setForm(data.form)
+        setPixels(data.form.pixels || {})
+        setQuestions((data.form.questions as QuestionConfig[]) || [])
+      }
+
       toast.success('Formulário salvo')
       setHasUnsavedChanges(false)
+      router.refresh()
+    } finally {
+      setIsSaving(false)
     }
-    setIsSaving(false)
-  }, [supabase, form, questions, pixels])
+  }, [form, questions, pixels, router])
 
   const handlePublish = async () => {
     if (questions.length === 0) {
@@ -108,42 +122,56 @@ export function FormBuilder({ form: initialForm }: FormBuilderProps) {
 
     setIsSaving(true)
     const newStatus: FormStatus = form.status === 'published' ? 'closed' : 'published'
-    
-    const updateData = {
-      status: newStatus,
-      is_published: newStatus === 'published',
-      questions: questions,
-      title: form.title,
-      description: form.description,
-      slug: form.slug,
-      theme: form.theme,
-      thank_you_message: form.thank_you_message,
-      thank_you_title: form.thank_you_title || null,
-      thank_you_description: form.thank_you_description || null,
-      thank_you_button_text: form.thank_you_button_text || null,
-      thank_you_button_url: form.thank_you_button_url || null,
-      pixels: pixels,
-      redirect_url: form.redirect_url || null,
-      webhook_url: form.webhook_url || null,
-      pixel_event_on_start: (form as any).pixel_event_on_start || null,
-      pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
-    }
-    const { data: updated, error } = await supabase
-      .from('forms')
-      .update(updateData as never)
-      .eq('id', form.id)
-      .select('id, status, is_published')
 
-    if (error || !updated || updated.length === 0) {
-      toast.error('Falha ao atualizar status')
-      console.error('Publish update failed:', error, 'rows:', updated)
-    } else {
-      setForm(prev => ({ ...prev, status: newStatus }))
+    try {
+      const updateData = {
+        status: newStatus,
+        questions,
+        title: form.title,
+        description: form.description,
+        slug: form.slug,
+        theme: form.theme,
+        thank_you_message: form.thank_you_message,
+        thank_you_title: form.thank_you_title || null,
+        thank_you_description: form.thank_you_description || null,
+        thank_you_button_text: form.thank_you_button_text || null,
+        thank_you_button_url: form.thank_you_button_url || null,
+        pixels,
+        redirect_url: form.redirect_url || null,
+        webhook_url: form.webhook_url || null,
+        pixel_event_on_start: (form as any).pixel_event_on_start || null,
+        pixel_event_on_complete: (form as any).pixel_event_on_complete || null,
+      }
+
+      const res = await fetch(`/api/forms/${form.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData),
+      })
+
+      const data = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        toast.error(data?.error ?? 'Falha ao atualizar status')
+        console.error('Publish update failed:', data)
+        return
+      }
+
+      if (data?.form) {
+        setForm(data.form)
+        setPixels(data.form.pixels || {})
+        setQuestions((data.form.questions as QuestionConfig[]) || [])
+      } else {
+        setForm(prev => ({ ...prev, status: newStatus }))
+      }
+
       toast.success(newStatus === 'published' ? 'Formulário publicado!' : 'Formulário despublicado')
       setShowPublishDialog(false)
       setHasUnsavedChanges(false)
+      router.refresh()
+    } finally {
+      setIsSaving(false)
     }
-    setIsSaving(false)
   }
 
   const addQuestion = (type: QuestionConfig['type']) => {

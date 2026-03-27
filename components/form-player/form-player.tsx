@@ -23,6 +23,19 @@ function ensureHttps(url: string): string {
   return 'https://' + url
 }
 
+function getResponsesApiUrl(): string {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
+  if (appUrl) {
+    return `${appUrl.replace(/\/$/, '')}/api/responses`
+  }
+
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api/responses`
+  }
+
+  return '/api/responses'
+}
+
 export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const questions = (form.questions as QuestionConfig[]) || []
   const theme = getTheme(form.theme)
@@ -151,7 +164,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (responseId) headers['x-response-id'] = responseId
 
-      const res = await fetch('/api/responses', {
+      const res = await fetch(getResponsesApiUrl(), {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -201,7 +214,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (responseId) headers['x-response-id'] = responseId
 
-      const res = await fetch('/api/responses', {
+      const res = await fetch(getResponsesApiUrl(), {
         method: 'POST',
         headers,
         body: JSON.stringify({

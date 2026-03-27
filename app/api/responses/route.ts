@@ -7,6 +7,11 @@ import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 
+// Maximum payload size (50KB — generous for form data, blocks abuse)
+const MAX_PAYLOAD_BYTES = 50 * 1024
+// Maximum number of answer keys (prevents flooding with fake question ids)
+const MAX_ANSWER_KEYS = 200
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -58,17 +63,44 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Payload size check (defense against large payloads)
+  const contentLength = req.headers.get('content-length')
+  if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_BYTES) {
+    return NextResponse.json(
+      { error: 'Payload muito grande' },
+      { status: 413, headers: CORS_HEADERS }
+    )
+  }
+
   // Use service-role client for anonymous submissions (no auth required)
   const supabase = createPublicClient()
 
   // Bug #6: Catch invalid JSON
+  let rawBody: string
   let body: Record<string, unknown>
   try {
-    body = await req.json()
+    rawBody = await req.text()
+    if (rawBody.length > MAX_PAYLOAD_BYTES) {
+      return NextResponse.json(
+        { error: 'Payload muito grande' },
+        { status: 413, headers: CORS_HEADERS }
+      )
+    }
+    body = JSON.parse(rawBody)
   } catch {
     return NextResponse.json({ error: 'Dados inválidos' }, { status: 400, headers: CORS_HEADERS })
   }
+
   const { form_id, last_question_answered } = body
+
+  // Honeypot: if _hp_ field is filled, silently accept but don't save (bot trap)
+  if (body._hp_ && String(body._hp_).length > 0) {
+    return NextResponse.json(
+      { response_id: 'ok', completed: true },
+      { status: 201, headers: CORS_HEADERS }
+    )
+  }
+
   // Bug #9: Sanitize answers
   const answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
 
@@ -76,8 +108,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'ID do formulário é obrigatório' }, { status: 400, headers: CORS_HEADERS })
   }
 
+  // Validate form_id is UUID format (prevents probing)
+  if (typeof form_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(form_id)) {
+    return NextResponse.json({ error: 'ID do formulário inválido' }, { status: 400, headers: CORS_HEADERS })
+  }
+
   if (!answers || typeof answers !== 'object') {
     return NextResponse.json({ error: 'Respostas em formato inválido' }, { status: 400, headers: CORS_HEADERS })
+  }
+
+  // Limit number of answer keys to prevent abuse
+  if (Object.keys(answers).length > MAX_ANSWER_KEYS) {
+    return NextResponse.json({ error: 'Número de respostas excede o limite' }, { status: 400, headers: CORS_HEADERS })
   }
 
   // Verificar se o formulário existe e está publicado
@@ -178,6 +220,7 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/responses — list responses for authenticated user
+// Note: Uses admin client to bypass RLS, but auth is enforced via getRequestUser()
 export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
   const user = await getRequestUser(req)

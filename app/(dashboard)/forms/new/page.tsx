@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { v4 as uuidv4 } from 'uuid'
 import { FormInsert } from '@/lib/database.types'
+import { checkFormLimit } from '@/lib/plan-limits'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +17,12 @@ export default async function NewFormPage() {
 
   if (!user) {
     redirect('/login')
+  }
+
+  // Check form limit before creating
+  const formLimit = await checkFormLimit(user.id)
+  if (!formLimit.allowed) {
+    redirect('/dashboard?error=form_limit')
   }
 
   // Create a new form

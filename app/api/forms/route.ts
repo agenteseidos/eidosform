@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { FormInsert, FormStatus } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
 import { getRequestUser } from '@/lib/supabase/request-auth'
+import { checkFormLimit } from '@/lib/plan-limits'
 
 // T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -60,6 +61,15 @@ export async function POST(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Check form limit before allowing creation
+  const formLimit = await checkFormLimit(user.id)
+  if (!formLimit.allowed) {
+    return NextResponse.json(
+      { error: `Limite de formulários atingido (${formLimit.usage}/${formLimit.limit}). Faça upgrade do plano.` },
+      { status: 403 }
+    )
   }
 
   const body = await req.json()

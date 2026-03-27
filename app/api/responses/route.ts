@@ -1,7 +1,8 @@
 import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createPublicClient } from '@/lib/supabase/public'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkResponseRateLimit } from '@/lib/response-rate-limit'
@@ -178,8 +179,8 @@ export async function POST(req: NextRequest) {
 
 // GET /api/responses — list responses for authenticated user
 export async function GET(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const supabase = createAdminClient()
+  const user = await getRequestUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

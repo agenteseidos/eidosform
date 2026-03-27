@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { FormInsert, FormStatus } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
+import { getRequestUser } from '@/lib/supabase/request-auth'
 
 // T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -15,9 +16,9 @@ function ensureHttps(url: string): string {
 // GET /api/forms — list all forms for authenticated user
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
+  const user = await getRequestUser(req)
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -55,14 +56,14 @@ export async function GET(req: NextRequest) {
 // POST /api/forms — create new form
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
+  const user = await getRequestUser(req)
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const body = await req.json()
-  const { title, description, slug, theme, questions, thank_you_message, pixels, plan, redirect_url, webhook_url } = body
+  const { title, description, slug, theme, questions, thank_you_message, pixels, redirect_url, webhook_url } = body
 
   if (!title || !slug) {
     return NextResponse.json({ error: 'title and slug are required' }, { status: 400 })

@@ -12,6 +12,23 @@ const MAX_PAYLOAD_BYTES = 50 * 1024
 // Maximum number of answer keys (prevents flooding with fake question ids)
 const MAX_ANSWER_KEYS = 200
 
+// SECURITY NOTE: CORS * is intentional — this endpoint must be callable from any
+// domain where forms are embedded (custom domains, landing pages, etc.).
+// The service_role key is used server-side only (never exposed to the client).
+// Protection layers:
+//   1. Rate limit per IP (10 req/min via Supabase RPC + in-memory fallback)
+//   2. Honeypot field (_hp_) to trap bots
+//   3. Payload size + answer key count limits
+//   4. Form must exist and be 'published' (validated before insert)
+//   5. Response limit per user plan (prevents infinite submissions)
+//   6. UUID format validation on form_id (prevents probing)
+//   7. Input sanitization (HTML tag stripping)
+//
+// TODO [SECURITY]: Add optional Turnstile/hCaptcha validation per form.
+//   Form owner enables in settings, form-player sends cf-turnstile-response token,
+//   this endpoint validates with Cloudflare before accepting submission.
+//   See: https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -57,9 +74,18 @@ export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
   const rateCheck = await checkResponseRateLimitAsync(ip)
   if (!rateCheck.allowed) {
+    const retryAfter = Math.ceil(rateCheck.resetIn / 1000)
     return NextResponse.json(
-      { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter: Math.ceil(rateCheck.resetIn / 1000) },
-      { status: 429, headers: CORS_HEADERS }
+      { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter },
+      {
+        status: 429,
+        headers: {
+          ...CORS_HEADERS,
+          'Retry-After': String(retryAfter),
+          'X-RateLimit-Limit': '10',
+          'X-RateLimit-Remaining': '0',
+        },
+      }
     )
   }
 
@@ -216,11 +242,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ response_id: responseId, completed }, { status: existingResponseId ? 200 : 201, headers: CORS_HEADERS })
+  return NextResponse.json({ response_id: responseId, completed }, {
+    status: existingResponseId ? 200 : 201,
+    headers: {
+      ...CORS_HEADERS,
+      'X-RateLimit-Limit': '10',
+      'X-RateLimit-Remaining': String(rateCheck.remaining),
+    },
+  })
 }
 
 // GET /api/responses — list responses for authenticated user
 // Note: Uses admin client to bypass RLS, but auth is enforced via getRequestUser()
+// No CORS headers on GET — this is an authenticated dashboard endpoint, not public
 export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
   const user = await getRequestUser(req)

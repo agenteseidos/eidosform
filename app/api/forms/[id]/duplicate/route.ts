@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { FormInsert } from '@/lib/database.types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
+import { checkFormLimit } from '@/lib/plan-limits'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -39,6 +40,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const user = await getRequestUser(req)
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Enforce form limit before duplicating
+  const formLimit = await checkFormLimit(user.id)
+  if (!formLimit.allowed) {
+    return NextResponse.json(
+      { error: `Limite de formulários atingido (${formLimit.usage}/${formLimit.limit}). Faça upgrade do plano.` },
+      { status: 403 }
+    )
   }
 
   const { id } = await params

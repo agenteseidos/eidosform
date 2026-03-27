@@ -1,13 +1,11 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ArrowLeft, User, CreditCard, Trash2, LogOut } from 'lucide-react'
+import { ArrowLeft, CreditCard } from 'lucide-react'
 import Link from 'next/link'
+import { ProfileSettings } from '@/components/settings/profile-settings'
 import { DomainSettings } from '@/components/settings/domain-settings'
 import { ApiKeySettings } from '@/components/settings/api-key-settings'
 import { PasswordSettings } from '@/components/settings/password-settings'
@@ -50,54 +48,13 @@ export default async function SettingsPage() {
       </div>
 
       {/* Perfil */}
-      <Card className="p-6 mb-6">
-        <div className="flex items-center gap-3 mb-6">
-          <User className="w-5 h-5 text-slate-500" />
-          <h2 className="text-lg font-semibold text-slate-900">Perfil</h2>
-        </div>
-
-        <div className="flex items-center gap-4 mb-6">
-          <Avatar className="h-16 w-16">
-            <AvatarImage src={avatarUrl} alt={user.email || 'Usuário'} />
-            <AvatarFallback className="bg-blue-600 text-white text-xl font-semibold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-medium text-slate-900">{fullName || user.email}</p>
-            <p className="text-sm text-slate-500">{user.email}</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Membro desde {new Date(user.created_at).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="name">Nome completo</Label>
-            <Input
-              id="name"
-              defaultValue={fullName}
-              placeholder="Seu nome"
-              className="mt-1.5"
-            />
-          </div>
-          <div>
-            <Label htmlFor="email">E-mail</Label>
-            <Input
-              id="email"
-              type="email"
-              value={user.email || ''}
-              disabled
-              className="mt-1.5 bg-slate-50 text-slate-500"
-            />
-            <p className="text-xs text-slate-400 mt-1">O e-mail não pode ser alterado</p>
-          </div>
-          <Button className="bg-blue-600 hover:bg-blue-700">
-            Salvar alterações
-          </Button>
-        </div>
-      </Card>
+      <ProfileSettings
+        email={user.email || ''}
+        fullName={fullName}
+        avatarUrl={avatarUrl}
+        initials={initials}
+        memberSince={new Date(user.created_at).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+      />
 
       {/* Alterar Senha */}
       <PasswordSettings />

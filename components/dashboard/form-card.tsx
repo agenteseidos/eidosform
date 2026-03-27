@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Form, FormStatus } from '@/lib/database.types'
 import { DeleteFormButton } from './delete-form-button'
+import { DuplicateFormButton } from './duplicate-form-button'
 import { toast } from 'sonner'
 
 interface FormCardProps {
@@ -108,6 +109,7 @@ export function FormCard({ form, responseCount }: FormCardProps) {
                 Respostas
               </Link>
             </DropdownMenuItem>
+            <DuplicateFormButton formId={form.id} />
             <DropdownMenuItem 
               onClick={copyFormLink}
               className="cursor-pointer"

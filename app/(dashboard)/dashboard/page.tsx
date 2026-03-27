@@ -49,9 +49,14 @@ export default async function DashboardPage() {
         <div className="flex items-center gap-3">
           <TemplatesGallery />
           <Link href="/forms/new">
-            <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
+            <Button className="hidden sm:flex bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
               <Plus className="w-4 h-4 mr-2" />
               Criar Formulário
+            </Button>
+          </Link>
+          <Link href="/forms/new">
+            <Button size="icon" className="flex sm:hidden bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5" aria-label="Criar formulário">
+              <Plus className="w-4 h-4" />
             </Button>
           </Link>
         </div>

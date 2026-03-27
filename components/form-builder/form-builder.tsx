@@ -42,7 +42,6 @@ import {
   Pencil,
   Upload,
   Loader2,
-  ImageIcon,
 } from 'lucide-react'
 import Link from 'next/link'
 import { QuestionEditor } from './question-editor'
@@ -147,18 +146,24 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       welcome_button_text: form.welcome_button_text || null,
       welcome_image_url: form.welcome_image_url || null,
     }
-    const { error } = await supabase
-      .from('forms')
-      .update(updateData)
-      .eq('id', form.id)
 
-    if (error) {
-      toast.error('Falha ao salvar formulário')
-    } else {
+    try {
+      const { error } = await supabase
+        .from('forms')
+        .update(updateData)
+        .eq('id', form.id)
+
+      if (error) {
+        toast.error('Falha ao salvar formulário')
+        return false
+      }
+
       toast.success('Formulário salvo')
       setHasUnsavedChanges(false)
+      return true
+    } finally {
+      setIsSaving(false)
     }
-    setIsSaving(false)
   }, [supabase, form, questions, pixels])
 
   const handlePublish = async () => {
@@ -1009,7 +1014,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
             </Button>
             <Button
               onClick={async () => {
-                await handleSave()
+                const saved = await handleSave()
+                if (!saved) return
                 setShowLeaveDialog(false)
                 router.push('/dashboard')
               }}

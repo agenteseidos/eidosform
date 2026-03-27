@@ -1,7 +1,7 @@
 import type { ResponseInsert, AnswerItemInsert } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { checkRateLimit, checkRateLimitAsync } from '@/lib/rate-limit'
 
 // API pública: CORS aberto para permitir chamadas de qualquer domínio
 function getAllowedOrigin(): string {

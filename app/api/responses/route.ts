@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
-import { checkResponseRateLimit } from '@/lib/response-rate-limit'
+import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -50,7 +50,7 @@ function isResponseComplete(
 export async function POST(req: NextRequest) {
   // Bug #2: Rate limit — max 10 per minute per IP
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
-  const rateCheck = checkResponseRateLimit(ip)
+  const rateCheck = await checkResponseRateLimitAsync(ip)
   if (!rateCheck.allowed) {
     return NextResponse.json(
       { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter: Math.ceil(rateCheck.resetIn / 1000) },

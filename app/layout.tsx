@@ -39,9 +39,9 @@ export const metadata: Metadata = {
     type: 'website',
     images: [
       {
-        url: '/logo-full-dark.png',
+        url: '/og-image.png',
         width: 1200,
-        height: 400,
+        height: 630,
         alt: 'EidosForm — Formulários que convertem',
       },
     ],

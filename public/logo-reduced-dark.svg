@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 60">
+  <rect width="280" height="60" fill="#0A0A0A"/>
+  <!-- Icon: 3 pills, yellow→green→blue top→bottom, left-aligned -->
+  <rect x="14" y="13" width="32" height="7" rx="3.5" fill="#F5C518"/>
+  <rect x="14" y="23.5" width="24" height="7" rx="3.5" fill="#2ECC71"/>
+  <rect x="14" y="34" width="16" height="7" rx="3.5" fill="#2980B9"/>
+  <!-- Wordmark -->
+  <text x="58" y="37" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="30" font-weight="600" fill="#FFFFFF">EidosForm</text>
+</svg>

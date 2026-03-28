@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import Image from 'next/image'
 
 interface WatermarkProps {
   plan?: 'free' | 'starter' | 'plus' | 'professional'
@@ -17,8 +16,8 @@ export function EidosFormWatermark({ plan = 'free' }: WatermarkProps) {
         rel="noopener noreferrer"
         className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors group"
       >
-        <Image
-          src="/logo-icon-only.png"
+        <img
+          src="/logo-icon-only.svg"
           alt="EidosForm"
           width={16}
           height={16}

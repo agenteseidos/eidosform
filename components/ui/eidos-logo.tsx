@@ -4,15 +4,30 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
+const LOGO_MAP = {
+  full: {
+    dark: { src: '/logo-full-dark.png', width: 1200, height: 400 },
+    light: { src: '/logo-full-light.png', width: 1200, height: 400 },
+  },
+  reduced: {
+    dark: { src: '/logo-reduced-dark.png', width: 800, height: 200 },
+    light: { src: '/logo-reduced-light.png', width: 800, height: 200 },
+  },
+  icon: {
+    dark: { src: '/logo-icon-only.png', width: 200, height: 200 },
+    light: { src: '/logo-icon-only.png', width: 200, height: 200 },
+  },
+} as const
+
 export interface EidosLogoProps {
-  /** "full" = ícone + "EidosForm" + tagline | "reduced" = ícone + "EidosForm" */
-  variant?: 'full' | 'reduced'
-  /** "dark" = textos brancos (fundo escuro) | "light" = textos azul escuro (fundo claro) */
+  /** "full" = logo + tagline | "reduced" = logo sem tagline | "icon" = só ícone */
+  variant?: 'full' | 'reduced' | 'icon'
+  /** "dark" = para fundo escuro | "light" = para fundo claro */
   theme?: 'dark' | 'light'
   /** Se definido, envolve a logo num Link */
   href?: string
-  /** Tamanho do ícone em pixels */
-  size?: number
+  /** Altura da logo em pixels (largura calculada proporcionalmente) */
+  height?: number
   className?: string
 }
 
@@ -20,38 +35,22 @@ export function EidosLogo({
   variant = 'full',
   theme = 'dark',
   href,
-  size = 32,
+  height = 40,
   className,
 }: EidosLogoProps) {
-  const textColor = theme === 'dark' ? 'text-white' : 'text-[#1E3A5F]'
-  const taglineColor = theme === 'dark' ? 'text-slate-400' : 'text-slate-500'
+  const logo = LOGO_MAP[variant][theme]
+  const aspectRatio = logo.width / logo.height
+  const computedWidth = Math.round(height * aspectRatio)
 
-  // Proporção do texto relativa ao ícone
-  const titleSize = size >= 40 ? 'text-2xl' : size >= 32 ? 'text-xl' : 'text-lg'
-  const taglineSize = size >= 40 ? 'text-sm' : 'text-xs'
-
-  const content = (
-    <div className={cn('flex items-center gap-2.5', className)}>
-      <Image
-        src="/logo-eidosform.png"
-        alt="EidosForm"
-        width={size}
-        height={size}
-        className="flex-shrink-0 object-contain"
-        priority
-      />
-      <div className="flex flex-col">
-        <span className={cn(titleSize, 'font-bold tracking-tight leading-tight', textColor)}>
-          <span style={{ color: '#F5B731' }}>Eidos</span>
-          <span className={theme === 'dark' ? 'text-white' : ''} style={theme === 'light' ? { color: '#1E3A5F' } : undefined}>Form</span>
-        </span>
-        {variant === 'full' && (
-          <span className={cn(taglineSize, 'leading-tight', taglineColor)}>
-            Formulários que convertem
-          </span>
-        )}
-      </div>
-    </div>
+  const image = (
+    <Image
+      src={logo.src}
+      alt="EidosForm"
+      width={computedWidth}
+      height={height}
+      className={cn('object-contain', className)}
+      priority
+    />
   )
 
   if (href) {
@@ -61,10 +60,10 @@ export function EidosLogo({
         className="focus:outline-none focus-visible:ring-2 rounded inline-flex"
         style={{ '--tw-ring-color': '#F5B731' } as React.CSSProperties}
       >
-        {content}
+        {image}
       </Link>
     )
   }
 
-  return content
+  return image
 }

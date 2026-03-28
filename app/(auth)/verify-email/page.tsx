@@ -54,7 +54,7 @@ function VerifyEmailContent() {
         className="w-full max-w-md px-6 sm:px-8 text-center relative z-10"
       >
         <div className="flex justify-center mb-8">
-          <EidosLogo variant="full" theme="dark" href="/" size={40} />
+          <EidosLogo variant="full" theme="dark" href="/" height={40} />
         </div>
 
         <div className="bg-[#111111] rounded-2xl shadow-xl shadow-black/20 p-8 border border-white/5">

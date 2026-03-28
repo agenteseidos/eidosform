@@ -18,7 +18,7 @@ export function EidosFormWatermark({ plan = 'free' }: WatermarkProps) {
         className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors group"
       >
         <Image
-          src="/logo-eidosform.png"
+          src="/logo-icon-only.png"
           alt="EidosForm"
           width={16}
           height={16}

@@ -12,7 +12,7 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#0A0A0F]/80 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <EidosLogo variant="reduced" theme="dark" href="/" size={28} />
+          <EidosLogo variant="reduced" theme="dark" href="/" height={28} />
           <div className="hidden md:flex items-center gap-8 text-sm text-slate-400">
             <a href="#recursos" className="hover:text-white transition-colors">Recursos</a>
             <a href="#como-funciona" className="hover:text-white transition-colors">Como funciona</a>
@@ -299,7 +299,7 @@ export default function LandingPage() {
           <div className="grid sm:grid-cols-4 gap-8 mb-10">
             <div>
               <div className="mb-4">
-                <EidosLogo variant="full" theme="dark" href="/" size={24} />
+                <EidosLogo variant="full" theme="dark" href="/" height={24} />
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
                 Formulários conversacionais que as pessoas querem responder.

@@ -54,7 +54,7 @@ export default function ForgotPasswordPage() {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center">
-            <EidosLogo variant="full" theme="dark" href="/" size={40} />
+            <EidosLogo variant="full" theme="dark" href="/" height={40} />
           </div>
           <p className="mt-3 text-slate-400">Recupere o acesso à sua conta</p>
         </div>

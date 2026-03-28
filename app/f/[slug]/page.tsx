@@ -64,9 +64,9 @@ export async function generateMetadata({ params }: FormPageProps) {
       type: 'website',
       images: [
         {
-          url: '/og-image.png',
+          url: '/logo-full-dark.png',
           width: 1200,
-          height: 630,
+          height: 400,
           alt: title,
         },
       ],

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 interface WatermarkProps {
   plan?: 'free' | 'starter' | 'plus' | 'professional'
@@ -16,18 +17,13 @@ export function EidosFormWatermark({ plan = 'free' }: WatermarkProps) {
         rel="noopener noreferrer"
         className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors group"
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          className="opacity-60 group-hover:opacity-100 transition-opacity"
-        >
-          <rect x="3" y="3" width="8" height="8" rx="2" fill="currentColor" />
-          <rect x="13" y="3" width="8" height="8" rx="2" fill="currentColor" opacity="0.5" />
-          <rect x="3" y="13" width="8" height="8" rx="2" fill="currentColor" opacity="0.5" />
-          <rect x="13" y="13" width="8" height="8" rx="2" fill="currentColor" opacity="0.25" />
-        </svg>
+        <Image
+          src="/logo-eidosform.png"
+          alt="EidosForm"
+          width={16}
+          height={16}
+          className="opacity-60 group-hover:opacity-100 transition-opacity object-contain"
+        />
         <span>
           Criado com{' '}
           <span className="font-medium text-gray-500 group-hover:text-gray-700">EidosForm</span>

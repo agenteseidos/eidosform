@@ -33,6 +33,7 @@ import {
   Eye,
 
   Globe,
+  RefreshCw,
   X,
   ExternalLink,
   Copy,
@@ -287,11 +288,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     }
 
     setIsSaving(true)
-    const newStatus: FormStatus = form.status === 'published' ? 'closed' : 'published'
+    const newStatus: FormStatus = 'published'
     
     const updateData = {
       status: newStatus,
-      is_published: newStatus === 'published',
+      is_published: true,
       questions: questions,
       title: form.title,
       description: form.description,
@@ -324,7 +325,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       console.error('Publish update failed:', error, 'rows:', updated)
     } else {
       setForm(prev => ({ ...prev, status: newStatus }))
-      toast.success(newStatus === 'published' ? 'Formulário publicado!' : 'Formulário despublicado')
+      toast.success(form.status === 'published' ? 'Alterações publicadas!' : 'Formulário publicado!')
       setShowPublishDialog(false)
       setHasUnsavedChanges(false)
     }
@@ -499,15 +500,12 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-semibold px-5'
               }
             >
-              <Globe className="w-4 h-4 mr-1.5" />
-              <span className="hidden sm:inline">
-                {form.status === 'published' && hasUnsavedChanges
-                  ? 'Republicar'
-                  : form.status === 'published'
-                    ? 'Despublicar'
-                    : 'Publicar'
-                }
-              </span>
+              {form.status === 'published' && hasUnsavedChanges ? (
+                <RefreshCw className="w-4 h-4 mr-1.5" />
+              ) : (
+                <Globe className="w-4 h-4 mr-1.5" />
+              )}
+              <span className="hidden sm:inline">Publicar</span>
             </Button>
 
             {/* B20: Avatar do usuário no header */}
@@ -537,7 +535,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden pb-14 md:pb-0">
         {/* Sidebar */}
-        <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:min-w-[280px] bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
+        <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:min-w-[280px] bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden overflow-y-auto`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
             {/* Mobile-only tab selector (desktop tabs are in the header) */}
             <div className="shrink-0 p-2 border-b border-slate-100 md:hidden">
@@ -550,9 +548,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   <Palette className="w-3 h-3 mr-1" />
                   Design
                 </TabsTrigger>
-                <TabsTrigger value="settings" className="text-xs px-1" title="Configurações">
-                  <Settings className="w-3 h-3 mr-0.5 shrink-0" />
-                  <span className="truncate">Config</span>
+                <TabsTrigger value="settings" className="text-xs px-1.5" title="Configurações">
+                  <Settings className="w-3 h-3 mr-1 shrink-0" />
+                  <span className="whitespace-nowrap">Configurações</span>
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -1151,22 +1149,20 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {form.status === 'published' ? 'Despublicar formulário?' : 'Publicar formulário?'}
+              {form.status === 'published' ? 'Publicar alterações?' : 'Publicar formulário?'}
             </DialogTitle>
             <DialogDescription>
-              {form.status === 'published' 
-                ? 'Isso tornará seu formulário inacessível. As respostas existentes serão mantidas.'
+              {form.status === 'published'
+                ? 'As alterações atuais serão aplicadas na versão publicada do formulário.'
                 : 'Seu formulário ficará acessível em:'
               }
             </DialogDescription>
           </DialogHeader>
-          {form.status !== 'published' && (
-            <div className="p-3 bg-slate-50 rounded-lg">
-              <code className="text-sm text-blue-600">
-                {typeof window !== 'undefined' ? window.location.origin : ''}/f/{form.slug}
-              </code>
-            </div>
-          )}
+          <div className="p-3 bg-slate-50 rounded-lg">
+            <code className="text-sm text-blue-600">
+              {typeof window !== 'undefined' ? window.location.origin : ''}/f/{form.slug}
+            </code>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPublishDialog(false)}>
               Cancelar
@@ -1175,11 +1171,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               onClick={handlePublish}
               disabled={isSaving}
               className={form.status === 'published' 
-                ? 'bg-amber-500 hover:bg-amber-600' 
+                ? 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20' 
                 : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20'
               }
             >
-              {isSaving ? 'Salvando...' : form.status === 'published' ? 'Despublicar' : 'Publicar'}
+              {isSaving ? 'Salvando...' : 'Publicar'}
             </Button>
           </DialogFooter>
         </DialogContent>

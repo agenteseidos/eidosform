@@ -10,13 +10,12 @@ import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
 import { PixelInjector } from '@/components/pixels/pixel-injector'
 import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
-import { evaluateJumpRules } from '@/lib/jump-logic'
+import { evaluateJumpRules, getVisibleQuestions } from '@/lib/form-logic-engine'
 
 interface FormPlayerProps {
   ownerPlan?: string
   form: Form
 }
-
 
 function ensureHttps(url: string): string {
   if (!url) return url
@@ -43,25 +42,8 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const triggerPixelSubmitRef = useRef<(() => void) | null>(null)
   const skipNextValidationRef = useRef(false)
 
-  // Lógica condicional: avalia se uma pergunta deve ser exibida baseado nas respostas atuais
-  const isQuestionVisible = (question: QuestionConfig, currentAnswers: Record<string, Json>): boolean => {
-    const logic = question.conditionalLogic
-    if (!logic) return true
-    const { questionId, operator, value } = logic
-    const answer = currentAnswers[questionId]
-    const answerStr = Array.isArray(answer) ? answer.join(', ') : String(answer ?? '')
-    switch (operator) {
-      case 'equals': return answerStr === (value ?? '')
-      case 'not_equals': return answerStr !== (value ?? '')
-      case 'contains': return answerStr.includes(value ?? '')
-      case 'not_empty': return answerStr.trim() !== ''
-      case 'is_empty': return answerStr.trim() === ''
-      default: return true
-    }
-  }
-
   // Lista de perguntas visíveis com base nas respostas atuais
-  const visibleQuestions = questions.filter(q => isQuestionVisible(q, answers))
+  const visibleQuestions = getVisibleQuestions(questions, answers) as QuestionConfig[]
 
   const currentQuestion = visibleQuestions[currentIndex]
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
@@ -137,7 +119,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
       // Avaliar jump rules
       if (currentQuestion.jumpRules && currentQuestion.jumpRules.length > 0) {
-        const jumpAction = evaluateJumpRules(currentQuestion.jumpRules, currentQuestion.id, updatedAnswers)
+        const jumpAction = evaluateJumpRules(currentQuestion.jumpRules, updatedAnswers)
         if (jumpAction) {
           if (jumpAction.type === 'submit') {
             handleSubmit()

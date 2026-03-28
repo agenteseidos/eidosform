@@ -1,5 +1,7 @@
 // Jump Logic — lógica condicional de navegação entre perguntas
 
+import { evaluateJumpRules as evaluateJumpRulesWithEngine } from '@/lib/form-logic-engine'
+
 export interface JumpRule {
   id: string
   condition: {
@@ -21,41 +23,13 @@ export const JUMP_OPERATORS = [
   { value: 'less_than', label: 'é menor que' },
 ] as const
 
-function evaluateCondition(
-  condition: JumpRule['condition'],
-  answerValue: string
-): boolean {
-  const { operator, value } = condition
-  const answer = answerValue ?? ''
-
-  switch (operator) {
-    case 'equals':
-      return answer.toLowerCase() === value.toLowerCase()
-    case 'not_equals':
-      return answer.toLowerCase() !== value.toLowerCase()
-    case 'contains':
-      return answer.toLowerCase().includes(value.toLowerCase())
-    case 'greater_than':
-      return parseFloat(answer) > parseFloat(value)
-    case 'less_than':
-      return parseFloat(answer) < parseFloat(value)
-    default:
-      return false
-  }
-}
-
 /**
  * Avalia as jump rules de uma pergunta e retorna a ação da primeira regra que bater.
  */
 export function evaluateJumpRules(
   rules: JumpRule[],
-  currentQuestionId: string,
+  _currentQuestionId: string,
   answers: Record<string, unknown>
 ): JumpRule['action'] | null {
-  for (const rule of rules) {
-    const targetAnswer = String(answers[rule.condition.questionId] ?? '')
-    const match = evaluateCondition(rule.condition, targetAnswer)
-    if (match) return rule.action
-  }
-  return null
+  return evaluateJumpRulesWithEngine(rules, answers)
 }

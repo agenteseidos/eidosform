@@ -323,6 +323,22 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
         </div>
       )}
 
+      {question.type === 'calendly' && (
+        <div>
+          <Label htmlFor="calendlyUrl" className="text-sm font-medium text-slate-700">URL do Calendly</Label>
+          <Input
+            id="calendlyUrl"
+            value={question.calendlyUrl || ''}
+            onChange={(e) => onUpdate({ calendlyUrl: e.target.value })}
+            placeholder="https://calendly.com/seu-usuario/30min"
+            className="mt-2"
+          />
+          <p className="text-xs text-slate-500 mt-1.5">
+            Cole a URL do evento do Calendly que deseja incorporar
+          </p>
+        </div>
+      )}
+
       {question.type === 'file_upload' && (
         <div className="space-y-4">
           <div>

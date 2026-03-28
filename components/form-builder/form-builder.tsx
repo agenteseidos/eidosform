@@ -60,6 +60,8 @@ import {
   LucideIcon,
   BarChart3,
   Share2,
+  HandMetal,
+  PartyPopper,
 } from 'lucide-react'
 import Link from 'next/link'
 import { QuestionEditor } from './question-editor'
@@ -114,6 +116,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [sidebarSection, setSidebarSection] = useState<'welcome' | 'questions' | 'thankyou' | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -500,23 +503,55 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
             </div>
 
             <TabsContent value="questions" className="flex-1 flex flex-col mt-0 overflow-hidden data-[state=inactive]:hidden">
-              <div className="shrink-0 p-4 border-b border-slate-100">
-                <Button 
-                  onClick={() => setShowAddQuestion(true)}
-                  className="w-full bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Adicionar Pergunta
-                </Button>
-              </div>
-              
               <ScrollArea className="flex-1">
-                <div className="p-2">
+                <div className="p-2 space-y-1">
+
+                  {/* === SEÇÃO: TELA DE BOAS VINDAS === */}
+                  <div className="px-2 pt-3 pb-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tela de Boas Vindas</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSidebarSection('welcome')
+                      setSelectedQuestionId(null)
+                      setMobilePanel('editor')
+                    }}
+                    className={`
+                      w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left
+                      ${sidebarSection === 'welcome' && !selectedQuestionId
+                        ? 'bg-blue-50/70 border-blue-500 border-l-4 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
+                        : 'bg-white border-slate-100 hover:border-slate-200 border-l-4 border-l-transparent'
+                      }
+                    `}
+                  >
+                    <HandMetal className="w-4 h-4 text-amber-500 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-700 truncate">
+                        {form.welcome_title || form.title || 'Tela de boas vindas'}
+                      </p>
+                      <p className="text-xs text-slate-400">{form.welcome_enabled ? 'Ativada' : 'Desativada'}</p>
+                    </div>
+                  </button>
+
+                  {/* === SEÇÃO: QUESTÕES === */}
+                  <div className="px-2 pt-4 pb-1 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Questões</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowAddQuestion(true)}
+                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Adicionar
+                    </Button>
+                  </div>
+
                   {questions.length === 0 ? (
-                    <div className="text-center py-8 px-4">
-                      <FileText className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                    <div className="text-center py-6 px-4">
+                      <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />
                       <p className="text-sm text-slate-500">Nenhuma pergunta ainda</p>
-                      <p className="text-xs text-slate-500 mt-1">Adicione sua primeira pergunta para começar</p>
+                      <p className="text-xs text-slate-400 mt-1">Clique em Adicionar para começar</p>
                     </div>
                   ) : (
                     <Reorder.Group axis="y" values={questions} onReorder={handleReorder}>
@@ -535,7 +570,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                                   : 'bg-white border-slate-100 border-l-transparent hover:border-slate-200 hover:border-l-slate-300'
                                 }
                               `}
-                              onClick={() => { setSelectedQuestionId(question.id); setMobilePanel('editor'); }}
+                              onClick={() => { setSelectedQuestionId(question.id); setSidebarSection(null); setMobilePanel('editor'); }}
                             >
                               <div className="flex items-start gap-2">
                                 <div className="mt-0 cursor-grab active:cursor-grabbing p-2 -m-2">
@@ -593,6 +628,34 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                       </AnimatePresence>
                     </Reorder.Group>
                   )}
+
+                  {/* === SEÇÃO: TELAS FINAIS === */}
+                  <div className="px-2 pt-4 pb-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Telas Finais</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSidebarSection('thankyou')
+                      setSelectedQuestionId(null)
+                      setMobilePanel('editor')
+                    }}
+                    className={`
+                      w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left
+                      ${sidebarSection === 'thankyou' && !selectedQuestionId
+                        ? 'bg-blue-50/70 border-blue-500 border-l-4 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
+                        : 'bg-white border-slate-100 hover:border-slate-200 border-l-4 border-l-transparent'
+                      }
+                    `}
+                  >
+                    <PartyPopper className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-700 truncate">
+                        {form.thank_you_title || 'Tela de agradecimento'}
+                      </p>
+                      <p className="text-xs text-slate-400">Padrão</p>
+                    </div>
+                  </button>
+
                 </div>
               </ScrollArea>
             </TabsContent>
@@ -1053,6 +1116,15 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
             onDeleteQuestion={deleteQuestion}
             onDuplicateQuestion={duplicateQuestion}
             ownerPlan={userPlan}
+            sidebarSection={sidebarSection}
+            form={form}
+            onUpdateForm={(updates) => {
+              setForm(prev => ({ ...prev, ...updates }))
+              setHasUnsavedChanges(true)
+            }}
+            onWelcomeImageUpload={handleWelcomeImageUpload}
+            onRemoveWelcomeImage={handleRemoveWelcomeImage}
+            isUploadingImage={isUploadingImage}
           />
         </aside>
       </div>

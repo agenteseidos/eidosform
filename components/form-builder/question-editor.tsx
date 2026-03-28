@@ -1,6 +1,6 @@
 'use client'
 
-import { QuestionConfig, ConditionalRule, ConditionalOperator } from '@/lib/database.types'
+import { QuestionConfig, ConditionalOperator } from '@/lib/database.types'
 import { getQuestionTypeInfo } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Trash2, Plus, GripVertical, X, GitBranch, Copy } from 'lucide-react'
+import { Trash2, Plus, GripVertical, X, GitBranch, Copy, CalendarClock } from 'lucide-react'
 import { countries } from '@/lib/countries'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
 import { JumpRulesEditor } from './jump-rules-editor'
@@ -30,6 +30,7 @@ interface QuestionEditorProps {
 
 export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete, onDuplicate, ownerPlan = 'free', hideTypeAndRequired, hideLogic, onlyLogic }: QuestionEditorProps) {
   const typeInfo = getQuestionTypeInfo(question.type)
+  const isCalendlyQuestion = question.type === 'calendly'
 
   const addOption = () => {
     const options = question.options || []
@@ -148,33 +149,63 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
       </div>
       )}
 
-      {/* Question Title */}
-      <div>
-        <Label htmlFor="title" className="text-sm font-medium text-slate-900">Pergunta</Label>
-        <Textarea
-          id="title"
-          value={question.title}
-          onChange={(e) => onUpdate({ title: e.target.value })}
-          placeholder="Digite sua pergunta aqui..."
-          className="mt-2 resize-none"
-          rows={2}
-        />
-      </div>
+      {!isCalendlyQuestion ? (
+        <>
+          {/* Question Title */}
+          <div>
+            <Label htmlFor="title" className="text-sm font-medium text-slate-900">Pergunta</Label>
+            <Textarea
+              id="title"
+              value={question.title}
+              onChange={(e) => onUpdate({ title: e.target.value })}
+              placeholder="Digite sua pergunta aqui..."
+              className="mt-2 resize-none"
+              rows={2}
+            />
+          </div>
 
-      {/* Description */}
-      <div>
-        <Label htmlFor="description" className="text-sm font-medium text-slate-700">
-          Descrição <span className="text-slate-500 font-normal">(opcional)</span>
-        </Label>
-        <Textarea
-          id="description"
-          value={question.description || ''}
-          onChange={(e) => onUpdate({ description: e.target.value })}
-          placeholder="Adicione uma descrição..."
-          className="mt-2 resize-none"
-          rows={2}
-        />
-      </div>
+          {/* Description */}
+          <div>
+            <Label htmlFor="description" className="text-sm font-medium text-slate-700">
+              Descrição <span className="text-slate-500 font-normal">(opcional)</span>
+            </Label>
+            <Textarea
+              id="description"
+              value={question.description || ''}
+              onChange={(e) => onUpdate({ description: e.target.value })}
+              placeholder="Adicione uma descrição..."
+              className="mt-2 resize-none"
+              rows={2}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700">
+              <CalendarClock className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-slate-900">Integração Calendly</h3>
+              <p className="text-xs text-slate-600 mt-1">
+                Configure a URL do evento para exibir o widget de agendamento no formulário.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="calendlyUrl" className="text-sm font-medium text-slate-700">URL do Calendly</Label>
+            <Input
+              id="calendlyUrl"
+              value={question.calendlyUrl || ''}
+              onChange={(e) => onUpdate({ calendlyUrl: e.target.value })}
+              placeholder="https://calendly.com/seu-usuario/30min"
+              className="mt-2"
+            />
+            <p className="text-xs text-slate-500 mt-1.5">Cole a URL do seu evento Calendly</p>
+          </div>
+        </div>
+      )}
 
       <Separator />
 
@@ -323,21 +354,6 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
         </div>
       )}
 
-      {question.type === 'calendly' && (
-        <div>
-          <Label htmlFor="calendlyUrl" className="text-sm font-medium text-slate-700">URL do Calendly</Label>
-          <Input
-            id="calendlyUrl"
-            value={question.calendlyUrl || ''}
-            onChange={(e) => onUpdate({ calendlyUrl: e.target.value })}
-            placeholder="https://calendly.com/seu-usuario/30min"
-            className="mt-2"
-          />
-          <p className="text-xs text-slate-500 mt-1.5">
-            Cole a URL do evento do Calendly que deseja incorporar
-          </p>
-        </div>
-      )}
 
       {question.type === 'file_upload' && (
         <div className="space-y-4">

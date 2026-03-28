@@ -1,13 +1,9 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { DashboardNav } from '@/components/dashboard/nav'
+import { normalizePlan } from '@/lib/plans'
 
 const MAX_PLAN = 'professional'
-
-function normalizePlan(plan?: string | null) {
-  const normalized = plan?.trim().toLowerCase()
-  return normalized || 'free'
-}
 
 export default async function DashboardLayout({
   children,

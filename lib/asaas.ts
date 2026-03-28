@@ -17,7 +17,10 @@ export const PLAN_PRICES = {
   professional: { monthly: 257.0, yearly: 2467.2 },
 } as const
 
-export type PlanName = 'free' | 'starter' | 'plus' | 'professional'
+import { PlanId } from '@/lib/plans'
+
+/** @deprecated Use PlanId from lib/plans.ts */
+export type PlanName = PlanId
 export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
 interface AsaasCustomerPayload {

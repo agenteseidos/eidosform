@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { PLAN_ORDER, normalizePlan, type PlanId } from '@/lib/plans'
 
 const plans = [
   {
@@ -25,7 +26,8 @@ const plans = [
       'Suporte por email',
       "Marca d'água EidosForm",
     ],
-    cta: 'Assinar Free',
+    // CTA não exibido: free é sempre plano atual ou "Já incluso"
+    cta: null,
     checkoutUrl: null,
   },
   {
@@ -98,15 +100,6 @@ interface BillingPlansProps {
   currentPlan: string
 }
 
-const PLAN_ORDER = ['free', 'starter', 'plus', 'professional'] as const
-
-type PlanId = typeof PLAN_ORDER[number]
-
-function normalizePlan(plan: string): PlanId {
-  const normalized = plan.trim().toLowerCase()
-  return (PLAN_ORDER as readonly string[]).includes(normalized) ? (normalized as PlanId) : 'free'
-}
-
 export function BillingPlans({ currentPlan }: BillingPlansProps) {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('monthly')
   const normalizedCurrentPlan = useMemo(() => normalizePlan(currentPlan), [currentPlan])
@@ -154,6 +147,8 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
           const thisPlanIndex = PLAN_ORDER.indexOf(plan.id)
           const isLowerPlan = thisPlanIndex < currentPlanIndex
           const isHigherPlan = thisPlanIndex > currentPlanIndex
+          // Badge "Mais Popular" só aparece no Plus para usuários no plano Free (social proof para conversão).
+          // Quando o usuário já é pagante, o badge é ocultado intencionalmente.
           const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
 
           return (

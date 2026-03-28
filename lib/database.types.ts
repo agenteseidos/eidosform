@@ -1,5 +1,6 @@
 import { JumpRule } from "@/lib/jump-logic"
 import { PixelEventRule } from "@/types/pixel-events"
+import { PlanId } from "@/lib/plans"
 
 export type Json =
   | string
@@ -42,8 +43,8 @@ export interface ConditionalRule {
 // Form status
 export type FormStatus = 'draft' | 'published' | 'closed'
 
-// Plan tiers
-export type PlanType = 'free' | 'starter' | 'plus' | 'professional'
+// Plan tiers — single source of truth em lib/plans.ts
+export type PlanType = PlanId
 
 // Theme presets
 export type ThemePreset = 
@@ -133,7 +134,7 @@ export interface Database {
           email: string
           full_name: string | null
           avatar_url: string | null
-          plan: string
+          plan: PlanId
           api_key: string | null
           api_key_created_at: string | null
           response_count: number
@@ -152,7 +153,7 @@ export interface Database {
           email: string
           full_name?: string | null
           avatar_url?: string | null
-          plan?: string
+          plan?: PlanId
           api_key?: string | null
           api_key_created_at?: string | null
           response_count?: number
@@ -171,7 +172,7 @@ export interface Database {
           email?: string
           full_name?: string | null
           avatar_url?: string | null
-          plan?: string
+          plan?: PlanId
           api_key?: string | null
           api_key_created_at?: string | null
           response_count?: number

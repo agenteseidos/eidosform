@@ -6,8 +6,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { sendLimitAlert } from '@/lib/resend'
+import { PlanId } from '@/lib/plans'
 
-export type PlanName = 'free' | 'starter' | 'plus' | 'professional'
+/** @deprecated Use PlanId from lib/plans.ts */
+export type PlanName = PlanId
 
 export interface PlanConfig {
   name: string

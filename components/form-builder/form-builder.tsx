@@ -426,30 +426,44 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               { id: 'settings', label: 'Configurações', icon: Settings },
               { id: 'results', label: 'Resultados', icon: BarChart3 },
               { id: 'share', label: 'Compartilhar', icon: Share2 },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  if (tab.id === 'results') {
-                    router.push(`/dashboard/forms/${form.id}/responses`)
-                  } else if (tab.id === 'share') {
-                    copyFormLink()
-                  } else {
-                    setActiveTab(tab.id)
-                  }
-                }}
-                className={`
-                  flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all
-                  ${activeTab === tab.id 
-                    ? 'bg-white text-slate-900 shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
-                  }
-                `}
-              >
-                <tab.icon className="w-3.5 h-3.5" />
-                {tab.label}
-              </button>
-            ))}
+            ].map((tab) => {
+              const isCompactSettingsTab = tab.id === 'settings'
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    if (tab.id === 'results') {
+                      router.push(`/dashboard/forms/${form.id}/responses`)
+                    } else if (tab.id === 'share') {
+                      copyFormLink()
+                    } else {
+                      setActiveTab(tab.id)
+                    }
+                  }}
+                  title={isCompactSettingsTab ? tab.label : undefined}
+                  aria-label={isCompactSettingsTab ? tab.label : undefined}
+                  className={`
+                    flex items-center rounded-md text-sm font-medium transition-all
+                    ${isCompactSettingsTab ? 'gap-1.5 px-2.5 xl:px-3 2xl:min-w-[132px] 2xl:justify-center' : 'gap-1.5 px-3'} py-1.5
+                    ${activeTab === tab.id 
+                      ? 'bg-white text-slate-900 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                    }
+                  `}
+                >
+                  <tab.icon className="w-3.5 h-3.5 shrink-0" />
+                  {isCompactSettingsTab ? (
+                    <>
+                      <span className="hidden 2xl:inline whitespace-nowrap">{tab.label}</span>
+                      <span className="2xl:hidden sr-only">{tab.label}</span>
+                    </>
+                  ) : (
+                    <span className="whitespace-nowrap">{tab.label}</span>
+                  )}
+                </button>
+              )
+            })}
           </nav>
 
           {/* Right: Upgrade + Save status + Publish */}
@@ -963,9 +977,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
                 {/* B17: Dots de janela estilo macOS */}
                 <div className="flex items-center gap-1.5 mr-2">
-                  <div className="w-3 h-3 rounded-full bg-red-400" />
-                  <div className="w-3 h-3 rounded-full bg-amber-400" />
-                  <div className="w-3 h-3 rounded-full bg-emerald-400" />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#FF5F56' }} />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#FFBD2E' }} />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#27C93F' }} />
                 </div>
                 <Eye className="w-4 h-4 text-slate-500" />
                 <span className="text-sm font-medium text-slate-600">Visualização</span>

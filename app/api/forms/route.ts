@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
   const { data: profile } = await supabase
     .from('profiles')
     .select('plan')
-    .eq('user_id', user.id)
+    .eq('id', user.id)
     .single()
   const userPlan = ((profile as { plan: string } | null)?.plan || 'free') as import('@/lib/database.types').PlanType
 

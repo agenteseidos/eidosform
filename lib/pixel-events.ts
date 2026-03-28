@@ -5,6 +5,12 @@
 
 import { PixelEventRule, PixelEventCondition, PixelEventConfig } from '@/types/pixel-events'
 
+declare global {
+  interface Window {
+    fbq?: (...args: unknown[]) => void
+  }
+}
+
 export function matchesCondition(answer: string, condition: PixelEventCondition): boolean {
   const { operator, value } = condition
   const answerLower = (answer ?? '').toLowerCase()
@@ -25,7 +31,7 @@ export function matchesCondition(answer: string, condition: PixelEventCondition)
 
 export function firePixelEvent(event: PixelEventConfig) {
   if (typeof window === 'undefined') return
-  const fbq = (window as any).fbq
+  const { fbq } = window
   if (!fbq) return
 
   const params = event.value ? { value: event.value, currency: event.currency || 'BRL' } : {}
@@ -39,7 +45,7 @@ export function firePixelEvent(event: PixelEventConfig) {
 
 export function fireNamedPixelEvent(name: string, retries = 10) {
   if (!name || typeof window === 'undefined') return
-  const fbq = (window as any).fbq
+  const { fbq } = window
   if (!fbq) {
     // fbq ainda não carregou — tentar novamente em 300ms (até 10x = 3s)
     if (retries > 0) {

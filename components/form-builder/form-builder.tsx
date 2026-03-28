@@ -967,7 +967,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
         </button>
       </div>
 
-      {/* Add Question Dialog */}
+      {/* Add Question Dialog — B09: Menu categorizado */}
       <Dialog open={showAddQuestion} onOpenChange={setShowAddQuestion}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader>
@@ -976,18 +976,58 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
               Escolha o tipo de pergunta para adicionar
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 py-4 overflow-y-auto max-h-[60vh] pr-1">
-            {questionTypes.map((qt) => (
-              <button
-                key={qt.type}
-                onClick={() => addQuestion(qt.type)}
-                className="p-4 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left group"
-              >
-                <qt.icon className="w-6 h-6 text-slate-400 group-hover:text-blue-600 mb-2" />
-                <p className="font-medium text-sm text-slate-900">{qt.label}</p>
-                <p className="text-xs text-slate-500 mt-1">{qt.description}</p>
-              </button>
-            ))}
+          <div className="py-4 overflow-y-auto max-h-[60vh] pr-1 space-y-5">
+            {[
+              {
+                label: 'Escolhas',
+                types: ['dropdown', 'checkboxes', 'yes_no', 'nps', 'rating', 'opinion_scale'],
+              },
+              {
+                label: 'Contato',
+                types: ['email', 'phone', 'date', 'url'],
+              },
+              {
+                label: 'Texto',
+                types: ['short_text', 'long_text', 'number'],
+              },
+              {
+                label: 'Outros',
+                types: ['address', 'cpf', 'file_upload'],
+              },
+            ].map((category) => {
+              const categoryQuestionTypes = category.types
+                .map(t => questionTypes.find(qt => qt.type === t))
+                .filter(Boolean) as typeof questionTypes
+              if (categoryQuestionTypes.length === 0) return null
+              return (
+                <div key={category.label}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{category.label}</span>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {categoryQuestionTypes.map((qt) => {
+                      const visual = getQuestionVisual(qt.type)
+                      return (
+                        <button
+                          key={qt.type}
+                          onClick={() => addQuestion(qt.type)}
+                          className="p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left group flex items-start gap-3"
+                        >
+                          <div className={`mt-0.5 shrink-0 ${visual.color}`}>
+                            <visual.icon className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm text-slate-900">{qt.label}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{qt.description}</p>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </DialogContent>
       </Dialog>

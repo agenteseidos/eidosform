@@ -42,10 +42,50 @@ import {
   Pencil,
   Upload,
   Loader2,
+  Type,
+  AlignLeft,
+  Mail,
+  Phone,
+  Hash,
+  ToggleLeft,
+  List,
+  Star,
+  Calendar,
+  Gauge,
+  ThumbsUp,
+  CheckSquare,
+  Link as LinkIcon,
+  MapPin,
+  Fingerprint,
+  LucideIcon,
 } from 'lucide-react'
 import Link from 'next/link'
 import { QuestionEditor } from './question-editor'
 import { FormPreview } from './form-preview'
+
+// B03: Mapeamento de tipo de campo → ícone + cor para sidebar
+const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> = {
+  short_text:    { icon: Type,        color: 'text-slate-500' },
+  long_text:     { icon: AlignLeft,   color: 'text-slate-500' },
+  email:         { icon: Mail,        color: 'text-blue-500' },
+  phone:         { icon: Phone,       color: 'text-green-500' },
+  number:        { icon: Hash,        color: 'text-orange-500' },
+  yes_no:        { icon: ToggleLeft,  color: 'text-purple-500' },
+  dropdown:      { icon: List,        color: 'text-yellow-600' },
+  checkboxes:    { icon: CheckSquare, color: 'text-yellow-600' },
+  nps:           { icon: Star,        color: 'text-amber-500' },
+  opinion_scale: { icon: Gauge,       color: 'text-amber-500' },
+  rating:        { icon: Star,        color: 'text-amber-500' },
+  date:          { icon: Calendar,    color: 'text-teal-500' },
+  file_upload:   { icon: Upload,      color: 'text-pink-500' },
+  url:           { icon: LinkIcon,    color: 'text-blue-400' },
+  address:       { icon: MapPin,      color: 'text-emerald-500' },
+  cpf:           { icon: Fingerprint, color: 'text-violet-500' },
+}
+
+function getQuestionVisual(type: string) {
+  return questionTypeVisuals[type] || { icon: FileText, color: 'text-slate-400' }
+}
 
 interface FormBuilderProps {
   form: Form
@@ -416,12 +456,17 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                                 <div className="mt-0 cursor-grab active:cursor-grabbing p-2 -m-2">
                                   <GripVertical className="w-5 h-5 text-slate-300" />
                                 </div>
+                                {(() => {
+                                  const visual = getQuestionVisual(question.type)
+                                  const IconComp = visual.icon
+                                  return <IconComp className={`w-4 h-4 mt-0.5 shrink-0 ${visual.color}`} />
+                                })()}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
                                     <span className="text-xs font-medium text-slate-600">
                                       {index + 1}
                                     </span>
-                                    <span className="text-xs text-slate-600">
+                                    <span className="text-xs text-slate-500">
                                       {getQuestionTypeInfo(question.type)?.label || question.type}
                                     </span>
                                     {question.required && (

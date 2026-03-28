@@ -463,17 +463,28 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
               <Save className="w-4 h-4 mr-1" />
               Salvar
             </Button>
+            {/* B11: Botão Publicar como CTA primário */}
             <Button
               size="sm"
               onClick={() => setShowPublishDialog(true)}
               data-testid="publish-button"
-              className={form.status === 'published' 
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25' 
-                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
+              className={
+                form.status === 'published' && !hasUnsavedChanges
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-400/30 font-semibold px-5'
+                  : form.status === 'published' && hasUnsavedChanges
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 ring-2 ring-blue-400/30 font-semibold px-5 animate-pulse'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-semibold px-5'
               }
             >
-              <Globe className="w-4 h-4 mr-1" />
-              <span className="hidden sm:inline">{form.status === 'published' ? 'Publicado ✓' : 'Publicar'}</span>
+              <Globe className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">
+                {form.status === 'published' && !hasUnsavedChanges
+                  ? 'Publicado ✓'
+                  : form.status === 'published' && hasUnsavedChanges
+                    ? 'Publicar alterações'
+                    : 'Publicar'
+                }
+              </span>
             </Button>
           </div>
         </div>

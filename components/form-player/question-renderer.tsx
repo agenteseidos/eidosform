@@ -529,6 +529,60 @@ export function QuestionRenderer({
 }: QuestionRendererProps) {
   const [isFocused, setIsFocused] = useState(false)
 
+  // B15: Atalhos de teclado para opções de resposta
+  React.useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Ignorar se estiver digitando em um input/textarea
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      const key = e.key.toUpperCase()
+
+      // Sim/Não: S / N
+      if (question.type === 'yes_no') {
+        if (key === 'S') {
+          e.preventDefault()
+          onChange('Sim')
+          onClearError?.()
+          onSubmit(true)
+        } else if (key === 'N') {
+          e.preventDefault()
+          onChange('Não')
+          onClearError?.()
+          onSubmit(true)
+        }
+      }
+
+      // Dropdown (single-select): A, B, C, D...
+      if (question.type === 'dropdown' && question.options) {
+        const idx = key.charCodeAt(0) - 65 // A=0, B=1, ...
+        if (idx >= 0 && idx < question.options.length) {
+          e.preventDefault()
+          onChange(question.options[idx])
+          onClearError?.()
+          onSubmit(true)
+        }
+      }
+
+      // Checkboxes (multi-select): A, B, C, D... toggle
+      if (question.type === 'checkboxes' && question.options) {
+        const idx = key.charCodeAt(0) - 65
+        if (idx >= 0 && idx < question.options.length) {
+          e.preventDefault()
+          const selected = Array.isArray(value) ? (value as string[]) : []
+          const option = question.options[idx]
+          const newValues = selected.includes(option)
+            ? selected.filter(v => v !== option)
+            : [...selected, option]
+          onChange(newValues)
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [question, value, onChange, onSubmit, onClearError])
+
   const inputStyles = {
     borderColor: error ? '#EF4444' : isFocused ? theme.primaryColor : `${theme.textColor}30`,
     color: theme.textColor,
@@ -598,6 +652,7 @@ export function QuestionRenderer({
         <div className="space-y-3">
           {(question.options || []).map((option, index) => {
             const isSelected = value === option
+            const shortcutKey = String.fromCharCode(65 + index)
             return (
               <motion.button
                 key={index}
@@ -611,7 +666,7 @@ export function QuestionRenderer({
                   onClearError?.()
                   onSubmit(true)
                 }}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all"
+                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
                 style={{
                   borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
                   backgroundColor: isSelected ? `${theme.primaryColor}10` : 'transparent',
@@ -629,11 +684,18 @@ export function QuestionRenderer({
                     <Check className="w-4 h-4" style={{ color: theme.backgroundColor }} />
                   ) : (
                     <span className="text-sm font-medium" style={{ color: theme.textColor }}>
-                      {String.fromCharCode(65 + index)}
+                      {shortcutKey}
                     </span>
                   )}
                 </div>
-                <span className="text-lg">{option}</span>
+                <span className="text-lg flex-1">{option}</span>
+                {/* B15: Atalho de teclado */}
+                <kbd
+                  className="hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold opacity-40"
+                  style={{ backgroundColor: `${theme.textColor}10`, color: theme.textColor }}
+                >
+                  {shortcutKey}
+                </kbd>
               </motion.button>
             )
           })}
@@ -646,6 +708,7 @@ export function QuestionRenderer({
         <div className="space-y-3">
           {(question.options || []).map((option, index) => {
             const isSelected = selectedValues.includes(option)
+            const shortcutKey = String.fromCharCode(65 + index)
             return (
               <motion.button
                 key={index}
@@ -657,7 +720,7 @@ export function QuestionRenderer({
                     : [...selectedValues, option]
                   onChange(newValues)
                 }}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all"
+                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
                 style={{
                   borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
                   backgroundColor: isSelected ? `${theme.primaryColor}10` : 'transparent',
@@ -675,11 +738,18 @@ export function QuestionRenderer({
                     <Check className="w-4 h-4" style={{ color: theme.backgroundColor }} />
                   ) : (
                     <span className="text-sm font-medium" style={{ color: theme.textColor }}>
-                      {String.fromCharCode(65 + index)}
+                      {shortcutKey}
                     </span>
                   )}
                 </div>
-                <span className="text-lg">{option}</span>
+                <span className="text-lg flex-1">{option}</span>
+                {/* B15: Atalho de teclado */}
+                <kbd
+                  className="hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold opacity-40"
+                  style={{ backgroundColor: `${theme.textColor}10`, color: theme.textColor }}
+                >
+                  {shortcutKey}
+                </kbd>
               </motion.button>
             )
           })}
@@ -694,6 +764,7 @@ export function QuestionRenderer({
         <div className="flex gap-4">
           {['Sim', 'Não'].map((option) => {
             const isSelected = value === option
+            const shortcutKey = option === 'Sim' ? 'S' : 'N'
             return (
               <motion.button
                 key={option}
@@ -707,7 +778,7 @@ export function QuestionRenderer({
                   onClearError?.()
                   onSubmit(true)
                 }}
-                className="flex-1 flex items-center justify-center gap-3 p-5 rounded-xl border-2 transition-all"
+                className="flex-1 flex items-center justify-center gap-3 p-5 rounded-xl border-2 transition-all relative"
                 style={{
                   borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
                   backgroundColor: isSelected ? `${theme.primaryColor}10` : 'transparent',
@@ -725,11 +796,18 @@ export function QuestionRenderer({
                     <Check className="w-4 h-4" style={{ color: theme.backgroundColor }} />
                   ) : (
                     <span className="text-sm font-medium" style={{ color: theme.textColor }}>
-                      {option[0]}
+                      {shortcutKey}
                     </span>
                   )}
                 </div>
                 <span className="text-xl font-medium">{option}</span>
+                {/* B15: Atalho de teclado visível */}
+                <kbd
+                  className="absolute top-2 right-2 hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold opacity-40"
+                  style={{ backgroundColor: `${theme.textColor}10`, color: theme.textColor }}
+                >
+                  {shortcutKey}
+                </kbd>
               </motion.button>
             )
           })}

@@ -522,7 +522,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                   <Palette className="w-3 h-3 mr-1" />
                   Design
                 </TabsTrigger>
-                <TabsTrigger value="settings" className="text-xs px-1">
+                <TabsTrigger value="settings" className="text-xs px-1" title="Configurações">
                   <Settings className="w-3 h-3 mr-0.5 shrink-0" />
                   <span className="truncate">Config</span>
                 </TabsTrigger>

@@ -5,12 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
-import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
-
-// Maximum payload size (50KB — generous for form data, blocks abuse)
-const MAX_PAYLOAD_BYTES = 50 * 1024
-// Maximum number of answer keys (prevents flooding with fake question ids)
-const MAX_ANSWER_KEYS = 200
+import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
 
 // SECURITY NOTE: CORS * is intentional — this endpoint must be callable from any
 // domain where forms are embedded (custom domains, landing pages, etc.).
@@ -41,38 +36,10 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-// Sanitize string: strip HTML tags to prevent stored XSS (Bug #9)
-function sanitizeValue(val: unknown): unknown {
-  if (typeof val === 'string') return val.replace(/<[^>]*>/g, '')
-  if (Array.isArray(val)) return val.map(sanitizeValue)
-  if (val && typeof val === 'object') {
-    return Object.fromEntries(
-      Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, sanitizeValue(v)])
-    )
-  }
-  return val
-}
-
-// Check if all required questions are answered (Bug #5)
-function isResponseComplete(
-  answers: Record<string, unknown>,
-  questions: Array<{ id: string; required?: boolean }>
-): boolean {
-  const requiredIds = questions.filter((q) => q.required).map((q) => q.id)
-  if (requiredIds.length === 0) return true
-  return requiredIds.every((id) => {
-    const val = answers[id]
-    if (val === undefined || val === null || val === '') return false
-    if (Array.isArray(val) && val.length === 0) return false
-    return true
-  })
-}
-
 // POST /api/responses — submeter resposta (completa ou parcial)
 export async function POST(req: NextRequest) {
   // Bug #2: Rate limit — max 10 per minute per IP
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
-  const rateCheck = await checkResponseRateLimitAsync(ip)
+  const rateCheck = await checkSubmissionRateLimit(req)
   if (!rateCheck.allowed) {
     const retryAfter = Math.ceil(rateCheck.resetIn / 1000)
     return NextResponse.json(

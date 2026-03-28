@@ -1,7 +1,10 @@
-import type { ResponseInsert, AnswerItemInsert } from '@/lib/database.types'
+import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { authenticateApiKey } from '@/lib/api-key-auth'
+import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
+import { dispatchWebhook } from '@/lib/webhook-dispatcher'
+import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -119,10 +122,55 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     )
   }
 
+  const rateCheck = await checkSubmissionRateLimit(req)
+  if (!rateCheck.allowed) {
+    const retryAfter = Math.ceil(rateCheck.resetIn / 1000)
+    return NextResponse.json(
+      { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter },
+      {
+        status: 429,
+        headers: {
+          ...CORS_HEADERS,
+          'Retry-After': String(retryAfter),
+          'X-RateLimit-Limit': '10',
+          'X-RateLimit-Remaining': '0',
+        },
+      }
+    )
+  }
+
+  const contentLength = req.headers.get('content-length')
+  if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_BYTES) {
+    return NextResponse.json(
+      { error: 'Payload muito grande' },
+      { status: 413, headers: CORS_HEADERS }
+    )
+  }
+
   const { id } = await params
   const supabase = getServiceClient()
-  const body = await req.json()
-  const { answers, completed = true } = body
+
+  let rawBody: string
+  let body: Record<string, unknown>
+  try {
+    rawBody = await req.text()
+    if (rawBody.length > MAX_PAYLOAD_BYTES) {
+      return NextResponse.json(
+        { error: 'Payload muito grande' },
+        { status: 413, headers: CORS_HEADERS }
+      )
+    }
+    body = JSON.parse(rawBody)
+  } catch {
+    return NextResponse.json(
+      { error: 'Dados inválidos' },
+      { status: 400, headers: CORS_HEADERS }
+    )
+  }
+
+  const answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
+  const lastQuestionAnswered = body.last_question_answered as string | undefined
+  const existingResponseId = req.headers.get('x-response-id')
 
   if (!answers || typeof answers !== 'object') {
     return NextResponse.json(
@@ -131,13 +179,28 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     )
   }
 
+  if (Object.keys(answers).length > MAX_ANSWER_KEYS) {
+    return NextResponse.json(
+      { error: 'Número de respostas excede o limite' },
+      { status: 400, headers: CORS_HEADERS }
+    )
+  }
+
   const { data: form } = await supabase
     .from('forms')
-    .select('id, user_id, status')
+    .select('id, user_id, status, questions, webhook_url')
     .eq('id', id)
     .eq('user_id', auth.userId)
     .eq('status', 'published')
-    .single()
+    .single() as {
+      data: {
+        id: string
+        user_id: string
+        status: string
+        questions: Array<{ id: string; required?: boolean }> | null
+        webhook_url: string | null
+      } | null
+    }
 
   if (!form) {
     return NextResponse.json(
@@ -146,21 +209,67 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const { data: response, error } = await supabase
-    .from('responses')
-    .insert({ form_id: id, answers, completed } as ResponseInsert)
-    .select('id')
-    .single() as { data: { id: string } | null; error: unknown }
+  const completed = isResponseComplete(answers, form.questions ?? [])
 
-  if (error || !response) {
-    return NextResponse.json(
-      { error: 'Failed to save response' },
-      { status: 500, headers: CORS_HEADERS }
-    )
+  if (!existingResponseId) {
+    const limitCheck = await checkResponseLimit(form.user_id)
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit },
+        { status: 429, headers: CORS_HEADERS }
+      )
+    }
   }
 
-  const answerItems = Object.entries(answers as Record<string, unknown>).map(([questionId, value]) => ({
-    response_id: response.id,
+  let responseId: string
+
+  if (existingResponseId) {
+    const { data: updated, error } = await supabase
+      .from('responses')
+      .update({
+        answers: answers as Record<string, import('@/lib/database.types').Json>,
+        completed,
+        last_question_answered: lastQuestionAnswered ?? null,
+      } as ResponseUpdate)
+      .eq('id', existingResponseId)
+      .eq('form_id', id)
+      .select('id')
+      .single() as { data: { id: string } | null; error: unknown }
+
+    if (error || !updated) {
+      return NextResponse.json(
+        { error: 'Response not found' },
+        { status: 404, headers: CORS_HEADERS }
+      )
+    }
+
+    responseId = updated.id
+    await supabase.from('answer_items').delete().eq('response_id', responseId)
+  } else {
+    const { data: response, error } = await supabase
+      .from('responses')
+      .insert({
+        form_id: id,
+        answers: answers as Record<string, import('@/lib/database.types').Json>,
+        completed,
+        last_question_answered: lastQuestionAnswered ?? null,
+      } as ResponseInsert)
+      .select('id')
+      .single() as { data: { id: string } | null; error: unknown }
+
+    if (error || !response) {
+      return NextResponse.json(
+        { error: 'Failed to save response' },
+        { status: 500, headers: CORS_HEADERS }
+      )
+    }
+
+    responseId = response.id
+    await incrementResponseCount(form.user_id).catch(console.error)
+  }
+
+  const answerItems = Object.entries(answers).map(([questionId, value]) => ({
+    response_id: responseId,
     question_id: questionId,
     value: Array.isArray(value) ? value.join(', ') : String(value ?? ''),
   }))
@@ -169,5 +278,24 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     await supabase.from('answer_items').insert(answerItems as AnswerItemInsert[])
   }
 
-  return NextResponse.json({ response_id: response.id }, { status: 201, headers: CORS_HEADERS })
+  if (completed && form.webhook_url) {
+    dispatchWebhook({
+      webhookUrl: form.webhook_url,
+      formId: id,
+      responseId,
+      responseData: answers,
+    }).catch(console.error)
+  }
+
+  return NextResponse.json(
+    { response_id: responseId, completed },
+    {
+      status: existingResponseId ? 200 : 201,
+      headers: {
+        ...CORS_HEADERS,
+        'X-RateLimit-Limit': '10',
+        'X-RateLimit-Remaining': String(rateCheck.remaining),
+      },
+    }
+  )
 }

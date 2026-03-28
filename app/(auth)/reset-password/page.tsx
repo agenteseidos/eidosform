@@ -64,7 +64,7 @@ export default function ResetPasswordPage() {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center">
-            <EidosLogo variant="full" theme="dark" href="/" height={40} />
+            <EidosLogo variant="full" theme="dark" href="/" height={120} />
           </div>
           <p className="mt-3 text-slate-400">Defina sua nova senha</p>
         </div>

@@ -9,16 +9,21 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { 
-  MoreVertical, 
+import {
+  MoreVertical,
   ExternalLink,
   BarChart3,
   Pencil,
-  Copy
+  Copy,
+  Folder,
+  FolderOpen,
 } from 'lucide-react'
-import { Form, FormStatus } from '@/lib/database.types'
+import { Form, Folder as FolderType, FormStatus } from '@/lib/database.types'
 import { DeleteFormButton } from './delete-form-button'
 import { DuplicateFormButton } from './duplicate-form-button'
 import { toast } from 'sonner'
@@ -26,6 +31,9 @@ import { toast } from 'sonner'
 interface FormCardProps {
   form: Form
   responseCount: number
+  currentFolder?: FolderType | null
+  folders?: FolderType[]
+  onMoveToFolder?: (formId: string, folderId: string | null) => void
 }
 
 function getStatusBadge(status: FormStatus) {
@@ -58,7 +66,13 @@ function getStatusColor(status: FormStatus) {
   }
 }
 
-export function FormCard({ form, responseCount }: FormCardProps) {
+export function FormCard({
+  form,
+  responseCount,
+  currentFolder = null,
+  folders = [],
+  onMoveToFolder,
+}: FormCardProps) {
   const copyFormLink = () => {
     const link = `${window.location.origin}/f/${form.slug}`
     navigator.clipboard.writeText(link)
@@ -117,15 +131,48 @@ export function FormCard({ form, responseCount }: FormCardProps) {
               <Copy className="mr-2 h-4 w-4" />
               Copiar link
             </DropdownMenuItem>
+            {onMoveToFolder && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Folder className="mr-2 h-4 w-4" />
+                  Mover para pasta
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => onMoveToFolder(form.id, null)}>
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Sem pasta
+                  </DropdownMenuItem>
+                  {folders.length > 0 ? (
+                    folders.map((folder) => (
+                      <DropdownMenuItem key={folder.id} onClick={() => onMoveToFolder(form.id, folder.id)}>
+                        <Folder className="mr-2 h-4 w-4" />
+                        {folder.name}
+                      </DropdownMenuItem>
+                    ))
+                  ) : (
+                    <DropdownMenuItem disabled>
+                      <Folder className="mr-2 h-4 w-4" />
+                      Nenhuma pasta criada
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
             <DropdownMenuSeparator />
             <DeleteFormButton formId={form.id} formTitle={form.title} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      <div className="flex items-center justify-between">
-        {getStatusBadge(form.status)}
-        <div className="flex items-center gap-1 text-sm text-slate-500">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {getStatusBadge(form.status)}
+          <Badge variant="outline" className="border-slate-200 text-slate-500">
+            <Folder className="mr-1 h-3 w-3" />
+            {currentFolder?.name || 'Sem pasta'}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-1 text-sm text-slate-500 shrink-0">
           <BarChart3 className="w-4 h-4" />
           <span>{responseCount} respostas</span>
         </div>

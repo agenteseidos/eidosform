@@ -404,10 +404,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.95 }}
                               className={`
-                                group p-3 rounded-lg cursor-pointer mb-2 border transition-all
+                                group p-3 rounded-lg cursor-pointer mb-2 border-l-4 border transition-all
                                 ${selectedQuestionId === question.id 
-                                  ? 'bg-blue-50 border-blue-200' 
-                                  : 'bg-white border-slate-100 hover:border-slate-200'
+                                  ? 'bg-blue-50/70 border-blue-500 border-l-blue-500 ring-1 ring-blue-200 shadow-sm' 
+                                  : 'bg-white border-slate-100 border-l-transparent hover:border-slate-200 hover:border-l-slate-300'
                                 }
                               `}
                               onClick={() => { setSelectedQuestionId(question.id); setMobilePanel('editor'); }}

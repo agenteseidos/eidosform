@@ -58,10 +58,13 @@ import {
   MapPin,
   Fingerprint,
   LucideIcon,
+  BarChart3,
+  Share2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { QuestionEditor } from './question-editor'
 import { FormPreview } from './form-preview'
+import { RightPanel } from './right-panel'
 
 // B03: Mapeamento de tipo de campo → ícone + cor para sidebar
 const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> = {
@@ -309,86 +312,103 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
     <>
     <div className="flex flex-col h-screen bg-slate-50">
       {/* Header */}
-      <header className="min-h-16 bg-white border-b border-slate-200 flex flex-wrap gap-2 items-center justify-between px-3 sm:px-4 py-2 shrink-0">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (hasUnsavedChanges) {
-                setShowLeaveDialog(true)
-              } else {
-                router.push('/dashboard')
-              }
-            }}
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Voltar
-          </Button>
-          <Separator orientation="vertical" className="h-6" />
-          <div className="group relative flex items-center">
-            <Input
-              value={form.title}
-              onChange={(e) => {
-                setForm({ ...form, title: e.target.value })
-                setHasUnsavedChanges(true)
+      <header className="min-h-14 bg-white border-b border-slate-200 shrink-0">
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2">
+          {/* Left: Voltar + título */}
+          <div className="flex items-center gap-3 min-w-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (hasUnsavedChanges) {
+                  setShowLeaveDialog(true)
+                } else {
+                  router.push('/dashboard')
+                }
               }}
-              className="text-lg font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 max-w-[140px] sm:max-w-xs transition-colors"
-              placeholder="Formulário sem título"
-            />
-            <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-0 transition-opacity pointer-events-none" />
+              className="shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">Voltar</span>
+            </Button>
+            <Separator orientation="vertical" className="h-6 hidden sm:block" />
+            <div className="group relative flex items-center min-w-0">
+              <Input
+                value={form.title}
+                onChange={(e) => {
+                  setForm({ ...form, title: e.target.value })
+                  setHasUnsavedChanges(true)
+                }}
+                className="text-sm sm:text-base font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 max-w-[120px] sm:max-w-[200px] transition-colors"
+                placeholder="Sem título"
+              />
+              <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-0 transition-opacity pointer-events-none" />
+            </div>
           </div>
-          {form.status === 'published' && (
-            <Badge className="bg-emerald-100 text-emerald-700">Publicado</Badge>
-          )}
-          {form.status === 'draft' && (
-            <Badge variant="secondary">Rascunho</Badge>
-          )}
-          {form.status === 'closed' && (
-            <Badge variant="secondary" className="bg-amber-100 text-amber-700">Encerrado</Badge>
-          )}
-          {hasUnsavedChanges && (
-            <span className="text-sm text-slate-500">Alterações não salvas</span>
-          )}
-        </div>
 
-        <div className="flex items-center gap-2">
-          {form.status === 'published' && (
-            <>
-              <Button variant="outline" size="sm" onClick={copyFormLink} className="hidden md:flex">
-                <Copy className="w-4 h-4 mr-2" />
-                Copiar link
-              </Button>
-              <Link href={`/f/${form.slug}`} target="_blank" className="hidden md:flex">
-                <Button variant="outline" size="sm">
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Ver
-                </Button>
-              </Link>
-            </>
-          )}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Salvar
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setShowPublishDialog(true)}
-            data-testid="publish-button"
-            className={form.status === 'published' 
-              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-400/30' 
-              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
-            }
-          >
-            <Globe className="w-4 h-4 mr-2" />
-            {form.status === 'published' ? 'Publicado ✓' : 'Publicar'}
-          </Button>
+          {/* Center: Tabs de navegação */}
+          <nav className="hidden md:flex items-center bg-slate-100 rounded-lg p-1 gap-0.5">
+            {[
+              { id: 'questions', label: 'Perguntas', icon: FileText },
+              { id: 'design', label: 'Design', icon: Palette },
+              { id: 'settings', label: 'Configurações', icon: Settings },
+              { id: 'results', label: 'Resultados', icon: BarChart3 },
+              { id: 'share', label: 'Compartilhar', icon: Share2 },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  if (tab.id === 'results') {
+                    router.push(`/dashboard/forms/${form.id}/responses`)
+                  } else if (tab.id === 'share') {
+                    copyFormLink()
+                  } else {
+                    setActiveTab(tab.id)
+                  }
+                }}
+                className={`
+                  flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all
+                  ${activeTab === tab.id 
+                    ? 'bg-white text-slate-900 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                  }
+                `}
+              >
+                <tab.icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Right: Save + Publish */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Autosave indicator (B06 placeholder) */}
+            {hasUnsavedChanges && (
+              <span className="text-xs text-slate-400 hidden sm:block">●</span>
+            )}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleSave}
+              disabled={isSaving}
+              className="hidden sm:flex"
+            >
+              <Save className="w-4 h-4 mr-1" />
+              Salvar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowPublishDialog(true)}
+              data-testid="publish-button"
+              className={form.status === 'published' 
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25' 
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
+              }
+            >
+              <Globe className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">{form.status === 'published' ? 'Publicado ✓' : 'Publicar'}</span>
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -397,7 +417,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
         {/* Sidebar */}
         <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
-            <div className="shrink-0 p-2 border-b border-slate-100">
+            {/* Mobile-only tab selector (desktop tabs are in the header) */}
+            <div className="shrink-0 p-2 border-b border-slate-100 md:hidden">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="questions" className="text-xs">
                   <FileText className="w-3 h-3 mr-1" />
@@ -409,7 +430,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                 </TabsTrigger>
                 <TabsTrigger value="settings" className="text-xs px-1">
                   <Settings className="w-3 h-3 mr-0.5 shrink-0" />
-                  <span className="truncate">Configurações</span>
+                  <span className="truncate">Config</span>
                 </TabsTrigger>
               </TabsList>
             </div>

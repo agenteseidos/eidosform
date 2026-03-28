@@ -1,9 +1,9 @@
 import type { ProfileUpdate } from '@/lib/database.types'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 // POST /api/settings/api-key — gerar/regenerar API key
-export async function POST(req: NextRequest) {
+export async function POST() {
   const supabase = await createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -25,9 +25,15 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Gerar nova API key
+  // Gerar nova API key (RPC generates prefixed key; fallback ensures ek_ prefix)
   const { data: keyData } = await supabase.rpc('generate_api_key') as { data: string | null }
-  const newKey = keyData ?? ('ek_' + Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b => b.toString(16).padStart(2, '0')).join(''))
+  let newKey = keyData ?? null
+
+  // Ensure key always has ek_ prefix (required by API v1 auth validation)
+  if (!newKey || !newKey.startsWith('ek_')) {
+    newKey = 'ek_' + Array.from(crypto.getRandomValues(new Uint8Array(24)))
+      .map(b => b.toString(16).padStart(2, '0')).join('')
+  }
 
   const { error: updateError } = await supabase
     .from('profiles')
@@ -42,7 +48,7 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/settings/api-key — obter status da API key
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = await createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -84,4 +90,25 @@ export async function GET(req: NextRequest) {
     api_key_preview: maskedKey,
     plan: profile.plan,
   })
+}
+
+// DELETE /api/settings/api-key — revogar API key
+export async function DELETE() {
+  const supabase = await createClient()
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ api_key: null, api_key_created_at: null } as ProfileUpdate)
+    .eq('id', user.id)
+
+  if (updateError) {
+    return NextResponse.json({ error: 'Failed to revoke API key' }, { status: 500 })
+  }
+
+  return NextResponse.json({ message: 'API key revoked' })
 }

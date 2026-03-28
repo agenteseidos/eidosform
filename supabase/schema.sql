@@ -26,6 +26,7 @@ CREATE TABLE forms (
   description TEXT,
   slug TEXT NOT NULL,
   status form_status DEFAULT 'draft' NOT NULL,
+  is_public BOOLEAN DEFAULT FALSE NOT NULL,
   theme theme_preset DEFAULT 'minimal' NOT NULL,
   questions JSONB DEFAULT '[]'::jsonb NOT NULL,
   thank_you_message TEXT DEFAULT 'Thank you for your response!' NOT NULL,

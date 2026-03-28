@@ -210,6 +210,7 @@ export interface Database {
           description: string | null
           slug: string
           status: FormStatus
+          is_public: boolean
           is_published: boolean
           theme: ThemePreset
           questions: QuestionConfig[]
@@ -239,6 +240,7 @@ export interface Database {
           description?: string | null
           slug: string
           status?: FormStatus
+          is_public?: boolean
           is_published?: boolean
           theme?: ThemePreset
           questions?: QuestionConfig[]
@@ -266,6 +268,7 @@ export interface Database {
           description?: string | null
           slug?: string
           status?: FormStatus
+          is_public?: boolean
           is_published?: boolean
           theme?: ThemePreset
           questions?: QuestionConfig[]

@@ -1,0 +1,9 @@
+ALTER TABLE forms
+  ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
+
+UPDATE forms
+SET is_public = FALSE
+WHERE is_public IS NULL;
+
+ALTER TABLE forms
+  ALTER COLUMN is_public SET NOT NULL;

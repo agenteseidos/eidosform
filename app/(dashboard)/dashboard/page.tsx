@@ -7,6 +7,8 @@ import { Form } from '@/lib/database.types'
 import { FormCard } from '@/components/dashboard/form-card'
 import { TemplatesGallery } from '@/components/dashboard/templates-gallery'
 import { OnboardingWrapper } from '@/components/dashboard/onboarding-wrapper'
+import { ErrorToast } from '@/components/dashboard/error-toast'
+import { Suspense } from 'react'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +42,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
+      <Suspense><ErrorToast /></Suspense>
       <OnboardingWrapper isNewUser={isNewUser} />
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -49,9 +52,14 @@ export default async function DashboardPage() {
         <div className="flex items-center gap-3">
           <TemplatesGallery />
           <Link href="/forms/new">
-            <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
+            <Button className="hidden sm:flex bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
               <Plus className="w-4 h-4 mr-2" />
               Criar Formulário
+            </Button>
+          </Link>
+          <Link href="/forms/new">
+            <Button size="icon" className="flex sm:hidden bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5" aria-label="Criar formulário">
+              <Plus className="w-4 h-4" />
             </Button>
           </Link>
         </div>

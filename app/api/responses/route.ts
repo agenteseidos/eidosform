@@ -1,10 +1,33 @@
 import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createPublicClient } from '@/lib/supabase/public'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
-import { checkResponseRateLimit } from '@/lib/response-rate-limit'
+import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
+
+// Maximum payload size (50KB — generous for form data, blocks abuse)
+const MAX_PAYLOAD_BYTES = 50 * 1024
+// Maximum number of answer keys (prevents flooding with fake question ids)
+const MAX_ANSWER_KEYS = 200
+
+// SECURITY NOTE: CORS * is intentional — this endpoint must be callable from any
+// domain where forms are embedded (custom domains, landing pages, etc.).
+// The service_role key is used server-side only (never exposed to the client).
+// Protection layers:
+//   1. Rate limit per IP (10 req/min via Supabase RPC + in-memory fallback)
+//   2. Honeypot field (_hp_) to trap bots
+//   3. Payload size + answer key count limits
+//   4. Form must exist and be 'published' (validated before insert)
+//   5. Response limit per user plan (prevents infinite submissions)
+//   6. UUID format validation on form_id (prevents probing)
+//   7. Input sanitization (HTML tag stripping)
+//
+// TODO [SECURITY]: Add optional Turnstile/hCaptcha validation per form.
+//   Form owner enables in settings, form-player sends cf-turnstile-response token,
+//   this endpoint validates with Cloudflare before accepting submission.
+//   See: https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -49,11 +72,29 @@ function isResponseComplete(
 export async function POST(req: NextRequest) {
   // Bug #2: Rate limit — max 10 per minute per IP
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
-  const rateCheck = checkResponseRateLimit(ip)
+  const rateCheck = await checkResponseRateLimitAsync(ip)
   if (!rateCheck.allowed) {
+    const retryAfter = Math.ceil(rateCheck.resetIn / 1000)
     return NextResponse.json(
-      { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter: Math.ceil(rateCheck.resetIn / 1000) },
-      { status: 429, headers: CORS_HEADERS }
+      { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter },
+      {
+        status: 429,
+        headers: {
+          ...CORS_HEADERS,
+          'Retry-After': String(retryAfter),
+          'X-RateLimit-Limit': '10',
+          'X-RateLimit-Remaining': '0',
+        },
+      }
+    )
+  }
+
+  // Payload size check (defense against large payloads)
+  const contentLength = req.headers.get('content-length')
+  if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_BYTES) {
+    return NextResponse.json(
+      { error: 'Payload muito grande' },
+      { status: 413, headers: CORS_HEADERS }
     )
   }
 
@@ -61,13 +102,31 @@ export async function POST(req: NextRequest) {
   const supabase = createPublicClient()
 
   // Bug #6: Catch invalid JSON
+  let rawBody: string
   let body: Record<string, unknown>
   try {
-    body = await req.json()
+    rawBody = await req.text()
+    if (rawBody.length > MAX_PAYLOAD_BYTES) {
+      return NextResponse.json(
+        { error: 'Payload muito grande' },
+        { status: 413, headers: CORS_HEADERS }
+      )
+    }
+    body = JSON.parse(rawBody)
   } catch {
     return NextResponse.json({ error: 'Dados inválidos' }, { status: 400, headers: CORS_HEADERS })
   }
+
   const { form_id, last_question_answered } = body
+
+  // Honeypot: if _hp_ field is filled, silently accept but don't save (bot trap)
+  if (body._hp_ && String(body._hp_).length > 0) {
+    return NextResponse.json(
+      { response_id: 'ok', completed: true },
+      { status: 201, headers: CORS_HEADERS }
+    )
+  }
+
   // Bug #9: Sanitize answers
   const answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
 
@@ -75,8 +134,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'ID do formulário é obrigatório' }, { status: 400, headers: CORS_HEADERS })
   }
 
+  // Validate form_id is UUID format (prevents probing)
+  if (typeof form_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(form_id)) {
+    return NextResponse.json({ error: 'ID do formulário inválido' }, { status: 400, headers: CORS_HEADERS })
+  }
+
   if (!answers || typeof answers !== 'object') {
     return NextResponse.json({ error: 'Respostas em formato inválido' }, { status: 400, headers: CORS_HEADERS })
+  }
+
+  // Limit number of answer keys to prevent abuse
+  if (Object.keys(answers).length > MAX_ANSWER_KEYS) {
+    return NextResponse.json({ error: 'Número de respostas excede o limite' }, { status: 400, headers: CORS_HEADERS })
   }
 
   // Verificar se o formulário existe e está publicado
@@ -173,13 +242,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ response_id: responseId, completed }, { status: existingResponseId ? 200 : 201, headers: CORS_HEADERS })
+  return NextResponse.json({ response_id: responseId, completed }, {
+    status: existingResponseId ? 200 : 201,
+    headers: {
+      ...CORS_HEADERS,
+      'X-RateLimit-Limit': '10',
+      'X-RateLimit-Remaining': String(rateCheck.remaining),
+    },
+  })
 }
 
 // GET /api/responses — list responses for authenticated user
+// Note: Uses admin client to bypass RLS, but auth is enforced via getRequestUser()
+// No CORS headers on GET — this is an authenticated dashboard endpoint, not public
 export async function GET(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const supabase = createAdminClient()
+  const user = await getRequestUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

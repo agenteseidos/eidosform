@@ -3,6 +3,7 @@ import { PLANS, PlanName } from '@/lib/plan-limits'
 import { createClient } from '@/lib/supabase/server'
 import { FormUpdate } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
+import { getRequestUser } from '@/lib/supabase/request-auth'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -21,9 +22,9 @@ interface RouteParams {
 export async function GET(req: NextRequest, { params }: RouteParams) {
   const supabase = await createClient()
   const { id } = await params
+  const user = await getRequestUser(req)
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -45,9 +46,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const supabase = await createClient()
   const { id } = await params
+  const user = await getRequestUser(req)
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -150,9 +151,9 @@ export const PUT = PATCH
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const supabase = await createClient()
   const { id } = await params
+  const user = await getRequestUser(req)
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

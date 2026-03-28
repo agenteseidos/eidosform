@@ -74,8 +74,8 @@ function InlineEditableText({
             setIsEditing(false)
           }
         }}
-        className={`${className} bg-transparent border-0 border-b-2 border-dashed outline-none w-full resize-none`}
-        style={{ ...style, borderColor: style?.color || '#3b82f6' }}
+        className={`${className} bg-transparent border-0 outline-none w-full resize-none cursor-text`}
+        style={style}
         placeholder={placeholder}
         rows={tag === 'p' ? 2 : undefined}
       />

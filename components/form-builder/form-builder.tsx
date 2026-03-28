@@ -31,7 +31,7 @@ import {
   Trash2,
   GripVertical,
   Eye,
-  Save,
+
   Globe,
   X,
   ExternalLink,
@@ -452,17 +452,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                 <span className="text-emerald-500">Salvo ✓</span>
               )}
             </span>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={handleSave}
-              disabled={isSaving}
-              className="hidden sm:flex"
-              title="Salvar manualmente"
-            >
-              <Save className="w-4 h-4 mr-1" />
-              Salvar
-            </Button>
+
             {/* B11: Botão Publicar como CTA primário */}
             <Button
               size="sm"
@@ -493,7 +483,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden pb-14 md:pb-0">
         {/* Sidebar */}
-        <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
+        <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:min-w-[280px] bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
             {/* Mobile-only tab selector (desktop tabs are in the header) */}
             <div className="shrink-0 p-2 border-b border-slate-100 md:hidden">
@@ -537,7 +527,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                   >
                     <HandMetal className="w-4 h-4 text-amber-500 shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-700 truncate">
+                      <p className="text-sm font-medium text-slate-700 line-clamp-2">
                         {form.welcome_title || form.title || 'Tela de boas vindas'}
                       </p>
                       <p className="text-xs text-slate-400">{form.welcome_enabled ? 'Ativada' : 'Desativada'}</p>
@@ -604,7 +594,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                                       <span className="text-xs text-red-500">*</span>
                                     )}
                                   </div>
-                                  <p className="text-sm font-medium text-slate-900 truncate">
+                                  <p className="text-sm font-medium text-slate-900 line-clamp-2">
                                     {question.title || 'Pergunta sem título'}
                                   </p>
                                 </div>
@@ -640,6 +630,15 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                     </Reorder.Group>
                   )}
 
+                  {/* Botão adicionar pergunta abaixo da lista */}
+                  <button
+                    onClick={() => setShowAddQuestion(true)}
+                    className="w-full flex items-center justify-center gap-2 p-3 my-2 rounded-lg border-2 border-dashed border-slate-200 text-sm font-medium text-blue-600 hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Adicionar pergunta
+                  </button>
+
                   {/* === SEÇÃO: TELAS FINAIS === */}
                   <div className="px-2 pt-4 pb-1">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Telas Finais</span>
@@ -660,7 +659,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                   >
                     <PartyPopper className="w-4 h-4 text-emerald-500 shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-700 truncate">
+                      <p className="text-sm font-medium text-slate-700 line-clamp-2">
                         {form.thank_you_title || 'Tela de agradecimento'}
                       </p>
                       <p className="text-xs text-slate-400">Padrão</p>

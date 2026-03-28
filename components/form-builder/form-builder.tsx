@@ -296,43 +296,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     }
 
     setIsSaving(true)
-    const newStatus: FormStatus = 'published'
-    
-    const updateData = {
-      status: newStatus,
-      is_published: true,
-      questions: questions,
-      title: form.title,
-      description: form.description,
-      slug: form.slug,
-      theme: form.theme,
-      thank_you_message: form.thank_you_message,
-      thank_you_title: form.thank_you_title || null,
-      thank_you_description: form.thank_you_description || null,
-      thank_you_button_text: form.thank_you_button_text || null,
-      thank_you_button_url: form.thank_you_button_url || null,
-      pixels: pixels,
-      redirect_url: form.redirect_url || null,
-      webhook_url: form.webhook_url || null,
-      pixel_event_on_start: form.pixel_event_on_start || null,
-      pixel_event_on_complete: form.pixel_event_on_complete || null,
-      welcome_enabled: form.welcome_enabled || false,
-      welcome_title: form.welcome_title || null,
-      welcome_description: form.welcome_description || null,
-      welcome_button_text: form.welcome_button_text || null,
-      welcome_image_url: form.welcome_image_url || null,
-    }
-    const { data: updated, error } = await supabase
-      .from('forms')
-      .update(updateData)
-      .eq('id', form.id)
-      .select('id, status, is_published')
-
-    if (error || !updated || updated.length === 0) {
-      toast.error('Falha ao atualizar status')
-      console.error('Publish update failed:', error, 'rows:', updated)
-    } else {
-      setForm(prev => ({ ...prev, status: newStatus }))
+    try {
+      const payload = { ...buildFormPayload(), status: 'published' as FormStatus, is_published: true }
+      await updateFormViaApi(payload)
+      setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
       toast.success(form.status === 'published' ? 'Alterações publicadas!' : 'Formulário publicado!')
       setShowPublishDialog(false)
       setHasUnsavedChanges(false)

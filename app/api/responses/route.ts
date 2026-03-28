@@ -83,7 +83,8 @@ function isResponseComplete(
 // POST /api/responses — submeter resposta (completa ou parcial)
 export async function POST(req: NextRequest) {
   // Bug #2: Rate limit — max 10 per minute per IP
-  const rateCheck = await checkSubmissionRateLimit(req)
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown'
+  const rateCheck = await checkResponseRateLimitAsync(ip)
   if (!rateCheck.allowed) {
     const retryAfter = Math.ceil(rateCheck.resetIn / 1000)
     return NextResponse.json(

@@ -299,8 +299,11 @@ export default function LandingPage() {
           <div className="grid sm:grid-cols-4 gap-8 mb-10">
             <div>
               <div className="mb-4">
-                <EidosLogo variant="full" theme="dark" href="/" height={32} />
+                <EidosLogo variant="full" theme="dark" href="/" height={56} />
               </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Formulários conversacionais que as pessoas querem responder.
+              </p>
             </div>
             <div>
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Produto</h4>

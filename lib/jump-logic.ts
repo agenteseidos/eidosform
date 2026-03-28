@@ -6,7 +6,14 @@ export interface JumpRule {
   id: string
   condition: {
     questionId: string
-    operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than'
+    operator:
+      | 'equals'
+      | 'not_equals'
+      | 'contains'
+      | 'greater_than'
+      | 'less_than'
+      | 'not_empty'
+      | 'is_empty'
     value: string
   }
   action: {
@@ -21,6 +28,8 @@ export const JUMP_OPERATORS = [
   { value: 'contains', label: 'contém' },
   { value: 'greater_than', label: 'é maior que' },
   { value: 'less_than', label: 'é menor que' },
+  { value: 'not_empty', label: 'não está vazio' },
+  { value: 'is_empty', label: 'está vazio' },
 ] as const
 
 /**

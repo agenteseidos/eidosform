@@ -12,7 +12,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -34,8 +33,6 @@ import {
 
   Globe,
   RefreshCw,
-  X,
-  ExternalLink,
   Copy,
   Settings,
   Palette,
@@ -53,7 +50,6 @@ import {
   Star,
   Calendar,
   Gauge,
-  ThumbsUp,
   CheckSquare,
   Link as LinkIcon,
   MapPin,
@@ -67,7 +63,6 @@ import {
   Zap,
 } from 'lucide-react'
 import Link from 'next/link'
-import { QuestionEditor } from './question-editor'
 import { FormPreview } from './form-preview'
 import { RightPanel } from './right-panel'
 
@@ -128,7 +123,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [sidebarSection, setSidebarSection] = useState<'welcome' | 'questions' | 'thankyou' | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
@@ -385,9 +379,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     <div className="flex flex-col h-screen bg-slate-50">
       {/* Header */}
       <header className="min-h-14 bg-white border-b border-slate-200 shrink-0">
-        <div className="flex items-center justify-between px-3 sm:px-4 py-2">
+        <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 min-w-0 overflow-hidden">
           {/* Left: Voltar + título */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
             <Button
               variant="ghost"
               size="sm"
@@ -404,14 +398,14 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               <span className="hidden sm:inline">Voltar</span>
             </Button>
             <Separator orientation="vertical" className="h-6 hidden sm:block" />
-            <div className="group relative flex items-center min-w-0">
+            <div className="group relative flex items-center min-w-0 flex-1 max-w-full overflow-hidden">
               <Input
                 value={form.title}
                 onChange={(e) => {
                   setForm({ ...form, title: e.target.value })
                   setHasUnsavedChanges(true)
                 }}
-                className="text-sm sm:text-base font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 max-w-[120px] sm:max-w-[200px] transition-colors"
+                className="w-full min-w-0 max-w-[140px] sm:max-w-[220px] truncate text-sm sm:text-base font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 transition-colors"
                 placeholder="Sem título"
               />
               <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-0 transition-opacity pointer-events-none" />
@@ -467,7 +461,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           </nav>
 
           {/* Right: Upgrade + Save status + Publish */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 max-w-fit">
             {/* B10: Botão Upgrade para planos Free/Starter */}
             {(userPlan === 'free' || userPlan === 'starter') && (
               <Link
@@ -1004,7 +998,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         </div>
 
         {/* Right Panel - Fixed property editor */}
-        <aside className={`${mobilePanel === 'editor' ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0 overflow-hidden`}>
+        <aside className={`${mobilePanel === 'editor' ? 'flex' : 'hidden'} md:flex w-full max-w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0 overflow-hidden`}>
           <RightPanel
             selectedQuestion={selectedQuestion || null}
             allQuestions={questions}

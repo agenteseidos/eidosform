@@ -14,8 +14,6 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import {
   Copy,
-  FileText,
-  GitBranch,
   HandMetal,
   Loader2,
   MousePointerClick,
@@ -62,16 +60,16 @@ export function RightPanel({
   // B08: Welcome screen editor
   if (sidebarSection === 'welcome' && form && onUpdateForm) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full max-w-full overflow-hidden flex flex-col">
         <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-amber-50/50">
           <div className="flex items-center gap-2">
             <HandMetal className="w-4 h-4 text-amber-500" />
             <span className="text-sm font-medium text-slate-700">Tela de Boas Vindas</span>
           </div>
         </div>
-        <ScrollArea className="flex-1">
-          <div className="p-4 space-y-5">
-            <div className="flex items-center justify-between py-1">
+        <ScrollArea className="flex-1 max-w-full">
+          <div className="p-4 space-y-5 max-w-full overflow-hidden">
+            <div className="flex items-center justify-between gap-3 py-1 max-w-full">
               <div>
                 <Label className="text-xs font-medium text-slate-700">Ativar tela de boas vindas</Label>
                 <p className="text-[10px] text-slate-400">Mostrar antes das perguntas</p>
@@ -162,15 +160,15 @@ export function RightPanel({
   // B08: Thank you screen editor
   if (sidebarSection === 'thankyou' && form && onUpdateForm) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full max-w-full overflow-hidden flex flex-col">
         <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-emerald-50/50">
           <div className="flex items-center gap-2">
             <PartyPopper className="w-4 h-4 text-emerald-500" />
             <span className="text-sm font-medium text-slate-700">Tela de Agradecimento</span>
           </div>
         </div>
-        <ScrollArea className="flex-1">
-          <div className="p-4 space-y-5">
+        <ScrollArea className="flex-1 max-w-full">
+          <div className="p-4 space-y-5 max-w-full overflow-hidden">
             <div>
               <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Título</Label>
               <Input
@@ -261,7 +259,7 @@ export function RightPanel({
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full max-w-full overflow-hidden flex flex-col">
       {/* Header with question info */}
       <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-slate-50/50">
         <div className="flex items-center gap-2 mb-1">
@@ -301,15 +299,15 @@ export function RightPanel({
 
         {/* Tab: Questão */}
         <TabsContent value="question" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <ScrollArea className="h-full">
-            <div className="p-4 space-y-5">
+          <ScrollArea className="h-full max-w-full">
+            <div className="p-4 space-y-5 max-w-full overflow-hidden">
               {/* Tipo do campo */}
-              <div>
+              <div className="w-full max-w-full overflow-hidden">
                 <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Tipo do campo</Label>
                 <select
                   value={selectedQuestion.type}
                   onChange={(e) => handleTypeChange(e.target.value as QuestionType)}
-                  className="w-full text-sm text-slate-900 border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  className="w-full max-w-full text-sm text-slate-900 border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                 >
                   {questionTypes.map((qt) => (
                     <option key={qt.type} value={qt.type}>
@@ -320,8 +318,8 @@ export function RightPanel({
               </div>
 
               {/* Campo obrigatório */}
-              <div className="flex items-center justify-between py-1">
-                <div>
+              <div className="flex items-start justify-between gap-3 py-1 max-w-full overflow-hidden">
+                <div className="min-w-0 flex-1">
                   <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
                   <p className="text-[10px] text-slate-400">Respondentes devem responder</p>
                 </div>
@@ -330,6 +328,7 @@ export function RightPanel({
                   onCheckedChange={(checked) =>
                     onUpdateQuestion(selectedQuestion.id, { required: checked })
                   }
+                  className="shrink-0 self-start"
                 />
               </div>
 
@@ -352,8 +351,8 @@ export function RightPanel({
 
         {/* Tab: Lógica */}
         <TabsContent value="logic" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <ScrollArea className="h-full">
-            <div className="p-4 space-y-5">
+          <ScrollArea className="h-full max-w-full">
+            <div className="p-4 space-y-5 max-w-full overflow-hidden">
               {/* Existing logic from QuestionEditor - conditional logic + jump rules */}
               <QuestionEditor
                 question={selectedQuestion}

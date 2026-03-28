@@ -66,7 +66,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
               <select
                 value={question.conditionalLogic.questionId || ''}
                 onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
-                className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+                className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
               >
                 <option value="">Selecione uma pergunta</option>
                 {allQuestions.filter(q => q.id !== question.id).map(q => (
@@ -76,7 +76,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
               <select
                 value={question.conditionalLogic.operator || 'equals'}
                 onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
-                className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+                className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
               >
                 <option value="equals">é igual a</option>
                 <option value="not_equals">é diferente de</option>
@@ -89,7 +89,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
                   value={question.conditionalLogic.value || ''}
                   onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, value: e.target.value } })}
                   placeholder="Valor esperado"
-                  className="text-sm"
+                  className="w-full max-w-full text-sm"
                 />
               )}
               <Button
@@ -140,7 +140,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
   }
 
   return (
-    <div className={hideTypeAndRequired ? 'space-y-6' : 'p-4 space-y-6'}>
+    <div className={hideTypeAndRequired ? 'space-y-6 w-full max-w-full overflow-hidden' : 'p-4 space-y-6 w-full max-w-full overflow-hidden'}>
       {/* Question Type Badge */}
       {!hideTypeAndRequired && (
       <div className="flex items-center gap-2">
@@ -217,7 +217,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             {(question.options || []).map((option, index) => (
               <div
                 key={index}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 w-full max-w-full"
               >
                 <div className="cursor-grab active:cursor-grabbing">
                   <GripVertical className="w-4 h-4 text-slate-300" />
@@ -226,13 +226,13 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
                   value={option}
                   onChange={(e) => updateOption(index, e.target.value)}
                   placeholder={`Opção ${index + 1}`}
-                  className="flex-1"
+                  className="flex-1 min-w-0 w-full max-w-full"
                 />
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => deleteOption(index)}
-                  className="h-11 w-11 p-0"
+                  className="h-11 w-11 shrink-0 p-0"
                   disabled={(question.options?.length || 0) <= 1}
                 >
                   <X className="w-4 h-4 text-slate-400" />
@@ -343,7 +343,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
           <select
             value={question.defaultCountry || 'BR'}
             onChange={(e) => onUpdate({ defaultCountry: e.target.value })}
-            className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+            className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
           >
             {countries.map(c => (
               <option key={c.code} value={c.code}>
@@ -411,7 +411,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             <select
               value={question.conditionalLogic.questionId || ''}
               onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
-              className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+              className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
             >
               <option value="">Selecione uma pergunta</option>
               {allQuestions.filter(q => q.id !== question.id).map(q => (
@@ -421,7 +421,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             <select
               value={question.conditionalLogic.operator || 'equals'}
               onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
-              className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+              className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
             >
               <option value="equals">é igual a</option>
               <option value="not_equals">é diferente de</option>

@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Logo } from '@/components/ui/logo'
+import { EidosLogo } from '@/components/ui/eidos-logo'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff } from 'lucide-react'
@@ -64,7 +64,7 @@ export default function ResetPasswordPage() {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center">
-            <Logo href="/" size="lg" />
+            <EidosLogo variant="full" theme="dark" href="/" size={40} />
           </div>
           <p className="mt-3 text-slate-400">Defina sua nova senha</p>
         </div>

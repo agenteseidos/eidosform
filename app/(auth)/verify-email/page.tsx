@@ -4,7 +4,7 @@ import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Logo } from '@/components/ui/logo'
+import { EidosLogo } from '@/components/ui/eidos-logo'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
@@ -54,7 +54,7 @@ function VerifyEmailContent() {
         className="w-full max-w-md px-6 sm:px-8 text-center relative z-10"
       >
         <div className="flex justify-center mb-8">
-          <Logo href="/" size="lg" />
+          <EidosLogo variant="full" theme="dark" href="/" size={40} />
         </div>
 
         <div className="bg-[#111111] rounded-2xl shadow-xl shadow-black/20 p-8 border border-white/5">

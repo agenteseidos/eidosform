@@ -94,7 +94,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // GET /api/v1/forms/[id] — form details
   const { data: formData, error } = await supabase
     .from('forms')
-    .select('id, title, slug, status, questions, settings, created_at, updated_at')
+    .select('id, title, slug, status, questions, theme, created_at, updated_at')
     .eq('id', id)
     .eq('user_id', auth.userId)
     .single()
@@ -162,7 +162,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const answerItems = Object.entries(answers as Record<string, unknown>).map(([questionId, value]) => ({
     response_id: response.id,
     question_id: questionId,
-    value: Array.isArray(value) ? value.join(', ') : String(value ?? ''),
+    value: value === null || value === undefined ? ''
+      : typeof value === 'string' ? value
+      : Array.isArray(value) ? value.join(', ')
+      : typeof value === 'object' ? JSON.stringify(value)
+      : String(value),
   }))
 
   if (answerItems.length > 0) {

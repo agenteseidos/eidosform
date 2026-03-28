@@ -54,6 +54,17 @@ function sanitizeValue(val: unknown): unknown {
   return val
 }
 
+// Serializa valor de resposta para answer_items (coluna text)
+// Tipos complexos (objeto, array) são serializados como JSON
+function serializeAnswerValue(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return value.join(', ')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 // Check if all required questions are answered (Bug #5)
 function isResponseComplete(
   answers: Record<string, unknown>,
@@ -223,10 +234,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Inserir answer_items normalizados para analytics
+  // Serializa tipos complexos (address, file_upload, etc.) como JSON
   const answerItems = Object.entries(answers as Record<string, unknown>).map(([questionId, value]) => ({
     response_id: responseId,
     question_id: questionId,
-    value: Array.isArray(value) ? value.join(', ') : String(value ?? ''),
+    value: serializeAnswerValue(value),
   }))
 
   if (answerItems.length > 0) {
@@ -246,11 +258,19 @@ export async function POST(req: NextRequest) {
 
     // Webhook externo configurado pelo usuário
     if (form.webhook_url) {
+      // Enriquecer payload com metadata dos campos
+      const questions = (form.questions ?? []) as QuestionConfig[]
+      const fields = questions.map(q => ({
+        question_id: q.id,
+        type: q.type,
+        title: q.title,
+      }))
       dispatchWebhook({
         webhookUrl: form.webhook_url,
         formId: form_id as string,
         responseId,
         responseData: answers as Record<string, unknown>,
+        fields,
       }).catch(console.error) // fire-and-forget, não bloqueia resposta
     }
   }

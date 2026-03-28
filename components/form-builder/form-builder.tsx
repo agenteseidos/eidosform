@@ -935,6 +935,12 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
           <div className="max-w-2xl mx-auto w-full">
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-4">
               <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
+                {/* B17: Dots de janela estilo macOS */}
+                <div className="flex items-center gap-1.5 mr-2">
+                  <div className="w-3 h-3 rounded-full bg-red-400" />
+                  <div className="w-3 h-3 rounded-full bg-amber-400" />
+                  <div className="w-3 h-3 rounded-full bg-emerald-400" />
+                </div>
                 <Eye className="w-4 h-4 text-slate-500" />
                 <span className="text-sm font-medium text-slate-600">Visualização</span>
               </div>

@@ -62,6 +62,7 @@ import {
   Share2,
   HandMetal,
   PartyPopper,
+  Zap,
 } from 'lucide-react'
 import Link from 'next/link'
 import { QuestionEditor } from './question-editor'
@@ -441,8 +442,18 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
             ))}
           </nav>
 
-          {/* Right: Save status + Publish */}
+          {/* Right: Upgrade + Save status + Publish */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* B10: Botão Upgrade para planos Free/Starter */}
+            {(userPlan === 'free' || userPlan === 'starter') && (
+              <Link
+                href="/billing"
+                className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:from-amber-500 hover:to-yellow-600 transition-all shadow-sm hover:shadow-md"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                Upgrade
+              </Link>
+            )}
             {/* B06: Autosave status indicator */}
             <span className="text-xs text-slate-400 hidden sm:flex items-center gap-1 min-w-[70px] justify-end">
               {saveStatus === 'saving' && (

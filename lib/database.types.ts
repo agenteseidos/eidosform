@@ -27,6 +27,7 @@ export type QuestionType =
   | 'url'
   | 'address'
   | 'cpf'
+  | 'calendly'
 
 // Conditional logic operators
 export type ConditionalOperator = 'equals' | 'not_equals' | 'contains' | 'not_empty' | 'is_empty'
@@ -78,6 +79,7 @@ export interface QuestionConfig {
   maxFileSize?: number // In MB
   placeholder?: string
   defaultCountry?: string // Country code for phone type (default: BR)
+  calendlyUrl?: string // Calendly embed URL for calendly type
   conditionalLogic?: ConditionalRule
   pixelEvents?: PixelEventRule[]
   jumpRules?: JumpRule[]

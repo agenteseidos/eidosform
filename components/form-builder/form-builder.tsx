@@ -113,7 +113,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
   const [mobilePanel, setMobilePanel] = useState<'questions' | 'editor' | 'preview'>('questions')
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
 
@@ -129,6 +131,62 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [hasUnsavedChanges])
+
+  // B06: Autosave com debounce de 1500ms
+  const handleAutosave = useCallback(async () => {
+    setSaveStatus('saving')
+    setIsSaving(true)
+    const updateData = {
+      title: form.title,
+      description: form.description,
+      slug: form.slug,
+      theme: form.theme,
+      questions: questions,
+      thank_you_message: form.thank_you_message,
+      thank_you_title: form.thank_you_title || null,
+      thank_you_description: form.thank_you_description || null,
+      thank_you_button_text: form.thank_you_button_text || null,
+      thank_you_button_url: form.thank_you_button_url || null,
+      pixels: pixels,
+      redirect_url: form.redirect_url || null,
+      webhook_url: form.webhook_url || null,
+      pixel_event_on_start: form.pixel_event_on_start || null,
+      pixel_event_on_complete: form.pixel_event_on_complete || null,
+      welcome_enabled: form.welcome_enabled || false,
+      welcome_title: form.welcome_title || null,
+      welcome_description: form.welcome_description || null,
+      welcome_button_text: form.welcome_button_text || null,
+      welcome_image_url: form.welcome_image_url || null,
+    }
+    try {
+      const { error } = await supabase
+        .from('forms')
+        .update(updateData)
+        .eq('id', form.id)
+      if (!error) {
+        setHasUnsavedChanges(false)
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+      } else {
+        setSaveStatus('idle')
+      }
+    } catch {
+      setSaveStatus('idle')
+    } finally {
+      setIsSaving(false)
+    }
+  }, [supabase, form, questions, pixels])
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      handleAutosave()
+    }, 1500)
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    }
+  }, [hasUnsavedChanges, handleAutosave])
 
   const handleWelcomeImageUpload = useCallback(async (file: File) => {
     if (!file) return
@@ -380,18 +438,24 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
             ))}
           </nav>
 
-          {/* Right: Save + Publish */}
+          {/* Right: Save status + Publish */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Autosave indicator (B06 placeholder) */}
-            {hasUnsavedChanges && (
-              <span className="text-xs text-slate-400 hidden sm:block">●</span>
-            )}
+            {/* B06: Autosave status indicator */}
+            <span className="text-xs text-slate-400 hidden sm:flex items-center gap-1 min-w-[70px] justify-end">
+              {saveStatus === 'saving' && (
+                <><Loader2 className="w-3 h-3 animate-spin" /> Salvando...</>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="text-emerald-500">Salvo ✓</span>
+              )}
+            </span>
             <Button 
               variant="outline" 
               size="sm" 
               onClick={handleSave}
               disabled={isSaving}
               className="hidden sm:flex"
+              title="Salvar manualmente"
             >
               <Save className="w-4 h-4 mr-1" />
               Salvar
@@ -954,58 +1018,43 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
           </Tabs>
         </aside>
 
-        {/* Preview / Editor area */}
-        <div className={`${mobilePanel !== 'questions' ? 'flex' : 'hidden'} md:flex flex-1 overflow-hidden`}>
-          {/* Question Editor */}
-          {selectedQuestion && (
-            <div className={`${mobilePanel === 'editor' ? 'flex flex-col' : 'hidden'} md:flex md:flex-col flex-1 min-w-0 bg-white border-r border-slate-200 overflow-auto`}>
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-medium">Editar Pergunta</h3>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setSelectedQuestionId(null)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
+        {/* Center: Preview */}
+        <div className={`${mobilePanel === 'preview' || mobilePanel === 'editor' ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0 overflow-auto bg-slate-100 p-4 md:p-8`}>
+          <div className="max-w-2xl mx-auto w-full">
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-4">
+              <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
+                <Eye className="w-4 h-4 text-slate-500" />
+                <span className="text-sm font-medium text-slate-600">Visualização</span>
               </div>
-              <QuestionEditor
-                question={selectedQuestion}
-                allQuestions={questions}
-                onUpdate={(updates) => updateQuestion(selectedQuestion.id, updates)}
-                onDelete={() => deleteQuestion(selectedQuestion.id)}
-                onDuplicate={() => duplicateQuestion(selectedQuestion.id)}
-                ownerPlan={userPlan}
-              />
-            </div>
-          )}
-
-          {/* Preview */}
-          <div className={`${mobilePanel === 'preview' || !selectedQuestion ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0 overflow-auto bg-slate-100 p-4 md:p-8`}>
-            <div className="max-w-2xl mx-auto">
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-4">
-                <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
-                  <Eye className="w-4 h-4 text-slate-500" />
-                  <span className="text-sm font-medium text-slate-600">Visualização</span>
-                </div>
-                <div 
-                  className="min-h-[500px]"
-                  style={{ 
-                    backgroundColor: currentTheme.backgroundColor,
-                    fontFamily: currentTheme.fontFamily 
-                  }}
-                >
-                  <FormPreview 
-                    questions={questions}
-                    theme={currentTheme}
-                    selectedQuestionId={selectedQuestionId}
-                    onSelectQuestion={setSelectedQuestionId}
-                  />
-                </div>
+              <div 
+                className="min-h-[500px]"
+                style={{ 
+                  backgroundColor: currentTheme.backgroundColor,
+                  fontFamily: currentTheme.fontFamily 
+                }}
+              >
+                <FormPreview 
+                  questions={questions}
+                  theme={currentTheme}
+                  selectedQuestionId={selectedQuestionId}
+                  onSelectQuestion={setSelectedQuestionId}
+                />
               </div>
             </div>
           </div>
         </div>
+
+        {/* Right Panel - Fixed property editor */}
+        <aside className={`${mobilePanel === 'editor' ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0 overflow-hidden`}>
+          <RightPanel
+            selectedQuestion={selectedQuestion || null}
+            allQuestions={questions}
+            onUpdateQuestion={updateQuestion}
+            onDeleteQuestion={deleteQuestion}
+            onDuplicateQuestion={duplicateQuestion}
+            ownerPlan={userPlan}
+          />
+        </aside>
       </div>
 
       {/* Mobile Bottom Navigation */}

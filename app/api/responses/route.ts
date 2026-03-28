@@ -1,11 +1,17 @@
-import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/database.types'
+import type { ResponseInsert, ResponseUpdate, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
-import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
+import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
+import { validateAllAnswers } from '@/lib/field-validators'
+
+// Maximum payload size (50KB — generous for form data, blocks abuse)
+const MAX_PAYLOAD_BYTES = 50 * 1024
+// Maximum number of answer keys (prevents flooding with fake question ids)
+const MAX_ANSWER_KEYS = 200
 
 // SECURITY NOTE: CORS * is intentional — this endpoint must be callable from any
 // domain where forms are embedded (custom domains, landing pages, etc.).
@@ -34,6 +40,44 @@ const CORS_HEADERS = {
 // OPTIONS /api/responses — CORS preflight
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
+}
+
+// Sanitize string: strip HTML tags to prevent stored XSS (Bug #9)
+function sanitizeValue(val: unknown): unknown {
+  if (typeof val === 'string') return val.replace(/<[^>]*>/g, '')
+  if (Array.isArray(val)) return val.map(sanitizeValue)
+  if (val && typeof val === 'object') {
+    return Object.fromEntries(
+      Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, sanitizeValue(v)])
+    )
+  }
+  return val
+}
+
+// Serializa valor de resposta para answer_items (coluna text)
+// Tipos complexos (objeto, array) são serializados como JSON
+function serializeAnswerValue(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return value.join(', ')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+// Check if all required questions are answered (Bug #5)
+function isResponseComplete(
+  answers: Record<string, unknown>,
+  questions: Array<{ id: string; required?: boolean }>
+): boolean {
+  const requiredIds = questions.filter((q) => q.required).map((q) => q.id)
+  if (requiredIds.length === 0) return true
+  return requiredIds.every((id) => {
+    const val = answers[id]
+    if (val === undefined || val === null || val === '') return false
+    if (Array.isArray(val) && val.length === 0) return false
+    return true
+  })
 }
 
 // POST /api/responses — submeter resposta (completa ou parcial)
@@ -127,6 +171,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404, headers: CORS_HEADERS })
   }
 
+  // B16b: Validação backend por tipo de campo
+  const fieldErrors = validateAllAnswers(
+    (form.questions ?? []) as QuestionConfig[],
+    answers as Record<string, unknown>
+  )
+  if (fieldErrors.length > 0) {
+    return NextResponse.json(
+      { error: 'Dados inválidos', field_errors: fieldErrors },
+      { status: 422, headers: CORS_HEADERS }
+    )
+  }
+
   // Bug #5: Auto-detect completed based on required questions
   const completed = isResponseComplete(answers, form.questions ?? [])
 
@@ -177,10 +233,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Inserir answer_items normalizados para analytics
+  // Serializa tipos complexos (address, file_upload, etc.) como JSON
   const answerItems = Object.entries(answers as Record<string, unknown>).map(([questionId, value]) => ({
     response_id: responseId,
     question_id: questionId,
-    value: Array.isArray(value) ? value.join(', ') : String(value ?? ''),
+    value: serializeAnswerValue(value),
   }))
 
   if (answerItems.length > 0) {
@@ -200,11 +257,19 @@ export async function POST(req: NextRequest) {
 
     // Webhook externo configurado pelo usuário
     if (form.webhook_url) {
+      // Enriquecer payload com metadata dos campos
+      const questions = (form.questions ?? []) as QuestionConfig[]
+      const fields = questions.map(q => ({
+        question_id: q.id,
+        type: q.type,
+        title: q.title,
+      }))
       dispatchWebhook({
         webhookUrl: form.webhook_url,
         formId: form_id as string,
         responseId,
         responseData: answers as Record<string, unknown>,
+        fields,
       }).catch(console.error) // fire-and-forget, não bloqueia resposta
     }
   }

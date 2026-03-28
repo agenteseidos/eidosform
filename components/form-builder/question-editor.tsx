@@ -1,6 +1,6 @@
 'use client'
 
-import { QuestionConfig, ConditionalRule, ConditionalOperator } from '@/lib/database.types'
+import { QuestionConfig, ConditionalOperator } from '@/lib/database.types'
 import { getQuestionTypeInfo } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Trash2, Plus, GripVertical, X, GitBranch, Copy } from 'lucide-react'
+import { Trash2, Plus, GripVertical, X, GitBranch, Copy, CalendarClock } from 'lucide-react'
 import { countries } from '@/lib/countries'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
 import { JumpRulesEditor } from './jump-rules-editor'
@@ -20,10 +20,17 @@ interface QuestionEditorProps {
   onDelete: () => void
   onDuplicate?: () => void
   ownerPlan?: string
+  /** Hide type badge and required toggle (shown in right panel header instead) */
+  hideTypeAndRequired?: boolean
+  /** Hide logic sections (conditional, jump rules, pixel events) */
+  hideLogic?: boolean
+  /** Show ONLY logic sections */
+  onlyLogic?: boolean
 }
 
-export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete, onDuplicate, ownerPlan = 'free' }: QuestionEditorProps) {
+export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete, onDuplicate, ownerPlan = 'free', hideTypeAndRequired, hideLogic, onlyLogic }: QuestionEditorProps) {
   const typeInfo = getQuestionTypeInfo(question.type)
+  const isCalendlyQuestion = question.type === 'calendly'
 
   const addOption = () => {
     const options = question.options || []
@@ -41,41 +48,164 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
     onUpdate({ options })
   }
 
+  // If onlyLogic mode, render just the logic sections
+  if (onlyLogic) {
+    return (
+      <div className="space-y-6">
+        {/* Conditional Logic */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <GitBranch className="w-4 h-4 text-slate-500" />
+              <Label className="text-sm font-medium text-slate-700">Lógica Condicional</Label>
+            </div>
+          </div>
+          {question.conditionalLogic ? (
+            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
+              <p className="text-xs text-slate-500 font-medium">Mostrar esta pergunta se:</p>
+              <select
+                value={question.conditionalLogic.questionId || ''}
+                onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
+                className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+              >
+                <option value="">Selecione uma pergunta</option>
+                {allQuestions.filter(q => q.id !== question.id).map(q => (
+                  <option key={q.id} value={q.id}>{q.title || 'Pergunta sem título'}</option>
+                ))}
+              </select>
+              <select
+                value={question.conditionalLogic.operator || 'equals'}
+                onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
+                className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+              >
+                <option value="equals">é igual a</option>
+                <option value="not_equals">é diferente de</option>
+                <option value="contains">contém</option>
+                <option value="not_empty">não está vazio</option>
+                <option value="is_empty">está vazio</option>
+              </select>
+              {!['not_empty', 'is_empty'].includes(question.conditionalLogic.operator) && (
+                <Input
+                  value={question.conditionalLogic.value || ''}
+                  onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, value: e.target.value } })}
+                  placeholder="Valor esperado"
+                  className="w-full max-w-full text-sm"
+                />
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onUpdate({ conditionalLogic: undefined })}
+                className="text-red-500 hover:text-red-600 text-xs w-full"
+              >
+                <X className="w-3 h-3 mr-1" />
+                Remover condição
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onUpdate({ conditionalLogic: { questionId: '', operator: 'equals', value: '' } })}
+              className="w-full text-xs text-slate-700"
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              Adicionar condição
+            </Button>
+          )}
+        </div>
+
+        <Separator />
+
+        {/* Jump Rules */}
+        <div>
+          <JumpRulesEditor
+            rules={question.jumpRules || []}
+            questionId={question.id}
+            allQuestions={allQuestions}
+            onChange={(jumpRules) => onUpdate({ jumpRules })}
+          />
+        </div>
+
+        <Separator />
+
+        {/* Pixel Events */}
+        <PixelEventRulesEditor
+          rules={question.pixelEvents || []}
+          onChange={(pixelEvents) => onUpdate({ pixelEvents })}
+          hasPixelPlan={ownerPlan === 'plus' || ownerPlan === 'professional'}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="p-4 space-y-6">
+    <div className={hideTypeAndRequired ? 'space-y-6 w-full max-w-full overflow-hidden' : 'p-4 space-y-6 w-full max-w-full overflow-hidden'}>
       {/* Question Type Badge */}
+      {!hideTypeAndRequired && (
       <div className="flex items-center gap-2">
         {typeInfo && <typeInfo.icon className="w-4 h-4 text-blue-600" />}
         <span className="text-sm font-medium text-slate-600">{typeInfo?.label}</span>
       </div>
+      )}
 
-      {/* Question Title */}
-      <div>
-        <Label htmlFor="title" className="text-sm font-medium text-slate-900">Pergunta</Label>
-        <Textarea
-          id="title"
-          value={question.title}
-          onChange={(e) => onUpdate({ title: e.target.value })}
-          placeholder="Digite sua pergunta aqui..."
-          className="mt-2 resize-none"
-          rows={2}
-        />
-      </div>
+      {!isCalendlyQuestion ? (
+        <>
+          {/* Question Title */}
+          <div>
+            <Label htmlFor="title" className="text-sm font-medium text-slate-900">Pergunta</Label>
+            <Textarea
+              id="title"
+              value={question.title}
+              onChange={(e) => onUpdate({ title: e.target.value })}
+              placeholder="Digite sua pergunta aqui..."
+              className="mt-2 resize-none"
+              rows={2}
+            />
+          </div>
 
-      {/* Description */}
-      <div>
-        <Label htmlFor="description" className="text-sm font-medium text-slate-700">
-          Descrição <span className="text-slate-500 font-normal">(opcional)</span>
-        </Label>
-        <Textarea
-          id="description"
-          value={question.description || ''}
-          onChange={(e) => onUpdate({ description: e.target.value })}
-          placeholder="Adicione uma descrição..."
-          className="mt-2 resize-none"
-          rows={2}
-        />
-      </div>
+          {/* Description */}
+          <div>
+            <Label htmlFor="description" className="text-sm font-medium text-slate-700">
+              Descrição <span className="text-slate-500 font-normal">(opcional)</span>
+            </Label>
+            <Textarea
+              id="description"
+              value={question.description || ''}
+              onChange={(e) => onUpdate({ description: e.target.value })}
+              placeholder="Adicione uma descrição..."
+              className="mt-2 resize-none"
+              rows={2}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700">
+              <CalendarClock className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-slate-900">Integração Calendly</h3>
+              <p className="text-xs text-slate-600 mt-1">
+                Configure a URL do evento para exibir o widget de agendamento no formulário.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="calendlyUrl" className="text-sm font-medium text-slate-700">URL do Calendly</Label>
+            <Input
+              id="calendlyUrl"
+              value={question.calendlyUrl || ''}
+              onChange={(e) => onUpdate({ calendlyUrl: e.target.value })}
+              placeholder="https://calendly.com/seu-usuario/30min"
+              className="mt-2"
+            />
+            <p className="text-xs text-slate-500 mt-1.5">Cole a URL do seu evento Calendly</p>
+          </div>
+        </div>
+      )}
 
       <Separator />
 
@@ -87,7 +217,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             {(question.options || []).map((option, index) => (
               <div
                 key={index}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 w-full max-w-full"
               >
                 <div className="cursor-grab active:cursor-grabbing">
                   <GripVertical className="w-4 h-4 text-slate-300" />
@@ -96,13 +226,13 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
                   value={option}
                   onChange={(e) => updateOption(index, e.target.value)}
                   placeholder={`Opção ${index + 1}`}
-                  className="flex-1"
+                  className="flex-1 min-w-0 w-full max-w-full"
                 />
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => deleteOption(index)}
-                  className="h-11 w-11 p-0"
+                  className="h-11 w-11 shrink-0 p-0"
                   disabled={(question.options?.length || 0) <= 1}
                 >
                   <X className="w-4 h-4 text-slate-400" />
@@ -213,7 +343,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
           <select
             value={question.defaultCountry || 'BR'}
             onChange={(e) => onUpdate({ defaultCountry: e.target.value })}
-            className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+            className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
           >
             {countries.map(c => (
               <option key={c.code} value={c.code}>
@@ -223,6 +353,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
           </select>
         </div>
       )}
+
 
       {question.type === 'file_upload' && (
         <div className="space-y-4">
@@ -248,6 +379,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
       <Separator />
 
       {/* Required toggle */}
+      {!hideTypeAndRequired && (
       <div className="flex items-center justify-between">
         <div>
           <Label className="text-sm font-medium text-slate-700">Obrigatório</Label>
@@ -258,11 +390,14 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
           onCheckedChange={(checked) => onUpdate({ required: checked })}
         />
       </div>
+      )}
 
-      <Separator />
+      {!hideTypeAndRequired && <Separator />}
 
 
       {/* Conditional Logic */}
+      {!hideLogic && (
+      <>
       <div>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -276,7 +411,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             <select
               value={question.conditionalLogic.questionId || ''}
               onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
-              className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+              className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
             >
               <option value="">Selecione uma pergunta</option>
               {allQuestions.filter(q => q.id !== question.id).map(q => (
@@ -286,7 +421,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
             <select
               value={question.conditionalLogic.operator || 'equals'}
               onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
-              className="w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
+              className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
             >
               <option value="equals">é igual a</option>
               <option value="not_equals">é diferente de</option>
@@ -347,6 +482,8 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
       />
 
       <Separator />
+      </>
+      )}
       {/* Action buttons */}
       {onDuplicate && (
         <Button

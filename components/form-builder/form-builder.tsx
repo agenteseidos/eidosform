@@ -12,7 +12,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -31,10 +30,9 @@ import {
   Trash2,
   GripVertical,
   Eye,
-  Save,
+
   Globe,
-  X,
-  ExternalLink,
+  RefreshCw,
   Copy,
   Settings,
   Palette,
@@ -42,17 +40,70 @@ import {
   Pencil,
   Upload,
   Loader2,
+  Type,
+  AlignLeft,
+  Mail,
+  Phone,
+  Hash,
+  ToggleLeft,
+  List,
+  Star,
+  Calendar,
+  Gauge,
+  CheckSquare,
+  Link as LinkIcon,
+  MapPin,
+  Fingerprint,
+  LucideIcon,
+  CalendarClock,
+  BarChart3,
+  Share2,
+  HandMetal,
+  PartyPopper,
+  Zap,
 } from 'lucide-react'
 import Link from 'next/link'
-import { QuestionEditor } from './question-editor'
 import { FormPreview } from './form-preview'
+import { RightPanel } from './right-panel'
+
+// B03: Mapeamento de tipo de campo → ícone + cor para sidebar
+const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> = {
+  short_text:    { icon: Type,        color: 'text-slate-500' },
+  long_text:     { icon: AlignLeft,   color: 'text-slate-500' },
+  email:         { icon: Mail,        color: 'text-blue-500' },
+  phone:         { icon: Phone,       color: 'text-green-500' },
+  number:        { icon: Hash,        color: 'text-orange-500' },
+  yes_no:        { icon: ToggleLeft,  color: 'text-purple-500' },
+  dropdown:      { icon: List,        color: 'text-yellow-600' },
+  checkboxes:    { icon: CheckSquare, color: 'text-yellow-600' },
+  nps:           { icon: Star,        color: 'text-amber-500' },
+  opinion_scale: { icon: Gauge,       color: 'text-amber-500' },
+  rating:        { icon: Star,        color: 'text-amber-500' },
+  date:          { icon: Calendar,    color: 'text-teal-500' },
+  file_upload:   { icon: Upload,      color: 'text-pink-500' },
+  url:           { icon: LinkIcon,    color: 'text-blue-400' },
+  address:       { icon: MapPin,      color: 'text-emerald-500' },
+  cpf:           { icon: Fingerprint, color: 'text-violet-500' },
+  calendly:      { icon: CalendarClock, color: 'text-cyan-500' },
+}
+
+function getQuestionVisual(type: string) {
+  return questionTypeVisuals[type] || { icon: FileText, color: 'text-slate-400' }
+}
+
+interface UserInfo {
+  email: string
+  name: string
+  avatarUrl: string
+}
 
 interface FormBuilderProps {
   form: Form
   userPlan?: string
+  userInfo?: UserInfo
 }
 
-export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilderProps) {
+export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: FormBuilderProps) {
   const router = useRouter()
   const supabase = createClient()
   
@@ -70,7 +121,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
   const [mobilePanel, setMobilePanel] = useState<'questions' | 'editor' | 'preview'>('questions')
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [sidebarSection, setSidebarSection] = useState<'welcome' | 'questions' | 'thankyou' | null>(null)
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
 
@@ -86,6 +139,62 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [hasUnsavedChanges])
+
+  // B06: Autosave com debounce de 1500ms
+  const handleAutosave = useCallback(async () => {
+    setSaveStatus('saving')
+    setIsSaving(true)
+    const updateData = {
+      title: form.title,
+      description: form.description,
+      slug: form.slug,
+      theme: form.theme,
+      questions: questions,
+      thank_you_message: form.thank_you_message,
+      thank_you_title: form.thank_you_title || null,
+      thank_you_description: form.thank_you_description || null,
+      thank_you_button_text: form.thank_you_button_text || null,
+      thank_you_button_url: form.thank_you_button_url || null,
+      pixels: pixels,
+      redirect_url: form.redirect_url || null,
+      webhook_url: form.webhook_url || null,
+      pixel_event_on_start: form.pixel_event_on_start || null,
+      pixel_event_on_complete: form.pixel_event_on_complete || null,
+      welcome_enabled: form.welcome_enabled || false,
+      welcome_title: form.welcome_title || null,
+      welcome_description: form.welcome_description || null,
+      welcome_button_text: form.welcome_button_text || null,
+      welcome_image_url: form.welcome_image_url || null,
+    }
+    try {
+      const { error } = await supabase
+        .from('forms')
+        .update(updateData)
+        .eq('id', form.id)
+      if (!error) {
+        setHasUnsavedChanges(false)
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+      } else {
+        setSaveStatus('idle')
+      }
+    } catch {
+      setSaveStatus('idle')
+    } finally {
+      setIsSaving(false)
+    }
+  }, [supabase, form, questions, pixels])
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      handleAutosave()
+    }, 1500)
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    }
+  }, [hasUnsavedChanges, handleAutosave])
 
   const handleWelcomeImageUpload = useCallback(async (file: File) => {
     if (!file) return
@@ -187,16 +296,44 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
     }
 
     setIsSaving(true)
-    const newStatus: FormStatus = form.status === 'published' ? 'closed' : 'published'
+    const newStatus: FormStatus = 'published'
+    
+    const updateData = {
+      status: newStatus,
+      is_published: true,
+      questions: questions,
+      title: form.title,
+      description: form.description,
+      slug: form.slug,
+      theme: form.theme,
+      thank_you_message: form.thank_you_message,
+      thank_you_title: form.thank_you_title || null,
+      thank_you_description: form.thank_you_description || null,
+      thank_you_button_text: form.thank_you_button_text || null,
+      thank_you_button_url: form.thank_you_button_url || null,
+      pixels: pixels,
+      redirect_url: form.redirect_url || null,
+      webhook_url: form.webhook_url || null,
+      pixel_event_on_start: form.pixel_event_on_start || null,
+      pixel_event_on_complete: form.pixel_event_on_complete || null,
+      welcome_enabled: form.welcome_enabled || false,
+      welcome_title: form.welcome_title || null,
+      welcome_description: form.welcome_description || null,
+      welcome_button_text: form.welcome_button_text || null,
+      welcome_image_url: form.welcome_image_url || null,
+    }
+    const { data: updated, error } = await supabase
+      .from('forms')
+      .update(updateData)
+      .eq('id', form.id)
+      .select('id, status, is_published')
 
-    try {
-      const updatedForm = await updateFormViaApi(buildFormPayload(newStatus))
-      setForm(prev => ({
-        ...prev,
-        ...(updatedForm || {}),
-        status: updatedForm?.status || newStatus,
-      }))
-      toast.success(newStatus === 'published' ? 'Formulário publicado!' : 'Formulário despublicado')
+    if (error || !updated || updated.length === 0) {
+      toast.error('Falha ao atualizar status')
+      console.error('Publish update failed:', error, 'rows:', updated)
+    } else {
+      setForm(prev => ({ ...prev, status: newStatus }))
+      toast.success(form.status === 'published' ? 'Alterações publicadas!' : 'Formulário publicado!')
       setShowPublishDialog(false)
       setHasUnsavedChanges(false)
     } catch (error) {
@@ -258,95 +395,175 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
     <>
     <div className="flex flex-col h-screen bg-slate-50">
       {/* Header */}
-      <header className="min-h-16 bg-white border-b border-slate-200 flex flex-wrap gap-2 items-center justify-between px-3 sm:px-4 py-2 shrink-0">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (hasUnsavedChanges) {
-                setShowLeaveDialog(true)
-              } else {
-                router.push('/dashboard')
-              }
-            }}
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Voltar
-          </Button>
-          <Separator orientation="vertical" className="h-6" />
-          <div className="group relative flex items-center">
-            <Input
-              value={form.title}
-              onChange={(e) => {
-                setForm({ ...form, title: e.target.value })
-                setHasUnsavedChanges(true)
+      <header className="min-h-14 bg-white border-b border-slate-200 shrink-0">
+        <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 min-w-0 overflow-hidden">
+          {/* Left: Voltar + título */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (hasUnsavedChanges) {
+                  setShowLeaveDialog(true)
+                } else {
+                  router.push('/dashboard')
+                }
               }}
-              className="text-lg font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 max-w-[140px] sm:max-w-xs transition-colors"
-              placeholder="Formulário sem título"
-            />
-            <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-0 transition-opacity pointer-events-none" />
+              className="shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">Voltar</span>
+            </Button>
+            <Separator orientation="vertical" className="h-6 hidden sm:block" />
+            <div className="group relative flex items-center min-w-0 flex-1 max-w-full overflow-hidden">
+              <Input
+                value={form.title}
+                onChange={(e) => {
+                  setForm({ ...form, title: e.target.value })
+                  setHasUnsavedChanges(true)
+                }}
+                className="w-full min-w-0 max-w-[140px] sm:max-w-[220px] truncate text-sm sm:text-base font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 transition-colors"
+                placeholder="Sem título"
+              />
+              <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-0 transition-opacity pointer-events-none" />
+            </div>
           </div>
-          {form.status === 'published' && (
-            <Badge className="bg-emerald-100 text-emerald-700">Publicado</Badge>
-          )}
-          {form.status === 'draft' && (
-            <Badge variant="secondary">Rascunho</Badge>
-          )}
-          {form.status === 'closed' && (
-            <Badge variant="secondary" className="bg-amber-100 text-amber-700">Encerrado</Badge>
-          )}
-          {hasUnsavedChanges && (
-            <span className="text-sm text-slate-500">Alterações não salvas</span>
-          )}
-        </div>
 
-        <div className="flex items-center gap-2">
-          {form.status === 'published' && (
-            <>
-              <Button variant="outline" size="sm" onClick={copyFormLink} className="hidden md:flex">
-                <Copy className="w-4 h-4 mr-2" />
-                Copiar link
-              </Button>
-              <Link href={`/f/${form.slug}`} target="_blank" className="hidden md:flex">
-                <Button variant="outline" size="sm">
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Ver
-                </Button>
+          {/* Center: Tabs de navegação */}
+          <nav className="hidden md:flex items-center bg-slate-100 rounded-lg p-1 gap-0.5">
+            {[
+              { id: 'questions', label: 'Perguntas', icon: FileText },
+              { id: 'design', label: 'Design', icon: Palette },
+              { id: 'settings', label: 'Configurações', icon: Settings },
+              { id: 'results', label: 'Resultados', icon: BarChart3 },
+              { id: 'share', label: 'Compartilhar', icon: Share2 },
+            ].map((tab) => {
+              const isCompactSettingsTab = tab.id === 'settings'
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    if (tab.id === 'results') {
+                      router.push(`/dashboard/forms/${form.id}/responses`)
+                    } else if (tab.id === 'share') {
+                      copyFormLink()
+                    } else {
+                      setActiveTab(tab.id)
+                    }
+                  }}
+                  title={isCompactSettingsTab ? tab.label : undefined}
+                  aria-label={isCompactSettingsTab ? tab.label : undefined}
+                  className={`
+                    flex items-center rounded-md text-sm font-medium transition-all
+                    ${isCompactSettingsTab ? 'gap-1.5 px-2.5 xl:px-3 2xl:min-w-[132px] 2xl:justify-center' : 'gap-1.5 px-3'} py-1.5
+                    ${activeTab === tab.id 
+                      ? 'bg-white text-slate-900 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                    }
+                  `}
+                >
+                  <tab.icon className="w-3.5 h-3.5 shrink-0" />
+                  {isCompactSettingsTab ? (
+                    <>
+                      <span className="hidden 2xl:inline whitespace-nowrap">{tab.label}</span>
+                      <span className="2xl:hidden sr-only">{tab.label}</span>
+                    </>
+                  ) : (
+                    <span className="whitespace-nowrap">{tab.label}</span>
+                  )}
+                </button>
+              )
+            })}
+          </nav>
+
+          {/* Right: Upgrade + Save status + Publish */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 max-w-fit">
+            {/* B10: Botão Upgrade para planos Free/Starter */}
+            {(userPlan === 'free' || userPlan === 'starter') && (
+              <Link
+                href="/billing"
+                className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:from-amber-500 hover:to-yellow-600 transition-all shadow-sm hover:shadow-md"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                Upgrade
               </Link>
-            </>
-          )}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Salvar
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setShowPublishDialog(true)}
-            data-testid="publish-button"
-            className={form.status === 'published' 
-              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-400/30' 
-              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
-            }
-          >
-            <Globe className="w-4 h-4 mr-2" />
-            {form.status === 'published' ? 'Publicado ✓' : 'Publicar'}
-          </Button>
+            )}
+            {/* B06: Autosave status indicator */}
+            <span className="text-xs text-slate-400 hidden sm:flex items-center gap-1 min-w-[70px] justify-end">
+              {saveStatus === 'saving' && (
+                <><Loader2 className="w-3 h-3 animate-spin" /> Salvando...</>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="text-emerald-500">Salvo ✓</span>
+              )}
+            </span>
+
+            {/* B11: Status badge separado da ação de publicar */}
+            {form.status === 'published' && (
+              <Badge variant="outline" className="hidden sm:flex items-center gap-1.5 border-emerald-300 bg-emerald-50 text-emerald-700 text-xs font-medium px-2.5 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Publicado
+              </Badge>
+            )}
+            {form.status === 'draft' && (
+              <Badge variant="outline" className="hidden sm:flex items-center gap-1 border-slate-300 bg-slate-50 text-slate-500 text-xs font-medium px-2.5 py-1">
+                Rascunho
+              </Badge>
+            )}
+
+            {/* B11: Botão Publicar como CTA primário — sempre ação, nunca estado */}
+            <Button
+              size="sm"
+              onClick={() => setShowPublishDialog(true)}
+              data-testid="publish-button"
+              className={
+                form.status === 'published' && hasUnsavedChanges
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 ring-2 ring-blue-400/30 font-semibold px-5 animate-pulse'
+                  : form.status === 'published'
+                    ? 'bg-slate-600 hover:bg-slate-700 text-white font-semibold px-5'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-semibold px-5'
+              }
+            >
+              {form.status === 'published' && hasUnsavedChanges ? (
+                <RefreshCw className="w-4 h-4 mr-1.5" />
+              ) : (
+                <Globe className="w-4 h-4 mr-1.5" />
+              )}
+              <span className="hidden sm:inline">Publicar</span>
+            </Button>
+
+            {/* B20: Avatar do usuário no header */}
+            {userInfo && (
+              <div
+                className="hidden sm:flex items-center justify-center w-8 h-8 rounded-full shrink-0 overflow-hidden border-2 border-slate-200"
+                title={userInfo.name || userInfo.email}
+              >
+                {userInfo.avatarUrl ? (
+                  <img
+                    src={userInfo.avatarUrl}
+                    alt={userInfo.name || 'Avatar'}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="text-xs font-bold text-slate-500 bg-slate-100 w-full h-full flex items-center justify-center">
+                    {(userInfo.name || userInfo.email || '?').charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden pb-14 md:pb-0">
         {/* Sidebar */}
-        <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
+        <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:min-w-[280px] bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden overflow-y-auto`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
-            <div className="shrink-0 p-2 border-b border-slate-100">
+            {/* Mobile-only tab selector (desktop tabs are in the header) */}
+            <div className="shrink-0 p-2 border-b border-slate-100 md:hidden">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="questions" className="text-xs">
                   <FileText className="w-3 h-3 mr-1" />
@@ -356,31 +573,63 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                   <Palette className="w-3 h-3 mr-1" />
                   Design
                 </TabsTrigger>
-                <TabsTrigger value="settings" className="text-xs px-1">
-                  <Settings className="w-3 h-3 mr-0.5 shrink-0" />
-                  <span className="truncate">Configurações</span>
+                <TabsTrigger value="settings" className="text-xs px-1.5" title="Configurações">
+                  <Settings className="w-3 h-3 mr-1 shrink-0" />
+                  <span className="whitespace-nowrap">Configurações</span>
                 </TabsTrigger>
               </TabsList>
             </div>
 
             <TabsContent value="questions" className="flex-1 flex flex-col mt-0 overflow-hidden data-[state=inactive]:hidden">
-              <div className="shrink-0 p-4 border-b border-slate-100">
-                <Button 
-                  onClick={() => setShowAddQuestion(true)}
-                  className="w-full bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Adicionar Pergunta
-                </Button>
-              </div>
-              
               <ScrollArea className="flex-1">
-                <div className="p-2">
+                <div className="p-2 space-y-1">
+
+                  {/* === SEÇÃO: TELA DE BOAS VINDAS === */}
+                  <div className="px-2 pt-3 pb-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tela de Boas Vindas</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSidebarSection('welcome')
+                      setSelectedQuestionId(null)
+                      setMobilePanel('editor')
+                    }}
+                    className={`
+                      w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left
+                      ${sidebarSection === 'welcome' && !selectedQuestionId
+                        ? 'bg-blue-50/70 border-blue-500 border-l-4 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
+                        : 'bg-white border-slate-100 hover:border-slate-200 border-l-4 border-l-transparent'
+                      }
+                    `}
+                  >
+                    <HandMetal className="w-4 h-4 text-amber-500 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-700 line-clamp-2">
+                        {form.welcome_title || form.title || 'Tela de boas vindas'}
+                      </p>
+                      <p className="text-xs text-slate-400">{form.welcome_enabled ? 'Ativada' : 'Desativada'}</p>
+                    </div>
+                  </button>
+
+                  {/* === SEÇÃO: QUESTÕES === */}
+                  <div className="px-2 pt-4 pb-1 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Questões</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowAddQuestion(true)}
+                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Adicionar
+                    </Button>
+                  </div>
+
                   {questions.length === 0 ? (
-                    <div className="text-center py-8 px-4">
-                      <FileText className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                    <div className="text-center py-6 px-4">
+                      <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />
                       <p className="text-sm text-slate-500">Nenhuma pergunta ainda</p>
-                      <p className="text-xs text-slate-500 mt-1">Adicione sua primeira pergunta para começar</p>
+                      <p className="text-xs text-slate-400 mt-1">Clique em Adicionar para começar</p>
                     </div>
                   ) : (
                     <Reorder.Group axis="y" values={questions} onReorder={handleReorder}>
@@ -393,31 +642,36 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.95 }}
                               className={`
-                                group p-3 rounded-lg cursor-pointer mb-2 border transition-all
+                                group p-3 rounded-lg cursor-pointer mb-2 border-l-4 border transition-all
                                 ${selectedQuestionId === question.id 
-                                  ? 'bg-blue-50 border-blue-200' 
-                                  : 'bg-white border-slate-100 hover:border-slate-200'
+                                  ? 'bg-blue-50/70 border-blue-500 border-l-blue-500 ring-1 ring-blue-200 shadow-sm' 
+                                  : 'bg-white border-slate-100 border-l-transparent hover:border-slate-200 hover:border-l-slate-300'
                                 }
                               `}
-                              onClick={() => { setSelectedQuestionId(question.id); setMobilePanel('editor'); }}
+                              onClick={() => { setSelectedQuestionId(question.id); setSidebarSection(null); setMobilePanel('editor'); }}
                             >
                               <div className="flex items-start gap-2">
                                 <div className="mt-0 cursor-grab active:cursor-grabbing p-2 -m-2">
                                   <GripVertical className="w-5 h-5 text-slate-300" />
                                 </div>
+                                {(() => {
+                                  const visual = getQuestionVisual(question.type)
+                                  const IconComp = visual.icon
+                                  return <IconComp className={`w-4 h-4 mt-0.5 shrink-0 ${visual.color}`} />
+                                })()}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
                                     <span className="text-xs font-medium text-slate-600">
                                       {index + 1}
                                     </span>
-                                    <span className="text-xs text-slate-600">
+                                    <span className="text-xs text-slate-500">
                                       {getQuestionTypeInfo(question.type)?.label || question.type}
                                     </span>
                                     {question.required && (
                                       <span className="text-xs text-red-500">*</span>
                                     )}
                                   </div>
-                                  <p className="text-sm font-medium text-slate-900 truncate">
+                                  <p className="text-sm font-medium text-slate-900 line-clamp-2">
                                     {question.title || 'Pergunta sem título'}
                                   </p>
                                 </div>
@@ -452,6 +706,43 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                       </AnimatePresence>
                     </Reorder.Group>
                   )}
+
+                  {/* Botão adicionar pergunta abaixo da lista */}
+                  <button
+                    onClick={() => setShowAddQuestion(true)}
+                    className="w-full flex items-center justify-center gap-2 p-3 my-2 rounded-lg border-2 border-dashed border-slate-200 text-sm font-medium text-blue-600 hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Adicionar pergunta
+                  </button>
+
+                  {/* === SEÇÃO: TELAS FINAIS === */}
+                  <div className="px-2 pt-4 pb-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Telas Finais</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSidebarSection('thankyou')
+                      setSelectedQuestionId(null)
+                      setMobilePanel('editor')
+                    }}
+                    className={`
+                      w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left
+                      ${sidebarSection === 'thankyou' && !selectedQuestionId
+                        ? 'bg-blue-50/70 border-blue-500 border-l-4 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
+                        : 'bg-white border-slate-100 hover:border-slate-200 border-l-4 border-l-transparent'
+                      }
+                    `}
+                  >
+                    <PartyPopper className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-700 line-clamp-2">
+                        {form.thank_you_title || 'Tela de agradecimento'}
+                      </p>
+                      <p className="text-xs text-slate-400">Padrão</p>
+                    </div>
+                  </button>
+
                 </div>
               </ScrollArea>
             </TabsContent>
@@ -495,124 +786,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
 
             <TabsContent value="settings" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
               <div className="p-4 space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-px flex-1 bg-slate-100" />
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Tela de Boas Vindas</span>
-                    <div className="h-px flex-1 bg-slate-100" />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium text-slate-700">Ativar tela de boas vindas</Label>
-                    <Switch
-                      checked={form.welcome_enabled || false}
-                      onCheckedChange={(checked) => {
-                        setForm({ ...form, welcome_enabled: checked })
-                        setHasUnsavedChanges(true)
-                      }}
-                    />
-                  </div>
-                  {form.welcome_enabled && (
-                    <>
-                      <div>
-                        <Label className="text-sm font-medium text-slate-700">Título</Label>
-                        <Input
-                          value={form.welcome_title || ''}
-                          onChange={(e) => {
-                            setForm({ ...form, welcome_title: e.target.value || null })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="mt-2 text-slate-900 placeholder:text-slate-400"
-                          placeholder={form.title || 'Bem-vindo!'}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-sm font-medium text-slate-700">Descrição</Label>
-                        <Textarea
-                          value={form.welcome_description || ''}
-                          onChange={(e) => {
-                            setForm({ ...form, welcome_description: e.target.value || null })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="mt-2 text-slate-900 placeholder:text-slate-400"
-                          placeholder="Uma breve descrição do formulário..."
-                          rows={3}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-sm font-medium text-slate-700">Imagem</Label>
-                        {form.welcome_image_url ? (
-                          <div className="mt-2 space-y-2">
-                            <div className="relative rounded-lg overflow-hidden border border-slate-200">
-                              <img
-                                src={form.welcome_image_url}
-                                alt="Welcome"
-                                className="w-full h-32 object-contain bg-slate-50"
-                              />
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleRemoveWelcomeImage}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              Remover
-                            </Button>
-                          </div>
-                        ) : (
-                          <div
-                            className="mt-2 border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-slate-400 hover:bg-slate-50 transition-colors"
-                            onClick={() => fileInputRef.current?.click()}
-                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
-                            onDrop={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              const file = e.dataTransfer.files?.[0]
-                              if (file) handleWelcomeImageUpload(file)
-                            }}
-                          >
-                            {isUploadingImage ? (
-                              <div className="flex flex-col items-center gap-2">
-                                <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
-                                <span className="text-sm text-slate-500">Enviando...</span>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center gap-2">
-                                <Upload className="w-6 h-6 text-slate-400" />
-                                <span className="text-sm text-slate-500">Clique para enviar ou arraste aqui</span>
-                                <span className="text-xs text-slate-400">SVG, PNG, JPG, GIF (até 2MB)</span>
-                              </div>
-                            )}
-                            <input
-                              ref={fileInputRef}
-                              type="file"
-                              accept=".svg,.png,.jpg,.jpeg,.gif"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0]
-                                if (file) handleWelcomeImageUpload(file)
-                                e.target.value = ''
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <Label className="text-sm font-medium text-slate-700">Texto do botão</Label>
-                        <Input
-                          value={form.welcome_button_text || ''}
-                          onChange={(e) => {
-                            setForm({ ...form, welcome_button_text: e.target.value || null })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="mt-2 text-slate-900 placeholder:text-slate-400"
-                          placeholder="Começar"
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-
                 <div>
                   <Label htmlFor="slug" className="text-sm font-medium text-slate-700">URL do Formulário</Label>
                   <div className="mt-2 flex items-center gap-2">
@@ -644,75 +817,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                     placeholder="Descrição opcional..."
                     rows={3}
                   />
-                </div>
-
-                <div>
-                  <Label htmlFor="thank_you" className="text-sm font-medium text-slate-700">Mensagem de Agradecimento</Label>
-                  <Textarea
-                    id="thank_you"
-                    value={form.thank_you_message}
-                    onChange={(e) => {
-                      setForm({ ...form, thank_you_message: e.target.value })
-                      setHasUnsavedChanges(true)
-                    }}
-                    className="mt-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="Obrigado pela sua resposta!"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-px flex-1 bg-slate-100" />
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Tela de Agradecimento</span>
-                    <div className="h-px flex-1 bg-slate-100" />
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-700">Título</Label>
-                    <Input
-                      value={form.thank_you_title || ''}
-                      onChange={(e) => {
-                        setForm({ ...form, thank_you_title: e.target.value || null })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="mt-2 text-slate-900 placeholder:text-slate-400"
-                      placeholder="Obrigado! 🎉"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-700">Mensagem</Label>
-                    <Textarea
-                      value={form.thank_you_description || ''}
-                      onChange={(e) => {
-                        setForm({ ...form, thank_you_description: e.target.value || null })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="mt-2 text-slate-900 placeholder:text-slate-400"
-                      placeholder="Sua resposta foi registrada com sucesso."
-                      rows={3}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-700">Botão (opcional)</Label>
-                    <Input
-                      value={form.thank_you_button_text || ''}
-                      onChange={(e) => {
-                        setForm({ ...form, thank_you_button_text: e.target.value || null })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="mt-2 mb-2 text-slate-900 placeholder:text-slate-400"
-                      placeholder="Ex: Voltar ao site"
-                    />
-                    <Input
-                      value={form.thank_you_button_url || ''}
-                      onChange={(e) => {
-                        setForm({ ...form, thank_you_button_url: e.target.value || null })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="text-slate-900 placeholder:text-slate-400"
-                      placeholder="https://seusite.com.br"
-                    />
-                  </div>
                 </div>
 
                 <div>
@@ -877,58 +981,59 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
           </Tabs>
         </aside>
 
-        {/* Preview / Editor area */}
-        <div className={`${mobilePanel !== 'questions' ? 'flex' : 'hidden'} md:flex flex-1 overflow-hidden`}>
-          {/* Question Editor */}
-          {selectedQuestion && (
-            <div className={`${mobilePanel === 'editor' ? 'flex flex-col' : 'hidden'} md:flex md:flex-col flex-1 min-w-0 bg-white border-r border-slate-200 overflow-auto`}>
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-medium">Editar Pergunta</h3>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setSelectedQuestionId(null)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
+        {/* Center: Preview */}
+        <div className={`${mobilePanel === 'preview' || mobilePanel === 'editor' ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0 overflow-auto bg-slate-100 p-4 md:p-8`}>
+          <div className="max-w-2xl mx-auto w-full">
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-4">
+              <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
+                {/* B17: Dots de janela estilo macOS */}
+                <div className="flex items-center gap-1.5 mr-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#FF5F56' }} />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#FFBD2E' }} />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#27C93F' }} />
+                </div>
+                <Eye className="w-4 h-4 text-slate-500" />
+                <span className="text-sm font-medium text-slate-600">Visualização</span>
               </div>
-              <QuestionEditor
-                question={selectedQuestion}
-                allQuestions={questions}
-                onUpdate={(updates) => updateQuestion(selectedQuestion.id, updates)}
-                onDelete={() => deleteQuestion(selectedQuestion.id)}
-                onDuplicate={() => duplicateQuestion(selectedQuestion.id)}
-                ownerPlan={userPlan}
-              />
-            </div>
-          )}
-
-          {/* Preview */}
-          <div className={`${mobilePanel === 'preview' || !selectedQuestion ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0 overflow-auto bg-slate-100 p-4 md:p-8`}>
-            <div className="max-w-2xl mx-auto">
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-4">
-                <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
-                  <Eye className="w-4 h-4 text-slate-500" />
-                  <span className="text-sm font-medium text-slate-600">Visualização</span>
-                </div>
-                <div 
-                  className="min-h-[500px]"
-                  style={{ 
-                    backgroundColor: currentTheme.backgroundColor,
-                    fontFamily: currentTheme.fontFamily 
-                  }}
-                >
-                  <FormPreview 
-                    questions={questions}
-                    theme={currentTheme}
-                    selectedQuestionId={selectedQuestionId}
-                    onSelectQuestion={setSelectedQuestionId}
-                  />
-                </div>
+              <div 
+                className="min-h-[500px]"
+                style={{ 
+                  backgroundColor: currentTheme.backgroundColor,
+                  fontFamily: currentTheme.fontFamily 
+                }}
+              >
+                <FormPreview 
+                  questions={questions}
+                  theme={currentTheme}
+                  selectedQuestionId={selectedQuestionId}
+                  onSelectQuestion={setSelectedQuestionId}
+                  onUpdateQuestion={updateQuestion}
+                />
               </div>
             </div>
           </div>
         </div>
+
+        {/* Right Panel - Fixed property editor */}
+        <aside className={`${mobilePanel === 'editor' ? 'flex' : 'hidden'} md:flex w-full max-w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0 overflow-hidden`}>
+          <RightPanel
+            selectedQuestion={selectedQuestion || null}
+            allQuestions={questions}
+            onUpdateQuestion={updateQuestion}
+            onDeleteQuestion={deleteQuestion}
+            onDuplicateQuestion={duplicateQuestion}
+            ownerPlan={userPlan}
+            sidebarSection={sidebarSection}
+            form={form}
+            onUpdateForm={(updates) => {
+              setForm(prev => ({ ...prev, ...updates }))
+              setHasUnsavedChanges(true)
+            }}
+            onWelcomeImageUpload={handleWelcomeImageUpload}
+            onRemoveWelcomeImage={handleRemoveWelcomeImage}
+            isUploadingImage={isUploadingImage}
+          />
+        </aside>
       </div>
 
       {/* Mobile Bottom Navigation */}
@@ -956,7 +1061,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
         </button>
       </div>
 
-      {/* Add Question Dialog */}
+      {/* Add Question Dialog — B09: Menu categorizado */}
       <Dialog open={showAddQuestion} onOpenChange={setShowAddQuestion}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader>
@@ -965,18 +1070,66 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
               Escolha o tipo de pergunta para adicionar
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 py-4 overflow-y-auto max-h-[60vh] pr-1">
-            {questionTypes.map((qt) => (
-              <button
-                key={qt.type}
-                onClick={() => addQuestion(qt.type)}
-                className="p-4 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left group"
-              >
-                <qt.icon className="w-6 h-6 text-slate-400 group-hover:text-blue-600 mb-2" />
-                <p className="font-medium text-sm text-slate-900">{qt.label}</p>
-                <p className="text-xs text-slate-500 mt-1">{qt.description}</p>
-              </button>
-            ))}
+          <div className="py-4 overflow-y-auto max-h-[60vh] pr-1 space-y-5">
+            {[
+              {
+                label: 'Escolhas',
+                types: ['dropdown', 'checkboxes', 'yes_no', 'nps', 'rating', 'opinion_scale'],
+              },
+              {
+                label: 'Contato',
+                types: ['email', 'phone', 'date', 'url'],
+              },
+              {
+                label: 'Texto',
+                types: ['short_text', 'long_text', 'number'],
+              },
+              {
+                label: 'Arquivo',
+                types: ['file_upload'],
+              },
+              {
+                label: 'Dados Pessoais',
+                types: ['address', 'cpf'],
+              },
+              {
+                label: 'Integração',
+                types: ['calendly'],
+              },
+            ].map((category) => {
+              const categoryQuestionTypes = category.types
+                .map(t => questionTypes.find(qt => qt.type === t))
+                .filter(Boolean) as typeof questionTypes
+              if (categoryQuestionTypes.length === 0) return null
+              return (
+                <div key={category.label}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{category.label}</span>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {categoryQuestionTypes.map((qt) => {
+                      const visual = getQuestionVisual(qt.type)
+                      return (
+                        <button
+                          key={qt.type}
+                          onClick={() => addQuestion(qt.type)}
+                          className="p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left group flex items-start gap-3"
+                        >
+                          <div className={`mt-0.5 shrink-0 ${visual.color}`}>
+                            <visual.icon className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm text-slate-900">{qt.label}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{qt.description}</p>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </DialogContent>
       </Dialog>
@@ -1021,22 +1174,20 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {form.status === 'published' ? 'Despublicar formulário?' : 'Publicar formulário?'}
+              {form.status === 'published' ? 'Publicar alterações?' : 'Publicar formulário?'}
             </DialogTitle>
             <DialogDescription>
-              {form.status === 'published' 
-                ? 'Isso tornará seu formulário inacessível. As respostas existentes serão mantidas.'
+              {form.status === 'published'
+                ? 'As alterações atuais serão aplicadas na versão publicada do formulário.'
                 : 'Seu formulário ficará acessível em:'
               }
             </DialogDescription>
           </DialogHeader>
-          {form.status !== 'published' && (
-            <div className="p-3 bg-slate-50 rounded-lg">
-              <code className="text-sm text-blue-600">
-                {typeof window !== 'undefined' ? window.location.origin : ''}/f/{form.slug}
-              </code>
-            </div>
-          )}
+          <div className="p-3 bg-slate-50 rounded-lg">
+            <code className="text-sm text-blue-600">
+              {typeof window !== 'undefined' ? window.location.origin : ''}/f/{form.slug}
+            </code>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPublishDialog(false)}>
               Cancelar
@@ -1045,11 +1196,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
               onClick={handlePublish}
               disabled={isSaving}
               className={form.status === 'published' 
-                ? 'bg-amber-500 hover:bg-amber-600' 
+                ? 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20' 
                 : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20'
               }
             >
-              {isSaving ? 'Salvando...' : form.status === 'published' ? 'Despublicar' : 'Publicar'}
+              {isSaving ? 'Salvando...' : 'Publicar'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Plus, FileText } from 'lucide-react'
 import { Form } from '@/lib/database.types'
-import { FormCard } from '@/components/dashboard/form-card'
 import { TemplatesGallery } from '@/components/dashboard/templates-gallery'
 import { OnboardingWrapper } from '@/components/dashboard/onboarding-wrapper'
 import { ErrorToast } from '@/components/dashboard/error-toast'
+import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Suspense } from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -39,6 +39,8 @@ export default async function DashboardPage() {
   })
 
   const isNewUser = forms.length === 0
+
+  const responseCountsByForm = Object.fromEntries(responseCountMap.entries())
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
@@ -85,15 +87,11 @@ export default async function DashboardPage() {
           </div>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {forms.map((form) => (
-            <FormCard 
-              key={form.id} 
-              form={form} 
-              responseCount={responseCountMap.get(form.id) || 0} 
-            />
-          ))}
-        </div>
+        <DashboardShell
+          userId={user!.id}
+          forms={forms}
+          responseCounts={responseCountsByForm}
+        />
       )}
     </div>
   )

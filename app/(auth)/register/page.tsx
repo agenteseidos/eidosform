@@ -114,10 +114,10 @@ export default function RegisterPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md px-6 sm:px-8 py-8 relative z-10"
       >
-        <Link href="/" className="absolute top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
-        <div className="text-center mb-8">
+        <Link href="/" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
+        <div className="text-center mb-8 pt-12">
           <div className="flex justify-center">
-            <EidosLogo variant="full" theme="dark" href="/" height={40} />
+            <EidosLogo variant="full" theme="dark" href="/" height={144} />
           </div>
           <p className="mt-3 text-slate-400">Crie sua conta gratuita</p>
         </div>

@@ -6,12 +6,20 @@
 
 import { validateWebhookUrl } from './webhook-validator'
 
+export interface WebhookFieldMeta {
+  question_id: string
+  type: string
+  title: string
+}
+
 export interface WebhookPayload {
   event: 'form.response'
   form_id: string
   response_id: string
   created_at: string
   data: Record<string, unknown>
+  /** Metadata dos campos para facilitar integração com sistemas externos */
+  fields?: WebhookFieldMeta[]
 }
 
 
@@ -25,8 +33,10 @@ export async function dispatchWebhook(params: {
   formId: string
   responseId: string
   responseData: Record<string, unknown>
+  /** Metadata dos campos (opcional) para enriquecer o payload */
+  fields?: WebhookFieldMeta[]
 }): Promise<{ success: boolean; statusCode?: number; error?: string }> {
-  const { webhookUrl, formId, responseId, responseData } = params
+  const { webhookUrl, formId, responseId, responseData, fields } = params
 
   // SSRF validation
   const urlCheck = validateWebhookUrl(webhookUrl)
@@ -43,6 +53,7 @@ export async function dispatchWebhook(params: {
     response_id: responseId,
     created_at: new Date().toISOString(),
     data: responseData,
+    ...(fields && fields.length > 0 ? { fields } : {}),
   }
 
   const controller = new AbortController()

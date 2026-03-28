@@ -27,6 +27,7 @@ export type QuestionType =
   | 'url'
   | 'address'
   | 'cpf'
+  | 'calendly'
 
 // Conditional logic operators
 export type ConditionalOperator = 'equals' | 'not_equals' | 'contains' | 'not_empty' | 'is_empty'
@@ -63,6 +64,14 @@ export interface ThemeConfig {
   fontFamily: string
 }
 
+export interface Folder {
+  id: string
+  name: string
+  user_id: string
+  created_at: string
+  updated_at?: string
+}
+
 // Question configuration
 export interface QuestionConfig {
   id: string
@@ -78,6 +87,7 @@ export interface QuestionConfig {
   maxFileSize?: number // In MB
   placeholder?: string
   defaultCountry?: string // Country code for phone type (default: BR)
+  calendlyUrl?: string // Calendly embed URL for calendly type
   conditionalLogic?: ConditionalRule
   pixelEvents?: PixelEventRule[]
   jumpRules?: JumpRule[]
@@ -202,10 +212,35 @@ export interface Database {
         }
         Relationships: []
       }
+      folders: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       forms: {
         Row: {
           id: string
           user_id: string
+          folder_id: string | null
           title: string
           description: string | null
           slug: string
@@ -236,6 +271,7 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
+          folder_id?: string | null
           title: string
           description?: string | null
           slug: string
@@ -264,6 +300,7 @@ export interface Database {
           updated_at?: string
         }
         Update: {
+          folder_id?: string | null
           title?: string
           description?: string | null
           slug?: string
@@ -347,6 +384,9 @@ export interface Database {
 
 // Convenience types
 export type Profile = Database['public']['Tables']['profiles']['Row']
+export type FolderRow = Database['public']['Tables']['folders']['Row']
+export type FolderInsert = Database['public']['Tables']['folders']['Insert']
+export type FolderUpdate = Database['public']['Tables']['folders']['Update']
 export type Form = Database['public']['Tables']['forms']['Row']
 export type FormInsert = Database['public']['Tables']['forms']['Insert']
 export type FormUpdate = Database['public']['Tables']['forms']['Update']

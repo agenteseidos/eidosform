@@ -50,8 +50,31 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: (responsesError as { message: string }).message }, { status: 500 })
   }
 
+  const formatValue = (value: unknown): string => {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+    if (Array.isArray(value)) return value.join('; ')
+    // Objetos complexos: address, file_upload, etc.
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>
+      // Address: formatar como texto legível
+      if ('cep' in obj || 'rua' in obj || 'cidade' in obj) {
+        const parts = [obj.rua, obj.numero, obj.complemento, obj.bairro, obj.cidade, obj.estado, obj.cep]
+          .filter(Boolean)
+        return parts.join(', ') as string
+      }
+      // File upload: retornar nome do arquivo
+      if ('name' in obj && 'url' in obj) {
+        return String(obj.name)
+      }
+      return JSON.stringify(value)
+    }
+    return String(value)
+  }
+
   const escapeCSV = (value: unknown): string => {
-    const str = Array.isArray(value) ? value.join('; ') : String(value ?? '')
+    const str = formatValue(value)
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
       return `"${str.replace(/"/g, '""')}"`
     }

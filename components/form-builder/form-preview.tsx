@@ -1,9 +1,10 @@
 'use client'
 
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { QuestionConfig } from '@/lib/database.types'
 import { ThemeConfig } from '@/lib/database.types'
-import { motion } from 'framer-motion'
-import { Star, Check } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Star, CalendarClock } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 
 interface FormPreviewProps {
@@ -11,14 +12,106 @@ interface FormPreviewProps {
   theme: ThemeConfig
   selectedQuestionId: string | null
   onSelectQuestion: (id: string) => void
+  onUpdateQuestion?: (id: string, updates: Partial<QuestionConfig>) => void
+}
+
+// B05: Inline editable text component
+function InlineEditableText({
+  value,
+  placeholder,
+  onSave,
+  className,
+  style,
+  tag = 'h3',
+}: {
+  value: string
+  placeholder: string
+  onSave: (newValue: string) => void
+  className?: string
+  style?: React.CSSProperties
+  tag?: 'h3' | 'p'
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(value)
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    setEditValue(value)
+  }, [value])
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus()
+      // Select all text for easy replacement
+      if ('select' in inputRef.current) {
+        inputRef.current.select()
+      }
+    }
+  }, [isEditing])
+
+  const handleSave = useCallback(() => {
+    setIsEditing(false)
+    if (editValue !== value) {
+      onSave(editValue)
+    }
+  }, [editValue, value, onSave])
+
+  if (isEditing) {
+    const InputTag = tag === 'p' ? 'textarea' : 'input'
+    return (
+      <InputTag
+        ref={inputRef as React.Ref<HTMLInputElement & HTMLTextAreaElement>}
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && tag !== 'p') {
+            e.preventDefault()
+            handleSave()
+          }
+          if (e.key === 'Escape') {
+            setEditValue(value)
+            setIsEditing(false)
+          }
+        }}
+        className={`${className} bg-transparent border-0 outline-none w-full resize-none cursor-text`}
+        style={style}
+        placeholder={placeholder}
+        rows={tag === 'p' ? 2 : undefined}
+      />
+    )
+  }
+
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation()
+        setIsEditing(true)
+      }}
+      className={`${className} cursor-text hover:bg-white/10 rounded px-1 -mx-1 transition-colors group relative`}
+      style={style}
+      title="Clique para editar"
+    >
+      {value || <span className="opacity-40 italic">{placeholder}</span>}
+      <span className="absolute -top-1 -right-1 text-[10px] bg-blue-500 text-white px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+        editar
+      </span>
+    </div>
+  )
 }
 
 export function FormPreview({ 
   questions, 
   theme, 
   selectedQuestionId, 
-  onSelectQuestion 
+  onSelectQuestion,
+  onUpdateQuestion,
 }: FormPreviewProps) {
+  // B13: Preview "uma pergunta por vez" — mostra apenas a questão selecionada (ou a primeira)
+  const activeQuestionId = selectedQuestionId || (questions.length > 0 ? questions[0].id : null)
+  const activeQuestion = questions.find(q => q.id === activeQuestionId)
+  const activeIndex = activeQuestion ? questions.indexOf(activeQuestion) : 0
+
   if (questions.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px] p-8">
@@ -31,21 +124,21 @@ export function FormPreview({
     )
   }
 
+  if (!activeQuestion) return null
+
+  const question = activeQuestion
+  const index = activeIndex
+
   return (
-    <div className="p-8 space-y-6">
-      {questions.map((question, index) => (
+    <div className="p-8">
+      <AnimatePresence mode="wait">
         <motion.div
           key={question.id}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: index * 0.1 }}
-          className={`
-            p-6 rounded-xl cursor-pointer transition-all
-            ${selectedQuestionId === question.id 
-              ? 'ring-2 ring-offset-2' 
-              : 'hover:opacity-80'
-            }
-          `}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.25 }}
+          className="p-6 rounded-xl cursor-pointer transition-all ring-2 ring-offset-2"
           style={{ 
             backgroundColor: `${theme.primaryColor}10`,
             '--tw-ring-color': theme.primaryColor,
@@ -61,23 +154,42 @@ export function FormPreview({
             </span>
           </div>
           
-          <h3 
-            className="text-xl font-semibold mb-2"
-            style={{ color: theme.textColor }}
-          >
-            {question.title || 'Pergunta sem título'}
-            {question.required && (
-              <span style={{ color: theme.primaryColor }} className="ml-1">*</span>
+          {/* B05: Título editável inline */}
+          <div className="flex items-start gap-1 mb-2">
+            {onUpdateQuestion ? (
+              <InlineEditableText
+                value={question.title}
+                placeholder="Pergunta sem título"
+                onSave={(newTitle) => onUpdateQuestion(question.id, { title: newTitle })}
+                className="text-xl font-semibold"
+                style={{ color: theme.textColor }}
+              />
+            ) : (
+              <h3 className="text-xl font-semibold" style={{ color: theme.textColor }}>
+                {question.title || 'Pergunta sem título'}
+              </h3>
             )}
-          </h3>
+            {question.required && (
+              <span style={{ color: theme.primaryColor }} className="text-xl ml-1">*</span>
+            )}
+          </div>
           
-          {question.description && (
-            <p 
+          {/* B05: Descrição editável inline */}
+          {onUpdateQuestion ? (
+            <InlineEditableText
+              value={question.description || ''}
+              placeholder="Adicionar descrição (opcional)"
+              onSave={(newDesc) => onUpdateQuestion(question.id, { description: newDesc || '' })}
               className="text-sm opacity-70 mb-4"
               style={{ color: theme.textColor }}
-            >
-              {question.description}
-            </p>
+              tag="p"
+            />
+          ) : (
+            question.description && (
+              <p className="text-sm opacity-70 mb-4" style={{ color: theme.textColor }}>
+                {question.description}
+              </p>
+            )
           )}
 
           {/* Preview of input types */}
@@ -235,6 +347,50 @@ export function FormPreview({
                 </p>
               </div>
             )}
+
+            {question.type === 'calendly' && (
+              question.calendlyUrl ? (
+                <div
+                  className="overflow-hidden rounded-2xl border bg-white"
+                  style={{ borderColor: `${theme.primaryColor}30` }}
+                >
+                  <div
+                    className="flex items-center gap-2 border-b px-4 py-3 text-sm"
+                    style={{
+                      borderColor: `${theme.primaryColor}20`,
+                      color: theme.textColor,
+                      backgroundColor: `${theme.primaryColor}08`,
+                    }}
+                  >
+                    <CalendarClock className="w-4 h-4" style={{ color: theme.primaryColor }} />
+                    <span className="font-medium">Prévia do embed Calendly</span>
+                  </div>
+                  <iframe
+                    src={question.calendlyUrl}
+                    title="Prévia do Calendly"
+                    className="h-[520px] w-full bg-white"
+                  />
+                </div>
+              ) : (
+                <div
+                  className="rounded-2xl border-2 border-dashed px-6 py-10 text-center"
+                  style={{
+                    borderColor: `${theme.primaryColor}35`,
+                    backgroundColor: `${theme.primaryColor}08`,
+                    color: theme.textColor,
+                  }}
+                >
+                  <div
+                    className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
+                    style={{ backgroundColor: `${theme.primaryColor}16` }}
+                  >
+                    <CalendarClock className="w-7 h-7" style={{ color: theme.primaryColor }} />
+                  </div>
+                  <p className="text-base font-medium">Widget Calendly será exibido aqui</p>
+                  <p className="mt-2 text-sm opacity-60">Configure a URL do Calendly no painel direito para ativar a prévia.</p>
+                </div>
+              )
+            )}
           </div>
 
 
@@ -266,7 +422,27 @@ export function FormPreview({
             </kbd>
           </div>
         </motion.div>
-      ))}
+      </AnimatePresence>
+
+      {/* B13: Navegação entre perguntas no preview */}
+      <div className="flex items-center justify-between mt-4 text-xs" style={{ color: theme.textColor }}>
+        <span className="opacity-40">
+          Pergunta {index + 1} de {questions.length}
+        </span>
+        <div className="flex gap-1">
+          {questions.map((q, i) => (
+            <button
+              key={q.id}
+              onClick={() => onSelectQuestion(q.id)}
+              className="w-2 h-2 rounded-full transition-all"
+              style={{
+                backgroundColor: q.id === activeQuestionId ? theme.primaryColor : `${theme.textColor}30`,
+              }}
+              title={`Pergunta ${i + 1}`}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

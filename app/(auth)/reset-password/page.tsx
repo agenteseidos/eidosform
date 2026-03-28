@@ -11,6 +11,7 @@ import { EidosLogo } from '@/components/ui/eidos-logo'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff } from 'lucide-react'
+import Link from 'next/link'
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
@@ -63,9 +64,10 @@ export default function ResetPasswordPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md px-6 sm:px-8 relative z-10"
       >
-        <div className="text-center mb-8">
+        <Link href="/login" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
+        <div className="text-center mb-8 pt-12">
           <div className="flex justify-center">
-            <EidosLogo variant="full" theme="dark" href="/" height={40} />
+            <EidosLogo variant="full" theme="dark" href="/" height={144} />
           </div>
           <p className="mt-3 text-slate-400">Defina sua nova senha</p>
         </div>

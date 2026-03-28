@@ -5,6 +5,7 @@ import { authenticateApiKey } from '@/lib/api-key-auth'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
+import { validateAllAnswers } from '@/lib/field-validators'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -206,6 +207,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json(
       { error: 'Form not found or not published' },
       { status: 404, headers: CORS_HEADERS }
+    )
+  }
+
+  // Validate answers against known question IDs
+  const validationErrors = validateAllAnswers((form.questions ?? []) as import('@/lib/database.types').QuestionConfig[], answers)
+  if (validationErrors.length > 0) {
+    return NextResponse.json(
+      { error: 'Respostas inválidas', details: validationErrors },
+      { status: 422, headers: CORS_HEADERS }
     )
   }
 

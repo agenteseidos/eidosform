@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { QuestionConfig } from '@/lib/database.types'
 import { ThemeConfig } from '@/lib/database.types'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Star, Check } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 
@@ -107,6 +107,11 @@ export function FormPreview({
   onSelectQuestion,
   onUpdateQuestion,
 }: FormPreviewProps) {
+  // B13: Preview "uma pergunta por vez" — mostra apenas a questão selecionada (ou a primeira)
+  const activeQuestionId = selectedQuestionId || (questions.length > 0 ? questions[0].id : null)
+  const activeQuestion = questions.find(q => q.id === activeQuestionId)
+  const activeIndex = activeQuestion ? questions.indexOf(activeQuestion) : 0
+
   if (questions.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px] p-8">
@@ -119,21 +124,21 @@ export function FormPreview({
     )
   }
 
+  if (!activeQuestion) return null
+
+  const question = activeQuestion
+  const index = activeIndex
+
   return (
-    <div className="p-8 space-y-6">
-      {questions.map((question, index) => (
+    <div className="p-8">
+      <AnimatePresence mode="wait">
         <motion.div
           key={question.id}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: index * 0.1 }}
-          className={`
-            p-6 rounded-xl cursor-pointer transition-all
-            ${selectedQuestionId === question.id 
-              ? 'ring-2 ring-offset-2' 
-              : 'hover:opacity-80'
-            }
-          `}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.25 }}
+          className="p-6 rounded-xl cursor-pointer transition-all ring-2 ring-offset-2"
           style={{ 
             backgroundColor: `${theme.primaryColor}10`,
             '--tw-ring-color': theme.primaryColor,
@@ -373,7 +378,27 @@ export function FormPreview({
             </kbd>
           </div>
         </motion.div>
-      ))}
+      </AnimatePresence>
+
+      {/* B13: Navegação entre perguntas no preview */}
+      <div className="flex items-center justify-between mt-4 text-xs" style={{ color: theme.textColor }}>
+        <span className="opacity-40">
+          Pergunta {index + 1} de {questions.length}
+        </span>
+        <div className="flex gap-1">
+          {questions.map((q, i) => (
+            <button
+              key={q.id}
+              onClick={() => onSelectQuestion(q.id)}
+              className="w-2 h-2 rounded-full transition-all"
+              style={{
+                backgroundColor: q.id === activeQuestionId ? theme.primaryColor : `${theme.textColor}30`,
+              }}
+              title={`Pergunta ${i + 1}`}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

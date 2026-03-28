@@ -58,6 +58,7 @@ import {
   MapPin,
   Fingerprint,
   LucideIcon,
+  CalendarClock,
   BarChart3,
   Share2,
   HandMetal,
@@ -87,6 +88,7 @@ const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> =
   url:           { icon: LinkIcon,    color: 'text-blue-400' },
   address:       { icon: MapPin,      color: 'text-emerald-500' },
   cpf:           { icon: Fingerprint, color: 'text-violet-500' },
+  calendly:      { icon: CalendarClock, color: 'text-cyan-500' },
 }
 
 function getQuestionVisual(type: string) {
@@ -464,25 +466,38 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
               )}
             </span>
 
-            {/* B11: Botão Publicar como CTA primário */}
+            {/* B11: Status badge separado da ação de publicar */}
+            {form.status === 'published' && (
+              <Badge variant="outline" className="hidden sm:flex items-center gap-1.5 border-emerald-300 bg-emerald-50 text-emerald-700 text-xs font-medium px-2.5 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Publicado
+              </Badge>
+            )}
+            {form.status === 'draft' && (
+              <Badge variant="outline" className="hidden sm:flex items-center gap-1 border-slate-300 bg-slate-50 text-slate-500 text-xs font-medium px-2.5 py-1">
+                Rascunho
+              </Badge>
+            )}
+
+            {/* B11: Botão Publicar como CTA primário — sempre ação, nunca estado */}
             <Button
               size="sm"
               onClick={() => setShowPublishDialog(true)}
               data-testid="publish-button"
               className={
-                form.status === 'published' && !hasUnsavedChanges
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-400/30 font-semibold px-5'
-                  : form.status === 'published' && hasUnsavedChanges
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 ring-2 ring-blue-400/30 font-semibold px-5 animate-pulse'
+                form.status === 'published' && hasUnsavedChanges
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 ring-2 ring-blue-400/30 font-semibold px-5 animate-pulse'
+                  : form.status === 'published'
+                    ? 'bg-slate-600 hover:bg-slate-700 text-white font-semibold px-5'
                     : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-semibold px-5'
               }
             >
               <Globe className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">
-                {form.status === 'published' && !hasUnsavedChanges
-                  ? 'Publicado ✓'
-                  : form.status === 'published' && hasUnsavedChanges
-                    ? 'Publicar alterações'
+                {form.status === 'published' && hasUnsavedChanges
+                  ? 'Republicar'
+                  : form.status === 'published'
+                    ? 'Despublicar'
                     : 'Publicar'
                 }
               </span>
@@ -1013,8 +1028,16 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                 types: ['short_text', 'long_text', 'number'],
               },
               {
-                label: 'Outros',
-                types: ['address', 'cpf', 'file_upload'],
+                label: 'Arquivo',
+                types: ['file_upload'],
+              },
+              {
+                label: 'Dados Pessoais',
+                types: ['address', 'cpf'],
+              },
+              {
+                label: 'Integração',
+                types: ['calendly'],
               },
             ].map((category) => {
               const categoryQuestionTypes = category.types

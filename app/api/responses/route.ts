@@ -1,4 +1,4 @@
-import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/database.types'
+import type { ResponseInsert, ResponseUpdate, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -6,6 +6,7 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
+import { validateAllAnswers } from '@/lib/field-validators'
 
 // Maximum payload size (50KB — generous for form data, blocks abuse)
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -158,6 +159,18 @@ export async function POST(req: NextRequest) {
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404, headers: CORS_HEADERS })
+  }
+
+  // B16b: Validação backend por tipo de campo
+  const fieldErrors = validateAllAnswers(
+    (form.questions ?? []) as QuestionConfig[],
+    answers as Record<string, unknown>
+  )
+  if (fieldErrors.length > 0) {
+    return NextResponse.json(
+      { error: 'Dados inválidos', field_errors: fieldErrors },
+      { status: 422, headers: CORS_HEADERS }
+    )
   }
 
   // Bug #5: Auto-detect completed based on required questions

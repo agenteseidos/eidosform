@@ -438,6 +438,76 @@ function PhoneQuestion({ question, value, onChange, theme, error }: PhoneQuestio
   )
 }
 
+// ── Calendly Question ──
+interface CalendlyQuestionProps {
+  question: QuestionConfig
+  value: string
+  onChange: (value: string) => void
+  theme: ThemeConfig
+  onSubmit: (skipValidation?: boolean) => void
+}
+
+function CalendlyQuestion({ question, value, onChange, theme, onSubmit }: CalendlyQuestionProps) {
+  const calendlyUrl = question.calendlyUrl
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const scriptLoadedRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (!calendlyUrl || scriptLoadedRef.current) return
+
+    // Listen for Calendly events to capture scheduled event
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data?.event === 'calendly.event_scheduled') {
+        const eventUri = e.data?.payload?.event?.uri || 'scheduled'
+        onChange(eventUri)
+      }
+    }
+    window.addEventListener('message', handleMessage)
+
+    // Load Calendly widget script
+    const existing = document.querySelector('script[src*="calendly.com/assets/external/widget.js"]')
+    if (!existing) {
+      const script = document.createElement('script')
+      script.src = 'https://assets.calendly.com/assets/external/widget.js'
+      script.async = true
+      document.head.appendChild(script)
+    }
+    scriptLoadedRef.current = true
+
+    return () => {
+      window.removeEventListener('message', handleMessage)
+    }
+  }, [calendlyUrl, onChange])
+
+  if (!calendlyUrl) {
+    return (
+      <div className="p-6 rounded-xl border-2 border-dashed text-center" style={{ borderColor: `${theme.textColor}30`, color: theme.textColor }}>
+        <p className="text-sm opacity-60">URL do Calendly não configurada</p>
+      </div>
+    )
+  }
+
+  if (value) {
+    return (
+      <div className="p-6 rounded-xl border-2 text-center" style={{ borderColor: theme.primaryColor, color: theme.textColor }}>
+        <Check className="w-10 h-10 mx-auto mb-3" style={{ color: theme.primaryColor }} />
+        <p className="text-lg font-medium">Agendamento confirmado!</p>
+        <p className="text-sm opacity-60 mt-1">Seu horário foi reservado com sucesso.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="rounded-xl overflow-hidden border" style={{ borderColor: `${theme.textColor}20` }}>
+      <div
+        className="calendly-inline-widget"
+        data-url={calendlyUrl}
+        style={{ minWidth: '280px', height: '630px' }}
+      />
+    </div>
+  )
+}
+
 interface QuestionRendererProps {
   question: QuestionConfig
   value: Json
@@ -805,6 +875,17 @@ export function QuestionRenderer({
           onChange={(v) => onChange(v as Json)}
           theme={theme}
           error={error}
+        />
+      )
+
+    case 'calendly':
+      return (
+        <CalendlyQuestion
+          question={question}
+          value={value as string}
+          onChange={(v) => onChange(v as Json)}
+          theme={theme}
+          onSubmit={onSubmit}
         />
       )
 

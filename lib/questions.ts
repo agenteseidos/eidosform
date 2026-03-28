@@ -15,7 +15,8 @@ import {
   Link,
   LucideIcon,
   MapPin,
-  Fingerprint
+  Fingerprint,
+  CalendarClock,
 } from 'lucide-react'
 
 export interface QuestionTypeInfo {
@@ -169,6 +170,15 @@ export const questionTypes: QuestionTypeInfo[] = [
     icon: Fingerprint,
     defaultConfig: {
       placeholder: '000.000.000-00',
+    },
+  },
+  {
+    type: 'calendly',
+    label: 'Agendar com Calendly',
+    description: 'Agendamento integrado via Calendly',
+    icon: CalendarClock,
+    defaultConfig: {
+      calendlyUrl: '',
     },
   },
 ]

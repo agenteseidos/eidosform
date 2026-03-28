@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Zap, Shield, Globe, BarChart3, Palette, Code2, ChevronDown, Check, FileText, Sparkles, Menu } from 'lucide-react'
+import { ArrowRight, Zap, Shield, Globe, BarChart3, Palette, Code2, ChevronDown, Check, Sparkles, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { PricingSection } from '@/components/pricing-section'

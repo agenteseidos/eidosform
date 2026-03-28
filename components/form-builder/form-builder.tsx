@@ -687,28 +687,28 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 <div className="px-2 pt-4 pb-1 shrink-0">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Telas Finais</span>
                 </div>
-                  <button
-                    onClick={() => {
-                      setSidebarSection('thankyou')
-                      setSelectedQuestionId(null)
-                      setMobilePanel('editor')
-                    }}
-                    className={`
-                      w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left
-                      ${sidebarSection === 'thankyou' && !selectedQuestionId
-                        ? 'bg-blue-50/70 border-blue-500 border-l-4 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
-                        : 'bg-white border-slate-100 hover:border-slate-200 border-l-4 border-l-transparent'
-                      }
-                    `}
-                  >
-                    <PartyPopper className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-700 line-clamp-2">
-                        {form.thank_you_title || 'Tela de agradecimento'}
-                      </p>
-                      <p className="text-xs text-slate-400">Padrão</p>
-                    </div>
-                  </button>
+                <button
+                  onClick={() => {
+                    setSidebarSection('thankyou')
+                    setSelectedQuestionId(null)
+                    setMobilePanel('editor')
+                  }}
+                  className={`
+                    w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left
+                    ${sidebarSection === 'thankyou' && !selectedQuestionId
+                      ? 'bg-blue-50/70 border-blue-500 border-l-4 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
+                      : 'bg-white border-slate-100 hover:border-slate-200 border-l-4 border-l-transparent'
+                    }
+                  `}
+                >
+                  <PartyPopper className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-700 line-clamp-2">
+                      {form.thank_you_title || 'Tela de agradecimento'}
+                    </p>
+                    <p className="text-xs text-slate-400">Padrão</p>
+                  </div>
+                </button>
 
               </div>
             </TabsContent>

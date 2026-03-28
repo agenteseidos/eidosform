@@ -39,6 +39,13 @@ export default async function EditFormPage({ params }: EditFormPageProps) {
 
   const userPlan = (profile?.plan as string) || 'free'
 
-  return <FormBuilder form={form} userPlan={userPlan} />
+  // B20: Passar info do usuário para o builder (avatar no header)
+  const userInfo = {
+    email: user.email || '',
+    name: user.user_metadata?.full_name || user.user_metadata?.name || '',
+    avatarUrl: user.user_metadata?.avatar_url || user.user_metadata?.picture || '',
+  }
+
+  return <FormBuilder form={form} userPlan={userPlan} userInfo={userInfo} />
 }
 

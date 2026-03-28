@@ -95,12 +95,19 @@ function getQuestionVisual(type: string) {
   return questionTypeVisuals[type] || { icon: FileText, color: 'text-slate-400' }
 }
 
+interface UserInfo {
+  email: string
+  name: string
+  avatarUrl: string
+}
+
 interface FormBuilderProps {
   form: Form
   userPlan?: string
+  userInfo?: UserInfo
 }
 
-export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilderProps) {
+export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: FormBuilderProps) {
   const router = useRouter()
   const supabase = createClient()
   
@@ -502,6 +509,27 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                 }
               </span>
             </Button>
+
+            {/* B20: Avatar do usuário no header */}
+            {userInfo && (
+              <div
+                className="hidden sm:flex items-center justify-center w-8 h-8 rounded-full shrink-0 overflow-hidden border-2 border-slate-200"
+                title={userInfo.name || userInfo.email}
+              >
+                {userInfo.avatarUrl ? (
+                  <img
+                    src={userInfo.avatarUrl}
+                    alt={userInfo.name || 'Avatar'}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="text-xs font-bold text-slate-500 bg-slate-100 w-full h-full flex items-center justify-center">
+                    {(userInfo.name || userInfo.email || '?').charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>

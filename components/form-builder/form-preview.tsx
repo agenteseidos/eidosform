@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { QuestionConfig } from '@/lib/database.types'
 import { ThemeConfig } from '@/lib/database.types'
 import { motion } from 'framer-motion'
@@ -11,13 +12,100 @@ interface FormPreviewProps {
   theme: ThemeConfig
   selectedQuestionId: string | null
   onSelectQuestion: (id: string) => void
+  onUpdateQuestion?: (id: string, updates: Partial<QuestionConfig>) => void
+}
+
+// B05: Inline editable text component
+function InlineEditableText({
+  value,
+  placeholder,
+  onSave,
+  className,
+  style,
+  tag = 'h3',
+}: {
+  value: string
+  placeholder: string
+  onSave: (newValue: string) => void
+  className?: string
+  style?: React.CSSProperties
+  tag?: 'h3' | 'p'
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(value)
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    setEditValue(value)
+  }, [value])
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus()
+      // Select all text for easy replacement
+      if ('select' in inputRef.current) {
+        inputRef.current.select()
+      }
+    }
+  }, [isEditing])
+
+  const handleSave = useCallback(() => {
+    setIsEditing(false)
+    if (editValue !== value) {
+      onSave(editValue)
+    }
+  }, [editValue, value, onSave])
+
+  if (isEditing) {
+    const InputTag = tag === 'p' ? 'textarea' : 'input'
+    return (
+      <InputTag
+        ref={inputRef as any}
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && tag !== 'p') {
+            e.preventDefault()
+            handleSave()
+          }
+          if (e.key === 'Escape') {
+            setEditValue(value)
+            setIsEditing(false)
+          }
+        }}
+        className={`${className} bg-transparent border-0 border-b-2 border-dashed outline-none w-full resize-none`}
+        style={{ ...style, borderColor: style?.color || '#3b82f6' }}
+        placeholder={placeholder}
+        rows={tag === 'p' ? 2 : undefined}
+      />
+    )
+  }
+
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation()
+        setIsEditing(true)
+      }}
+      className={`${className} cursor-text hover:bg-white/10 rounded px-1 -mx-1 transition-colors group relative`}
+      style={style}
+      title="Clique para editar"
+    >
+      {value || <span className="opacity-40 italic">{placeholder}</span>}
+      <span className="absolute -top-1 -right-1 text-[10px] bg-blue-500 text-white px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+        editar
+      </span>
+    </div>
+  )
 }
 
 export function FormPreview({ 
   questions, 
   theme, 
   selectedQuestionId, 
-  onSelectQuestion 
+  onSelectQuestion,
+  onUpdateQuestion,
 }: FormPreviewProps) {
   if (questions.length === 0) {
     return (
@@ -61,23 +149,42 @@ export function FormPreview({
             </span>
           </div>
           
-          <h3 
-            className="text-xl font-semibold mb-2"
-            style={{ color: theme.textColor }}
-          >
-            {question.title || 'Pergunta sem título'}
-            {question.required && (
-              <span style={{ color: theme.primaryColor }} className="ml-1">*</span>
+          {/* B05: Título editável inline */}
+          <div className="flex items-start gap-1 mb-2">
+            {onUpdateQuestion ? (
+              <InlineEditableText
+                value={question.title}
+                placeholder="Pergunta sem título"
+                onSave={(newTitle) => onUpdateQuestion(question.id, { title: newTitle })}
+                className="text-xl font-semibold"
+                style={{ color: theme.textColor }}
+              />
+            ) : (
+              <h3 className="text-xl font-semibold" style={{ color: theme.textColor }}>
+                {question.title || 'Pergunta sem título'}
+              </h3>
             )}
-          </h3>
+            {question.required && (
+              <span style={{ color: theme.primaryColor }} className="text-xl ml-1">*</span>
+            )}
+          </div>
           
-          {question.description && (
-            <p 
+          {/* B05: Descrição editável inline */}
+          {onUpdateQuestion ? (
+            <InlineEditableText
+              value={question.description || ''}
+              placeholder="Adicionar descrição (opcional)"
+              onSave={(newDesc) => onUpdateQuestion(question.id, { description: newDesc || '' })}
               className="text-sm opacity-70 mb-4"
               style={{ color: theme.textColor }}
-            >
-              {question.description}
-            </p>
+              tag="p"
+            />
+          ) : (
+            question.description && (
+              <p className="text-sm opacity-70 mb-4" style={{ color: theme.textColor }}>
+                {question.description}
+              </p>
+            )
           )}
 
           {/* Preview of input types */}

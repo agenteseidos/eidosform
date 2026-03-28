@@ -925,6 +925,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
                   theme={currentTheme}
                   selectedQuestionId={selectedQuestionId}
                   onSelectQuestion={setSelectedQuestionId}
+                  onUpdateQuestion={updateQuestion}
                 />
               </div>
             </div>

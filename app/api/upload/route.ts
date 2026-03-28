@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { createClient } from '@/lib/supabase/server'
+import { checkUploadRateLimitAsync } from '@/lib/upload-rate-limit'
 
 // Check if R2 is configured
 function isR2Configured(): boolean {
@@ -35,6 +36,22 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const rateCheck = await checkUploadRateLimitAsync(user.id)
+    if (!rateCheck.allowed) {
+      const retryAfter = Math.ceil(rateCheck.resetIn / 1000)
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Try again in a moment.', retryAfter },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(retryAfter),
+            'X-RateLimit-Limit': '10',
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      )
+    }
+
     const formData = await request.formData()
     const file = formData.get('file') as File
     
@@ -88,6 +105,11 @@ export async function POST(request: NextRequest) {
         name: file.name,
         type: file.type,
         size: file.size,
+      },
+    }, {
+      headers: {
+        'X-RateLimit-Limit': '10',
+        'X-RateLimit-Remaining': String(rateCheck.remaining),
       },
     })
   } catch (error) {

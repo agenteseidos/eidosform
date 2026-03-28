@@ -122,49 +122,63 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
     setHasUnsavedChanges(true)
   }, [setForm, setHasUnsavedChanges])
 
-  const handleSave = useCallback(async () => {
-    setIsSaving(true)
-    const updateData = {
-      title: form.title,
-      description: form.description,
-      slug: form.slug,
-      theme: form.theme,
-      questions: questions,
-      thank_you_message: form.thank_you_message,
-      thank_you_title: form.thank_you_title || null,
-      thank_you_description: form.thank_you_description || null,
-      thank_you_button_text: form.thank_you_button_text || null,
-      thank_you_button_url: form.thank_you_button_url || null,
-      pixels: pixels,
-      redirect_url: form.redirect_url || null,
-      webhook_url: form.webhook_url || null,
-      pixel_event_on_start: form.pixel_event_on_start || null,
-      pixel_event_on_complete: form.pixel_event_on_complete || null,
-      welcome_enabled: form.welcome_enabled || false,
-      welcome_title: form.welcome_title || null,
-      welcome_description: form.welcome_description || null,
-      welcome_button_text: form.welcome_button_text || null,
-      welcome_image_url: form.welcome_image_url || null,
+  const buildFormPayload = useCallback((status?: FormStatus) => ({
+    title: form.title,
+    description: form.description,
+    slug: form.slug,
+    theme: form.theme,
+    questions,
+    thank_you_message: form.thank_you_message,
+    thank_you_title: form.thank_you_title || null,
+    thank_you_description: form.thank_you_description || null,
+    thank_you_button_text: form.thank_you_button_text || null,
+    thank_you_button_url: form.thank_you_button_url || null,
+    pixels,
+    redirect_url: form.redirect_url || null,
+    webhook_url: form.webhook_url || null,
+    pixel_event_on_start: form.pixel_event_on_start || null,
+    pixel_event_on_complete: form.pixel_event_on_complete || null,
+    welcome_enabled: form.welcome_enabled || false,
+    welcome_title: form.welcome_title || null,
+    welcome_description: form.welcome_description || null,
+    welcome_button_text: form.welcome_button_text || null,
+    welcome_image_url: form.welcome_image_url || null,
+    ...(status && { status }),
+  }), [form, questions, pixels])
+
+  const updateFormViaApi = useCallback(async (payload: ReturnType<typeof buildFormPayload>) => {
+    const response = await fetch(`/api/forms/${form.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok) {
+      throw new Error(data?.error || 'Falha ao atualizar formulário')
     }
 
+    return data?.form as Form | undefined
+  }, [form.id])
+
+  const handleSave = useCallback(async () => {
+    setIsSaving(true)
+
     try {
-      const { error } = await supabase
-        .from('forms')
-        .update(updateData)
-        .eq('id', form.id)
-
-      if (error) {
-        toast.error('Falha ao salvar formulário')
-        return false
-      }
-
+      await updateFormViaApi(buildFormPayload())
       toast.success('Formulário salvo')
       setHasUnsavedChanges(false)
       return true
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao salvar formulário')
+      return false
     } finally {
       setIsSaving(false)
     }
-  }, [supabase, form, questions, pixels])
+  }, [buildFormPayload, updateFormViaApi])
 
   const handlePublish = async () => {
     if (questions.length === 0) {
@@ -174,47 +188,22 @@ export function FormBuilder({ form: initialForm, userPlan = 'free' }: FormBuilde
 
     setIsSaving(true)
     const newStatus: FormStatus = form.status === 'published' ? 'closed' : 'published'
-    
-    const updateData = {
-      status: newStatus,
-      is_published: newStatus === 'published',
-      questions: questions,
-      title: form.title,
-      description: form.description,
-      slug: form.slug,
-      theme: form.theme,
-      thank_you_message: form.thank_you_message,
-      thank_you_title: form.thank_you_title || null,
-      thank_you_description: form.thank_you_description || null,
-      thank_you_button_text: form.thank_you_button_text || null,
-      thank_you_button_url: form.thank_you_button_url || null,
-      pixels: pixels,
-      redirect_url: form.redirect_url || null,
-      webhook_url: form.webhook_url || null,
-      pixel_event_on_start: form.pixel_event_on_start || null,
-      pixel_event_on_complete: form.pixel_event_on_complete || null,
-      welcome_enabled: form.welcome_enabled || false,
-      welcome_title: form.welcome_title || null,
-      welcome_description: form.welcome_description || null,
-      welcome_button_text: form.welcome_button_text || null,
-      welcome_image_url: form.welcome_image_url || null,
-    }
-    const { data: updated, error } = await supabase
-      .from('forms')
-      .update(updateData)
-      .eq('id', form.id)
-      .select('id, status, is_published')
 
-    if (error || !updated || updated.length === 0) {
-      toast.error('Falha ao atualizar status')
-      console.error('Publish update failed:', error, 'rows:', updated)
-    } else {
-      setForm(prev => ({ ...prev, status: newStatus }))
+    try {
+      const updatedForm = await updateFormViaApi(buildFormPayload(newStatus))
+      setForm(prev => ({
+        ...prev,
+        ...(updatedForm || {}),
+        status: updatedForm?.status || newStatus,
+      }))
       toast.success(newStatus === 'published' ? 'Formulário publicado!' : 'Formulário despublicado')
       setShowPublishDialog(false)
       setHasUnsavedChanges(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao atualizar status')
+    } finally {
+      setIsSaving(false)
     }
-    setIsSaving(false)
   }
 
   const addQuestion = (type: QuestionConfig['type']) => {

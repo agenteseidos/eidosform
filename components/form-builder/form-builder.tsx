@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -548,50 +547,50 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
             </div>
 
             <TabsContent value="questions" className="flex-1 flex flex-col mt-0 overflow-hidden data-[state=inactive]:hidden">
-              <ScrollArea className="flex-1">
-                <div className="p-2 space-y-1">
+              <div className="flex-1 min-h-0 p-2 space-y-1">
 
-                  {/* === SEÇÃO: TELA DE BOAS VINDAS === */}
-                  <div className="px-2 pt-3 pb-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tela de Boas Vindas</span>
+                {/* === SEÇÃO: TELA DE BOAS VINDAS === */}
+                <div className="px-2 pt-3 pb-1 shrink-0">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tela de Boas Vindas</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setSidebarSection('welcome')
+                    setSelectedQuestionId(null)
+                    setMobilePanel('editor')
+                  }}
+                  className={`
+                    w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left shrink-0
+                    ${sidebarSection === 'welcome' && !selectedQuestionId
+                      ? 'bg-blue-50/70 border-blue-500 border-l-4 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
+                      : 'bg-white border-slate-100 hover:border-slate-200 border-l-4 border-l-transparent'
+                    }
+                  `}
+                >
+                  <HandMetal className="w-4 h-4 text-amber-500 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-700 line-clamp-2">
+                      {form.welcome_title || form.title || 'Tela de boas vindas'}
+                    </p>
+                    <p className="text-xs text-slate-400">{form.welcome_enabled ? 'Ativada' : 'Desativada'}</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setSidebarSection('welcome')
-                      setSelectedQuestionId(null)
-                      setMobilePanel('editor')
-                    }}
-                    className={`
-                      w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left
-                      ${sidebarSection === 'welcome' && !selectedQuestionId
-                        ? 'bg-blue-50/70 border-blue-500 border-l-4 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
-                        : 'bg-white border-slate-100 hover:border-slate-200 border-l-4 border-l-transparent'
-                      }
-                    `}
+                </button>
+
+                {/* === SEÇÃO: QUESTÕES === */}
+                <div className="px-2 pt-4 pb-1 flex items-center justify-between shrink-0">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Questões</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowAddQuestion(true)}
+                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                   >
-                    <HandMetal className="w-4 h-4 text-amber-500 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-700 line-clamp-2">
-                        {form.welcome_title || form.title || 'Tela de boas vindas'}
-                      </p>
-                      <p className="text-xs text-slate-400">{form.welcome_enabled ? 'Ativada' : 'Desativada'}</p>
-                    </div>
-                  </button>
+                    <Plus className="w-3 h-3 mr-1" />
+                    Adicionar
+                  </Button>
+                </div>
 
-                  {/* === SEÇÃO: QUESTÕES === */}
-                  <div className="px-2 pt-4 pb-1 flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Questões</span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setShowAddQuestion(true)}
-                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                    >
-                      <Plus className="w-3 h-3 mr-1" />
-                      Adicionar
-                    </Button>
-                  </div>
-
+                <div className="min-h-0 max-h-full overflow-y-auto pr-1">
                   {questions.length === 0 ? (
                     <div className="text-center py-6 px-4">
                       <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />
@@ -682,11 +681,12 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     <Plus className="w-4 h-4" />
                     Adicionar pergunta
                   </button>
+                </div>
 
-                  {/* === SEÇÃO: TELAS FINAIS === */}
-                  <div className="px-2 pt-4 pb-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Telas Finais</span>
-                  </div>
+                {/* === SEÇÃO: TELAS FINAIS === */}
+                <div className="px-2 pt-4 pb-1 shrink-0">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Telas Finais</span>
+                </div>
                   <button
                     onClick={() => {
                       setSidebarSection('thankyou')
@@ -710,8 +710,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     </div>
                   </button>
 
-                </div>
-              </ScrollArea>
+              </div>
             </TabsContent>
 
             <TabsContent value="design" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">

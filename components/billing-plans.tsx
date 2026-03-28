@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Check } from 'lucide-react'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
@@ -26,7 +25,7 @@ const plans = [
       'Suporte por email',
       "Marca d'água EidosForm",
     ],
-    cta: 'Plano atual',
+    cta: 'Assinar Free',
     checkoutUrl: null,
   },
   {
@@ -93,20 +92,28 @@ const plans = [
     cta: 'Assinar Professional',
     checkoutUrl: '/checkout/professional',
   },
-]
+] as const
 
 interface BillingPlansProps {
   currentPlan: string
 }
 
-const PLAN_ORDER = ['free', 'starter', 'plus', 'professional']
+const PLAN_ORDER = ['free', 'starter', 'plus', 'professional'] as const
+
+type PlanId = typeof PLAN_ORDER[number]
+
+function normalizePlan(plan: string): PlanId {
+  const normalized = plan.trim().toLowerCase()
+  return (PLAN_ORDER as readonly string[]).includes(normalized) ? (normalized as PlanId) : 'free'
+}
 
 export function BillingPlans({ currentPlan }: BillingPlansProps) {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('monthly')
+  const normalizedCurrentPlan = useMemo(() => normalizePlan(currentPlan), [currentPlan])
+  const currentPlanIndex = PLAN_ORDER.indexOf(normalizedCurrentPlan)
 
   return (
     <div>
-      {/* Toggle */}
       <div className="flex justify-center mb-8">
         <div className="inline-flex items-center gap-1 bg-slate-900 border border-white/10 rounded-full p-1.5">
           <button
@@ -143,32 +150,51 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
         {plans.map((plan) => {
           const price = billing === 'annual' ? plan.price.annual : plan.price.monthly
           const originalPrice = plan.price.monthly
-          const isCurrentPlan = plan.id === currentPlan
-          const currentPlanIndex = PLAN_ORDER.indexOf(currentPlan)
+          const isCurrentPlan = plan.id === normalizedCurrentPlan
           const thisPlanIndex = PLAN_ORDER.indexOf(plan.id)
           const isLowerPlan = thisPlanIndex < currentPlanIndex
-          const shouldHighlight = isCurrentPlan || (plan.highlight && currentPlan === 'free' && plan.id === 'plus')
+          const isHigherPlan = thisPlanIndex > currentPlanIndex
+          const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
 
           return (
             <div
               key={plan.id}
               className={`relative flex flex-col rounded-2xl border p-6 transition-all ${
-                plan.highlight
+                isCurrentPlan
+                  ? 'bg-slate-900 border-[#F5B731]/70 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/25'
+                  : plan.highlight
                   ? 'bg-slate-900 border-[#F5B731]/60 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/20'
+                  : isLowerPlan
+                  ? 'bg-slate-900/40 border-white/[0.08] opacity-70'
                   : 'bg-slate-900/60 border-white/[0.08]'
-              } ${isCurrentPlan ? 'opacity-70' : ''}`}
+              }`}
             >
-              {shouldHighlight && (
+              {isCurrentPlan ? (
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <Badge className="bg-[#F5B731] text-black font-bold border-0 px-3 shadow-lg shadow-[#F5B731]/30">
+                    ✓ Plano atual
+                  </Badge>
+                </div>
+              ) : shouldHighlight ? (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap">
                   <Badge className="bg-[#F5B731] text-black font-bold border-0 px-3 shadow-lg shadow-[#F5B731]/30">
                     ✨ Mais Popular
                   </Badge>
                 </div>
-              )}
+              ) : null}
 
               <div className="text-2xl mb-2">{plan.emoji}</div>
-              <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-              <p className="text-xs text-slate-500 mb-4">{plan.desc}</p>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white">{plan.name}</h3>
+                  <p className="text-xs text-slate-500">{plan.desc}</p>
+                </div>
+                {isLowerPlan && (
+                  <Badge variant="secondary" className="bg-white/10 text-slate-300 border border-white/10">
+                    Já incluso
+                  </Badge>
+                )}
+              </div>
 
               <div className="mb-5">
                 {price === 0 ? (
@@ -191,7 +217,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
 
               <ul className="space-y-2 mb-6 flex-1">
                 {plan.features.map((feature, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+                  <li key={i} className={`flex items-start gap-2 text-sm ${isLowerPlan ? 'text-slate-400' : 'text-slate-300'}`}>
                     <Check className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#4BB678]" />
                     {feature}
                   </li>
@@ -201,19 +227,19 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               <Button
                 className={`w-full font-semibold transition-all mt-auto ${
                   isCurrentPlan || isLowerPlan
-                    ? 'bg-white/5 text-slate-500 border border-white/10 cursor-default'
-                    : shouldHighlight
-                    ? 'bg-[#F5B731] hover:bg-[#E8923A] text-black shadow-lg shadow-[#F5B731]/25'
+                    ? 'bg-white/5 text-slate-400 border border-white/10 cursor-default hover:bg-white/5'
+                    : shouldHighlight || isHigherPlan
+                    ? 'bg-[#F5B731] hover:bg-yellow-500 text-black shadow-lg shadow-[#F5B731]/25'
                     : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
                 }`}
                 disabled={isCurrentPlan || isLowerPlan}
                 onClick={() => {
-                  if (!isCurrentPlan && plan.checkoutUrl) {
+                  if (!isCurrentPlan && !isLowerPlan && plan.checkoutUrl) {
                     window.location.href = plan.checkoutUrl
                   }
                 }}
               >
-                {isCurrentPlan ? '✓ Plano atual' : isLowerPlan ? '✓ Incluído' : plan.cta}
+                {isCurrentPlan ? 'Plano atual' : isLowerPlan ? 'Já incluso no seu plano' : plan.cta}
               </Button>
             </div>
           )

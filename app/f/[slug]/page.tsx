@@ -100,7 +100,9 @@ export default async function FormPage({ params }: FormPageProps) {
 
   // Extract Meta Pixel ID from form pixels config (suporte a camelCase e snake_case)
   const px = (form.pixels as Record<string, string> | null) ?? {}
-  const metaPixelId = px.metaPixelId || px.facebook || px.meta_pixel_id || px.pixel_meta || null
+  // Sanitize: Meta Pixel IDs are always numeric (15-16 digits) — strip any non-digits to prevent XSS
+  const rawPixelId = px.metaPixelId || px.facebook || px.meta_pixel_id || px.pixel_meta || null
+  const metaPixelId = rawPixelId && /^\d{10,20}$/.test(rawPixelId.trim()) ? rawPixelId.trim() : null
   const canShowPixels = ownerPlan === 'plus' || ownerPlan === 'professional'
 
   return (

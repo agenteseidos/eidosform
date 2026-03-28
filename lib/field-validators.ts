@@ -96,7 +96,10 @@ export function validateAllAnswers(
 
   for (const [questionId, value] of Object.entries(answers)) {
     const question = questionMap.get(questionId)
-    if (!question) continue // Ignorar respostas para perguntas inexistentes
+    if (!question) {
+      errors.push({ questionId, error: 'Pergunta desconhecida' })
+      continue
+    }
 
     const result = validateFieldValue(question, value)
     if (!result.valid && result.error) {

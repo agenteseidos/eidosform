@@ -84,11 +84,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Bug #11: Inherit plan from user profile
+  // Bug P2: Inherit plan from user profile
+  // profiles.id = auth.uid() (not user_id — that column doesn't exist on profiles)
   const { data: profile } = await supabase
     .from('profiles')
     .select('plan')
-    .eq('user_id', user.id)
+    .eq('id', user.id)
     .single()
   const userPlan = ((profile as { plan: string } | null)?.plan || 'free') as import('@/lib/database.types').PlanType
 

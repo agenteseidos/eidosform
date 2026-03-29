@@ -160,7 +160,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                   : plan.highlight
                   ? 'bg-slate-900 border-[#F5B731]/60 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/20'
                   : isLowerPlan
-                  ? 'bg-slate-900/40 border-white/[0.08] opacity-70'
+                  ? 'bg-slate-900/55 border-white/10'
                   : 'bg-slate-900/60 border-white/[0.08]'
               }`}
             >
@@ -182,7 +182,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-                  <p className="text-xs text-slate-500">{plan.desc}</p>
+                  <p className="text-xs text-slate-400">{plan.desc}</p>
                 </div>
                 {isLowerPlan && (
                   <Badge variant="secondary" className="bg-white/10 text-slate-300 border border-white/10">
@@ -212,9 +212,9 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
 
               <ul className="space-y-2 mb-6 flex-1">
                 {plan.features.map((feature, i) => (
-                  <li key={i} className={`flex items-start gap-2 text-sm ${isLowerPlan ? 'text-slate-400' : 'text-slate-300'}`}>
+                  <li key={i} className={`flex items-start gap-2 text-sm ${isLowerPlan ? 'text-slate-200' : 'text-slate-300'}`}>
                     <Check className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#4BB678]" />
-                    {feature}
+                    <span className="leading-5">{feature}</span>
                   </li>
                 ))}
               </ul>

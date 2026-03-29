@@ -81,7 +81,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section id="recursos" className="py-24 px-4 sm:px-6 bg-white/[0.02]">
+      <section id="recursos" className="pt-12 pb-24 px-4 sm:px-6 bg-white/[0.02]">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">Recursos</Badge>

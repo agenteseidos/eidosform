@@ -445,8 +445,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
           {/* Right: Upgrade + Save status + Publish */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 max-w-fit">
-            {/* B10: Botão Upgrade para planos Free/Starter */}
-            {(userPlan === 'free' || userPlan === 'starter') && (
+            {/* B10: Botão Upgrade para todos abaixo de Professional */}
+            {(userPlan === 'free' || userPlan === 'starter' || userPlan === 'plus') && (
               <Link
                 href="/billing"
                 className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:from-amber-500 hover:to-yellow-600 transition-all shadow-sm hover:shadow-md"

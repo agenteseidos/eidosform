@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { FileText, Plus } from 'lucide-react'
-import { Form } from '@/lib/database.types'
+import { Form, Folder } from '@/lib/database.types'
 import { TemplatesGallery } from '@/components/dashboard/templates-gallery'
 import { OnboardingWrapper } from '@/components/dashboard/onboarding-wrapper'
 import { ErrorToast } from '@/components/dashboard/error-toast'
@@ -16,13 +16,21 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
-  const { data: formsData } = await supabase
-    .from('forms')
-    .select('*')
-    .eq('user_id', user!.id)
-    .order('updated_at', { ascending: false })
+  const [{ data: formsData }, { data: foldersData }] = await Promise.all([
+    supabase
+      .from('forms')
+      .select('*')
+      .eq('user_id', user!.id)
+      .order('updated_at', { ascending: false }),
+    supabase
+      .from('folders')
+      .select('*')
+      .eq('user_id', user!.id)
+      .order('created_at', { ascending: true }),
+  ])
 
   const forms = (formsData || []) as Form[]
+  const folders = (foldersData || []) as Folder[]
 
   const formIds = forms.map(f => f.id)
   const { data: responseCounts } = formIds.length > 0 
@@ -75,8 +83,8 @@ export default async function DashboardPage() {
         </Card>
       ) : (
         <DashboardShell
-          userId={user!.id}
           forms={forms}
+          folders={folders}
           responseCounts={responseCountsByForm}
         />
       )}

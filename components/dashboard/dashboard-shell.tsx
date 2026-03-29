@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -23,72 +24,26 @@ type FolderFilter = 'all' | 'unassigned' | string
 type FolderAssignments = Record<string, string | null>
 
 interface DashboardShellProps {
-  userId: string
   forms: Form[]
+  folders: Folder[]
   responseCounts: Record<string, number>
 }
 
-function getFoldersStorageKey(userId: string) {
-  return `eidosform:folders:${userId}`
+function buildAssignments(forms: Form[]): FolderAssignments {
+  return forms.reduce<FolderAssignments>((acc, form) => {
+    acc[form.id] = form.folder_id ?? null
+    return acc
+  }, {})
 }
 
-function getAssignmentsStorageKey(userId: string) {
-  return `eidosform:folder-assignments:${userId}`
-}
-
-function loadStoredFolders(userId: string): Folder[] {
-  if (typeof window === 'undefined') return []
-
-  try {
-    const rawFolders = window.localStorage.getItem(getFoldersStorageKey(userId))
-    return rawFolders ? (JSON.parse(rawFolders) as Folder[]) : []
-  } catch (error) {
-    console.error('Erro ao carregar pastas do dashboard:', error)
-    return []
-  }
-}
-
-function loadStoredAssignments(userId: string, forms: Form[]): FolderAssignments {
-  if (typeof window === 'undefined') {
-    return forms.reduce<FolderAssignments>((acc, form) => {
-      acc[form.id] = form.folder_id ?? null
-      return acc
-    }, {})
-  }
-
-  try {
-    const rawAssignments = window.localStorage.getItem(getAssignmentsStorageKey(userId))
-    const storedAssignments = rawAssignments ? (JSON.parse(rawAssignments) as FolderAssignments) : {}
-
-    return forms.reduce<FolderAssignments>((acc, form) => {
-      acc[form.id] = storedAssignments[form.id] ?? form.folder_id ?? null
-      return acc
-    }, {})
-  } catch (error) {
-    console.error('Erro ao carregar vínculos de pastas:', error)
-    return forms.reduce<FolderAssignments>((acc, form) => {
-      acc[form.id] = form.folder_id ?? null
-      return acc
-    }, {})
-  }
-}
-
-export function DashboardShell({ userId, forms, responseCounts }: DashboardShellProps) {
-  const [folders, setFolders] = useState<Folder[]>(() => loadStoredFolders(userId))
-  const [assignments, setAssignments] = useState<FolderAssignments>(() => loadStoredAssignments(userId, forms))
+export function DashboardShell({ forms, folders: initialFolders, responseCounts }: DashboardShellProps) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const [folders, setFolders] = useState<Folder[]>(initialFolders)
+  const [assignments, setAssignments] = useState<FolderAssignments>(() => buildAssignments(forms))
   const [selectedFilter, setSelectedFilter] = useState<FolderFilter>('all')
   const [isFolderDialogOpen, setIsFolderDialogOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(getFoldersStorageKey(userId), JSON.stringify(folders))
-  }, [folders, userId])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(getAssignmentsStorageKey(userId), JSON.stringify(assignments))
-  }, [assignments, userId])
 
   const formsWithFolders = useMemo(() => {
     return forms.map((form) => {
@@ -118,7 +73,13 @@ export function DashboardShell({ userId, forms, responseCounts }: DashboardShell
     return folders.find((folder) => folder.id === selectedFilter)?.name || 'Pasta'
   }, [folders, selectedFilter])
 
-  const handleCreateFolder = () => {
+  const refreshDashboard = () => {
+    startTransition(() => {
+      router.refresh()
+    })
+  }
+
+  const handleCreateFolder = async () => {
     const trimmedName = newFolderName.trim()
 
     if (!trimmedName) {
@@ -126,27 +87,65 @@ export function DashboardShell({ userId, forms, responseCounts }: DashboardShell
       return
     }
 
-    const folder: Folder = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`,
-      name: trimmedName,
-      user_id: userId,
-      created_at: new Date().toISOString(),
-    }
+    try {
+      const response = await fetch('/api/folders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: trimmedName }),
+      })
 
-    setFolders((current) => [...current, folder])
-    setNewFolderName('')
-    setIsFolderDialogOpen(false)
-    setSelectedFilter(folder.id)
-    toast.success('Pasta criada com sucesso')
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Não foi possível criar a pasta')
+      }
+
+      const folder = payload.folder as Folder
+      setFolders((current) => [...current, folder])
+      setNewFolderName('')
+      setIsFolderDialogOpen(false)
+      setSelectedFilter(folder.id)
+      toast.success('Pasta criada com sucesso')
+      refreshDashboard()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível criar a pasta')
+    }
   }
 
-  const handleMoveFormToFolder = (formId: string, folderId: string | null) => {
+  const handleMoveFormToFolder = async (formId: string, folderId: string | null) => {
+    const previousFolderId = assignments[formId] ?? forms.find((form) => form.id === formId)?.folder_id ?? null
+
     setAssignments((current) => ({
       ...current,
       [formId]: folderId,
     }))
 
-    toast.success(folderId ? 'Formulário movido para a pasta' : 'Formulário removido da pasta')
+    try {
+      const response = await fetch(`/api/forms/${formId}/folder`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ folder_id: folderId }),
+      })
+
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Não foi possível mover o formulário')
+      }
+
+      toast.success(folderId ? 'Formulário movido para a pasta' : 'Formulário removido da pasta')
+      refreshDashboard()
+    } catch (error) {
+      setAssignments((current) => ({
+        ...current,
+        [formId]: previousFolderId,
+      }))
+      toast.error(error instanceof Error ? error.message : 'Não foi possível mover o formulário')
+    }
   }
 
   return (
@@ -211,6 +210,7 @@ export function DashboardShell({ userId, forms, responseCounts }: DashboardShell
               variant="outline"
               className="w-full justify-start"
               onClick={() => setIsFolderDialogOpen(true)}
+              disabled={isPending}
             >
               <Plus className="mr-2 h-4 w-4" />
               Nova pasta
@@ -270,17 +270,19 @@ export function DashboardShell({ userId, forms, responseCounts }: DashboardShell
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault()
-                  handleCreateFolder()
+                  void handleCreateFolder()
                 }
               }}
             />
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsFolderDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsFolderDialogOpen(false)} disabled={isPending}>
               Cancelar
             </Button>
-            <Button onClick={handleCreateFolder}>Criar pasta</Button>
+            <Button onClick={() => void handleCreateFolder()} disabled={isPending}>
+              Criar pasta
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

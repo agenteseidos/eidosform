@@ -337,6 +337,11 @@ export interface Database {
           answers: Record<string, Json>
           completed: boolean
           last_question_answered: string | null
+          utm_source: string | null
+          utm_medium: string | null
+          utm_campaign: string | null
+          utm_term: string | null
+          utm_content: string | null
           submitted_at: string
           created_at: string
           updated_at: string
@@ -347,6 +352,11 @@ export interface Database {
           answers: Record<string, Json>
           completed?: boolean
           last_question_answered?: string | null
+          utm_source?: string | null
+          utm_medium?: string | null
+          utm_campaign?: string | null
+          utm_term?: string | null
+          utm_content?: string | null
           submitted_at?: string
           created_at?: string
           updated_at?: string
@@ -355,6 +365,11 @@ export interface Database {
           answers?: Record<string, Json>
           completed?: boolean
           last_question_answered?: string | null
+          utm_source?: string | null
+          utm_medium?: string | null
+          utm_campaign?: string | null
+          utm_term?: string | null
+          utm_content?: string | null
           updated_at?: string
         }
         Relationships: []

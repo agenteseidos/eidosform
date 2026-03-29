@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { Check, Crown, Rocket, Sprout, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { PLAN_ORDER, normalizePlan, type PlanId } from '@/lib/plans'
+import { PLAN_ORDER, normalizePlan } from '@/lib/plans'
 
 const plans = [
   {

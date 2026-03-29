@@ -202,7 +202,7 @@ export function DomainSettings({ isProfessional, defaultFormId }: DomainSettings
               Crie pelo menos um formulário para vincular o domínio personalizado.
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <Input
               placeholder="formularios.suaempresa.com.br"
               value={domain}
@@ -213,7 +213,7 @@ export function DomainSettings({ isProfessional, defaultFormId }: DomainSettings
             <Button
               onClick={handleAdd}
               disabled={loading || !domain || !defaultFormId}
-              className="bg-[#F5B731] hover:bg-[#E8923A] text-white font-medium"
+              className="w-full bg-[#F5B731] font-medium text-white hover:bg-[#E8923A] sm:w-auto"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Adicionar'}
             </Button>

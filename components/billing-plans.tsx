@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, Crown, Rocket, Sprout, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { PLAN_ORDER, normalizePlan, type PlanId } from '@/lib/plans'
@@ -10,7 +10,7 @@ const plans = [
   {
     id: 'free',
     name: 'Free',
-    emoji: '🌱',
+    icon: Sprout,
     price: { monthly: 0, annual: 0 },
     desc: 'Para começar',
     highlight: false,
@@ -33,7 +33,7 @@ const plans = [
   {
     id: 'starter',
     name: 'Starter',
-    emoji: '⚡',
+    icon: Zap,
     price: { monthly: 49, annual: 29 },
     desc: 'Para freelancers',
     highlight: false,
@@ -51,7 +51,7 @@ const plans = [
   {
     id: 'plus',
     name: 'Plus',
-    emoji: '🚀',
+    icon: Rocket,
     price: { monthly: 127, annual: 97 },
     desc: 'Para equipes',
     highlight: true,
@@ -77,7 +77,7 @@ const plans = [
   {
     id: 'professional',
     name: 'Professional',
-    emoji: '👑',
+    icon: Crown,
     price: { monthly: 257, annual: 197 },
     desc: 'Para empresas',
     highlight: false,
@@ -150,6 +150,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
           // Badge "Mais Popular" só aparece no Plus para usuários no plano Free (social proof para conversão).
           // Quando o usuário já é pagante, o badge é ocultado intencionalmente.
           const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
+          const Icon = plan.icon
 
           return (
             <div
@@ -178,7 +179,9 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                 </div>
               ) : null}
 
-              <div className="text-2xl mb-2">{plan.emoji}</div>
+              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10">
+                <Icon className="h-5 w-5 text-[#F5B731]" aria-hidden="true" />
+              </div>
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-white">{plan.name}</h3>

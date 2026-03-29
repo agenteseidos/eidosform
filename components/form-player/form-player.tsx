@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { PixelInjector } from '@/components/pixels/pixel-injector'
 import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions } from '@/lib/form-logic-engine'
+import { captureUtms, getUtms } from '@/lib/utm-tracker'
 
 interface FormPlayerProps {
   ownerPlan?: string
@@ -168,6 +169,8 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (responseId) headers['x-response-id'] = responseId
 
+      const utms = getUtms()
+
       const res = await fetch('/api/responses', {
         method: 'POST',
         headers,
@@ -176,6 +179,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
           answers,
           completed: true,
           last_question_answered: currentQuestion?.id ?? null,
+          ...utms,
         }),
       })
 
@@ -240,6 +244,10 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       console.warn('Partial save failed:', e)
     }
   }, [form.id, responseId])
+
+  useEffect(() => {
+    captureUtms()
+  }, [])
 
   // Pixel event: ao iniciar formulário (sem welcome screen)
   useEffect(() => {

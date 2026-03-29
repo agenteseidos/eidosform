@@ -161,11 +161,11 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
               <p className="text-xs font-semibold text-[#E8923A] mb-2">
                 ⚠️ Copie agora! Esta key não será exibida novamente.
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Input
                   readOnly
                   value={showKey ? newKey : `${newKey.slice(0, 8)}${'•'.repeat(24)}${newKey.slice(-4)}`}
-                  className="font-mono text-xs flex-1 bg-white border-[#F5B731]/40"
+                  className="w-full min-w-0 flex-1 truncate font-mono text-xs bg-white border-[#F5B731]/40"
                 />
                 <Button variant="outline" size="sm" onClick={() => setShowKey(v => !v)} className="border-[#F5B731]/40">
                   {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -176,9 +176,9 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
               </div>
             </div>
           ) : (
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
-              <Key className="w-4 h-4 text-slate-400" />
-              <span className="text-sm text-slate-600 font-mono">{apiKeyPreview ?? '••••••••'}</span>
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3 min-w-0 overflow-hidden">
+              <Key className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="max-w-full truncate text-sm text-slate-600 font-mono">{apiKeyPreview ?? '••••••••'}</span>
             </div>
           )}
 

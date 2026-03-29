@@ -225,7 +225,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               <Button
                 className={`w-full font-semibold transition-all mt-auto ${
                   isCurrentPlan || isLowerPlan
-                    ? 'bg-white/5 text-slate-400 border border-white/10 cursor-default hover:bg-white/5'
+                    ? 'bg-slate-800 text-slate-100 border border-white/10 hover:bg-slate-800'
                     : shouldHighlight || isHigherPlan
                     ? 'bg-[#F5B731] hover:bg-yellow-500 text-black shadow-lg shadow-[#F5B731]/25'
                     : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'

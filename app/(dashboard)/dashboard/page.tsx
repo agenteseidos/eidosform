@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Plus, FileText } from 'lucide-react'
+import { FileText, Plus } from 'lucide-react'
 import { Form } from '@/lib/database.types'
 import { TemplatesGallery } from '@/components/dashboard/templates-gallery'
 import { OnboardingWrapper } from '@/components/dashboard/onboarding-wrapper'
@@ -46,25 +46,12 @@ export default async function DashboardPage() {
     <div className="max-w-7xl mx-auto px-6 py-8">
       <Suspense><ErrorToast /></Suspense>
       <OnboardingWrapper isNewUser={isNewUser} />
-      <div className="flex items-center justify-between mb-8">
+      <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Meus Formulários</h1>
-          <p className="text-slate-600 mt-1">Crie e gerencie seus formulários</p>
+          <p className="mt-1 text-slate-600">Crie e gerencie seus formulários</p>
         </div>
-        <div className="flex items-center gap-3">
-          <TemplatesGallery />
-          <Link href="/forms/new">
-            <Button className="hidden sm:flex bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
-              <Plus className="w-4 h-4 mr-2" />
-              Criar Formulário
-            </Button>
-          </Link>
-          <Link href="/forms/new">
-            <Button size="icon" className="flex sm:hidden bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5" aria-label="Criar formulário">
-              <Plus className="w-4 h-4" />
-            </Button>
-          </Link>
-        </div>
+        <TemplatesGallery />
       </div>
 
       {forms.length === 0 ? (

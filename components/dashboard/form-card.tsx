@@ -88,6 +88,7 @@ export function FormCard({
         <div className="flex-1 min-w-0">
           <Link 
             href={`/forms/${form.id}/edit`}
+            title={form.title || 'Formulário sem título'}
             className="text-lg font-semibold text-slate-900 hover:text-blue-600 truncate block transition-colors"
           >
             {form.title || 'Formulário sem título'}

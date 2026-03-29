@@ -139,7 +139,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 lg:grid-cols-4">
         {plans.map((plan) => {
           const price = billing === 'annual' ? plan.price.annual : plan.price.monthly
           const originalPrice = plan.price.monthly
@@ -155,7 +155,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
           return (
             <div
               key={plan.id}
-              className={`relative flex flex-col rounded-2xl border p-6 transition-all ${
+              className={`relative flex h-full flex-col rounded-2xl border p-6 transition-all ${
                 isCurrentPlan
                   ? 'bg-slate-900 border-[#F5B731]/70 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/25'
                   : plan.highlight

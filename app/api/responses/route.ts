@@ -130,6 +130,13 @@ export async function POST(req: NextRequest) {
   }
 
   const { form_id, last_question_answered } = body
+  const utmData = {
+    utm_source: typeof body.utm_source === 'string' ? body.utm_source : null,
+    utm_medium: typeof body.utm_medium === 'string' ? body.utm_medium : null,
+    utm_campaign: typeof body.utm_campaign === 'string' ? body.utm_campaign : null,
+    utm_term: typeof body.utm_term === 'string' ? body.utm_term : null,
+    utm_content: typeof body.utm_content === 'string' ? body.utm_content : null,
+  }
 
   // Honeypot: if _hp_ field is filled, silently accept but don't save (bot trap)
   if (body._hp_ && String(body._hp_).length > 0) {
@@ -204,7 +211,7 @@ export async function POST(req: NextRequest) {
   if (existingResponseId) {
     const { data: updated, error: updateError } = await supabase
       .from('responses')
-      .update({ answers, completed, last_question_answered: last_question_answered ?? null } as ResponseUpdate)
+      .update({ answers, completed, last_question_answered: last_question_answered ?? null, ...utmData } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
       .select('id')
@@ -219,7 +226,7 @@ export async function POST(req: NextRequest) {
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
-      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, completed, last_question_answered: last_question_answered as string ?? null } as ResponseInsert)
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, completed, last_question_answered: last_question_answered as string ?? null, ...utmData } as ResponseInsert)
       .select('id')
       .single() as { data: { id: string } | null; error: { message: string } | null }
 
@@ -318,7 +325,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('responses')
-    .select('id, form_id, answers, completed, submitted_at, last_question_answered', { count: 'exact' })
+    .select('id, form_id, answers, completed, submitted_at, last_question_answered, utm_source, utm_medium, utm_campaign, utm_term, utm_content', { count: 'exact' })
     .order('submitted_at', { ascending: false })
     .range(offset, offset + limit - 1)
 

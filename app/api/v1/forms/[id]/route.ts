@@ -68,7 +68,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     const { data: responses, count, error } = await supabase
       .from('responses')
-      .select('id, answers, completed, last_question_answered, created_at, updated_at', { count: 'exact' })
+      .select('id, answers, completed, last_question_answered, utm_source, utm_medium, utm_campaign, utm_term, utm_content, created_at, updated_at', { count: 'exact' })
       .eq('form_id', id)
       .eq('completed', true)
       .order('created_at', { ascending: false })
@@ -172,6 +172,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
   const lastQuestionAnswered = body.last_question_answered as string | undefined
   const existingResponseId = req.headers.get('x-response-id')
+  const utmData = {
+    utm_source: typeof body.utm_source === 'string' ? body.utm_source : null,
+    utm_medium: typeof body.utm_medium === 'string' ? body.utm_medium : null,
+    utm_campaign: typeof body.utm_campaign === 'string' ? body.utm_campaign : null,
+    utm_term: typeof body.utm_term === 'string' ? body.utm_term : null,
+    utm_content: typeof body.utm_content === 'string' ? body.utm_content : null,
+  }
 
   if (!answers || typeof answers !== 'object') {
     return NextResponse.json(
@@ -240,6 +247,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         answers: answers as Record<string, import('@/lib/database.types').Json>,
         completed,
         last_question_answered: lastQuestionAnswered ?? null,
+        ...utmData,
       } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', id)
@@ -263,6 +271,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         answers: answers as Record<string, import('@/lib/database.types').Json>,
         completed,
         last_question_answered: lastQuestionAnswered ?? null,
+        ...utmData,
       } as ResponseInsert)
       .select('id')
       .single() as { data: { id: string } | null; error: unknown }

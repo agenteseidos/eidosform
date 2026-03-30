@@ -4,6 +4,8 @@
  * Graceful degradation: não crasha se RESEND_API_KEY ausente
  */
 
+import { escapeHtml } from '@/lib/html'
+
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
 
@@ -48,13 +50,15 @@ export async function sendNewResponseNotification(params: {
   formId: string
 }) {
   const { to, formTitle, responseId, formId } = params
+  const safeFormTitle = escapeHtml(formTitle)
+
   return sendEmail({
     to,
-    subject: `Nova resposta em "${formTitle}"`,
+    subject: `Nova resposta em "${safeFormTitle}"`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
         <h2 style="color:#6366f1">Nova resposta recebida! 🎉</h2>
-        <p>Seu formulário <strong>${formTitle}</strong> recebeu uma nova resposta.</p>
+        <p>Seu formulário <strong>${safeFormTitle}</strong> recebeu uma nova resposta.</p>
         <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/forms/${formId}/responses/${responseId}"
            style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
           Ver resposta

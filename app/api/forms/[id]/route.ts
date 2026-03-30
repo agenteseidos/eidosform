@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { FormUpdate } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
 import { getRequestUser } from '@/lib/supabase/request-auth'
+import { validateFormIntegrations } from '@/lib/form-integrations'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -83,16 +84,17 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const planConfig = PLANS[userPlan]
+
   // Validar plano para pixel events condicionais
   if (pixel_event_on_start !== undefined || pixel_event_on_complete !== undefined || hasPixelEventRules(questions)) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('plan')
-      .eq('id', user.id)
-      .single()
-
-    const userPlan = (profile?.plan ?? 'free') as PlanName
-    const planConfig = PLANS[userPlan]
     if (!planConfig?.pixels) {
       return NextResponse.json(
         { error: 'Eventos de pixel condicionais disponíveis a partir do plano Plus' },
@@ -101,7 +103,27 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
   }
 
-    const update: FormUpdate = {
+  if (hide_branding === true && planConfig?.watermark) {
+    return NextResponse.json(
+      { error: 'hide_branding está disponível apenas em planos pagos sem marca d\'água' },
+      { status: 403 }
+    )
+  }
+
+  const integrationValidation = validateFormIntegrations({
+    notify_email,
+    notify_whatsapp_number,
+    google_sheets_id,
+  })
+
+  if (!integrationValidation.valid) {
+    return NextResponse.json(
+      { error: 'Dados de integração inválidos', details: integrationValidation.errors },
+      { status: 400 }
+    )
+  }
+
+  const update: FormUpdate = {
     ...(title !== undefined && { title }),
     ...(description !== undefined && { description }),
     ...(slug !== undefined && { slug }),
@@ -127,11 +149,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(is_closed !== undefined && { is_closed }),
     ...(hide_branding !== undefined && { hide_branding }),
     ...(notify_email_enabled !== undefined && { notify_email_enabled }),
-    ...(notify_email !== undefined && { notify_email }),
+    ...(integrationValidation.values.notify_email !== undefined && { notify_email: integrationValidation.values.notify_email }),
     ...(notify_whatsapp_enabled !== undefined && { notify_whatsapp_enabled }),
-    ...(notify_whatsapp_number !== undefined && { notify_whatsapp_number }),
+    ...(integrationValidation.values.notify_whatsapp_number !== undefined && { notify_whatsapp_number: integrationValidation.values.notify_whatsapp_number }),
     ...(google_sheets_enabled !== undefined && { google_sheets_enabled }),
-    ...(google_sheets_id !== undefined && { google_sheets_id }),
+    ...(integrationValidation.values.google_sheets_id !== undefined && { google_sheets_id: integrationValidation.values.google_sheets_id }),
     updated_at: new Date().toISOString(),
   }
 

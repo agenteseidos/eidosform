@@ -3,6 +3,8 @@
  * Usa a API Resend via fetch (mesmo padrão de lib/resend.ts).
  */
 
+import { escapeHtml } from '@/lib/html'
+
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <notificacoes@eidosform.com.br>'
 
@@ -23,6 +25,8 @@ export async function sendEmailNotification({
   }
 
   try {
+    const safeFormTitle = escapeHtml(formTitle)
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -32,11 +36,11 @@ export async function sendEmailNotification({
       body: JSON.stringify({
         from: FROM_EMAIL,
         to: toEmail,
-        subject: `Nova resposta em "${formTitle}"`,
+        subject: `Nova resposta em "${safeFormTitle}"`,
         html: `
           <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
             <h2 style="color: #1E3A5F;">Nova resposta recebida!</h2>
-            <p>O formulário <strong>${formTitle}</strong> acaba de receber uma nova resposta com ${answersCount} campo(s) preenchido(s).</p>
+            <p>O formulário <strong>${safeFormTitle}</strong> acaba de receber uma nova resposta com ${answersCount} campo(s) preenchido(s).</p>
             <a href="https://eidosform.com.br/dashboard/forms/${formId}/responses"
                style="display: inline-block; background: #F5B731; color: #000; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 16px;">
               Ver resposta

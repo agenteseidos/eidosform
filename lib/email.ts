@@ -3,6 +3,8 @@
  * Configure RESEND_API_KEY no .env para ativar o envio.
  */
 
+import { escapeHtml } from '@/lib/html'
+
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@eidosform.com'
 
@@ -66,6 +68,7 @@ export async function sendNewResponseNotification(
   )
   const forms = formRes.ok ? await formRes.json() : []
   const formTitle = forms?.[0]?.title || 'Formulário sem título'
+  const safeFormTitle = escapeHtml(formTitle)
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.eidosform.com'
   const dashboardUrl = `${appUrl}/dashboard/forms/${formId}/responses`
@@ -74,12 +77,12 @@ export async function sendNewResponseNotification(
   await sendEmail({
     from: FROM_EMAIL,
     to: [profile.email],
-    subject: `Nova resposta em "${formTitle}"`,
+    subject: `Nova resposta em "${safeFormTitle}"`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;">
         <h2 style="color:#1a1a2e;">📋 Nova resposta recebida!</h2>
         <p>Olá${name},</p>
-        <p>Você recebeu uma nova resposta no formulário <strong>"${formTitle}"</strong>.</p>
+        <p>Você recebeu uma nova resposta no formulário <strong>"${safeFormTitle}"</strong>.</p>
         <p style="margin:24px 0;">
           <a href="${dashboardUrl}"
              style="background:#6366f1;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">

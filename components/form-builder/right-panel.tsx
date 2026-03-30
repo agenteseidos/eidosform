@@ -11,7 +11,6 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { toast } from 'sonner'
 import {
   Check,
   Copy,
@@ -56,6 +55,7 @@ export function RightPanel({
   isUploadingImage,
 }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<'question' | 'logic'>('question')
+  const [copied, setCopied] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // B08: Welcome screen editor
@@ -240,7 +240,6 @@ export function RightPanel({
   }
 
   const typeInfo = getQuestionTypeInfo(selectedQuestion.type)
-  const [copied, setCopied] = useState(false)
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(selectedQuestion.id)

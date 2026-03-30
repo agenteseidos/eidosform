@@ -133,6 +133,32 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
 
+  useEffect(() => {
+    if (previewMode !== 'step') return
+
+    const selectedIndex = questions.findIndex(q => q.id === selectedQuestionId)
+    if (selectedIndex >= 0 && selectedIndex !== stepPreviewIndex) {
+      setStepPreviewIndex(selectedIndex)
+    }
+  }, [previewMode, questions, selectedQuestionId, stepPreviewIndex])
+
+  useEffect(() => {
+    setStepPreviewIndex((currentIndex) => {
+      if (questions.length === 0) return 0
+      return Math.min(currentIndex, questions.length - 1)
+    })
+  }, [questions])
+
+  useEffect(() => {
+    if (previewMode !== 'step') return
+
+    const previewQuestion = questions[stepPreviewIndex]
+    if (previewQuestion && previewQuestion.id !== selectedQuestionId) {
+      setSelectedQuestionId(previewQuestion.id)
+      setSidebarSection(null)
+    }
+  }, [previewMode, questions, stepPreviewIndex, selectedQuestionId])
+
   // Warn user about unsaved changes when leaving the page
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {

@@ -1058,7 +1058,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 </div>
 
                 {/* Card WhatsApp */}
-                <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3 opacity-80">
+                <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
                       <MessageCircle className="w-4 h-4 text-green-600" />
@@ -1066,18 +1066,24 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium text-slate-700">Notificação por WhatsApp</p>
-                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Em breve</span>
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">EM BREVE</span>
                       </div>
-                      <p className="text-xs text-slate-500">Integração ainda não disponível no backend. Em breve você poderá ativar alertas por WhatsApp.</p>
+                      <p className="text-xs text-slate-500">Em breve. Configuração salva, envio disponível em breve.</p>
                     </div>
                     <Switch
-                      checked={false}
-                      disabled
-                      aria-label="Integração WhatsApp indisponível"
-                      title="Integração de WhatsApp em breve. Backend ainda não implementado."
+                      checked={form.notify_whatsapp_enabled ?? false}
+                      onCheckedChange={(checked) => {
+                        setForm({ ...form, notify_whatsapp_enabled: checked })
+                        setHasUnsavedChanges(true)
+                      }}
+                      aria-label="Ativar notificação WhatsApp"
                     />
                   </div>
-                  <p className="text-[11px] text-slate-400">O toggle está desabilitado até a implementação backend ficar pronta.</p>
+                  {form.notify_whatsapp_enabled && (
+                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      ⚠️ Esta integração está em desenvolvimento. A configuração será salva mas ainda não enviará dados.
+                    </p>
+                  )}
                 </div>
 
                 {/* Card Google Sheets */}
@@ -1086,7 +1092,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Planilhas</span>
                   <div className="h-px flex-1 bg-slate-100" />
                 </div>
-                <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3 opacity-80">
+                <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
                       <Table className="w-4 h-4 text-emerald-600" />
@@ -1094,18 +1100,24 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium text-slate-700">Google Sheets</p>
-                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Em breve</span>
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">EM BREVE</span>
                       </div>
-                      <p className="text-xs text-slate-500">Integração ainda não disponível no backend. Em breve você poderá enviar respostas para uma planilha.</p>
+                      <p className="text-xs text-slate-500">Em desenvolvimento. Configuração salva, integração disponível em breve.</p>
                     </div>
                     <Switch
-                      checked={false}
-                      disabled
-                      aria-label="Integração Google Sheets indisponível"
-                      title="Integração com Google Sheets em breve. Backend ainda não implementado."
+                      checked={form.google_sheets_enabled ?? false}
+                      onCheckedChange={(checked) => {
+                        setForm({ ...form, google_sheets_enabled: checked })
+                        setHasUnsavedChanges(true)
+                      }}
+                      aria-label="Ativar Google Sheets"
                     />
                   </div>
-                  <p className="text-[11px] text-slate-400">Assim que o backend estiver pronto, o campo do ID da planilha será liberado aqui.</p>
+                  {form.google_sheets_enabled && (
+                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      ⚠️ Esta integração está em desenvolvimento. A configuração será salva mas ainda não enviará dados.
+                    </p>
+                  )}
                 </div>
               </div>
             </TabsContent>

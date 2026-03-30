@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { PixelEventRule, PixelEventConditionOperator } from '@/types/pixel-events'
+import { PixelEventRule, PixelEventConfig } from '@/types/pixel-events'
 import { STANDARD_PIXEL_EVENTS, OPERATOR_LABELS, VALUE_OPERATORS } from '@/lib/pixel-events'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -58,7 +58,7 @@ export function PixelEventRulesEditor({ rules, onChange, hasPixelPlan }: PixelEv
     updateRule(id, { condition: { ...rule.condition, [field]: value } })
   }
 
-  const updateEvent = (id: string, field: string, value: any) => {
+  const updateEvent = <K extends keyof PixelEventConfig>(id: string, field: K, value: PixelEventConfig[K]) => {
     const rule = rules.find(r => r.id === id)
     if (!rule) return
     updateRule(id, { event: { ...rule.event, [field]: value } })

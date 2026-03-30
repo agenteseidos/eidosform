@@ -8,14 +8,14 @@ import { Button } from '@/components/ui/button'
 
 export function MobileMenu() {
   const [open, setOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => { setMounted(true) }, [])
+  const canRenderPortal = typeof document !== 'undefined'
 
   useEffect(() => {
+    if (!canRenderPortal) return
+
     document.body.style.overflow = open ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
-  }, [open])
+  }, [canRenderPortal, open])
 
   const overlay = open ? (
     <div
@@ -63,7 +63,7 @@ export function MobileMenu() {
       >
         {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </button>
-      {mounted && createPortal(overlay, document.body)}
+      {canRenderPortal && createPortal(overlay, document.body)}
     </div>
   )
 }

@@ -5,7 +5,7 @@ import { Form, QuestionConfig, Json } from '@/lib/database.types'
 import { getTheme, getThemeCSSVariables } from '@/lib/themes'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
-import { ChevronUp, ChevronDown, Check, ArrowRight } from 'lucide-react'
+import { ChevronUp, ChevronDown, Check, ArrowRight, Lock } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
 import { PixelInjector } from '@/components/pixels/pixel-injector'
@@ -385,6 +385,72 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     )
   }
 
+
+  // ─── Closed form screen ─────────────────────────────────────────────────────
+  if (form.is_closed) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-6"
+        style={{ ...themeStyles, backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.92, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-lg w-full px-4"
+        >
+          <motion.div
+            initial={{ scale: 0, rotate: -90 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ delay: 0.2, type: 'spring', stiffness: 220, damping: 14 }}
+            className="w-20 h-20 mx-auto mb-8 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: `${theme.primaryColor}1A` }}
+          >
+            <Lock className="w-9 h-9" style={{ color: theme.primaryColor }} />
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.32 }}
+            className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 leading-tight"
+            style={{ color: theme.textColor }}
+          >
+            Formulário encerrado
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.42 }}
+            className="text-base md:text-lg opacity-70"
+            style={{ color: theme.textColor }}
+          >
+            Este formulário não está mais aceitando novas respostas no momento.
+          </motion.p>
+
+          {!form.hide_branding && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.7 }}
+              className="mt-12"
+            >
+              <a
+                href="/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
+                style={{ color: theme.textColor }}
+              >
+                Feito com <span className="font-semibold">EidosForm</span>
+              </a>
+            </motion.div>
+          )}
+        </motion.div>
+      </div>
+    )
+  }
 
   // ─── Welcome screen ──────────────────────────────────────────────────────────
   if (currentIndex === -1 && form.welcome_enabled) {

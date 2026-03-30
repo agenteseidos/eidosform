@@ -167,6 +167,14 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       welcome_description: form.welcome_description || null,
       welcome_button_text: form.welcome_button_text || null,
       welcome_image_url: form.welcome_image_url || null,
+      is_closed: form.is_closed ?? false,
+      hide_branding: form.hide_branding ?? false,
+      notify_email_enabled: form.notify_email_enabled ?? false,
+      notify_email: form.notify_email || null,
+      notify_whatsapp_enabled: form.notify_whatsapp_enabled ?? false,
+      notify_whatsapp_number: form.notify_whatsapp_number || null,
+      google_sheets_enabled: form.google_sheets_enabled ?? false,
+      google_sheets_id: form.google_sheets_id || null,
     }
     try {
       const { error } = await supabase
@@ -1050,40 +1058,26 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 </div>
 
                 {/* Card WhatsApp */}
-                <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+                <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3 opacity-80">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
                       <MessageCircle className="w-4 h-4 text-green-600" />
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium text-slate-700">Notificação por WhatsApp</p>
-                        <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">BETA</span>
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Em breve</span>
                       </div>
-                      <p className="text-xs text-slate-500">Receba uma mensagem a cada nova resposta.</p>
+                      <p className="text-xs text-slate-500">Integração ainda não disponível no backend. Em breve você poderá ativar alertas por WhatsApp.</p>
                     </div>
                     <Switch
-                      checked={form.notify_whatsapp_enabled ?? false}
-                      onCheckedChange={(checked) => {
-                        setForm({ ...form, notify_whatsapp_enabled: checked })
-                        setHasUnsavedChanges(true)
-                      }}
+                      checked={false}
+                      disabled
+                      aria-label="Integração WhatsApp indisponível"
+                      title="Integração de WhatsApp em breve. Backend ainda não implementado."
                     />
                   </div>
-                  {form.notify_whatsapp_enabled && (
-                    <div>
-                      <Label className="text-xs text-slate-600">Número (com DDD e código do país)</Label>
-                      <Input
-                        value={form.notify_whatsapp_number ?? ""}
-                        onChange={(e) => {
-                          setForm({ ...form, notify_whatsapp_number: e.target.value || null })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
-                        placeholder="+5511999999999"
-                      />
-                    </div>
-                  )}
+                  <p className="text-[11px] text-slate-400">O toggle está desabilitado até a implementação backend ficar pronta.</p>
                 </div>
 
                 {/* Card Google Sheets */}
@@ -1092,39 +1086,26 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Planilhas</span>
                   <div className="h-px flex-1 bg-slate-100" />
                 </div>
-                <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+                <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3 opacity-80">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
                       <Table className="w-4 h-4 text-emerald-600" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-700">Google Sheets</p>
-                      <p className="text-xs text-slate-500">Envie respostas + UTMs em tempo real para uma planilha.</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-slate-700">Google Sheets</p>
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Em breve</span>
+                      </div>
+                      <p className="text-xs text-slate-500">Integração ainda não disponível no backend. Em breve você poderá enviar respostas para uma planilha.</p>
                     </div>
                     <Switch
-                      checked={form.google_sheets_enabled ?? false}
-                      onCheckedChange={(checked) => {
-                        setForm({ ...form, google_sheets_enabled: checked })
-                        setHasUnsavedChanges(true)
-                      }}
+                      checked={false}
+                      disabled
+                      aria-label="Integração Google Sheets indisponível"
+                      title="Integração com Google Sheets em breve. Backend ainda não implementado."
                     />
                   </div>
-                  {form.google_sheets_enabled && (
-                    <div>
-                      <Label className="text-xs text-slate-600">ID da Planilha</Label>
-                      <p className="text-[11px] text-slate-400 mb-1">Encontre na URL: docs.google.com/spreadsheets/d/<strong>[ID]</strong>/edit</p>
-                      <Input
-                        value={form.google_sheets_id ?? ""}
-                        onChange={(e) => {
-                          setForm({ ...form, google_sheets_id: e.target.value || null })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1 text-slate-900 placeholder:text-slate-400 text-sm"
-                        placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
-                      />
-                      <p className="text-[11px] text-slate-400 mt-2">⚠️ Compartilhe a planilha com: <strong>sheets@eidosform.iam.gserviceaccount.com</strong></p>
-                    </div>
-                  )}
+                  <p className="text-[11px] text-slate-400">Assim que o backend estiver pronto, o campo do ID da planilha será liberado aqui.</p>
                 </div>
               </div>
             </TabsContent>

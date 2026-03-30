@@ -170,10 +170,10 @@ export async function POST(req: NextRequest) {
   // Verificar se o formulário existe e está publicado
   const { data: form, error: formError } = await supabase
     .from('forms')
-    .select('id, questions, status, user_id, webhook_url')
+    .select('id, title, questions, status, user_id, webhook_url, is_closed, notify_email_enabled, notify_email')
     .eq('id', form_id as string)
     .eq('status', 'published')
-    .single() as { data: { id: string; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null } | null; error: unknown }
+    .single() as { data: { id: string; title: string | null; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null; is_closed: boolean; notify_email_enabled: boolean; notify_email: string | null } | null; error: unknown }
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404, headers: CORS_HEADERS })

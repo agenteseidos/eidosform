@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -60,6 +61,8 @@ import {
   HandMetal,
   PartyPopper,
   Zap,
+  MessageCircle,
+  Table,
 } from 'lucide-react'
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
@@ -401,6 +404,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               { id: 'questions', label: 'Perguntas', icon: FileText },
               { id: 'design', label: 'Design', icon: Palette },
               { id: 'settings', label: 'Configurações', icon: Settings },
+              { id: 'integrations', label: 'Integrações', icon: Zap },
               { id: 'results', label: 'Resultados', icon: BarChart3 },
               { id: 'share', label: 'Compartilhar', icon: Share2 },
             ].map((tab) => {
@@ -530,7 +534,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
             {/* Mobile-only tab selector (desktop tabs are in the header) */}
             <div className="shrink-0 p-2 border-b border-slate-100 md:hidden">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="questions" className="text-xs">
                   <FileText className="w-3 h-3 mr-1" />
                   Perguntas
@@ -541,7 +545,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 </TabsTrigger>
                 <TabsTrigger value="settings" className="text-xs px-1.5" title="Configurações">
                   <Settings className="w-3 h-3 mr-1 shrink-0" />
-                  <span className="whitespace-nowrap">Configurações</span>
+                  <span className="whitespace-nowrap">Config</span>
+                </TabsTrigger>
+                <TabsTrigger value="integrations" className="text-xs px-1.5" title="Integrações">
+                  <Zap className="w-3 h-3 mr-1 shrink-0" />
+                  <span className="whitespace-nowrap">Integr.</span>
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -822,6 +830,51 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 <div className="pt-2">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="h-px flex-1 bg-slate-100" />
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Acesso</span>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-white">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Fechar formulário</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Impede novos envios. Respostas existentes são mantidas.</p>
+                    </div>
+                    <Switch
+                      checked={form.is_closed ?? false}
+                      onCheckedChange={(checked) => {
+                        setForm({ ...form, is_closed: checked })
+                        setHasUnsavedChanges(true)
+                      }}
+                    />
+                  </div>
+                  {userPlan === 'plus' || userPlan === 'professional' ? (
+                    <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-white mt-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Ocultar &quot;Feito com EidosForm&quot;</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Remove o branding do rodapé do formulário.</p>
+                      </div>
+                      <Switch
+                        checked={form.hide_branding ?? false}
+                        onCheckedChange={(checked) => {
+                          setForm({ ...form, hide_branding: checked })
+                          setHasUnsavedChanges(true)
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 mt-3 opacity-70">
+                      <div>
+                        <p className="text-sm font-medium text-slate-500">Ocultar &quot;Feito com EidosForm&quot;</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Remove o branding do rodapé do formulário.</p>
+                        <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Upgrade para Plus+ →</a>
+                      </div>
+                      <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">Plus+</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="h-px flex-1 bg-slate-100" />
                     <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Pixels de Rastreamento</span>
                     <div className="h-px flex-1 bg-slate-100" />
                   </div>
@@ -939,6 +992,129 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       </div>
                       <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
                       <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="integrations" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
+              <div className="p-4 space-y-3">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="h-px flex-1 bg-slate-100" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Notificações</span>
+                  <div className="h-px flex-1 bg-slate-100" />
+                </div>
+
+                {/* Card Email */}
+                <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                      <Mail className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-700">Notificação por E-mail</p>
+                      <p className="text-xs text-slate-500">Receba um e-mail a cada nova resposta.</p>
+                    </div>
+                    <Switch
+                      checked={form.notify_email_enabled ?? false}
+                      onCheckedChange={(checked) => {
+                        setForm({ ...form, notify_email_enabled: checked })
+                        setHasUnsavedChanges(true)
+                      }}
+                    />
+                  </div>
+                  {form.notify_email_enabled && (
+                    <div>
+                      <Label className="text-xs text-slate-600">E-mail de destino</Label>
+                      <Input
+                        value={form.notify_email ?? ""}
+                        onChange={(e) => {
+                          setForm({ ...form, notify_email: e.target.value || null })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
+                        placeholder="seu@email.com"
+                        type="email"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Card WhatsApp */}
+                <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+                      <MessageCircle className="w-4 h-4 text-green-600" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-slate-700">Notificação por WhatsApp</p>
+                        <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">BETA</span>
+                      </div>
+                      <p className="text-xs text-slate-500">Receba uma mensagem a cada nova resposta.</p>
+                    </div>
+                    <Switch
+                      checked={form.notify_whatsapp_enabled ?? false}
+                      onCheckedChange={(checked) => {
+                        setForm({ ...form, notify_whatsapp_enabled: checked })
+                        setHasUnsavedChanges(true)
+                      }}
+                    />
+                  </div>
+                  {form.notify_whatsapp_enabled && (
+                    <div>
+                      <Label className="text-xs text-slate-600">Número (com DDD e código do país)</Label>
+                      <Input
+                        value={form.notify_whatsapp_number ?? ""}
+                        onChange={(e) => {
+                          setForm({ ...form, notify_whatsapp_number: e.target.value || null })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
+                        placeholder="+5511999999999"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Card Google Sheets */}
+                <div className="flex items-center gap-2 mt-6 mb-4">
+                  <div className="h-px flex-1 bg-slate-100" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Planilhas</span>
+                  <div className="h-px flex-1 bg-slate-100" />
+                </div>
+                <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                      <Table className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-700">Google Sheets</p>
+                      <p className="text-xs text-slate-500">Envie respostas + UTMs em tempo real para uma planilha.</p>
+                    </div>
+                    <Switch
+                      checked={form.google_sheets_enabled ?? false}
+                      onCheckedChange={(checked) => {
+                        setForm({ ...form, google_sheets_enabled: checked })
+                        setHasUnsavedChanges(true)
+                      }}
+                    />
+                  </div>
+                  {form.google_sheets_enabled && (
+                    <div>
+                      <Label className="text-xs text-slate-600">ID da Planilha</Label>
+                      <p className="text-[11px] text-slate-400 mb-1">Encontre na URL: docs.google.com/spreadsheets/d/<strong>[ID]</strong>/edit</p>
+                      <Input
+                        value={form.google_sheets_id ?? ""}
+                        onChange={(e) => {
+                          setForm({ ...form, google_sheets_id: e.target.value || null })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1 text-slate-900 placeholder:text-slate-400 text-sm"
+                        placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+                      />
+                      <p className="text-[11px] text-slate-400 mt-2">⚠️ Compartilhe a planilha com: <strong>sheets@eidosform.iam.gserviceaccount.com</strong></p>
                     </div>
                   )}
                 </div>

@@ -266,6 +266,14 @@ export interface Database {
           welcome_description: string | null
           welcome_button_text: string | null
           welcome_image_url: string | null
+          is_closed: boolean
+          hide_branding: boolean
+          notify_email_enabled: boolean
+          notify_email: string | null
+          notify_whatsapp_enabled: boolean
+          notify_whatsapp_number: string | null
+          google_sheets_enabled: boolean
+          google_sheets_id: string | null
           created_at: string
           updated_at: string
         }
@@ -298,6 +306,14 @@ export interface Database {
           welcome_description?: string | null
           welcome_button_text?: string | null
           welcome_image_url?: string | null
+          is_closed?: boolean
+          hide_branding?: boolean
+          notify_email_enabled?: boolean
+          notify_email?: string | null
+          notify_whatsapp_enabled?: boolean
+          notify_whatsapp_number?: string | null
+          google_sheets_enabled?: boolean
+          google_sheets_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -327,6 +343,14 @@ export interface Database {
           welcome_description?: string | null
           welcome_button_text?: string | null
           welcome_image_url?: string | null
+          is_closed?: boolean
+          hide_branding?: boolean
+          notify_email_enabled?: boolean
+          notify_email?: string | null
+          notify_whatsapp_enabled?: boolean
+          notify_whatsapp_number?: string | null
+          google_sheets_enabled?: boolean
+          google_sheets_id?: string | null
         }
         Relationships: []
       }

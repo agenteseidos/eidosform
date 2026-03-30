@@ -362,22 +362,24 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             </motion.p>
           )}
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8 }}
-            className="mt-12"
-          >
-            <a
-              href="/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
-              style={{ color: theme.textColor }}
+          {!form.hide_branding && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8 }}
+              className="mt-12"
             >
-              Feito com <span className="font-semibold">EidosForm</span>
-            </a>
-          </motion.div>
+              <a
+                href="/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
+                style={{ color: theme.textColor }}
+              >
+                Feito com <span className="font-semibold">EidosForm</span>
+              </a>
+            </motion.div>
+          )}
         </motion.div>
       </div>
     )
@@ -462,22 +464,24 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             </Button>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.7 }}
-            className="mt-12"
-          >
-            <a
-              href="/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
-              style={{ color: theme.textColor }}
+          {!form.hide_branding && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.7 }}
+              className="mt-12"
             >
-              Feito com <span className="font-semibold">EidosForm</span>
-            </a>
-          </motion.div>
+              <a
+                href="/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
+                style={{ color: theme.textColor }}
+              >
+                Feito com <span className="font-semibold">EidosForm</span>
+              </a>
+            </motion.div>
+          )}
         </motion.div>
       </div>
     )
@@ -705,15 +709,17 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
           </Button>
         </div>
 
-        <a
-          href="/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[13px] opacity-40 hover:opacity-60 transition-opacity"
-          style={{ color: theme.textColor }}
-        >
-          Feito com <span className="font-semibold">EidosForm</span>
-        </a>
+        {!form.hide_branding && (
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[13px] opacity-40 hover:opacity-60 transition-opacity"
+            style={{ color: theme.textColor }}
+          >
+            Feito com <span className="font-semibold">EidosForm</span>
+          </a>
+        )}
       </footer>
     </div>
   )

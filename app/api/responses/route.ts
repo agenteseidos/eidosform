@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
+import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers } from '@/lib/field-validators'
 
@@ -179,6 +180,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404, headers: CORS_HEADERS })
   }
 
+  // Verificar se o form está fechado
+  if (form.is_closed) {
+    return NextResponse.json(
+      { error: 'Este formulário não está aceitando novas respostas.' },
+      { status: 403, headers: CORS_HEADERS }
+    )
+  }
+
   // B16b: Validação backend por tipo de campo
   const fieldErrors = validateAllAnswers(
     (form.questions ?? []) as QuestionConfig[],
@@ -261,6 +270,16 @@ export async function POST(req: NextRequest) {
       await sendNewResponseNotification(form_id as string, form.user_id, responseId)
     } catch (e) {
       console.error('Email notification failed:', e)
+    }
+
+    // Notificação por email configurada no form
+    if (form.notify_email_enabled && form.notify_email) {
+      sendEmailNotification({
+        toEmail: form.notify_email,
+        formTitle: form.title ?? 'Formulário',
+        formId: form_id as string,
+        answersCount: Object.keys(answers as Record<string, unknown>).length,
+      }).catch(console.error)
     }
 
     // Webhook externo configurado pelo usuário

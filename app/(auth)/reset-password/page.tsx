@@ -41,10 +41,15 @@ export default function ResetPasswordPage() {
     const { error } = await supabase.auth.updateUser({ password })
 
     if (error) {
-      toast.error('Falha ao redefinir senha. Tente novamente.')
+      if (error.message?.toLowerCase().includes('same') || error.message?.toLowerCase().includes('different from the old')) {
+        toast.error('A nova senha deve ser diferente da senha atual.')
+      } else {
+        toast.error('Falha ao redefinir senha. Tente novamente.')
+      }
       setIsLoading(false)
     } else {
-      router.push('/login?message=Senha redefinida com sucesso!')
+      await supabase.auth.signOut()
+      router.push('/login?message=Senha redefinida com sucesso! Faça login com a nova senha.')
     }
   }
 

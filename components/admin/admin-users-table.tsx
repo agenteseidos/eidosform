@@ -91,13 +91,12 @@ export function AdminUsersTable() {
       setSaving(true)
       setError(null)
 
-      const response = await fetch('/api/admin/users', {
+      const response = await fetch(`/api/admin/users/${selectedUser.id}/plan`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userId: selectedUser.id,
           plan: nextPlan,
         }),
       })

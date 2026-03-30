@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
 export function getAdminEmails(): string[] {
-  const emails = (process.env.ADMIN_EMAILS || 'medeiros.sco@gmail.com')
+  const emails = (process.env.ADMIN_EMAILS ?? '')
     .split(',')
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)

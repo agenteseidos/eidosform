@@ -254,6 +254,14 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     welcome_description: form.welcome_description || null,
     welcome_button_text: form.welcome_button_text || null,
     welcome_image_url: form.welcome_image_url || null,
+    is_closed: form.is_closed ?? false,
+    hide_branding: form.hide_branding ?? false,
+    notify_email_enabled: form.notify_email_enabled ?? false,
+    notify_email: form.notify_email || null,
+    notify_whatsapp_enabled: form.notify_whatsapp_enabled ?? false,
+    notify_whatsapp_number: form.notify_whatsapp_number || null,
+    google_sheets_enabled: form.google_sheets_enabled ?? false,
+    google_sheets_id: form.google_sheets_id || null,
     ...(status && { status }),
   }), [form, questions, pixels])
 

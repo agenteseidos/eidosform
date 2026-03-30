@@ -22,7 +22,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
             <div className="hidden md:flex items-center gap-3">
               <Link href="/login">
-                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white">
+                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white hover:bg-white/10">
                   Entrar
                 </Button>
               </Link>
@@ -75,7 +75,7 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-6 text-sm sm:text-sm text-[14px] text-slate-400">
-            Grátis para sempre · Sem cartão de crédito · Setup em 30 segundos
+            Sem cartão de crédito · Setup em 30 segundos
           </p>
         </div>
       </section>
@@ -160,7 +160,6 @@ export default function LandingPage() {
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
         </Link>
-        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
       </div>
 
       {/* How it works */}
@@ -220,7 +219,6 @@ export default function LandingPage() {
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
         </Link>
-        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
       </div>
 
       {/* Pricing — client component with toggle */}

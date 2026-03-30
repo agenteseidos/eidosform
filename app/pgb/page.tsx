@@ -373,7 +373,6 @@ export default function PgbLandingPage() {
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
         </Link>
-        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
       </div>
 
       {/* ══════ FEATURES COMO BENEFÍCIOS ══════ */}
@@ -489,7 +488,6 @@ export default function PgbLandingPage() {
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
         </Link>
-        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
       </div>
 
       {/* ══════ SEGMENTAÇÃO POR PERSONA ══════ */}
@@ -577,7 +575,6 @@ export default function PgbLandingPage() {
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
         </Link>
-        <p className="mt-3 text-sm text-slate-500">Grátis para sempre · Sem cartão de crédito</p>
       </div>
 
       {/* ══════ PLANOS E PREÇOS ══════ */}

@@ -63,6 +63,8 @@ import {
   Zap,
   MessageCircle,
   Table,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
@@ -125,6 +127,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [sidebarSection, setSidebarSection] = useState<'welcome' | 'questions' | 'thankyou' | null>(null)
+  const [previewMode, setPreviewMode] = useState<"full" | "step">("full")
+  const [stepPreviewIndex, setStepPreviewIndex] = useState(0)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
@@ -697,14 +701,20 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     </Reorder.Group>
                   )}
 
-                  {/* Botão adicionar pergunta abaixo da lista */}
-                  <button
-                    onClick={() => setShowAddQuestion(true)}
-                    className="w-full flex items-center justify-center gap-2 p-3 my-2 rounded-lg border-2 border-dashed border-slate-200 text-sm font-medium text-blue-600 hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
+                  {/* B19: Botão inline adicionar pergunta */}
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-2 mb-1"
                   >
-                    <Plus className="w-4 h-4" />
-                    Adicionar pergunta
-                  </button>
+                    <button
+                      onClick={() => setShowAddQuestion(true)}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all text-xs font-medium"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Adicionar pergunta
+                    </button>
+                  </motion.div>
                 </div>
 
                 {/* === SEÇÃO: TELAS FINAIS === */}
@@ -1137,21 +1147,85 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 </div>
                 <Eye className="w-4 h-4 text-slate-500" />
                 <span className="text-sm font-medium text-slate-600">Visualização</span>
+                <div className="ml-auto flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setPreviewMode("full")}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                      previewMode === "full"
+                        ? "bg-slate-900 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    Completo
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPreviewMode("step")
+                      // Sync step index with selected question
+                      const idx = questions.findIndex(q => q.id === selectedQuestionId)
+                      setStepPreviewIndex(idx >= 0 ? idx : 0)
+                    }}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                      previewMode === "step"
+                        ? "bg-slate-900 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    Passo a passo
+                  </button>
+                </div>
               </div>
-              <div 
+              <div
                 className="min-h-[500px]"
-                style={{ 
+                style={{
                   backgroundColor: currentTheme.backgroundColor,
-                  fontFamily: currentTheme.fontFamily 
+                  fontFamily: currentTheme.fontFamily
                 }}
               >
-                <FormPreview 
-                  questions={questions}
-                  theme={currentTheme}
-                  selectedQuestionId={selectedQuestionId}
-                  onSelectQuestion={setSelectedQuestionId}
-                  onUpdateQuestion={updateQuestion}
-                />
+                {previewMode === "full" ? (
+                  <FormPreview
+                    questions={questions}
+                    theme={currentTheme}
+                    selectedQuestionId={selectedQuestionId}
+                    onSelectQuestion={setSelectedQuestionId}
+                    onUpdateQuestion={updateQuestion}
+                  />
+                ) : (
+                  <>
+                    <FormPreview
+                      questions={questions.length > 0 ? [questions[stepPreviewIndex] || questions[0]] : []}
+                      theme={currentTheme}
+                      selectedQuestionId={questions[stepPreviewIndex]?.id || null}
+                      onSelectQuestion={setSelectedQuestionId}
+                      onUpdateQuestion={updateQuestion}
+                    />
+                    {questions.length > 1 && (
+                      <div className="flex items-center justify-between px-6 py-3 border-t" style={{ borderColor: `${currentTheme.textColor}15` }}>
+                        <button
+                          onClick={() => setStepPreviewIndex(i => Math.max(0, i - 1))}
+                          disabled={stepPreviewIndex === 0}
+                          className="flex items-center gap-1 text-sm font-medium disabled:opacity-30 transition-opacity"
+                          style={{ color: currentTheme.textColor }}
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                          Anterior
+                        </button>
+                        <span className="text-xs" style={{ color: `${currentTheme.textColor}80` }}>
+                          {stepPreviewIndex + 1} / {questions.length}
+                        </span>
+                        <button
+                          onClick={() => setStepPreviewIndex(i => Math.min(questions.length - 1, i + 1))}
+                          disabled={stepPreviewIndex >= questions.length - 1}
+                          className="flex items-center gap-1 text-sm font-medium disabled:opacity-30 transition-opacity"
+                          style={{ color: currentTheme.textColor }}
+                        >
+                          Próxima
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>

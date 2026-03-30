@@ -1,8 +1,14 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { LucideIcon } from 'lucide-react'
+import { Activity, FileText, Users } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+
+const ICON_MAP: Record<string, React.ElementType> = {
+  users: Users,
+  forms: FileText,
+  responses: Activity,
+}
 
 type MetricsResponse = {
   totalUsers: number
@@ -14,7 +20,6 @@ type MetricItem = {
   key: string
   title: string
   valueKey: keyof MetricsResponse
-  icon: LucideIcon
 }
 
 export function AdminMetricsCards({ items }: { items: MetricItem[] }) {
@@ -51,7 +56,7 @@ export function AdminMetricsCards({ items }: { items: MetricItem[] }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => {
-        const Icon = item.icon
+        const Icon = ICON_MAP[item.key]
         const value = data?.[item.valueKey] ?? 0
 
         return (

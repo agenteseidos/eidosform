@@ -1,4 +1,3 @@
-import { Activity, FileText, Users } from 'lucide-react'
 import { AdminMetricsCards } from '@/components/admin/admin-metrics-cards'
 
 export default function AdminPage() {
@@ -15,19 +14,16 @@ export default function AdminPage() {
             key: 'users',
             title: 'Total de usuários',
             valueKey: 'totalUsers',
-            icon: Users,
           },
           {
             key: 'forms',
             title: 'Total de forms',
             valueKey: 'totalForms',
-            icon: FileText,
           },
           {
             key: 'responses',
             title: 'Total de respostas',
             valueKey: 'totalResponses',
-            icon: Activity,
           },
         ]}
       />

@@ -242,9 +242,24 @@ export function RightPanel({
   const typeInfo = getQuestionTypeInfo(selectedQuestion.type)
 
   const handleCopyId = () => {
-    navigator.clipboard.writeText(selectedQuestion.id)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    try {
+      navigator.clipboard.writeText(selectedQuestion.id).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }).catch(() => {
+        // fallback para contextos sem permissão de clipboard
+        const el = document.createElement('textarea')
+        el.value = selectedQuestion.id
+        document.body.appendChild(el)
+        el.select()
+        document.execCommand('copy')
+        document.body.removeChild(el)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+    } catch {
+      // silencioso se tudo falhar
+    }
   }
 
   const handleTypeChange = (newType: QuestionType) => {

@@ -138,7 +138,7 @@ export function PixelEventRulesEditor({ rules, onChange, hasPixelPlan }: PixelEv
                     <div className="flex gap-2">
                       <select
                         value={rule.event.type}
-                        onChange={(e) => updateEvent(rule.id, 'type', e.target.value)}
+                        onChange={(e) => updateEvent(rule.id, 'type', e.target.value as 'standard' | 'custom')}
                         className="text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
                       >
                         <option value="standard">Padrão</option>

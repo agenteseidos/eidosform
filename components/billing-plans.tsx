@@ -158,10 +158,12 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               className={`relative flex h-full flex-col rounded-2xl border p-6 transition-all ${
                 isCurrentPlan
                   ? 'bg-slate-900 border-[#F5B731]/70 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/25'
-                  : plan.highlight
+                  : shouldHighlight
                   ? 'bg-slate-900 border-[#F5B731]/60 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/20'
                   : isLowerPlan
                   ? 'bg-slate-900/55 border-white/10'
+                  : isHigherPlan
+                  ? 'bg-slate-900/80 border-white/20 shadow-lg'
                   : 'bg-slate-900/60 border-white/[0.08]'
               }`}
             >

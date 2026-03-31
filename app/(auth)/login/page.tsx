@@ -85,7 +85,7 @@ function LoginForm() {
       >
         <Link href="/" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
         <div className="flex flex-col items-center mb-8 pt-12">
-          <EidosLogo variant="full" theme="dark" href="/" height={72} />
+          <EidosLogo variant="full" theme="dark" href="/" height={108} />
         </div>
 
         {successMessage && (
@@ -178,7 +178,7 @@ function LoginForm() {
             onClick={handleGoogleLogin}
             disabled={isLoading}
             variant="outline"
-            className="w-full h-12 text-base font-medium border border-slate-500 bg-[#1a1a1a] hover:bg-[#222222] hover:border-white/30 text-white shadow-sm transition-all"
+            className="w-full h-12 text-base font-medium border border-slate-500 bg-[#1a1a1a] hover:bg-[#222222] hover:border-white/30 text-white hover:text-white shadow-sm transition-all"
           >
             <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />

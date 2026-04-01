@@ -274,6 +274,7 @@ export interface Database {
           notify_whatsapp_number: string | null
           google_sheets_enabled: boolean
           google_sheets_id: string | null
+          google_sheets_share_email: string | null
           created_at: string
           updated_at: string
         }
@@ -314,6 +315,7 @@ export interface Database {
           notify_whatsapp_number?: string | null
           google_sheets_enabled?: boolean
           google_sheets_id?: string | null
+          google_sheets_share_email?: string | null
           updated_at?: string
         }
         Update: {
@@ -351,6 +353,7 @@ export interface Database {
           notify_whatsapp_number?: string | null
           google_sheets_enabled?: boolean
           google_sheets_id?: string | null
+          google_sheets_share_email?: string | null
         }
         Relationships: []
       }

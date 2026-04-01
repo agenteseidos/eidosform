@@ -437,9 +437,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     <div className="flex flex-col h-screen bg-slate-50">
       {/* Header */}
       <header className="min-h-14 bg-white border-b border-slate-200 shrink-0">
-        <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 min-w-0 overflow-hidden">
+        <div className="flex items-center gap-2 px-3 sm:px-4 py-2 min-w-0 overflow-hidden">
           {/* Left: Voltar + título */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden basis-0">
             <Button
               variant="ghost"
               size="sm"
@@ -520,7 +520,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           </nav>
 
           {/* Right: Upgrade + Save status + Publish */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 max-w-fit">
+          <div className="flex items-center justify-end gap-1.5 sm:gap-2 flex-1 basis-0">
             {/* B10: Botão Upgrade para todos abaixo de Professional */}
             {(userPlan === 'free' || userPlan === 'starter' || userPlan === 'plus') && (
               <Link

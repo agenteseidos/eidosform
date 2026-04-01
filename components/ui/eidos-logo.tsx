@@ -20,7 +20,7 @@ const LOGO_MAP = {
 
 /** Aspect ratios por variante (largura / altura) */
 const ASPECT_RATIOS = {
-  full: 3, // ~1200/400
+  full: 3.67, // 220/60
   reduced: 4, // ~800/200
   icon: 1, // quadrado
 } as const

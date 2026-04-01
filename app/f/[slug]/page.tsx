@@ -17,7 +17,7 @@ async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient
   // Try by slug first
   const { data: bySlug } = await supabase
     .from('forms')
-    .select('*')
+    .select('id, title, description, slug, questions, status, theme, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, user_id, pixel_event_on_start, pixel_event_on_complete')
     .eq('slug', slugOrId)
     .eq('status', 'published')
     .single()
@@ -28,7 +28,7 @@ async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient
   if (UUID_RE.test(slugOrId)) {
     const { data: byId } = await supabase
       .from('forms')
-      .select('*')
+      .select('id, title, description, slug, questions, status, theme, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, user_id, pixel_event_on_start, pixel_event_on_complete')
       .eq('id', slugOrId)
       .eq('status', 'published')
       .single()

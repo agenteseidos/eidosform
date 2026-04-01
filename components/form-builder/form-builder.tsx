@@ -65,6 +65,8 @@ import {
   Table,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  Unlink,
 } from 'lucide-react'
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
@@ -205,18 +207,40 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       notify_whatsapp_number: form.notify_whatsapp_number || null,
       google_sheets_enabled: form.google_sheets_enabled ?? false,
       google_sheets_id: form.google_sheets_id || null,
+      google_sheets_share_email: form.google_sheets_share_email || null,
     }
     try {
-      const { error } = await supabase
-        .from('forms')
-        .update(updateData)
-        .eq('id', form.id)
-      if (!error) {
-        setHasUnsavedChanges(false)
-        setSaveStatus('saved')
-        setTimeout(() => setSaveStatus('idle'), 2000)
+      // Use API route when Google Sheets creation is needed (API handles spreadsheet creation)
+      const needsSheetsCreation = updateData.google_sheets_enabled && !updateData.google_sheets_id
+      if (needsSheetsCreation) {
+        const response = await fetch(`/api/forms/${form.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updateData),
+        })
+        const data = await response.json().catch(() => null)
+        if (response.ok && data?.form) {
+          setForm(data.form)
+          setHasUnsavedChanges(false)
+          setSaveStatus('saved')
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        } else {
+          const errorMsg = data?.error || 'Falha ao salvar'
+          toast.error(errorMsg)
+          setSaveStatus('idle')
+        }
       } else {
-        setSaveStatus('idle')
+        const { error } = await supabase
+          .from('forms')
+          .update(updateData)
+          .eq('id', form.id)
+        if (!error) {
+          setHasUnsavedChanges(false)
+          setSaveStatus('saved')
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        } else {
+          setSaveStatus('idle')
+        }
       }
     } catch {
       setSaveStatus('idle')
@@ -300,6 +324,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     notify_whatsapp_number: form.notify_whatsapp_number || null,
     google_sheets_enabled: form.google_sheets_enabled ?? false,
     google_sheets_id: form.google_sheets_id || null,
+    google_sheets_share_email: form.google_sheets_share_email || null,
     ...(status && { status }),
   }), [form, questions, pixels])
 
@@ -325,7 +350,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     setIsSaving(true)
 
     try {
-      await updateFormViaApi(buildFormPayload())
+      const updatedForm = await updateFormViaApi(buildFormPayload())
+      if (updatedForm) setForm(updatedForm)
       toast.success('Formulário salvo')
       setHasUnsavedChanges(false)
       return true
@@ -1134,25 +1160,74 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       <Table className="w-4 h-4 text-emerald-600" />
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-slate-700">Google Sheets</p>
-                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">EM BREVE</span>
-                      </div>
-                      <p className="text-xs text-slate-500">Em desenvolvimento. Configuração salva, integração disponível em breve.</p>
+                      <p className="text-sm font-medium text-slate-700">Google Sheets</p>
+                      <p className="text-xs text-slate-500">Envie respostas automaticamente para uma planilha do Google.</p>
                     </div>
                     <Switch
                       checked={form.google_sheets_enabled ?? false}
                       onCheckedChange={(checked) => {
-                        setForm({ ...form, google_sheets_enabled: checked })
+                        const updates: Partial<typeof form> = { google_sheets_enabled: checked }
+                        if (checked && !form.google_sheets_share_email && userInfo?.email) {
+                          updates.google_sheets_share_email = userInfo.email
+                        }
+                        if (!checked) {
+                          updates.google_sheets_id = null
+                          updates.google_sheets_share_email = null
+                        }
+                        setForm({ ...form, ...updates })
                         setHasUnsavedChanges(true)
                       }}
                       aria-label="Ativar Google Sheets"
                     />
                   </div>
                   {form.google_sheets_enabled && (
-                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                      ⚠️ Esta integração está em desenvolvimento. A configuração será salva mas ainda não enviará dados.
-                    </p>
+                    <>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="google_sheets_share_email" className="text-xs text-slate-600">
+                          E-mail para receber a planilha
+                        </Label>
+                        <Input
+                          id="google_sheets_share_email"
+                          type="email"
+                          placeholder="seu@email.com"
+                          value={form.google_sheets_share_email ?? ''}
+                          onChange={(e) => {
+                            setForm({ ...form, google_sheets_share_email: e.target.value })
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="text-sm"
+                        />
+                      </div>
+                      {form.google_sheets_id && (
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={`https://docs.google.com/spreadsheets/d/${form.google_sheets_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Abrir planilha
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm({ ...form, google_sheets_enabled: false, google_sheets_id: null, google_sheets_share_email: null })
+                              setHasUnsavedChanges(true)
+                            }}
+                            className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 font-medium ml-auto"
+                          >
+                            <Unlink className="w-3.5 h-3.5" />
+                            Desconectar
+                          </button>
+                        </div>
+                      )}
+                      {!form.google_sheets_id && (
+                        <p className="text-xs text-slate-500 bg-slate-100 rounded px-2 py-1">
+                          A planilha será criada automaticamente ao salvar o formulário.
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

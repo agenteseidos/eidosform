@@ -473,50 +473,32 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           {/* Center: Tabs de navegação */}
           <nav className="hidden md:flex items-center bg-slate-100 rounded-lg p-1 gap-0.5">
             {[
-              { id: 'questions', label: 'Perguntas', icon: FileText },
-              { id: 'design', label: 'Design', icon: Palette },
-              { id: 'settings', label: 'Configurações', icon: Settings },
-              { id: 'integrations', label: 'Integrações', icon: Zap },
-              { id: 'results', label: 'Resultados', icon: BarChart3 },
-              { id: 'share', label: 'Compartilhar', icon: Share2 },
-            ].map((tab) => {
-              const isCompactSettingsTab = tab.id === 'settings'
-
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    if (tab.id === 'results') {
-                      router.push(`/dashboard/forms/${form.id}/responses`)
-                    } else if (tab.id === 'share') {
-                      copyFormLink()
-                    } else {
-                      setActiveTab(tab.id)
-                    }
-                  }}
-                  title={isCompactSettingsTab ? tab.label : undefined}
-                  aria-label={isCompactSettingsTab ? tab.label : undefined}
-                  className={`
-                    flex items-center rounded-md text-sm font-medium transition-all
-                    ${isCompactSettingsTab ? 'gap-1.5 px-2.5 xl:px-3 2xl:min-w-[132px] 2xl:justify-center' : 'gap-1.5 px-3'} py-1.5
-                    ${activeTab === tab.id 
-                      ? 'bg-white text-slate-900 shadow-sm' 
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
-                    }
-                  `}
-                >
-                  <tab.icon className="w-3.5 h-3.5 shrink-0" />
-                  {isCompactSettingsTab ? (
-                    <>
-                      <span className="hidden 2xl:inline whitespace-nowrap">{tab.label}</span>
-                      <span className="2xl:hidden sr-only">{tab.label}</span>
-                    </>
-                  ) : (
-                    <span className="whitespace-nowrap">{tab.label}</span>
-                  )}
-                </button>
-              )
-            })}
+              { id: 'edit', label: 'Editar', icon: Pencil, activeTabs: ['questions', 'design', 'config'], defaultTab: 'questions' },
+              { id: 'integrations', label: 'Integrações', icon: Zap, activeTabs: ['integrations'], defaultTab: 'integrations' },
+              { id: 'share', label: 'Compartilhar', icon: Share2, activeTabs: ['share'], defaultTab: 'share' },
+              { id: 'results', label: 'Resultados', icon: BarChart3, activeTabs: [] as string[], defaultTab: null as string | null },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  if (tab.id === 'results') {
+                    router.push(`/dashboard/forms/${form.id}/responses`)
+                  } else {
+                    setActiveTab(tab.defaultTab!)
+                  }
+                }}
+                className={`
+                  flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all
+                  ${tab.activeTabs.includes(activeTab)
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                  }
+                `}
+              >
+                <tab.icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">{tab.label}</span>
+              </button>
+            ))}
           </nav>
 
           {/* Right: Upgrade + Save status + Publish */}
@@ -604,27 +586,64 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         {/* Sidebar */}
         <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:min-w-[280px] bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
-            {/* Mobile-only tab selector (desktop tabs are in the header) */}
+            {/* Mobile-only: main section selector */}
             <div className="shrink-0 p-2 border-b border-slate-100 md:hidden">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="questions" className="text-xs">
-                  <FileText className="w-3 h-3 mr-1" />
-                  Perguntas
-                </TabsTrigger>
-                <TabsTrigger value="design" className="text-xs">
-                  <Palette className="w-3 h-3 mr-1" />
-                  Design
-                </TabsTrigger>
-                <TabsTrigger value="settings" className="text-xs px-1.5" title="Configurações">
-                  <Settings className="w-3 h-3 mr-1 shrink-0" />
-                  <span className="whitespace-nowrap">Config</span>
-                </TabsTrigger>
-                <TabsTrigger value="integrations" className="text-xs px-1.5" title="Integrações">
-                  <Zap className="w-3 h-3 mr-1 shrink-0" />
-                  <span className="whitespace-nowrap">Integr.</span>
-                </TabsTrigger>
-              </TabsList>
+              <div className="grid w-full grid-cols-3 bg-slate-100 rounded-lg p-0.5 gap-0.5">
+                <button
+                  onClick={() => { if (!['questions', 'design', 'config'].includes(activeTab)) setActiveTab('questions') }}
+                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    ['questions', 'design', 'config'].includes(activeTab)
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  <Pencil className="w-3 h-3" />
+                  Editar
+                </button>
+                <button
+                  onClick={() => setActiveTab('integrations')}
+                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    activeTab === 'integrations'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  <Zap className="w-3 h-3" />
+                  Integr.
+                </button>
+                <button
+                  onClick={() => setActiveTab('share')}
+                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    activeTab === 'share'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  <Share2 className="w-3 h-3" />
+                  Comp.
+                </button>
+              </div>
             </div>
+
+            {/* Sub-tabs for Editar section — shown on both mobile and desktop */}
+            {['questions', 'design', 'config'].includes(activeTab) && (
+              <div className="shrink-0 px-2 pb-2 pt-1 border-b border-slate-100">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="questions" className="text-xs">
+                    <FileText className="w-3 h-3 mr-1" />
+                    Perguntas
+                  </TabsTrigger>
+                  <TabsTrigger value="design" className="text-xs">
+                    <Palette className="w-3 h-3 mr-1" />
+                    Design
+                  </TabsTrigger>
+                  <TabsTrigger value="config" className="text-xs px-1.5" title="Configurações">
+                    <Settings className="w-3 h-3 mr-1 shrink-0" />
+                    <span className="whitespace-nowrap">Config</span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+            )}
 
             <TabsContent value="questions" className="flex-1 flex flex-col mt-0 overflow-hidden data-[state=inactive]:hidden">
               <div className="flex-1 min-h-0 p-2 space-y-1 flex flex-col">
@@ -836,26 +855,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               </div>
             </TabsContent>
 
-            <TabsContent value="settings" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
+            <TabsContent value="config" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
               <div className="p-4 space-y-6">
-                <div>
-                  <Label htmlFor="slug" className="text-sm font-medium text-slate-700">URL do Formulário</Label>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="text-sm font-medium text-slate-600">/f/</span>
-                    <Input
-                      id="slug"
-                      value={form.slug}
-                      onChange={(e) => {
-                        const slug = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
-                        setForm({ ...form, slug })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="flex-1 text-slate-900 placeholder:text-slate-400"
-                      placeholder="meu-formulario"
-                    />
-                  </div>
-                </div>
-
                 <div>
                   <Label htmlFor="description" className="text-sm font-medium text-slate-700">Descrição</Label>
                   <Textarea
@@ -885,23 +886,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     }}
                     className="mt-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="https://exemplo.com/obrigado"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="webhook_url" className="text-sm font-medium text-slate-700">
-                    URL de Webhook
-                  </Label>
-                  <p className="text-xs text-slate-500 mt-0.5">Notificação POST enviada com os dados da resposta ao submeter</p>
-                  <Input
-                    id="webhook_url"
-                    value={form.webhook_url || ''}
-                    onChange={(e) => {
-                      setForm({ ...form, webhook_url: e.target.value || null })
-                      setHasUnsavedChanges(true)
-                    }}
-                    className="mt-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="https://webhook.site/seu-endpoint"
                   />
                 </div>
 
@@ -949,136 +933,41 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     </div>
                   )}
                 </div>
-
-                <div className="pt-2">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="h-px flex-1 bg-slate-100" />
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Pixels de Rastreamento</span>
-                    <div className="h-px flex-1 bg-slate-100" />
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Meta Pixel ID</Label>
-                      <Input
-                        id="meta_pixel"
-                        value={pixels.metaPixelId || ''}
-                        onChange={(e) => {
-                          setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                        placeholder="123456789012345"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor="google_ads_id" className="text-sm font-medium text-slate-700">Google Ads ID</Label>
-                        <Input
-                          id="google_ads_id"
-                          value={pixels.googleAdsId || ''}
-                          onChange={(e) => {
-                            setPixels({ ...pixels, googleAdsId: e.target.value || undefined })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                          placeholder="AW-XXXXXXXXX"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="google_ads_label" className="text-sm font-medium text-slate-700">Rótulo de Conversão</Label>
-                        <Input
-                          id="google_ads_label"
-                          value={pixels.googleAdsLabel || ''}
-                          onChange={(e) => {
-                            setPixels({ ...pixels, googleAdsLabel: e.target.value || undefined })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                          placeholder="AbCdEfGhIj"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="tiktok_pixel" className="text-sm font-medium text-slate-700">TikTok Pixel ID</Label>
-                      <Input
-                        id="tiktok_pixel"
-                        value={pixels.tiktokPixelId || ''}
-                        onChange={(e) => {
-                          setPixels({ ...pixels, tiktokPixelId: e.target.value || undefined })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                        placeholder="CXXXXXXXXXXXXXXXXX"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="gtm_id" className="text-sm font-medium text-slate-700">Google Tag Manager ID</Label>
-                      <Input
-                        id="gtm_id"
-                        value={pixels.gtmId || ''}
-                        onChange={(e) => {
-                          setPixels({ ...pixels, gtmId: e.target.value || undefined })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                        placeholder="GTM-XXXXXXX"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="pt-2">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="h-px flex-1 bg-slate-100" />
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Eventos do Pixel Meta</span>
-                    <div className="h-px flex-1 bg-slate-100" />
-                  </div>
-                  {userPlan === 'plus' || userPlan === 'professional' ? (
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Ao iniciar o formulário</Label>
-                        <Input
-                          id="pixel_event_start"
-                          value={form.pixel_event_on_start || ''}
-                          onChange={(e) => {
-                            setForm({ ...form, pixel_event_on_start: e.target.value || null })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                          placeholder="ex: FormStarted"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="pixel_event_complete" className="text-sm font-medium text-slate-700">Ao completar o formulário</Label>
-                        <Input
-                          id="pixel_event_complete"
-                          value={form.pixel_event_on_complete || ''}
-                          onChange={(e) => {
-                            setForm({ ...form, pixel_event_on_complete: e.target.value || null })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                          placeholder="ex: Lead"
-                        />
-                      </div>
-                      <p className="text-xs text-slate-400">ℹ️ Requer Pixel Meta configurado acima.</p>
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 opacity-60">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-slate-500">Eventos do Pixel Meta</span>
-                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
-                      <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
-                    </div>
-                  )}
-                </div>
               </div>
             </TabsContent>
 
             <TabsContent value="integrations" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
               <div className="p-4 space-y-3">
+                {/* Webhook */}
                 <div className="flex items-center gap-2 mb-4">
+                  <div className="h-px flex-1 bg-slate-100" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Webhook</span>
+                  <div className="h-px flex-1 bg-slate-100" />
+                </div>
+                <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                      <Globe className="w-4 h-4 text-violet-600" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-700">URL de Webhook</p>
+                      <p className="text-xs text-slate-500">Notificação POST enviada com os dados da resposta ao submeter</p>
+                    </div>
+                  </div>
+                  <Input
+                    id="webhook_url"
+                    value={form.webhook_url || ''}
+                    onChange={(e) => {
+                      setForm({ ...form, webhook_url: e.target.value || null })
+                      setHasUnsavedChanges(true)
+                    }}
+                    className="text-slate-900 placeholder:text-slate-400 text-sm"
+                    placeholder="https://webhook.site/seu-endpoint"
+                  />
+                </div>
+
+                {/* Notificações */}
+                <div className="flex items-center gap-2 mt-6 mb-4">
                   <div className="h-px flex-1 bg-slate-100" />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Notificações</span>
                   <div className="h-px flex-1 bg-slate-100" />
@@ -1262,6 +1151,187 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       )}
                     </>
                   )}
+                </div>
+
+                {/* Pixels de Rastreamento */}
+                <div className="flex items-center gap-2 mt-6 mb-4">
+                  <div className="h-px flex-1 bg-slate-100" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Pixels de Rastreamento</span>
+                  <div className="h-px flex-1 bg-slate-100" />
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Meta Pixel ID</Label>
+                    <Input
+                      id="meta_pixel"
+                      value={pixels.metaPixelId || ''}
+                      onChange={(e) => {
+                        setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                      placeholder="123456789012345"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="google_ads_id" className="text-sm font-medium text-slate-700">Google Ads ID</Label>
+                      <Input
+                        id="google_ads_id"
+                        value={pixels.googleAdsId || ''}
+                        onChange={(e) => {
+                          setPixels({ ...pixels, googleAdsId: e.target.value || undefined })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                        placeholder="AW-XXXXXXXXX"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="google_ads_label" className="text-sm font-medium text-slate-700">Rótulo de Conversão</Label>
+                      <Input
+                        id="google_ads_label"
+                        value={pixels.googleAdsLabel || ''}
+                        onChange={(e) => {
+                          setPixels({ ...pixels, googleAdsLabel: e.target.value || undefined })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                        placeholder="AbCdEfGhIj"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="tiktok_pixel" className="text-sm font-medium text-slate-700">TikTok Pixel ID</Label>
+                    <Input
+                      id="tiktok_pixel"
+                      value={pixels.tiktokPixelId || ''}
+                      onChange={(e) => {
+                        setPixels({ ...pixels, tiktokPixelId: e.target.value || undefined })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                      placeholder="CXXXXXXXXXXXXXXXXX"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="gtm_id" className="text-sm font-medium text-slate-700">Google Tag Manager ID</Label>
+                    <Input
+                      id="gtm_id"
+                      value={pixels.gtmId || ''}
+                      onChange={(e) => {
+                        setPixels({ ...pixels, gtmId: e.target.value || undefined })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                      placeholder="GTM-XXXXXXX"
+                    />
+                  </div>
+                </div>
+
+                {/* Eventos do Pixel Meta */}
+                <div className="flex items-center gap-2 mt-6 mb-4">
+                  <div className="h-px flex-1 bg-slate-100" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Eventos do Pixel Meta</span>
+                  <div className="h-px flex-1 bg-slate-100" />
+                </div>
+                {userPlan === 'plus' || userPlan === 'professional' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Ao iniciar o formulário</Label>
+                      <Input
+                        id="pixel_event_start"
+                        value={form.pixel_event_on_start || ''}
+                        onChange={(e) => {
+                          setForm({ ...form, pixel_event_on_start: e.target.value || null })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                        placeholder="ex: FormStarted"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="pixel_event_complete" className="text-sm font-medium text-slate-700">Ao completar o formulário</Label>
+                      <Input
+                        id="pixel_event_complete"
+                        value={form.pixel_event_on_complete || ''}
+                        onChange={(e) => {
+                          setForm({ ...form, pixel_event_on_complete: e.target.value || null })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                        placeholder="ex: Lead"
+                      />
+                    </div>
+                    <p className="text-xs text-slate-400">Requer Pixel Meta configurado acima.</p>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 opacity-60">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-500">Eventos do Pixel Meta</span>
+                      <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
+                    <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="share" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
+              <div className="p-4 space-y-6">
+                <div>
+                  <Label className="text-sm font-medium text-slate-700">Link do Formulário</Label>
+                  <p className="text-xs text-slate-500 mt-0.5">Compartilhe este link para receber respostas</p>
+                  <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <code className="text-sm text-blue-600 break-all">
+                      {typeof window !== 'undefined' ? `${window.location.origin}/f/${form.slug}` : `/f/${form.slug}`}
+                    </code>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyFormLink}
+                      className="flex-1"
+                    >
+                      <Copy className="w-4 h-4 mr-1.5" />
+                      Copiar link
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      asChild
+                      className="flex-1"
+                    >
+                      <a
+                        href={`/f/${form.slug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink className="w-4 h-4 mr-1.5" />
+                        Abrir formulário
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="share-slug" className="text-sm font-medium text-slate-700">URL do Formulário</Label>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-600">/f/</span>
+                    <Input
+                      id="share-slug"
+                      value={form.slug}
+                      onChange={(e) => {
+                        const slug = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                        setForm({ ...form, slug })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="flex-1 text-slate-900 placeholder:text-slate-400"
+                      placeholder="meu-formulario"
+                    />
+                  </div>
                 </div>
               </div>
             </TabsContent>

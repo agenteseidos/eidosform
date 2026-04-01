@@ -1223,9 +1223,42 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         </div>
                       )}
                       {!form.google_sheets_id && (
-                        <p className="text-xs text-slate-500 bg-slate-100 rounded px-2 py-1">
-                          A planilha será criada automaticamente ao salvar o formulário.
-                        </p>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const email = form.google_sheets_share_email?.trim()
+                            if (!email) {
+                              toast.error('Informe um e-mail para receber a planilha')
+                              return
+                            }
+                            try {
+                              toast.loading('Criando planilha...', { id: 'sheets-connect' })
+                              const res = await fetch(`/api/forms/${form.id}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  google_sheets_enabled: true,
+                                  google_sheets_share_email: email,
+                                }),
+                              })
+                              if (!res.ok) {
+                                const data = await res.json().catch(() => ({}))
+                                throw new Error(data.error || 'Erro ao criar planilha')
+                              }
+                              const data = await res.json()
+                              const updated = data.form ?? data
+                              setForm({ ...form, google_sheets_id: updated.google_sheets_id, google_sheets_enabled: true, google_sheets_share_email: email })
+                              setHasUnsavedChanges(false)
+                              toast.success('Planilha criada e compartilhada!', { id: 'sheets-connect' })
+                            } catch (err: unknown) {
+                              const message = err instanceof Error ? err.message : 'Falha ao criar planilha'
+                              toast.error(message, { id: 'sheets-connect' })
+                            }
+                          }}
+                          className="w-full py-2 px-3 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                        >
+                          Conectar Google Sheets
+                        </button>
                       )}
                     </>
                   )}

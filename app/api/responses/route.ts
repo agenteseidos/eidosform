@@ -8,7 +8,8 @@ import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers } from '@/lib/field-validators'
-import { sendWhatsAppNotificationStub, syncGoogleSheetsStub } from '@/lib/integration-stubs'
+import { sendWhatsAppNotificationStub } from '@/lib/integration-stubs'
+import { appendSubmission } from '@/lib/google-sheets'
 
 // Maximum payload size (50KB — generous for form data, blocks abuse)
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -292,11 +293,19 @@ export async function POST(req: NextRequest) {
     }
 
     if (form.google_sheets_enabled && form.google_sheets_id) {
-      syncGoogleSheetsStub({
-        formId: form_id as string,
-        responseId,
-        googleSheetsId: form.google_sheets_id,
-      }).catch(console.error)
+      const formQuestions = (form.questions ?? []) as Array<{ id: string; title: string }>
+      const fieldLabels = formQuestions.map((q) => q.title || 'Sem título')
+      const questionIdToLabel: Record<string, string> = {}
+      for (const q of formQuestions) {
+        questionIdToLabel[q.id] = q.title || 'Sem título'
+      }
+      appendSubmission(
+        form.google_sheets_id,
+        fieldLabels,
+        answers as Record<string, unknown>,
+        questionIdToLabel,
+        utmData,
+      ).catch((e) => console.error('Google Sheets sync failed:', e))
     }
 
     // Webhook externo configurado pelo usuário

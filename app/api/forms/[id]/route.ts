@@ -5,6 +5,7 @@ import { FormUpdate } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { validateFormIntegrations } from '@/lib/form-integrations'
+import { createSpreadsheet } from '@/lib/google-sheets'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -56,7 +57,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // Verify ownership
   const { data: existing } = await supabase
     .from('forms')
-    .select('id')
+    .select('id, title, questions, google_sheets_id, google_sheets_enabled')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
@@ -66,7 +67,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const body = await req.json()
-  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id } = body
+  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email } = body
 
   // Validate slug if provided
   if (slug && !/^[a-z0-9-]+$/.test(slug)) {
@@ -123,6 +124,34 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     )
   }
 
+  // Google Sheets: create spreadsheet when enabling for the first time
+  let newGoogleSheetsId: string | undefined
+  if (google_sheets_enabled === true && !existing.google_sheets_id) {
+    const shareEmail = google_sheets_share_email as string | undefined
+    if (!shareEmail) {
+      return NextResponse.json(
+        { error: 'E-mail para compartilhamento da planilha é obrigatório' },
+        { status: 400 }
+      )
+    }
+
+    try {
+      const formQuestions = (questions ?? existing.questions ?? []) as Array<{ id: string; title: string }>
+      const fieldLabels = formQuestions.map((q) => q.title || 'Sem título')
+      newGoogleSheetsId = await createSpreadsheet(
+        (title as string) ?? existing.title ?? 'Formulário',
+        shareEmail,
+        fieldLabels
+      )
+    } catch (e) {
+      console.error('Failed to create Google Spreadsheet:', e)
+      return NextResponse.json(
+        { error: 'Falha ao criar planilha do Google. Verifique se o e-mail informado é válido.' },
+        { status: 500 }
+      )
+    }
+  }
+
   const update: FormUpdate = {
     ...(title !== undefined && { title }),
     ...(description !== undefined && { description }),
@@ -154,6 +183,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(integrationValidation.values.notify_whatsapp_number !== undefined && { notify_whatsapp_number: integrationValidation.values.notify_whatsapp_number }),
     ...(google_sheets_enabled !== undefined && { google_sheets_enabled }),
     ...(integrationValidation.values.google_sheets_id !== undefined && { google_sheets_id: integrationValidation.values.google_sheets_id }),
+    ...(newGoogleSheetsId && { google_sheets_id: newGoogleSheetsId }),
+    ...(google_sheets_share_email !== undefined && { google_sheets_share_email }),
     updated_at: new Date().toISOString(),
   }
 

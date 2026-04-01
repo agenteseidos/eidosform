@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
+import { checkResponseLimit, incrementResponseCount, PLANS, PlanName } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
@@ -266,7 +266,16 @@ export async function POST(req: NextRequest) {
 
   // Notificar por email e disparar webhook se resposta completa
   if (completed) {
-    // Email de notificação
+    // Fetch form owner's plan for feature gating
+    const { data: ownerProfile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', form.user_id)
+      .single()
+    const ownerPlan = (ownerProfile?.plan ?? 'free') as PlanName
+    const ownerPlanConfig = PLANS[ownerPlan]
+
+    // Email de notificação (system email — always allowed)
     try {
       const { sendNewResponseNotification } = await import('@/lib/email')
       await sendNewResponseNotification(form_id as string, form.user_id, responseId)
@@ -274,8 +283,8 @@ export async function POST(req: NextRequest) {
       console.error('Email notification failed:', e)
     }
 
-    // Notificação por email configurada no form
-    if (form.notify_email_enabled && form.notify_email) {
+    // Notificação por email configurada no form — feature gated
+    if (form.notify_email_enabled && form.notify_email && ownerPlanConfig?.emailNotifications) {
       sendEmailNotification({
         toEmail: form.notify_email,
         formTitle: form.title ?? 'Formulário',
@@ -284,7 +293,7 @@ export async function POST(req: NextRequest) {
       }).catch(console.error)
     }
 
-    if (form.notify_whatsapp_enabled && form.notify_whatsapp_number) {
+    if (form.notify_whatsapp_enabled && form.notify_whatsapp_number && ownerPlanConfig?.emailNotifications) {
       sendWhatsAppNotificationStub({
         formId: form_id as string,
         responseId,
@@ -308,8 +317,8 @@ export async function POST(req: NextRequest) {
       ).catch((e) => console.error('Google Sheets sync failed:', e))
     }
 
-    // Webhook externo configurado pelo usuário
-    if (form.webhook_url) {
+    // Webhook externo configurado pelo usuário — feature gated
+    if (form.webhook_url && ownerPlanConfig?.webhooks) {
       // Enriquecer payload com metadata dos campos
       const questions = (form.questions ?? []) as QuestionConfig[]
       const fields = questions.map(q => ({

@@ -111,6 +111,22 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     )
   }
 
+  // Feature gate: webhooks
+  if (webhook_url && !planConfig?.webhooks) {
+    return NextResponse.json(
+      { error: 'Webhooks disponíveis a partir do plano Plus' },
+      { status: 403 }
+    )
+  }
+
+  // Feature gate: email notifications
+  if (notify_email_enabled === true && !planConfig?.emailNotifications) {
+    return NextResponse.json(
+      { error: 'Notificações por email disponíveis a partir do plano Plus' },
+      { status: 403 }
+    )
+  }
+
   const integrationValidation = validateFormIntegrations({
     notify_email,
     notify_whatsapp_number,

@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
+import { PLANS, PlanName } from '@/lib/plan-limits'
 
 function getSupabase() {
   return createClient(
@@ -18,9 +19,9 @@ const VALUE_TO_PLAN: Record<number, string> = {
   49: 'starter',
   127: 'plus',
   257: 'professional',
-  470.4: 'starter',
-  1219.2: 'plus',
-  2467.2: 'professional',
+  470.4: 'starter',      // R$39,20/mês × 12
+  1219.2: 'plus',         // R$101,60/mês × 12
+  2467.2: 'professional', // R$205,60/mês × 12
 }
 
 function detectPlan(value: number): string {
@@ -54,12 +55,18 @@ interface AsaasWebhookBody {
 }
 
 export async function POST(req: NextRequest) {
+  const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN
+  if (!expectedToken) {
+    console.error('[asaas-webhook] ASAAS_WEBHOOK_TOKEN not configured — rejecting all requests')
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
+  }
+
   const headerToken = req.headers.get('asaas-access-token')
   const url = new URL(req.url)
   const queryToken = url.searchParams.get('accessToken')
   const token = headerToken || queryToken
 
-  if (process.env.ASAAS_WEBHOOK_TOKEN && token !== process.env.ASAAS_WEBHOOK_TOKEN) {
+  if (!token || token !== expectedToken) {
     console.warn('[asaas-webhook] Token mismatch. Header:', headerToken, 'Query:', queryToken)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -87,6 +94,7 @@ export async function POST(req: NextRequest) {
         if (!user) break
 
         const plan = detectPlan(payment.value)
+        const planConfig = PLANS[plan as PlanName]
 
         await supabase
           .from('profiles')
@@ -95,6 +103,8 @@ export async function POST(req: NextRequest) {
             plan_status: 'active',
             plan_expires_at: null,
             limit_alert_sent: false,
+            responses_limit: planConfig?.maxResponses ?? 100,
+            responses_used: 0,
             asaas_subscription_id: payment.subscription ?? user.plan,
           })
           .eq('id', user.id)
@@ -130,6 +140,8 @@ export async function POST(req: NextRequest) {
             plan_status: 'cancelled',
             asaas_subscription_id: null,
             limit_alert_sent: false,
+            responses_limit: PLANS.free.maxResponses,
+            responses_used: 0,
           })
           .eq('id', user.id)
 

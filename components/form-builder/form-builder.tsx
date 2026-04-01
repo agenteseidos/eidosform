@@ -70,6 +70,7 @@ import {
   ChevronRight,
   ExternalLink,
   Unlink,
+  Lock,
 } from 'lucide-react'
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
@@ -1249,26 +1250,42 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   </div>
 
                   {/* Webhook */}
-                  <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3 mt-3">
+                  <div className={`p-4 rounded-lg border border-slate-200 space-y-3 mt-3 ${userPlan !== 'plus' && userPlan !== 'professional' ? 'bg-slate-50 opacity-60' : 'bg-white'}`}>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-                        <Globe className="w-4 h-4 text-violet-600" />
+                        {userPlan !== 'plus' && userPlan !== 'professional' ? (
+                          <Lock className="w-4 h-4 text-violet-600" />
+                        ) : (
+                          <Globe className="w-4 h-4 text-violet-600" />
+                        )}
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-700">Webhook</p>
+                        <p className="text-sm font-medium text-slate-700">
+                          Webhook
+                          {userPlan !== 'plus' && userPlan !== 'professional' && (
+                            <span className="ml-2 text-[10px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">Plus+</span>
+                          )}
+                        </p>
                         <p className="text-xs text-slate-500">Notificação POST enviada com os dados da resposta ao submeter</p>
                       </div>
                     </div>
-                    <Input
-                      id="webhook_url"
-                      value={form.webhook_url || ''}
-                      onChange={(e) => {
-                        setForm({ ...form, webhook_url: e.target.value || null })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="text-slate-900 placeholder:text-slate-400 text-sm"
-                      placeholder="https://webhook.site/seu-endpoint"
-                    />
+                    {userPlan !== 'plus' && userPlan !== 'professional' ? (
+                      <p className="text-xs text-slate-500">
+                        Disponível nos planos Plus e Professional.{' '}
+                        <Link href="/billing" className="text-violet-600 underline">Fazer upgrade</Link>
+                      </p>
+                    ) : (
+                      <Input
+                        id="webhook_url"
+                        value={form.webhook_url || ''}
+                        onChange={(e) => {
+                          setForm({ ...form, webhook_url: e.target.value || null })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="text-slate-900 placeholder:text-slate-400 text-sm"
+                        placeholder="https://webhook.site/seu-endpoint"
+                      />
+                    )}
                   </div>
                 </section>
 
@@ -1281,24 +1298,40 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   </div>
 
                   {/* E-mail */}
-                  <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+                  <div className={`p-4 rounded-lg border border-slate-200 space-y-3 ${userPlan !== 'plus' && userPlan !== 'professional' ? 'bg-slate-50 opacity-60' : 'bg-white'}`}>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                        <Mail className="w-4 h-4 text-blue-600" />
+                        {userPlan !== 'plus' && userPlan !== 'professional' ? (
+                          <Lock className="w-4 h-4 text-blue-600" />
+                        ) : (
+                          <Mail className="w-4 h-4 text-blue-600" />
+                        )}
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-700">Notificação por E-mail</p>
+                        <p className="text-sm font-medium text-slate-700">
+                          Notificação por E-mail
+                          {userPlan !== 'plus' && userPlan !== 'professional' && (
+                            <span className="ml-2 text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Plus+</span>
+                          )}
+                        </p>
                         <p className="text-xs text-slate-500">Receba um e-mail a cada nova resposta.</p>
                       </div>
-                      <Switch
-                        checked={form.notify_email_enabled ?? false}
-                        onCheckedChange={(checked) => {
-                          setForm({ ...form, notify_email_enabled: checked })
-                          setHasUnsavedChanges(true)
-                        }}
-                      />
+                      {(userPlan === 'plus' || userPlan === 'professional') && (
+                        <Switch
+                          checked={form.notify_email_enabled ?? false}
+                          onCheckedChange={(checked) => {
+                            setForm({ ...form, notify_email_enabled: checked })
+                            setHasUnsavedChanges(true)
+                          }}
+                        />
+                      )}
                     </div>
-                    {form.notify_email_enabled && (
+                    {userPlan !== 'plus' && userPlan !== 'professional' ? (
+                      <p className="text-xs text-slate-500">
+                        Disponível nos planos Plus e Professional.{' '}
+                        <Link href="/billing" className="text-blue-600 underline">Fazer upgrade</Link>
+                      </p>
+                    ) : form.notify_email_enabled ? (
                       <div>
                         <Label className="text-xs text-slate-600">E-mail de destino</Label>
                         <Input
@@ -1312,7 +1345,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           type="email"
                         />
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* WhatsApp */}

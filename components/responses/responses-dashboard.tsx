@@ -58,11 +58,13 @@ import {
   BarChart3,
   Users,
   X,
+  Lock,
 } from 'lucide-react'
 
 interface ResponsesDashboardProps {
   form: Form
   responses: Response[]
+  userPlan?: string
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -323,7 +325,7 @@ function ResponseDetailDialog({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ResponsesDashboard({ form, responses: initialResponses }: ResponsesDashboardProps) {
+export function ResponsesDashboard({ form, responses: initialResponses, userPlan = 'free' }: ResponsesDashboardProps) {
   const supabase = createClient()
   const questions = (form.questions as QuestionConfig[]) || []
 
@@ -472,9 +474,18 @@ export function ResponsesDashboard({ form, responses: initialResponses }: Respon
                 </Link>
               </>
             )}
-            <Button onClick={exportCSVFromAPI} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              <Download className="w-4 h-4 mr-2" />Exportar CSV
-            </Button>
+            {userPlan === 'free' ? (
+              <Link href="/billing">
+                <Button size="sm" variant="outline" className="text-slate-500 border-slate-300">
+                  <Lock className="w-4 h-4 mr-2" />Exportar CSV
+                  <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">Starter+</Badge>
+                </Button>
+              </Link>
+            ) : (
+              <Button onClick={exportCSVFromAPI} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                <Download className="w-4 h-4 mr-2" />Exportar CSV
+              </Button>
+            )}
           </div>
         </div>
       </div>

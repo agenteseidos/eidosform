@@ -34,7 +34,7 @@ const plans = [
     id: 'starter',
     name: 'Starter',
     icon: Zap,
-    price: { monthly: 49, annual: 29 },
+    price: { monthly: 49, annual: 39.2 },
     desc: 'Para freelancers',
     highlight: false,
     features: [
@@ -52,7 +52,7 @@ const plans = [
     id: 'plus',
     name: 'Plus',
     icon: Rocket,
-    price: { monthly: 127, annual: 97 },
+    price: { monthly: 127, annual: 101.6 },
     desc: 'Para equipes',
     highlight: true,
     features: [
@@ -78,7 +78,7 @@ const plans = [
     id: 'professional',
     name: 'Professional',
     icon: Crown,
-    price: { monthly: 257, annual: 197 },
+    price: { monthly: 257, annual: 205.6 },
     desc: 'Para empresas',
     highlight: false,
     features: [
@@ -133,7 +133,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                 ? 'bg-black/20 text-black'
                 : 'bg-[#F5B731]/20 text-[#F5B731]'
             }`}>
-              Economize até 40%
+              Economize 20%
             </span>
           </button>
         </div>
@@ -198,7 +198,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                 ) : (
                   <div>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-black text-white">R${price}</span>
+                      <span className="text-3xl font-black text-white">R${Number.isInteger(price) ? price : price.toFixed(2).replace('.', ',')}</span>
                       <span className="text-sm text-slate-500">/mês</span>
                     </div>
                     {billing === 'annual' && originalPrice !== price && (

@@ -10,11 +10,12 @@ const ASAAS_BASE_URL =
 
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY ?? ''
 
-// Planos e preços
+// Planos e preços — yearly = monthlyPrice × 12 × 0.8 (20% off)
+// Fonte de verdade: lib/plan-limits.ts
 export const PLAN_PRICES = {
-  starter: { monthly: 49.0, yearly: 470.4 },  // 20% off no anual
-  plus: { monthly: 127.0, yearly: 1219.2 },
-  professional: { monthly: 257.0, yearly: 2467.2 },
+  starter: { monthly: 49.0, yearly: 470.4 },        // R$39,20/mês × 12
+  plus: { monthly: 127.0, yearly: 1219.2 },          // R$101,60/mês × 12
+  professional: { monthly: 257.0, yearly: 2467.2 },  // R$205,60/mês × 12
 } as const
 
 import { PlanId } from '@/lib/plans'

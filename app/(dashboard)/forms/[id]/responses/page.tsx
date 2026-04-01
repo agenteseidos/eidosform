@@ -31,18 +31,27 @@ export default async function ResponsesPage({ params }: ResponsesPageProps) {
     notFound()
   }
 
-  const { data: responsesData } = await supabase
-    .from('responses')
-    .select('*')
-    .eq('form_id', id)
-    .order('submitted_at', { ascending: false })
+  const [{ data: responsesData }, { data: profile }] = await Promise.all([
+    supabase
+      .from('responses')
+      .select('*')
+      .eq('form_id', id)
+      .order('submitted_at', { ascending: false }),
+    supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', user.id)
+      .single(),
+  ])
 
   const responses = (responsesData || []) as Response[]
+  const userPlan = (profile?.plan as string) || 'free'
 
   return (
-    <ResponsesDashboard 
-      form={form} 
-      responses={responses} 
+    <ResponsesDashboard
+      form={form}
+      responses={responses}
+      userPlan={userPlan}
     />
   )
 }

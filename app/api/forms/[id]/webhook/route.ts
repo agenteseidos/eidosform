@@ -8,6 +8,7 @@ import { validateWebhookUrl } from '@/lib/webhook-validator'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { PLANS, PlanName } from '@/lib/plan-limits'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -36,6 +37,21 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Feature gate: webhooks
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  if (!PLANS[userPlan]?.webhooks) {
+    return NextResponse.json(
+      { error: 'Webhooks disponíveis a partir do plano Plus' },
+      { status: 403 }
+    )
+  }
 
   const body = await req.json()
   const { webhook_url } = body

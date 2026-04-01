@@ -63,6 +63,9 @@ import {
   Zap,
   MessageCircle,
   Table,
+  Crosshair,
+  Database,
+  Bell,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -937,344 +940,348 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
             </TabsContent>
 
             <TabsContent value="integrations" className="flex-1 mt-0 overflow-auto data-[state=inactive]:hidden">
-              <div className="p-4 space-y-3">
-                {/* Webhook */}
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="h-px flex-1 bg-slate-100" />
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Webhook</span>
-                  <div className="h-px flex-1 bg-slate-100" />
-                </div>
-                <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-                      <Globe className="w-4 h-4 text-violet-600" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-700">URL de Webhook</p>
-                      <p className="text-xs text-slate-500">Notificação POST enviada com os dados da resposta ao submeter</p>
-                    </div>
-                  </div>
-                  <Input
-                    id="webhook_url"
-                    value={form.webhook_url || ''}
-                    onChange={(e) => {
-                      setForm({ ...form, webhook_url: e.target.value || null })
-                      setHasUnsavedChanges(true)
-                    }}
-                    className="text-slate-900 placeholder:text-slate-400 text-sm"
-                    placeholder="https://webhook.site/seu-endpoint"
-                  />
-                </div>
+              <div className="p-4 space-y-6">
 
-                {/* Notificações */}
-                <div className="flex items-center gap-2 mt-6 mb-4">
-                  <div className="h-px flex-1 bg-slate-100" />
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Notificações</span>
-                  <div className="h-px flex-1 bg-slate-100" />
-                </div>
+                {/* ── Seção 1: Rastreamento ── */}
+                <section>
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <Crosshair className="w-4 h-4 text-slate-400" />
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Rastreamento</h3>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
 
-                {/* Card Email */}
-                <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                      <Mail className="w-4 h-4 text-blue-600" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-700">Notificação por E-mail</p>
-                      <p className="text-xs text-slate-500">Receba um e-mail a cada nova resposta.</p>
-                    </div>
-                    <Switch
-                      checked={form.notify_email_enabled ?? false}
-                      onCheckedChange={(checked) => {
-                        setForm({ ...form, notify_email_enabled: checked })
-                        setHasUnsavedChanges(true)
-                      }}
-                    />
-                  </div>
-                  {form.notify_email_enabled && (
-                    <div>
-                      <Label className="text-xs text-slate-600">E-mail de destino</Label>
-                      <Input
-                        value={form.notify_email ?? ""}
-                        onChange={(e) => {
-                          setForm({ ...form, notify_email: e.target.value || null })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
-                        placeholder="seu@email.com"
-                        type="email"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Card WhatsApp */}
-                <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
-                      <MessageCircle className="w-4 h-4 text-green-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-slate-700">Notificação por WhatsApp</p>
-                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">EM BREVE</span>
-                      </div>
-                      <p className="text-xs text-slate-500">Em breve. Configuração salva, envio disponível em breve.</p>
-                    </div>
-                    <Switch
-                      checked={form.notify_whatsapp_enabled ?? false}
-                      onCheckedChange={(checked) => {
-                        setForm({ ...form, notify_whatsapp_enabled: checked })
-                        setHasUnsavedChanges(true)
-                      }}
-                      aria-label="Ativar notificação WhatsApp"
-                    />
-                  </div>
-                  {form.notify_whatsapp_enabled && (
-                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                      ⚠️ Esta integração está em desenvolvimento. A configuração será salva mas ainda não enviará dados.
-                    </p>
-                  )}
-                </div>
-
-                {/* Card Google Sheets */}
-                <div className="flex items-center gap-2 mt-6 mb-4">
-                  <div className="h-px flex-1 bg-slate-100" />
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Planilhas</span>
-                  <div className="h-px flex-1 bg-slate-100" />
-                </div>
-                <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                      <Table className="w-4 h-4 text-emerald-600" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-700">Google Sheets</p>
-                      <p className="text-xs text-slate-500">Envie respostas automaticamente para uma planilha do Google.</p>
-                    </div>
-                    <Switch
-                      checked={form.google_sheets_enabled ?? false}
-                      onCheckedChange={(checked) => {
-                        const updates: Partial<typeof form> = { google_sheets_enabled: checked }
-                        if (checked && !form.google_sheets_share_email && userInfo?.email) {
-                          updates.google_sheets_share_email = userInfo.email
-                        }
-                        if (!checked) {
-                          updates.google_sheets_id = null
-                          updates.google_sheets_share_email = null
-                        }
-                        setForm({ ...form, ...updates })
-                        setHasUnsavedChanges(true)
-                      }}
-                      aria-label="Ativar Google Sheets"
-                    />
-                  </div>
-                  {form.google_sheets_enabled && (
-                    <>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="google_sheets_share_email" className="text-xs text-slate-600">
-                          E-mail para receber a planilha
-                        </Label>
-                        <Input
-                          id="google_sheets_share_email"
-                          type="email"
-                          placeholder="seu@email.com"
-                          value={form.google_sheets_share_email ?? ''}
-                          onChange={(e) => {
-                            setForm({ ...form, google_sheets_share_email: e.target.value })
-                            setHasUnsavedChanges(true)
-                          }}
-                          className="text-sm"
-                        />
-                      </div>
-                      {form.google_sheets_id && (
-                        <div className="flex items-center gap-2">
-                          <a
-                            href={`https://docs.google.com/spreadsheets/d/${form.google_sheets_id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            Abrir planilha
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setForm({ ...form, google_sheets_enabled: false, google_sheets_id: null, google_sheets_share_email: null })
-                              setHasUnsavedChanges(true)
-                            }}
-                            className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 font-medium ml-auto"
-                          >
-                            <Unlink className="w-3.5 h-3.5" />
-                            Desconectar
-                          </button>
-                        </div>
-                      )}
-                      {!form.google_sheets_id && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const email = form.google_sheets_share_email?.trim()
-                            if (!email) {
-                              toast.error('Informe um e-mail para receber a planilha')
-                              return
-                            }
-                            try {
-                              toast.loading('Criando planilha...', { id: 'sheets-connect' })
-                              const res = await fetch(`/api/forms/${form.id}`, {
-                                method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  google_sheets_enabled: true,
-                                  google_sheets_share_email: email,
-                                }),
-                              })
-                              if (!res.ok) {
-                                const data = await res.json().catch(() => ({}))
-                                throw new Error(data.error || 'Erro ao criar planilha')
-                              }
-                              const data = await res.json()
-                              const updated = data.form ?? data
-                              setForm({ ...form, google_sheets_id: updated.google_sheets_id, google_sheets_enabled: true, google_sheets_share_email: email })
-                              setHasUnsavedChanges(false)
-                              toast.success('Planilha criada e compartilhada!', { id: 'sheets-connect' })
-                            } catch (err: unknown) {
-                              const message = err instanceof Error ? err.message : 'Falha ao criar planilha'
-                              toast.error(message, { id: 'sheets-connect' })
-                            }
-                          }}
-                          className="w-full py-2 px-3 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
-                        >
-                          Conectar Google Sheets
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Pixels de Rastreamento */}
-                <div className="flex items-center gap-2 mt-6 mb-4">
-                  <div className="h-px flex-1 bg-slate-100" />
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Pixels de Rastreamento</span>
-                  <div className="h-px flex-1 bg-slate-100" />
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Meta Pixel ID</Label>
-                    <Input
-                      id="meta_pixel"
-                      value={pixels.metaPixelId || ''}
-                      onChange={(e) => {
-                        setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                      placeholder="123456789012345"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="google_ads_id" className="text-sm font-medium text-slate-700">Google Ads ID</Label>
-                      <Input
-                        id="google_ads_id"
-                        value={pixels.googleAdsId || ''}
-                        onChange={(e) => {
-                          setPixels({ ...pixels, googleAdsId: e.target.value || undefined })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                        placeholder="AW-XXXXXXXXX"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="google_ads_label" className="text-sm font-medium text-slate-700">Rótulo de Conversão</Label>
-                      <Input
-                        id="google_ads_label"
-                        value={pixels.googleAdsLabel || ''}
-                        onChange={(e) => {
-                          setPixels({ ...pixels, googleAdsLabel: e.target.value || undefined })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                        placeholder="AbCdEfGhIj"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="tiktok_pixel" className="text-sm font-medium text-slate-700">TikTok Pixel ID</Label>
-                    <Input
-                      id="tiktok_pixel"
-                      value={pixels.tiktokPixelId || ''}
-                      onChange={(e) => {
-                        setPixels({ ...pixels, tiktokPixelId: e.target.value || undefined })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                      placeholder="CXXXXXXXXXXXXXXXXX"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="gtm_id" className="text-sm font-medium text-slate-700">Google Tag Manager ID</Label>
-                    <Input
-                      id="gtm_id"
-                      value={pixels.gtmId || ''}
-                      onChange={(e) => {
-                        setPixels({ ...pixels, gtmId: e.target.value || undefined })
-                        setHasUnsavedChanges(true)
-                      }}
-                      className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                      placeholder="GTM-XXXXXXX"
-                    />
-                  </div>
-                </div>
-
-                {/* Eventos do Pixel Meta */}
-                <div className="flex items-center gap-2 mt-6 mb-4">
-                  <div className="h-px flex-1 bg-slate-100" />
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Eventos do Pixel Meta</span>
-                  <div className="h-px flex-1 bg-slate-100" />
-                </div>
-                {userPlan === 'plus' || userPlan === 'professional' ? (
                   <div className="space-y-4">
                     <div>
-                      <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Ao iniciar o formulário</Label>
+                      <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Meta Pixel ID</Label>
                       <Input
-                        id="pixel_event_start"
-                        value={form.pixel_event_on_start || ''}
+                        id="meta_pixel"
+                        value={pixels.metaPixelId || ''}
                         onChange={(e) => {
-                          setForm({ ...form, pixel_event_on_start: e.target.value || null })
+                          setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
                           setHasUnsavedChanges(true)
                         }}
                         className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                        placeholder="ex: FormStarted"
+                        placeholder="123456789012345"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="google_ads_id" className="text-sm font-medium text-slate-700">Google Ads ID</Label>
+                        <Input
+                          id="google_ads_id"
+                          value={pixels.googleAdsId || ''}
+                          onChange={(e) => {
+                            setPixels({ ...pixels, googleAdsId: e.target.value || undefined })
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                          placeholder="AW-XXXXXXXXX"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="google_ads_label" className="text-sm font-medium text-slate-700">Rótulo de Conversão</Label>
+                        <Input
+                          id="google_ads_label"
+                          value={pixels.googleAdsLabel || ''}
+                          onChange={(e) => {
+                            setPixels({ ...pixels, googleAdsLabel: e.target.value || undefined })
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                          placeholder="AbCdEfGhIj"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="tiktok_pixel" className="text-sm font-medium text-slate-700">TikTok Pixel ID</Label>
+                      <Input
+                        id="tiktok_pixel"
+                        value={pixels.tiktokPixelId || ''}
+                        onChange={(e) => {
+                          setPixels({ ...pixels, tiktokPixelId: e.target.value || undefined })
+                          setHasUnsavedChanges(true)
+                        }}
+                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                        placeholder="CXXXXXXXXXXXXXXXXX"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="pixel_event_complete" className="text-sm font-medium text-slate-700">Ao completar o formulário</Label>
+                      <Label htmlFor="gtm_id" className="text-sm font-medium text-slate-700">Google Tag Manager ID</Label>
                       <Input
-                        id="pixel_event_complete"
-                        value={form.pixel_event_on_complete || ''}
+                        id="gtm_id"
+                        value={pixels.gtmId || ''}
                         onChange={(e) => {
-                          setForm({ ...form, pixel_event_on_complete: e.target.value || null })
+                          setPixels({ ...pixels, gtmId: e.target.value || undefined })
                           setHasUnsavedChanges(true)
                         }}
                         className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                        placeholder="ex: Lead"
+                        placeholder="GTM-XXXXXXX"
                       />
                     </div>
-                    <p className="text-xs text-slate-400">Requer Pixel Meta configurado acima.</p>
                   </div>
-                ) : (
-                  <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 opacity-60">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-500">Eventos do Pixel Meta</span>
-                      <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
+
+                  {/* Eventos do Pixel Meta */}
+                  <div className="mt-5">
+                    <p className="text-xs font-medium text-slate-500 mb-3">Eventos do Pixel Meta</p>
+                    {userPlan === 'plus' || userPlan === 'professional' ? (
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Ao iniciar o formulário</Label>
+                          <Input
+                            id="pixel_event_start"
+                            value={form.pixel_event_on_start || ''}
+                            onChange={(e) => {
+                              setForm({ ...form, pixel_event_on_start: e.target.value || null })
+                              setHasUnsavedChanges(true)
+                            }}
+                            className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                            placeholder="ex: FormStarted"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="pixel_event_complete" className="text-sm font-medium text-slate-700">Ao completar o formulário</Label>
+                          <Input
+                            id="pixel_event_complete"
+                            value={form.pixel_event_on_complete || ''}
+                            onChange={(e) => {
+                              setForm({ ...form, pixel_event_on_complete: e.target.value || null })
+                              setHasUnsavedChanges(true)
+                            }}
+                            className="mt-1.5 text-slate-900 placeholder:text-slate-400"
+                            placeholder="ex: Lead"
+                          />
+                        </div>
+                        <p className="text-xs text-slate-400">Requer Pixel Meta configurado acima.</p>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 opacity-60">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-slate-500">Eventos do Pixel Meta</span>
+                          <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
+                        <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* ── Seção 2: Destino de dados ── */}
+                <section>
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <Database className="w-4 h-4 text-slate-400" />
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Destino de dados</h3>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+
+                  {/* Google Sheets */}
+                  <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                        <Table className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-slate-700">Google Sheets</p>
+                        <p className="text-xs text-slate-500">Envie respostas automaticamente para uma planilha do Google.</p>
+                      </div>
+                      <Switch
+                        checked={form.google_sheets_enabled ?? false}
+                        onCheckedChange={(checked) => {
+                          const updates: Partial<typeof form> = { google_sheets_enabled: checked }
+                          if (checked && !form.google_sheets_share_email && userInfo?.email) {
+                            updates.google_sheets_share_email = userInfo.email
+                          }
+                          if (!checked) {
+                            updates.google_sheets_id = null
+                            updates.google_sheets_share_email = null
+                          }
+                          setForm({ ...form, ...updates })
+                          setHasUnsavedChanges(true)
+                        }}
+                        aria-label="Ativar Google Sheets"
+                      />
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
-                    <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                    {form.google_sheets_enabled && (
+                      <>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="google_sheets_share_email" className="text-xs text-slate-600">
+                            E-mail para receber a planilha
+                          </Label>
+                          <Input
+                            id="google_sheets_share_email"
+                            type="email"
+                            placeholder="seu@email.com"
+                            value={form.google_sheets_share_email ?? ''}
+                            onChange={(e) => {
+                              setForm({ ...form, google_sheets_share_email: e.target.value })
+                              setHasUnsavedChanges(true)
+                            }}
+                            className="text-sm"
+                          />
+                        </div>
+                        {form.google_sheets_id && (
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={`https://docs.google.com/spreadsheets/d/${form.google_sheets_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              Abrir planilha
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForm({ ...form, google_sheets_enabled: false, google_sheets_id: null, google_sheets_share_email: null })
+                                setHasUnsavedChanges(true)
+                              }}
+                              className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 font-medium ml-auto"
+                            >
+                              <Unlink className="w-3.5 h-3.5" />
+                              Desconectar
+                            </button>
+                          </div>
+                        )}
+                        {!form.google_sheets_id && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const email = form.google_sheets_share_email?.trim()
+                              if (!email) {
+                                toast.error('Informe um e-mail para receber a planilha')
+                                return
+                              }
+                              try {
+                                toast.loading('Criando planilha...', { id: 'sheets-connect' })
+                                const res = await fetch(`/api/forms/${form.id}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    google_sheets_enabled: true,
+                                    google_sheets_share_email: email,
+                                  }),
+                                })
+                                if (!res.ok) {
+                                  const data = await res.json().catch(() => ({}))
+                                  throw new Error(data.error || 'Erro ao criar planilha')
+                                }
+                                const data = await res.json()
+                                const updated = data.form ?? data
+                                setForm({ ...form, google_sheets_id: updated.google_sheets_id, google_sheets_enabled: true, google_sheets_share_email: email })
+                                setHasUnsavedChanges(false)
+                                toast.success('Planilha criada e compartilhada!', { id: 'sheets-connect' })
+                              } catch (err: unknown) {
+                                const message = err instanceof Error ? err.message : 'Falha ao criar planilha'
+                                toast.error(message, { id: 'sheets-connect' })
+                              }
+                            }}
+                            className="w-full py-2 px-3 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                          >
+                            Conectar Google Sheets
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
-                )}
+
+                  {/* Webhook */}
+                  <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3 mt-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                        <Globe className="w-4 h-4 text-violet-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-slate-700">Webhook</p>
+                        <p className="text-xs text-slate-500">Notificação POST enviada com os dados da resposta ao submeter</p>
+                      </div>
+                    </div>
+                    <Input
+                      id="webhook_url"
+                      value={form.webhook_url || ''}
+                      onChange={(e) => {
+                        setForm({ ...form, webhook_url: e.target.value || null })
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="text-slate-900 placeholder:text-slate-400 text-sm"
+                      placeholder="https://webhook.site/seu-endpoint"
+                    />
+                  </div>
+                </section>
+
+                {/* ── Seção 3: Automação e notificações ── */}
+                <section>
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <Bell className="w-4 h-4 text-slate-400" />
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Automação e notificações</h3>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+
+                  {/* E-mail */}
+                  <div className="p-4 rounded-lg border border-slate-200 bg-white space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <Mail className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-slate-700">Notificação por E-mail</p>
+                        <p className="text-xs text-slate-500">Receba um e-mail a cada nova resposta.</p>
+                      </div>
+                      <Switch
+                        checked={form.notify_email_enabled ?? false}
+                        onCheckedChange={(checked) => {
+                          setForm({ ...form, notify_email_enabled: checked })
+                          setHasUnsavedChanges(true)
+                        }}
+                      />
+                    </div>
+                    {form.notify_email_enabled && (
+                      <div>
+                        <Label className="text-xs text-slate-600">E-mail de destino</Label>
+                        <Input
+                          value={form.notify_email ?? ""}
+                          onChange={(e) => {
+                            setForm({ ...form, notify_email: e.target.value || null })
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
+                          placeholder="seu@email.com"
+                          type="email"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* WhatsApp */}
+                  <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3 mt-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+                        <MessageCircle className="w-4 h-4 text-green-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-medium text-slate-700">Notificação por WhatsApp</p>
+                          <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">EM BREVE</span>
+                        </div>
+                        <p className="text-xs text-slate-500">Em breve. Configuração salva, envio disponível em breve.</p>
+                      </div>
+                      <Switch
+                        checked={form.notify_whatsapp_enabled ?? false}
+                        onCheckedChange={(checked) => {
+                          setForm({ ...form, notify_whatsapp_enabled: checked })
+                          setHasUnsavedChanges(true)
+                        }}
+                        aria-label="Ativar notificação WhatsApp"
+                      />
+                    </div>
+                    {form.notify_whatsapp_enabled && (
+                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        ⚠️ Esta integração está em desenvolvimento. A configuração será salva mas ainda não enviará dados.
+                      </p>
+                    )}
+                  </div>
+                </section>
+
               </div>
             </TabsContent>
 

@@ -157,14 +157,10 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               key={plan.id}
               className={`relative flex h-full flex-col rounded-2xl border p-6 transition-all ${
                 isCurrentPlan
-                  ? 'bg-slate-900 border-[#F5B731]/70 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/25'
-                  : shouldHighlight
-                  ? 'bg-slate-900 border-[#F5B731]/60 shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/20'
+                  ? 'bg-[#1a1f35] border-[#F5B731]/50 shadow-lg shadow-[#F5B731]/10 ring-1 ring-[#F5B731]/20'
                   : isLowerPlan
-                  ? 'bg-slate-900/55 border-white/10'
-                  : isHigherPlan
-                  ? 'bg-slate-900/80 border-white/20 shadow-lg'
-                  : 'bg-slate-900/60 border-white/[0.08]'
+                  ? 'bg-[#111827] border-white/[0.06] opacity-60'
+                  : 'bg-[#111827] border-white/10 hover:border-white/20'
               }`}
             >
               {isCurrentPlan ? (
@@ -175,7 +171,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                 </div>
               ) : shouldHighlight ? (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                  <Badge className="bg-[#F5B731] text-black font-bold border-0 px-3 shadow-lg shadow-[#F5B731]/30">
+                  <Badge className="bg-white/10 text-white font-semibold border border-white/15 px-3 backdrop-blur">
                     ✨ Mais Popular
                   </Badge>
                 </div>
@@ -187,7 +183,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-                  <p className="text-xs text-slate-400">{plan.desc}</p>
+                  <p className="text-sm text-slate-400">{plan.desc}</p>
                 </div>
                 {isLowerPlan && (
                   <Badge variant="secondary" className="bg-white/10 text-slate-300 border border-white/10">
@@ -215,9 +211,9 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                 )}
               </div>
 
-              <ul className="space-y-2 mb-6 flex-1">
+              <ul className="space-y-2.5 mb-6 flex-1">
                 {plan.features.map((feature, i) => (
-                  <li key={i} className={`flex items-start gap-2 text-sm ${isLowerPlan ? 'text-slate-200' : 'text-slate-300'}`}>
+                  <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
                     <Check className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#4BB678]" />
                     <span className="leading-5">{feature}</span>
                   </li>
@@ -226,11 +222,11 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
 
               <Button
                 className={`w-full font-semibold transition-all mt-auto ${
-                  isCurrentPlan || isLowerPlan
-                    ? 'bg-slate-800 text-slate-100 border border-white/10 hover:bg-slate-800'
-                    : shouldHighlight || isHigherPlan
-                    ? 'bg-[#F5B731] hover:bg-yellow-500 text-black shadow-lg shadow-[#F5B731]/25'
-                    : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                  isCurrentPlan
+                    ? 'bg-white/5 text-slate-500 border border-white/10 cursor-not-allowed'
+                    : isLowerPlan
+                    ? 'bg-white/5 text-slate-600 border border-white/[0.06] cursor-not-allowed'
+                    : 'bg-[#F5B731] hover:bg-[#e5a820] text-black font-bold shadow-lg shadow-[#F5B731]/25'
                 }`}
                 disabled={isCurrentPlan || isLowerPlan}
                 onClick={() => {

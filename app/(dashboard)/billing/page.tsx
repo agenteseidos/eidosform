@@ -48,13 +48,13 @@ export default async function BillingPage() {
       </div>
 
       {/* Uso atual */}
-      <Card className="p-6 mb-8 bg-slate-900/60 border-white/10">
+      <Card className="p-6 mb-8 bg-[#0F1629] border border-[#F5B731]/30 shadow-lg shadow-[#F5B731]/5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-semibold">Uso atual — Plano {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}</h2>
             <p className="text-sm text-slate-500 mt-0.5">Ciclo reinicia em 1 de abril</p>
           </div>
-          <Badge className="bg-slate-800 text-slate-300 font-medium">
+          <Badge className="bg-[#F5B731]/15 text-[#F5B731] font-semibold border border-[#F5B731]/30">
             {PLAN_LABELS[currentPlan] || currentPlan}
           </Badge>
         </div>

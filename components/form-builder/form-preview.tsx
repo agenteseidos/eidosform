@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { QuestionConfig } from '@/lib/database.types'
 import { ThemeConfig } from '@/lib/database.types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Star, CalendarClock } from 'lucide-react'
+import { Star, CalendarClock, Plus, X } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 
 interface FormPreviewProps {
@@ -206,40 +206,65 @@ export function FormPreview({
                     <span className="text-base">{country.dial}</span>
                     <span className="text-xs">▾</span>
                   </div>
-                  <div
-                    className="flex-1 border-b-2 py-2 text-lg opacity-50"
-                    style={{ borderColor: theme.primaryColor, color: theme.textColor }}
-                  >
-                    {country.format}
-                  </div>
+                  {onUpdateQuestion ? (
+                    <InlineEditableText
+                      value={question.placeholder || ''}
+                      placeholder={country.format}
+                      onSave={(newVal) => onUpdateQuestion(question.id, { placeholder: newVal })}
+                      className="flex-1 border-b-2 py-2 text-lg opacity-50"
+                      style={{ borderColor: theme.primaryColor, color: theme.textColor }}
+                    />
+                  ) : (
+                    <div
+                      className="flex-1 border-b-2 py-2 text-lg opacity-50"
+                      style={{ borderColor: theme.primaryColor, color: theme.textColor }}
+                    >
+                      {question.placeholder || country.format}
+                    </div>
+                  )}
                 </div>
               )
             })()}
 
-            {(question.type === 'short_text' || question.type === 'email' || 
-              question.type === 'url' || 
+            {(question.type === 'short_text' || question.type === 'email' ||
+              question.type === 'url' ||
               question.type === 'number') && (
-              <div 
-                className="border-b-2 py-2 text-lg opacity-50"
-                style={{ 
-                  borderColor: theme.primaryColor,
-                  color: theme.textColor 
-                }}
-              >
-                {question.placeholder || 'Digite sua resposta aqui...'}
-              </div>
+              onUpdateQuestion ? (
+                <InlineEditableText
+                  value={question.placeholder || ''}
+                  placeholder="Digite sua resposta aqui..."
+                  onSave={(newVal) => onUpdateQuestion(question.id, { placeholder: newVal })}
+                  className="border-b-2 py-2 text-lg opacity-50"
+                  style={{ borderColor: theme.primaryColor, color: theme.textColor }}
+                />
+              ) : (
+                <div
+                  className="border-b-2 py-2 text-lg opacity-50"
+                  style={{ borderColor: theme.primaryColor, color: theme.textColor }}
+                >
+                  {question.placeholder || 'Digite sua resposta aqui...'}
+                </div>
+              )
             )}
 
             {question.type === 'long_text' && (
-              <div 
-                className="border-2 rounded-lg p-3 opacity-50 min-h-[80px]"
-                style={{ 
-                  borderColor: `${theme.primaryColor}40`,
-                  color: theme.textColor 
-                }}
-              >
-                {question.placeholder || 'Digite sua resposta aqui...'}
-              </div>
+              onUpdateQuestion ? (
+                <InlineEditableText
+                  value={question.placeholder || ''}
+                  placeholder="Digite sua resposta aqui..."
+                  onSave={(newVal) => onUpdateQuestion(question.id, { placeholder: newVal })}
+                  className="border-2 rounded-lg p-3 opacity-50 min-h-[80px]"
+                  style={{ borderColor: `${theme.primaryColor}40`, color: theme.textColor }}
+                  tag="p"
+                />
+              ) : (
+                <div
+                  className="border-2 rounded-lg p-3 opacity-50 min-h-[80px]"
+                  style={{ borderColor: `${theme.primaryColor}40`, color: theme.textColor }}
+                >
+                  {question.placeholder || 'Digite sua resposta aqui...'}
+                </div>
+              )
             )}
 
             {question.type === 'date' && (
@@ -257,25 +282,71 @@ export function FormPreview({
             {(question.type === 'dropdown' || question.type === 'checkboxes') && (
               <div className="space-y-2">
                 {(question.options || []).map((option, i) => (
-                  <div 
+                  <div
                     key={i}
                     className="flex items-center gap-3 p-3 rounded-lg border-2 transition-colors hover:border-opacity-100"
-                    style={{ 
+                    style={{
                       borderColor: `${theme.primaryColor}40`,
-                      color: theme.textColor 
+                      color: theme.textColor
                     }}
                   >
-                    <div 
-                      className={`w-6 h-6 rounded-${question.type === 'dropdown' ? 'full' : 'md'} border-2 flex items-center justify-center`}
+                    <div
+                      className={`w-6 h-6 shrink-0 rounded-${question.type === 'dropdown' ? 'full' : 'md'} border-2 flex items-center justify-center`}
                       style={{ borderColor: theme.primaryColor }}
                     >
                       <span className="text-xs font-medium" style={{ color: theme.primaryColor }}>
                         {String.fromCharCode(65 + i)}
                       </span>
                     </div>
-                    <span>{option}</span>
+                    {onUpdateQuestion ? (
+                      <div className="flex-1 flex items-center gap-1">
+                        <InlineEditableText
+                          value={option}
+                          placeholder={`Opção ${i + 1}`}
+                          onSave={(newVal) => {
+                            const options = [...(question.options || [])]
+                            options[i] = newVal
+                            onUpdateQuestion(question.id, { options })
+                          }}
+                          className="flex-1 text-sm"
+                          style={{ color: theme.textColor }}
+                        />
+                        {(question.options?.length || 0) > 1 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const options = (question.options || []).filter((_, idx) => idx !== i)
+                              onUpdateQuestion(question.id, { options })
+                            }}
+                            className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded"
+                            title="Remover opção"
+                          >
+                            <X className="w-3.5 h-3.5" style={{ color: theme.textColor }} />
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <span>{option}</span>
+                    )}
                   </div>
                 ))}
+                {onUpdateQuestion && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const options = question.options || []
+                      onUpdateQuestion(question.id, { options: [...options, `Opção ${options.length + 1}`] })
+                    }}
+                    className="flex items-center gap-2 p-3 rounded-lg border-2 border-dashed w-full transition-colors hover:border-opacity-100 opacity-50 hover:opacity-80"
+                    style={{
+                      borderColor: `${theme.primaryColor}40`,
+                      color: theme.textColor
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="text-sm">Adicionar opção</span>
+                  </button>
+                )}
               </div>
             )}
 

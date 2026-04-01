@@ -5,10 +5,9 @@ import { getQuestionTypeInfo } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Trash2, Plus, GripVertical, X, GitBranch, Copy, CalendarClock } from 'lucide-react'
+import { X, GitBranch, CalendarClock, Plus } from 'lucide-react'
 import { countries } from '@/lib/countries'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
 import { JumpRulesEditor } from './jump-rules-editor'
@@ -17,8 +16,6 @@ interface QuestionEditorProps {
   question: QuestionConfig
   allQuestions?: QuestionConfig[]
   onUpdate: (updates: Partial<QuestionConfig>) => void
-  onDelete: () => void
-  onDuplicate?: () => void
   ownerPlan?: string
   /** Hide type badge and required toggle (shown in right panel header instead) */
   hideTypeAndRequired?: boolean
@@ -28,25 +25,9 @@ interface QuestionEditorProps {
   onlyLogic?: boolean
 }
 
-export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete, onDuplicate, ownerPlan = 'free', hideTypeAndRequired, hideLogic, onlyLogic }: QuestionEditorProps) {
+export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPlan = 'free', hideTypeAndRequired, hideLogic, onlyLogic }: QuestionEditorProps) {
   const typeInfo = getQuestionTypeInfo(question.type)
   const isCalendlyQuestion = question.type === 'calendly'
-
-  const addOption = () => {
-    const options = question.options || []
-    onUpdate({ options: [...options, `Opção ${options.length + 1}`] })
-  }
-
-  const updateOption = (index: number, value: string) => {
-    const options = [...(question.options || [])]
-    options[index] = value
-    onUpdate({ options })
-  }
-
-  const deleteOption = (index: number) => {
-    const options = (question.options || []).filter((_, i) => i !== index)
-    onUpdate({ options })
-  }
 
   // If onlyLogic mode, render just the logic sections
   if (onlyLogic) {
@@ -149,37 +130,8 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
       </div>
       )}
 
-      {!isCalendlyQuestion ? (
-        <>
-          {/* Question Title */}
-          <div>
-            <Label htmlFor="title" className="text-sm font-medium text-slate-900">Pergunta</Label>
-            <Textarea
-              id="title"
-              value={question.title}
-              onChange={(e) => onUpdate({ title: e.target.value })}
-              placeholder="Digite sua pergunta aqui..."
-              className="mt-2 resize-none"
-              rows={2}
-            />
-          </div>
-
-          {/* Description */}
-          <div>
-            <Label htmlFor="description" className="text-sm font-medium text-slate-700">
-              Descrição <span className="text-slate-500 font-normal">(opcional)</span>
-            </Label>
-            <Textarea
-              id="description"
-              value={question.description || ''}
-              onChange={(e) => onUpdate({ description: e.target.value })}
-              placeholder="Adicione uma descrição..."
-              className="mt-2 resize-none"
-              rows={2}
-            />
-          </div>
-        </>
-      ) : (
+      {/* Calendly-specific config */}
+      {isCalendlyQuestion && (
         <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 space-y-3">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700">
@@ -207,65 +159,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
         </div>
       )}
 
-      <Separator />
-
-      {/* Type-specific settings */}
-      {(question.type === 'dropdown' || question.type === 'checkboxes') && (
-        <div>
-          <Label className="text-sm font-medium text-slate-700 mb-3 block">Opções</Label>
-          <div className="space-y-2">
-            {(question.options || []).map((option, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-2 w-full max-w-full"
-              >
-                <div className="cursor-grab active:cursor-grabbing">
-                  <GripVertical className="w-4 h-4 text-slate-300" />
-                </div>
-                <Input
-                  value={option}
-                  onChange={(e) => updateOption(index, e.target.value)}
-                  placeholder={`Opção ${index + 1}`}
-                  className="flex-1 min-w-0 w-full max-w-full"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => deleteOption(index)}
-                  className="h-11 w-11 shrink-0 p-0"
-                  disabled={(question.options?.length || 0) <= 1}
-                >
-                  <X className="w-4 h-4 text-slate-400" />
-                </Button>
-              </div>
-            ))}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={addOption}
-            className="mt-3 w-full"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Adicionar opção
-          </Button>
-        </div>
-      )}
-
-      {(question.type === 'short_text' || question.type === 'long_text' || 
-        question.type === 'email' || question.type === 'phone' || 
-        question.type === 'url' || question.type === 'number') && (
-        <div>
-          <Label htmlFor="placeholder" className="text-sm font-medium text-slate-700">Texto de exemplo</Label>
-          <Input
-            id="placeholder"
-            value={question.placeholder || ''}
-            onChange={(e) => onUpdate({ placeholder: e.target.value })}
-            placeholder="Ex: Digite seu nome completo..."
-            className="mt-2"
-          />
-        </div>
-      )}
+      {/* Type-specific technical settings */}
 
       {question.type === 'rating' && (
         <div>
@@ -484,26 +378,6 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, onDelete
       <Separator />
       </>
       )}
-      {/* Action buttons */}
-      {onDuplicate && (
-        <Button
-          variant="outline"
-          onClick={onDuplicate}
-          data-testid="duplicate-question-btn"
-          className="w-full text-slate-700 hover:text-slate-900 hover:bg-slate-50"
-        >
-          <Copy className="w-4 h-4 mr-2" />
-          Duplicar pergunta
-        </Button>
-      )}
-      <Button
-        variant="outline"
-        onClick={onDelete}
-        className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
-      >
-        <Trash2 className="w-4 h-4 mr-2" />
-        Excluir pergunta
-      </Button>
     </div>
   )
 }

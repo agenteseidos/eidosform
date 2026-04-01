@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -18,10 +17,10 @@ import {
   Loader2,
   MousePointerClick,
   PartyPopper,
-  Settings2,
   Trash2,
   Upload,
   Zap,
+  Settings2,
 } from 'lucide-react'
 import { QuestionEditor } from './question-editor'
 
@@ -54,7 +53,6 @@ export function RightPanel({
   onRemoveWelcomeImage,
   isUploadingImage,
 }: RightPanelProps) {
-  const [activeTab, setActiveTab] = useState<'question' | 'logic'>('question')
   const [copied, setCopied] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -286,103 +284,120 @@ export function RightPanel({
           </span>
         </div>
       </div>
-      {/* B14: ID copiável */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50">
-        <span className="text-[11px] text-slate-400 font-mono flex-1 truncate">{selectedQuestion.id}</span>
-        <button
-          onClick={handleCopyId}
-          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors"
-          title="Copiar ID"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? "Copiado!" : "Copiar ID"}
-        </button>
-      </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'question' | 'logic')} className="flex-1 flex flex-col overflow-hidden">
-        <div className="shrink-0 px-2 pt-2 border-b border-slate-100">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="question" className="text-xs gap-1">
+      <ScrollArea className="flex-1 max-w-full">
+        <div className="max-w-full overflow-hidden">
+
+          {/* Bloco 1 — Ações */}
+          <div className="px-4 py-4 space-y-4 border-b border-slate-100">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
               <Settings2 className="w-3 h-3" />
-              Questão
-            </TabsTrigger>
-            <TabsTrigger value="logic" className="text-xs gap-1">
+              Ações
+            </div>
+
+            {/* Tipo do campo */}
+            <div className="w-full max-w-full overflow-hidden">
+              <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Tipo do campo</Label>
+              <select
+                value={selectedQuestion.type}
+                onChange={(e) => handleTypeChange(e.target.value as QuestionType)}
+                className="w-full max-w-full text-sm text-slate-900 border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              >
+                {questionTypes.map((qt) => (
+                  <option key={qt.type} value={qt.type}>
+                    {qt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Campo obrigatório */}
+            <div className="flex items-start justify-between gap-3 py-1 max-w-full overflow-hidden">
+              <div className="min-w-0 flex-1">
+                <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
+                <p className="text-[10px] text-slate-400">Respondentes devem responder</p>
+              </div>
+              <Switch
+                checked={selectedQuestion.required}
+                onCheckedChange={(checked) =>
+                  onUpdateQuestion(selectedQuestion.id, { required: checked })
+                }
+                className="shrink-0 self-start"
+              />
+            </div>
+
+            {/* Duplicar / Excluir */}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onDuplicateQuestion(selectedQuestion.id)}
+                data-testid="duplicate-question-btn"
+                className="flex-1 text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-50"
+              >
+                <Copy className="w-3.5 h-3.5 mr-1.5" />
+                Duplicar
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onDeleteQuestion(selectedQuestion.id)}
+                className="flex-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                Excluir
+              </Button>
+            </div>
+          </div>
+
+          {/* Bloco 2 — Lógica */}
+          <div className="px-4 py-4 space-y-4 border-b border-slate-100">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
               <Zap className="w-3 h-3" />
               Lógica
-            </TabsTrigger>
-          </TabsList>
+            </div>
+            <QuestionEditor
+              question={selectedQuestion}
+              allQuestions={allQuestions}
+              onUpdate={(updates) => onUpdateQuestion(selectedQuestion.id, updates)}
+              ownerPlan={ownerPlan}
+              onlyLogic
+            />
+          </div>
+
+          {/* Bloco 3 — Configurações técnicas */}
+          <div className="px-4 py-4 space-y-4">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <Settings2 className="w-3 h-3" />
+              Configurações
+            </div>
+
+            {/* ID copiável */}
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-[11px] text-slate-400 font-mono flex-1 truncate">{selectedQuestion.id}</span>
+              <button
+                onClick={handleCopyId}
+                className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors shrink-0"
+                title="Copiar ID"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? "Copiado!" : "Copiar ID"}
+              </button>
+            </div>
+
+            {/* Type-specific technical config (without title/description/options/placeholder) */}
+            <QuestionEditor
+              question={selectedQuestion}
+              allQuestions={allQuestions}
+              onUpdate={(updates) => onUpdateQuestion(selectedQuestion.id, updates)}
+              ownerPlan={ownerPlan}
+              hideTypeAndRequired
+              hideLogic
+            />
+          </div>
+
         </div>
-
-        {/* Tab: Questão */}
-        <TabsContent value="question" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <ScrollArea className="h-full max-w-full">
-            <div className="p-4 space-y-5 max-w-full overflow-hidden">
-              {/* Tipo do campo */}
-              <div className="w-full max-w-full overflow-hidden">
-                <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Tipo do campo</Label>
-                <select
-                  value={selectedQuestion.type}
-                  onChange={(e) => handleTypeChange(e.target.value as QuestionType)}
-                  className="w-full max-w-full text-sm text-slate-900 border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                >
-                  {questionTypes.map((qt) => (
-                    <option key={qt.type} value={qt.type}>
-                      {qt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Campo obrigatório */}
-              <div className="flex items-start justify-between gap-3 py-1 max-w-full overflow-hidden">
-                <div className="min-w-0 flex-1">
-                  <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
-                  <p className="text-[10px] text-slate-400">Respondentes devem responder</p>
-                </div>
-                <Switch
-                  checked={selectedQuestion.required}
-                  onCheckedChange={(checked) =>
-                    onUpdateQuestion(selectedQuestion.id, { required: checked })
-                  }
-                  className="shrink-0 self-start"
-                />
-              </div>
-
-              <Separator className="my-1" />
-
-              {/* Full QuestionEditor content (title, description, type-specific options) */}
-              <QuestionEditor
-                question={selectedQuestion}
-                allQuestions={allQuestions}
-                onUpdate={(updates) => onUpdateQuestion(selectedQuestion.id, updates)}
-                onDelete={() => onDeleteQuestion(selectedQuestion.id)}
-                onDuplicate={() => onDuplicateQuestion(selectedQuestion.id)}
-                ownerPlan={ownerPlan}
-                hideTypeAndRequired
-                hideLogic
-              />
-            </div>
-          </ScrollArea>
-        </TabsContent>
-
-        {/* Tab: Lógica */}
-        <TabsContent value="logic" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <ScrollArea className="h-full max-w-full">
-            <div className="p-4 space-y-5 max-w-full overflow-hidden">
-              {/* Existing logic from QuestionEditor - conditional logic + jump rules */}
-              <QuestionEditor
-                question={selectedQuestion}
-                allQuestions={allQuestions}
-                onUpdate={(updates) => onUpdateQuestion(selectedQuestion.id, updates)}
-                onDelete={() => onDeleteQuestion(selectedQuestion.id)}
-                ownerPlan={ownerPlan}
-                onlyLogic
-              />
-            </div>
-          </ScrollArea>
-        </TabsContent>
-      </Tabs>
+      </ScrollArea>
     </div>
   )
 }

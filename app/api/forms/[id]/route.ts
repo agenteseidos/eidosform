@@ -5,7 +5,7 @@ import { FormUpdate } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { validateFormIntegrations } from '@/lib/form-integrations'
-import { createSpreadsheet } from '@/lib/google-sheets'
+import { extractSpreadsheetId, connectSpreadsheet } from '@/lib/google-sheets'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -67,7 +67,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const body = await req.json()
-  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email } = body
+  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url } = body
 
   // Validate slug if provided
   if (slug && !/^[a-z0-9-]+$/.test(slug)) {
@@ -124,13 +124,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     )
   }
 
-  // Google Sheets: create spreadsheet when enabling for the first time
-  let newGoogleSheetsId: string | undefined
-  if (google_sheets_enabled === true && !existing.google_sheets_id) {
-    const shareEmail = google_sheets_share_email as string | undefined
-    if (!shareEmail) {
+  // Google Sheets: connect to user-provided spreadsheet
+  let connectedSheetsId: string | undefined
+  let connectedSheetsTitle: string | undefined
+  if (google_sheets_url) {
+    const spreadsheetId = extractSpreadsheetId(google_sheets_url as string)
+    if (!spreadsheetId) {
       return NextResponse.json(
-        { error: 'E-mail para compartilhamento da planilha é obrigatório' },
+        { error: 'Link de planilha inválido. Cole a URL completa.' },
         { status: 400 }
       )
     }
@@ -138,18 +139,28 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     try {
       const formQuestions = (questions ?? existing.questions ?? []) as Array<{ id: string; title: string }>
       const fieldLabels = formQuestions.map((q) => q.title || 'Sem título')
-      newGoogleSheetsId = await createSpreadsheet(
-        (title as string) ?? existing.title ?? 'Formulário',
-        shareEmail,
-        fieldLabels
-      )
-    } catch (e) {
-      console.error('Failed to create Google Spreadsheet:', e)
+      const result = await connectSpreadsheet(spreadsheetId, fieldLabels)
+      connectedSheetsId = spreadsheetId
+      connectedSheetsTitle = result.title
+    } catch (e: unknown) {
+      console.error('Failed to connect Google Spreadsheet:', e)
+      const gErr = e as { code?: number; errors?: Array<{ message?: string }> }
+      if (gErr.code === 403 || gErr.code === 404) {
+        return NextResponse.json(
+          { error: 'Não conseguimos acessar essa planilha. Verifique se foi compartilhada com eidosform-sheets@eidosform.iam.gserviceaccount.com com permissão de Editor.' },
+          { status: 400 }
+        )
+      }
       return NextResponse.json(
-        { error: 'Falha ao criar planilha do Google. Verifique se o e-mail informado é válido.' },
+        { error: 'Não foi possível conectar a planilha agora. Tente novamente.' },
         { status: 500 }
       )
     }
+  }
+
+  // If disconnecting, clear the sheets ID
+  if (google_sheets_enabled === false) {
+    connectedSheetsId = undefined
   }
 
   const update: FormUpdate = {
@@ -183,7 +194,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(integrationValidation.values.notify_whatsapp_number !== undefined && { notify_whatsapp_number: integrationValidation.values.notify_whatsapp_number }),
     ...(google_sheets_enabled !== undefined && { google_sheets_enabled }),
     ...(integrationValidation.values.google_sheets_id !== undefined && { google_sheets_id: integrationValidation.values.google_sheets_id }),
-    ...(newGoogleSheetsId && { google_sheets_id: newGoogleSheetsId }),
+    ...(connectedSheetsId && { google_sheets_id: connectedSheetsId, google_sheets_enabled: true }),
+    ...(google_sheets_enabled === false && { google_sheets_id: null }),
     ...(google_sheets_share_email !== undefined && { google_sheets_share_email }),
     updated_at: new Date().toISOString(),
   }
@@ -202,7 +214,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ form: data })
+  return NextResponse.json({
+    form: data,
+    ...(connectedSheetsTitle && { google_sheets_title: connectedSheetsTitle }),
+  })
 }
 
 // PUT /api/forms/[id] — update form (alias for PATCH, used by frontend)

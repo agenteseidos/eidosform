@@ -133,6 +133,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [sidebarSection, setSidebarSection] = useState<'welcome' | 'questions' | 'thankyou' | null>(null)
   const [previewMode, setPreviewMode] = useState<"full" | "step">("full")
+  const [sheetsUrl, setSheetsUrl] = useState('')
+  const [sheetsTitle, setSheetsTitle] = useState('')
   const [stepPreviewIndex, setStepPreviewIndex] = useState(0)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -1082,105 +1084,166 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       </div>
                       <div className="flex-1">
                         <p className="text-sm font-medium text-slate-700">Google Sheets</p>
-                        <p className="text-xs text-slate-500">Envie respostas automaticamente para uma planilha do Google.</p>
+                        <p className="text-xs text-slate-500">Envie automaticamente as respostas para uma planilha do Google Sheets.</p>
                       </div>
-                      <Switch
-                        checked={form.google_sheets_enabled ?? false}
-                        onCheckedChange={(checked) => {
-                          const updates: Partial<typeof form> = { google_sheets_enabled: checked }
-                          if (checked && !form.google_sheets_share_email && userInfo?.email) {
-                            updates.google_sheets_share_email = userInfo.email
-                          }
-                          if (!checked) {
-                            updates.google_sheets_id = null
-                            updates.google_sheets_share_email = null
-                          }
-                          setForm({ ...form, ...updates })
-                          setHasUnsavedChanges(true)
-                        }}
-                        aria-label="Ativar Google Sheets"
-                      />
                     </div>
-                    {form.google_sheets_enabled && (
+
+                    {form.google_sheets_id ? (
                       <>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="google_sheets_share_email" className="text-xs text-slate-600">
-                            E-mail para receber a planilha
-                          </Label>
-                          <Input
-                            id="google_sheets_share_email"
-                            type="email"
-                            placeholder="seu@email.com"
-                            value={form.google_sheets_share_email ?? ''}
-                            onChange={(e) => {
-                              setForm({ ...form, google_sheets_share_email: e.target.value })
-                              setHasUnsavedChanges(true)
-                            }}
-                            className="text-sm"
-                          />
-                        </div>
-                        {form.google_sheets_id && (
+                        {/* CONNECTED state */}
+                        <div className="p-3 rounded-md bg-emerald-50 border border-emerald-200 space-y-2">
                           <div className="flex items-center gap-2">
-                            <a
-                              href={`https://docs.google.com/spreadsheets/d/${form.google_sheets_id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              Abrir planilha
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setForm({ ...form, google_sheets_enabled: false, google_sheets_id: null, google_sheets_share_email: null })
-                                setHasUnsavedChanges(true)
-                              }}
-                              className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 font-medium ml-auto"
-                            >
-                              <Unlink className="w-3.5 h-3.5" />
-                              Desconectar
-                            </button>
+                            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <span className="text-xs font-medium text-emerald-700">Conectado</span>
                           </div>
-                        )}
-                        {!form.google_sheets_id && (
+                          <a
+                            href={`https://docs.google.com/spreadsheets/d/${form.google_sheets_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-sm text-emerald-700 hover:text-emerald-800 font-medium"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            {sheetsTitle || 'Abrir planilha'}
+                          </a>
+                          <p className="text-xs text-slate-500">Novas respostas serão enviadas automaticamente.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={async () => {
-                              const email = form.google_sheets_share_email?.trim()
-                              if (!email) {
-                                toast.error('Informe um e-mail para receber a planilha')
-                                return
-                              }
                               try {
-                                toast.loading('Criando planilha...', { id: 'sheets-connect' })
+                                toast.loading('Testando conexão...', { id: 'sheets-test' })
                                 const res = await fetch(`/api/forms/${form.id}`, {
                                   method: 'PATCH',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
-                                    google_sheets_enabled: true,
-                                    google_sheets_share_email: email,
+                                    google_sheets_url: `https://docs.google.com/spreadsheets/d/${form.google_sheets_id}`,
                                   }),
                                 })
                                 if (!res.ok) {
                                   const data = await res.json().catch(() => ({}))
-                                  throw new Error(data.error || 'Erro ao criar planilha')
+                                  throw new Error(data.error || 'Falha ao testar conexão')
                                 }
-                                const data = await res.json()
-                                const updated = data.form ?? data
-                                setForm({ ...form, google_sheets_id: updated.google_sheets_id, google_sheets_enabled: true, google_sheets_share_email: email })
-                                setHasUnsavedChanges(false)
-                                toast.success('Planilha criada e compartilhada!', { id: 'sheets-connect' })
+                                toast.success('Conexão funcionando!', { id: 'sheets-test' })
                               } catch (err: unknown) {
-                                const message = err instanceof Error ? err.message : 'Falha ao criar planilha'
+                                const message = err instanceof Error ? err.message : 'Falha ao testar conexão'
+                                toast.error(message, { id: 'sheets-test' })
+                              }
+                            }}
+                            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-800 font-medium py-1.5 px-3 rounded-md border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Testar Conexão
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                toast.loading('Desconectando...', { id: 'sheets-disconnect' })
+                                const res = await fetch(`/api/forms/${form.id}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    google_sheets_enabled: false,
+                                    google_sheets_id: null,
+                                  }),
+                                })
+                                if (!res.ok) throw new Error('Erro ao desconectar')
+                                setForm({ ...form, google_sheets_enabled: false, google_sheets_id: null })
+                                setSheetsTitle('')
+                                setHasUnsavedChanges(false)
+                                toast.success('Planilha desconectada', { id: 'sheets-disconnect' })
+                              } catch {
+                                toast.error('Erro ao desconectar planilha', { id: 'sheets-disconnect' })
+                              }
+                            }}
+                            className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 font-medium py-1.5 px-3 rounded-md border border-red-200 bg-white hover:bg-red-50 transition-colors ml-auto"
+                          >
+                            <Unlink className="w-3.5 h-3.5" />
+                            Desconectar
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* DISCONNECTED state */}
+                        <div className="space-y-3">
+                          <div className="p-3 rounded-md bg-white border border-slate-200 space-y-2">
+                            <p className="text-xs text-slate-600">
+                              1. Crie uma planilha em branco no Google Sheets
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              2. Compartilhe com o e-mail abaixo <span className="text-slate-400">(permissão de Editor)</span>:
+                            </p>
+                            <div className="flex items-center gap-2 p-2 rounded bg-slate-50 border border-slate-200">
+                              <code className="text-xs text-slate-700 flex-1 break-all">
+                                eidosform-sheets@eidosform.iam.gserviceaccount.com
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText('eidosform-sheets@eidosform.iam.gserviceaccount.com')
+                                  toast.success('E-mail copiado!')
+                                }}
+                                className="shrink-0 p-1.5 rounded hover:bg-slate-200 transition-colors"
+                                title="Copiar e-mail"
+                              >
+                                <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-600">
+                              3. Cole a URL da planilha abaixo:
+                            </p>
+                          </div>
+                          <Input
+                            id="google_sheets_url"
+                            type="url"
+                            placeholder="https://docs.google.com/spreadsheets/d/..."
+                            value={sheetsUrl}
+                            onChange={(e) => setSheetsUrl(e.target.value)}
+                            className="text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const url = sheetsUrl.trim()
+                              if (!url) {
+                                toast.error('Cole a URL da planilha')
+                                return
+                              }
+                              try {
+                                toast.loading('Conectando planilha...', { id: 'sheets-connect' })
+                                const res = await fetch(`/api/forms/${form.id}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    google_sheets_url: url,
+                                  }),
+                                })
+                                const data = await res.json()
+                                if (!res.ok) {
+                                  throw new Error(data.error || 'Não foi possível conectar a planilha agora. Tente novamente.')
+                                }
+                                const updated = data.form
+                                setForm({
+                                  ...form,
+                                  google_sheets_id: updated.google_sheets_id,
+                                  google_sheets_enabled: true,
+                                })
+                                setSheetsUrl('')
+                                if (data.google_sheets_title) setSheetsTitle(data.google_sheets_title)
+                                setHasUnsavedChanges(false)
+                                toast.success('Planilha conectada com sucesso!', { id: 'sheets-connect' })
+                              } catch (err: unknown) {
+                                const message = err instanceof Error ? err.message : 'Não foi possível conectar a planilha agora. Tente novamente.'
                                 toast.error(message, { id: 'sheets-connect' })
                               }
                             }}
-                            className="w-full py-2 px-3 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                            className="w-full py-2 px-3 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
                           >
-                            Conectar Google Sheets
+                            Conectar Planilha
                           </button>
-                        )}
+                        </div>
                       </>
                     )}
                   </div>

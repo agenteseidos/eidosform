@@ -15,82 +15,131 @@ function getAuth() {
     key,
     scopes: [
       'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive',
     ],
   })
 }
 
 /**
- * Creates a new Google Spreadsheet, sets up headers, and shares with the user.
- * Returns the spreadsheetId.
+ * Extracts the spreadsheet ID from a Google Sheets URL or raw ID.
+ * Supports URLs like:
+ *   https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+ *   https://docs.google.com/spreadsheets/d/SPREADSHEET_ID
+ * Also accepts a raw spreadsheet ID directly.
  */
-export async function createSpreadsheet(
-  formName: string,
-  shareWithEmail: string,
+export function extractSpreadsheetId(urlOrId: string): string | null {
+  const trimmed = urlOrId.trim()
+  if (!trimmed) return null
+
+  // Try to extract from URL
+  const urlMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/)
+  if (urlMatch) return urlMatch[1]
+
+  // If it looks like a raw spreadsheet ID (alphanumeric, dashes, underscores, 20+ chars)
+  if (/^[a-zA-Z0-9-_]{20,}$/.test(trimmed)) return trimmed
+
+  return null
+}
+
+/**
+ * Connects to an existing Google Spreadsheet:
+ *  - Validates access by reading metadata
+ *  - Creates a "Respostas" sheet tab if it doesn't exist
+ *  - Writes header row if the sheet is empty
+ * Returns the spreadsheet title.
+ */
+export async function connectSpreadsheet(
+  spreadsheetId: string,
   fieldLabels: string[]
-): Promise<string> {
+): Promise<{ title: string }> {
   const auth = getAuth()
   const sheets = google.sheets({ version: 'v4', auth })
-  const drive = google.drive({ version: 'v3', auth })
 
-  const title = `EidosForm — ${formName}`
-
-  // Create the spreadsheet
-  const spreadsheet = await sheets.spreadsheets.create({
-    requestBody: {
-      properties: { title },
-      sheets: [{ properties: { title: 'Respostas' } }],
-    },
+  // 1. Read spreadsheet metadata (validates access)
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'properties.title,sheets.properties',
   })
 
-  const spreadsheetId = spreadsheet.data.spreadsheetId!
+  const title = meta.data.properties?.title ?? 'Planilha sem título'
+  const existingSheets = meta.data.sheets ?? []
 
-  // Build header row: Data/Hora | field labels | UTM columns
-  const headers = ['Data/Hora', ...fieldLabels, ...UTM_COLUMNS]
+  // 2. Check if "Respostas" tab exists
+  const respostasSheet = existingSheets.find(
+    (s) => s.properties?.title === 'Respostas'
+  )
 
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: 'Respostas!A1',
-    valueInputOption: 'RAW',
-    requestBody: { values: [headers] },
-  })
-
-  // Bold the header row
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      requests: [
-        {
-          repeatCell: {
-            range: {
-              sheetId: 0,
-              startRowIndex: 0,
-              endRowIndex: 1,
+  if (!respostasSheet) {
+    // Create the "Respostas" tab
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: { title: 'Respostas' },
             },
-            cell: {
-              userEnteredFormat: {
-                textFormat: { bold: true },
+          },
+        ],
+      },
+    })
+  }
+
+  // 3. Check if header row exists
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'Respostas!1:1',
+  })
+
+  const existingHeaders = headerRes.data.values?.[0] as string[] | undefined
+
+  if (!existingHeaders || existingHeaders.length === 0) {
+    // Write header row: Data/Hora | field labels | UTM columns
+    const headers = ['Data/Hora', ...fieldLabels, ...UTM_COLUMNS]
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'Respostas!A1',
+      valueInputOption: 'RAW',
+      requestBody: { values: [headers] },
+    })
+
+    // Get the sheetId for formatting
+    const updatedMeta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties',
+    })
+    const respostasSheetId = updatedMeta.data.sheets?.find(
+      (s) => s.properties?.title === 'Respostas'
+    )?.properties?.sheetId
+
+    if (respostasSheetId !== undefined) {
+      // Bold the header row
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              repeatCell: {
+                range: {
+                  sheetId: respostasSheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                },
+                cell: {
+                  userEnteredFormat: {
+                    textFormat: { bold: true },
+                  },
+                },
+                fields: 'userEnteredFormat.textFormat.bold',
               },
             },
-            fields: 'userEnteredFormat.textFormat.bold',
-          },
+          ],
         },
-      ],
-    },
-  })
+      })
+    }
+  }
 
-  // Share with the user
-  await drive.permissions.create({
-    fileId: spreadsheetId,
-    requestBody: {
-      type: 'user',
-      role: 'writer',
-      emailAddress: shareWithEmail,
-    },
-    sendNotificationEmail: true,
-  })
-
-  return spreadsheetId
+  return { title }
 }
 
 /**

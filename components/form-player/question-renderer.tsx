@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
 import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink } from 'lucide-react'
 import { renderContentBlockHtml } from '@/lib/content-block'
+import { renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
 
 interface FileUploadValue {
   name: string
@@ -970,13 +971,14 @@ export function QuestionRenderer({
       )
 
     case 'content_block': {
+      const contentHtml = renderTiptapHtml(question.contentBody, renderContentBlockHtml)
       return (
         <div className="space-y-5">
-          {question.contentBody && (
+          {contentHtml && (
             <div
               style={{ color: theme.textColor }}
               className="content-block-body text-base md:text-lg leading-relaxed [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ul:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&_strong]:font-semibold [&_em]:italic"
-              dangerouslySetInnerHTML={{ __html: renderContentBlockHtml(question.contentBody) }}
+              dangerouslySetInnerHTML={{ __html: contentHtml }}
             />
           )}
           {question.contentButtonText ? (

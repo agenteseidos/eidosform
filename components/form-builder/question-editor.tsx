@@ -5,7 +5,6 @@ import { getQuestionTypeInfo } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { X, GitBranch, CalendarClock, Plus } from 'lucide-react'
@@ -160,23 +159,16 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
         </div>
       )}
 
-      {/* Content Block config */}
+      {/* Content Block config — edição inline no preview via Tiptap */}
       {question.type === 'content_block' && (
         <div className="space-y-4">
-          <div>
-            <Label className="text-sm font-medium text-slate-700 mb-1.5 block">Conteúdo</Label>
-            <Textarea
-              value={question.contentBody || ''}
-              onChange={(e) => onUpdate({ contentBody: e.target.value })}
-              placeholder="Escreva o conteúdo aqui... Use **negrito**, *itálico* e - listas"
-              className="text-sm min-h-[120px] resize-y"
-              rows={6}
-            />
-            <p className="text-[10px] text-slate-400 mt-1">Suporta Markdown: **negrito**, *itálico*, - lista</p>
+          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5">
+            <p className="text-xs text-blue-700 font-medium mb-0.5">✏️ Edição inline ativa</p>
+            <p className="text-[11px] text-blue-600 leading-snug">Clique no bloco de conteúdo no preview para editar. Selecione texto para formatar (negrito, itálico, lista).</p>
           </div>
           <Separator />
           <div>
-            <Label className="text-sm font-medium text-slate-700 mb-1.5 block">Botão da etapa</Label>
+            <Label className="text-sm font-medium text-slate-700 mb-1.5 block">Texto do botão</Label>
             <Input
               value={question.contentButtonText || ''}
               onChange={(e) => onUpdate({ contentButtonText: e.target.value })}

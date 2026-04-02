@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Star, CalendarClock, Plus, X } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 import { renderContentBlockHtml } from '@/lib/content-block'
+import { TiptapEditor } from '@/components/ui/tiptap/TiptapEditor'
 
 interface FormPreviewProps {
   questions: QuestionConfig[]
@@ -273,14 +274,28 @@ export function FormPreview({
             )}
 
             {question.type === 'content_block' && (
-              <div className="space-y-4">
-                <div
-                  className="text-base leading-relaxed [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ul:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&_strong]:font-semibold [&_em]:italic"
-                  style={{ color: theme.textColor }}
-                  dangerouslySetInnerHTML={{
-                    __html: renderContentBlockHtml(question.contentBody || 'Digite aqui o conteúdo desta etapa. Você pode usar **negrito**, *itálico*, bullets e emojis ✨'),
-                  }}
-                />
+              <div className="space-y-4 group">
+                {onUpdateQuestion ? (
+                  <TiptapEditor
+                    value={question.contentBody || ''}
+                    placeholder="Clique para editar o conteúdo desta etapa. Use negrito, itálico, bullets e emojis ✨"
+                    clickToEdit
+                    editable
+                    primaryColor={theme.primaryColor}
+                    style={{ color: theme.textColor }}
+                    className="text-base leading-relaxed"
+                    onBlur={(jsonString) => onUpdateQuestion(question.id, { contentBody: jsonString })}
+                    onChange={(jsonString) => onUpdateQuestion(question.id, { contentBody: jsonString })}
+                  />
+                ) : (
+                  <div
+                    className="text-base leading-relaxed [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ul:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&_strong]:font-semibold [&_em]:italic"
+                    style={{ color: theme.textColor }}
+                    dangerouslySetInnerHTML={{
+                      __html: renderContentBlockHtml(question.contentBody || 'Digite aqui o conteúdo desta etapa.'),
+                    }}
+                  />
+                )}
 
                 <div
                   className="inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-medium"

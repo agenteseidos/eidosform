@@ -76,6 +76,7 @@ import {
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
 import { RightPanel } from './right-panel'
+import { getContentBlockPreview } from '@/lib/content-block'
 
 // B03: Mapeamento de tipo de campo → ícone + cor para sidebar
 const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> = {
@@ -745,7 +746,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                     )}
                                   </div>
                                   <p className="text-sm font-medium text-slate-900 line-clamp-2">
-                                    {question.title || 'Pergunta sem título'}
+                                    {question.type === 'content_block'
+                                      ? getContentBlockPreview(question.contentBody || question.title || '')
+                                      : (question.title || 'Pergunta sem título')}
                                   </p>
                                 </div>
                                 <Button

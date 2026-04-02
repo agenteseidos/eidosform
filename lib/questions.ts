@@ -188,10 +188,9 @@ export const questionTypes: QuestionTypeInfo[] = [
     description: 'Texto rico com botão de ação',
     icon: TextCursorInput,
     defaultConfig: {
-      placeholder: '',
       required: false,
       contentBody: '',
-      contentButtonText: '',
+      contentButtonText: 'Continuar',
       contentButtonUrl: '',
     },
   },

@@ -8,6 +8,7 @@ import { countries, getCountryByCode } from '@/lib/countries'
 import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
 import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink } from 'lucide-react'
+import { renderContentBlockHtml } from '@/lib/content-block'
 
 interface FileUploadValue {
   name: string
@@ -968,29 +969,13 @@ export function QuestionRenderer({
       )
 
     case 'content_block': {
-      const escapeHtml = (text: string) =>
-        text
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;')
-
-      const renderMarkdown = (text: string) =>
-        escapeHtml(text)
-          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-          .replace(/\*(.+?)\*/g, '<em>$1</em>')
-          .replace(/^- (.+)$/gm, '<li>$1</li>')
-          .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul style="list-style:disc;padding-left:1.25rem">$1</ul>')
-          .replace(/\n/g, '<br />')
-
       return (
         <div className="space-y-5">
           {question.contentBody && (
             <div
               style={{ color: theme.textColor }}
-              className="text-base md:text-lg leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(question.contentBody) }}
+              className="content-block-body text-base md:text-lg leading-relaxed [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ul:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&_strong]:font-semibold [&_em]:italic"
+              dangerouslySetInnerHTML={{ __html: renderContentBlockHtml(question.contentBody) }}
             />
           )}
           {question.contentButtonText ? (

@@ -6,6 +6,7 @@ import { ThemeConfig } from '@/lib/database.types'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Star, CalendarClock, Plus, X } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
+import { renderContentBlockHtml } from '@/lib/content-block'
 
 interface FormPreviewProps {
   questions: QuestionConfig[]
@@ -154,42 +155,46 @@ export function FormPreview({
             </span>
           </div>
           
-          {/* B05: Título editável inline */}
-          <div className="flex items-start gap-1 mb-2">
-            {onUpdateQuestion ? (
-              <InlineEditableText
-                value={question.title}
-                placeholder="Pergunta sem título"
-                onSave={(newTitle) => onUpdateQuestion(question.id, { title: newTitle })}
-                className="text-xl font-semibold"
-                style={{ color: theme.textColor }}
-              />
-            ) : (
-              <h3 className="text-xl font-semibold" style={{ color: theme.textColor }}>
-                {question.title || 'Pergunta sem título'}
-              </h3>
-            )}
-            {question.required && (
-              <span style={{ color: theme.primaryColor }} className="text-xl ml-1">*</span>
-            )}
-          </div>
-          
-          {/* B05: Descrição editável inline */}
-          {onUpdateQuestion ? (
-            <InlineEditableText
-              value={question.description || ''}
-              placeholder="Adicionar descrição (opcional)"
-              onSave={(newDesc) => onUpdateQuestion(question.id, { description: newDesc || '' })}
-              className="text-sm opacity-70 mb-4"
-              style={{ color: theme.textColor }}
-              tag="p"
-            />
-          ) : (
-            question.description && (
-              <p className="text-sm opacity-70 mb-4" style={{ color: theme.textColor }}>
-                {question.description}
-              </p>
-            )
+          {question.type !== 'content_block' && (
+            <>
+              {/* B05: Título editável inline */}
+              <div className="flex items-start gap-1 mb-2">
+                {onUpdateQuestion ? (
+                  <InlineEditableText
+                    value={question.title}
+                    placeholder="Pergunta sem título"
+                    onSave={(newTitle) => onUpdateQuestion(question.id, { title: newTitle })}
+                    className="text-xl font-semibold"
+                    style={{ color: theme.textColor }}
+                  />
+                ) : (
+                  <h3 className="text-xl font-semibold" style={{ color: theme.textColor }}>
+                    {question.title || 'Pergunta sem título'}
+                  </h3>
+                )}
+                {question.required && (
+                  <span style={{ color: theme.primaryColor }} className="text-xl ml-1">*</span>
+                )}
+              </div>
+              
+              {/* B05: Descrição editável inline */}
+              {onUpdateQuestion ? (
+                <InlineEditableText
+                  value={question.description || ''}
+                  placeholder="Adicionar descrição (opcional)"
+                  onSave={(newDesc) => onUpdateQuestion(question.id, { description: newDesc || '' })}
+                  className="text-sm opacity-70 mb-4"
+                  style={{ color: theme.textColor }}
+                  tag="p"
+                />
+              ) : (
+                question.description && (
+                  <p className="text-sm opacity-70 mb-4" style={{ color: theme.textColor }}>
+                    {question.description}
+                  </p>
+                )
+              )}
+            </>
           )}
 
           {/* Preview of input types */}
@@ -265,6 +270,28 @@ export function FormPreview({
                   {question.placeholder || 'Digite sua resposta aqui...'}
                 </div>
               )
+            )}
+
+            {question.type === 'content_block' && (
+              <div className="space-y-4">
+                <div
+                  className="text-base leading-relaxed [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ul:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&_strong]:font-semibold [&_em]:italic"
+                  style={{ color: theme.textColor }}
+                  dangerouslySetInnerHTML={{
+                    __html: renderContentBlockHtml(question.contentBody || 'Digite aqui o conteúdo desta etapa. Você pode usar **negrito**, *itálico*, bullets e emojis ✨'),
+                  }}
+                />
+
+                <div
+                  className="inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-medium"
+                  style={{
+                    backgroundColor: theme.primaryColor,
+                    color: theme.backgroundColor,
+                  }}
+                >
+                  {question.contentButtonText || 'Continuar'}
+                </div>
+              </div>
             )}
 
             {question.type === 'date' && (

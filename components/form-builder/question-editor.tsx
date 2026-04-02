@@ -176,19 +176,20 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
           </div>
           <Separator />
           <div>
-            <Label className="text-sm font-medium text-slate-700 mb-1.5 block">Botão (opcional)</Label>
+            <Label className="text-sm font-medium text-slate-700 mb-1.5 block">Botão da etapa</Label>
             <Input
               value={question.contentButtonText || ''}
               onChange={(e) => onUpdate({ contentButtonText: e.target.value })}
-              placeholder="Texto do botão (ex: Saiba mais)"
+              placeholder="Continuar"
               className="text-sm mb-2"
             />
             <Input
               value={question.contentButtonUrl || ''}
               onChange={(e) => onUpdate({ contentButtonUrl: e.target.value })}
-              placeholder="https://link-do-botao.com"
+              placeholder="URL opcional (se quiser abrir link externo)"
               className="text-sm"
             />
+            <p className="text-[10px] text-slate-400 mt-1">Sem URL, o botão continua para a próxima etapa.</p>
           </div>
         </div>
       )}

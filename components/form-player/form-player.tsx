@@ -47,6 +47,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const visibleQuestions = getVisibleQuestions(questions, answers) as QuestionConfig[]
 
   const currentQuestion = visibleQuestions[currentIndex]
+  const isContentStep = currentQuestion?.type === 'content_block'
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
   const isFirstQuestion = form.welcome_enabled ? currentIndex === -1 : currentIndex === 0
   // Com jump logic, progresso baseado em perguntas respondidas + posição atual
@@ -635,42 +636,46 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
               exit="exit"
               transition={{ duration: 0.38, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
-              {/* Question number */}
-              <motion.div
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.07 }}
-                className="mb-5 flex items-center gap-2"
-              >
-                <span className="text-sm font-bold tabular-nums" style={{ color: theme.primaryColor }}>
-                  Pergunta {currentIndex + 1} de {visibleQuestions.length}
-                </span>
-              </motion.div>
+              {!isContentStep && (
+                <>
+                  {/* Question number */}
+                  <motion.div
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.07 }}
+                    className="mb-5 flex items-center gap-2"
+                  >
+                    <span className="text-sm font-bold tabular-nums" style={{ color: theme.primaryColor }}>
+                      Pergunta {currentIndex + 1} de {visibleQuestions.length}
+                    </span>
+                  </motion.div>
 
-              {/* Title */}
-              <motion.h2
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.12 }}
-                className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-3 leading-snug"
-                style={{ color: theme.textColor }}
-              >
-                {currentQuestion.title || 'Pergunta sem título'}
-                {currentQuestion.required && (
-                  <span style={{ color: theme.primaryColor }} className="ml-1">*</span>
-                )}
-              </motion.h2>
+                  {/* Title */}
+                  <motion.h2
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.12 }}
+                    className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-3 leading-snug"
+                    style={{ color: theme.textColor }}
+                  >
+                    {currentQuestion.title || 'Pergunta sem título'}
+                    {currentQuestion.required && (
+                      <span style={{ color: theme.primaryColor }} className="ml-1">*</span>
+                    )}
+                  </motion.h2>
 
-              {currentQuestion.description && (
-                <motion.p
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.17 }}
-                  className="text-base md:text-lg opacity-70 mb-6 sm:mb-8"
-                  style={{ color: theme.textColor }}
-                >
-                  {currentQuestion.description}
-                </motion.p>
+                  {currentQuestion.description && (
+                    <motion.p
+                      initial={{ opacity: 0, y: 14 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.17 }}
+                      className="text-base md:text-lg opacity-70 mb-6 sm:mb-8"
+                      style={{ color: theme.textColor }}
+                    >
+                      {currentQuestion.description}
+                    </motion.p>
+                  )}
+                </>
               )}
 
               {/* Input */}

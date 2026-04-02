@@ -286,7 +286,9 @@ export function RightPanel({
         <div className="flex items-center gap-2">
           {typeInfo && <typeInfo.icon className="w-4 h-4 text-blue-600" />}
           <span className="text-sm font-medium text-slate-700 truncate">
-            {selectedQuestion.title || 'Pergunta sem título'}
+            {selectedQuestion.type === 'content_block'
+              ? (selectedQuestion.title || 'Etapa de conteúdo')
+              : (selectedQuestion.title || 'Pergunta sem título')}
           </span>
         </div>
       </div>
@@ -325,19 +327,21 @@ export function RightPanel({
                 </div>
 
                 {/* Campo obrigatório */}
-                <div className="flex items-start justify-between gap-3 py-1 max-w-full overflow-hidden">
-                  <div className="min-w-0 flex-1">
-                    <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
-                    <p className="text-[10px] text-slate-400">Respondentes devem responder</p>
+                {selectedQuestion.type !== 'content_block' && (
+                  <div className="flex items-start justify-between gap-3 py-1 max-w-full overflow-hidden">
+                    <div className="min-w-0 flex-1">
+                      <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
+                      <p className="text-[10px] text-slate-400">Respondentes devem responder</p>
+                    </div>
+                    <Switch
+                      checked={selectedQuestion.required}
+                      onCheckedChange={(checked) =>
+                        onUpdateQuestion(selectedQuestion.id, { required: checked })
+                      }
+                      className="shrink-0 self-start"
+                    />
                   </div>
-                  <Switch
-                    checked={selectedQuestion.required}
-                    onCheckedChange={(checked) =>
-                      onUpdateQuestion(selectedQuestion.id, { required: checked })
-                    }
-                    className="shrink-0 self-start"
-                  />
-                </div>
+                )}
 
                 {/* Duplicar / Excluir */}
                 <div className="flex gap-2">

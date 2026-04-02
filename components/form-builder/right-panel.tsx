@@ -373,7 +373,7 @@ export function RightPanel({
             >
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 <Zap className="w-3 h-3" />
-                Lógica
+                Lógica e Navegação
               </div>
               <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${collapsed['logic'] ? '-rotate-90' : ''}`} />
             </button>

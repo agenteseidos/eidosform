@@ -326,7 +326,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
       {/* Logic sections */}
       {!hideLogic && (
       <>
-      {/* Lógica de Navegação (Jump Logic) — prioritário */}
+      {/* Navegação / Pular para — prioritário */}
       <div>
         <JumpRulesEditor
           rules={question.jumpRules || []}

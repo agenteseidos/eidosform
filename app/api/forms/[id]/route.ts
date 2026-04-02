@@ -77,6 +77,20 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     )
   }
 
+  // Validate meta_pixel_id if pixels object is provided
+  if (pixels !== undefined && pixels !== null && typeof pixels === 'object') {
+    const px = pixels as Record<string, string>
+    const rawPixelId = px.metaPixelId || px.meta_pixel_id || px.facebook || null
+    if (rawPixelId !== undefined && rawPixelId !== null && rawPixelId !== '') {
+      if (!/^\d{10,20}$/.test(String(rawPixelId).trim())) {
+        return NextResponse.json(
+          { error: 'meta_pixel_id inválido. O ID do Meta Pixel deve conter apenas dígitos (10 a 20 caracteres).' },
+          { status: 400 }
+        )
+      }
+    }
+  }
+
   // Validate webhook_url if provided
   if (webhook_url) {
     const webhookCheck = validateWebhookUrl(webhook_url)

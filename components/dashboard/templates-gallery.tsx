@@ -5,7 +5,6 @@ import { templates, FormTemplate } from '@/lib/templates'
 import { questionTypes } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ArrowRight, FileText, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -70,39 +69,31 @@ export function TemplatesGallery() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
               {filtered.map(template => (
-                <Card
+                <button
                   key={template.id}
-                  className="p-4 border-slate-200 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group"
+                  className="w-full flex items-center gap-4 p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all cursor-pointer group text-left"
                   onClick={() => setPreview(template)}
                 >
-                  <div className="flex items-start gap-3 mb-3">
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                      style={{ backgroundColor: template.theme.backgroundColor }}
-                    >
-                      {template.emoji}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-900 text-sm leading-tight">{template.name}</p>
-                      <Badge className="bg-slate-100 text-slate-500 text-xs mt-1 font-normal">
-                        {template.category}
-                      </Badge>
-                    </div>
+                  <div
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
+                    style={{ backgroundColor: template.theme.backgroundColor }}
+                  >
+                    {template.emoji}
                   </div>
-                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-3">
-                    {template.description}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400">
-                      {template.questions.length} perguntas
-                    </span>
-                    <span className="text-xs text-blue-600 font-medium group-hover:underline">
-                      Ver detalhes →
-                    </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900 text-sm leading-tight">{template.name}</p>
+                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{template.description}</p>
                   </div>
-                </Card>
+                  <Badge className="bg-slate-100 text-slate-500 text-[10px] font-normal shrink-0">
+                    {template.category}
+                  </Badge>
+                  <span className="text-xs text-slate-400 shrink-0">
+                    {template.questions.length}p
+                  </span>
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 shrink-0 transition-colors" />
+                </button>
               ))}
             </div>
           </div>

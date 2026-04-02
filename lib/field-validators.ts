@@ -74,6 +74,9 @@ export function validateFieldValue(
     case 'cpf':
       return validateCpfField(value)
 
+    case 'content_block':
+      return validateContentBlock(value)
+
     case 'calendly':
       return validateCalendly(value)
 
@@ -289,6 +292,19 @@ function validateCpfField(value: unknown): FieldValidationResult {
   }
   if (!validateCPF(clean)) {
     return { valid: false, error: 'CPF inválido' }
+  }
+  return { valid: true }
+}
+
+function validateContentBlock(value: unknown): FieldValidationResult {
+  if (value === null || value === undefined || value === '') {
+    return { valid: true }
+  }
+  if (typeof value !== 'string') {
+    return { valid: false, error: 'Conteúdo deve ser texto' }
+  }
+  if (value.length > 50_000) {
+    return { valid: false, error: 'Conteúdo excede o limite de 50.000 caracteres' }
   }
   return { valid: true }
 }

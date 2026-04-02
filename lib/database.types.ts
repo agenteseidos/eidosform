@@ -29,6 +29,7 @@ export type QuestionType =
   | 'address'
   | 'cpf'
   | 'calendly'
+  | 'content_block'
 
 // Conditional logic operators
 export type ConditionalOperator = 'equals' | 'not_equals' | 'contains' | 'not_empty' | 'is_empty'
@@ -92,6 +93,10 @@ export interface QuestionConfig {
   conditionalLogic?: ConditionalRule
   pixelEvents?: PixelEventRule[]
   jumpRules?: JumpRule[]
+  // Content block fields
+  contentBody?: string
+  contentButtonText?: string
+  contentButtonUrl?: string
 }
 
 // Pixel tracking configuration

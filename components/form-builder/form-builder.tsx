@@ -71,6 +71,7 @@ import {
   ExternalLink,
   Unlink,
   Lock,
+  TextCursorInput,
 } from 'lucide-react'
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
@@ -95,6 +96,7 @@ const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> =
   address:       { icon: MapPin,      color: 'text-emerald-500' },
   cpf:           { icon: Fingerprint, color: 'text-violet-500' },
   calendly:      { icon: CalendarClock, color: 'text-cyan-500' },
+  content_block: { icon: TextCursorInput, color: 'text-indigo-500' },
 }
 
 function getQuestionVisual(type: string) {
@@ -954,19 +956,64 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   </div>
 
                   <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Meta Pixel ID</Label>
-                      <Input
-                        id="meta_pixel"
-                        value={pixels.metaPixelId || ''}
-                        onChange={(e) => {
-                          setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
-                          setHasUnsavedChanges(true)
-                        }}
-                        className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                        placeholder="123456789012345"
-                      />
+                    {/* Meta Pixel — agrupado com Eventos */}
+                    <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-4">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Meta Pixel</p>
+                      <div>
+                        <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Pixel ID</Label>
+                        <Input
+                          id="meta_pixel"
+                          value={pixels.metaPixelId || ''}
+                          onChange={(e) => {
+                            setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
+                            setHasUnsavedChanges(true)
+                          }}
+                          className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white"
+                          placeholder="123456789012345"
+                        />
+                      </div>
+                      {userPlan === 'plus' || userPlan === 'professional' ? (
+                        <>
+                          <div>
+                            <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Evento ao iniciar</Label>
+                            <Input
+                              id="pixel_event_start"
+                              value={form.pixel_event_on_start || ''}
+                              onChange={(e) => {
+                                setForm({ ...form, pixel_event_on_start: e.target.value || null })
+                                setHasUnsavedChanges(true)
+                              }}
+                              className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white"
+                              placeholder="ex: FormStarted"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="pixel_event_complete" className="text-sm font-medium text-slate-700">Evento ao completar</Label>
+                            <Input
+                              id="pixel_event_complete"
+                              value={form.pixel_event_on_complete || ''}
+                              onChange={(e) => {
+                                setForm({ ...form, pixel_event_on_complete: e.target.value || null })
+                                setHasUnsavedChanges(true)
+                              }}
+                              className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white"
+                              placeholder="ex: Lead"
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400">Eventos disparados automaticamente via Pixel configurado acima.</p>
+                        </>
+                      ) : (
+                        <div className="p-3 rounded-lg border border-slate-200 bg-white opacity-60">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-slate-500">Eventos do Pixel</span>
+                            <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
+                          <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                        </div>
+                      )}
                     </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label htmlFor="google_ads_id" className="text-sm font-medium text-slate-700">Google Ads ID</Label>
@@ -1021,51 +1068,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         placeholder="GTM-XXXXXXX"
                       />
                     </div>
-                  </div>
-
-                  {/* Eventos do Pixel Meta */}
-                  <div className="mt-5">
-                    <p className="text-xs font-medium text-slate-500 mb-3">Eventos do Pixel Meta</p>
-                    {userPlan === 'plus' || userPlan === 'professional' ? (
-                      <div className="space-y-4">
-                        <div>
-                          <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Ao iniciar o formulário</Label>
-                          <Input
-                            id="pixel_event_start"
-                            value={form.pixel_event_on_start || ''}
-                            onChange={(e) => {
-                              setForm({ ...form, pixel_event_on_start: e.target.value || null })
-                              setHasUnsavedChanges(true)
-                            }}
-                            className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                            placeholder="ex: FormStarted"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="pixel_event_complete" className="text-sm font-medium text-slate-700">Ao completar o formulário</Label>
-                          <Input
-                            id="pixel_event_complete"
-                            value={form.pixel_event_on_complete || ''}
-                            onChange={(e) => {
-                              setForm({ ...form, pixel_event_on_complete: e.target.value || null })
-                              setHasUnsavedChanges(true)
-                            }}
-                            className="mt-1.5 text-slate-900 placeholder:text-slate-400"
-                            placeholder="ex: Lead"
-                          />
-                        </div>
-                        <p className="text-xs text-slate-400">Requer Pixel Meta configurado acima.</p>
-                      </div>
-                    ) : (
-                      <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 opacity-60">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-slate-500">Eventos do Pixel Meta</span>
-                          <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
-                        </div>
-                        <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
-                        <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
-                      </div>
-                    )}
                   </div>
                 </section>
 
@@ -1314,7 +1316,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                             <span className="ml-2 text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Plus+</span>
                           )}
                         </p>
-                        <p className="text-xs text-slate-500">Receba um e-mail a cada nova resposta.</p>
+                        <p className="text-xs text-slate-500">Envio automático a cada nova resposta recebida.</p>
                       </div>
                       {(userPlan === 'plus' || userPlan === 'professional') && (
                         <Switch
@@ -1597,24 +1599,24 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           <div className="py-4 overflow-y-auto max-h-[60vh] pr-1 space-y-5">
             {[
               {
+                label: 'Texto',
+                types: ['short_text', 'long_text', 'email', 'phone'],
+              },
+              {
                 label: 'Escolhas',
                 types: ['dropdown', 'checkboxes', 'yes_no', 'nps', 'rating', 'opinion_scale'],
               },
               {
-                label: 'Contato',
-                types: ['email', 'phone', 'date', 'url'],
+                label: 'Dados',
+                types: ['number', 'date', 'url', 'address', 'cpf'],
               },
               {
-                label: 'Texto',
-                types: ['short_text', 'long_text', 'number'],
+                label: 'Conteúdo',
+                types: ['content_block'],
               },
               {
                 label: 'Arquivo',
                 types: ['file_upload'],
-              },
-              {
-                label: 'Dados Pessoais',
-                types: ['address', 'cpf'],
               },
               {
                 label: 'Integração',

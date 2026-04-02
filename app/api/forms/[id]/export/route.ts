@@ -12,6 +12,11 @@ interface ResponseRow {
   answers: Record<string, unknown>
   completed: boolean
   submitted_at: string
+  utm_source: string | null
+  utm_medium: string | null
+  utm_campaign: string | null
+  utm_term: string | null
+  utm_content: string | null
 }
 
 interface RouteParams {
@@ -65,7 +70,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   const { data: responses, error: responsesError } = await supabase
     .from('responses')
-    .select('id, answers, completed, submitted_at')
+    .select('id, answers, completed, submitted_at, utm_source, utm_medium, utm_campaign, utm_term, utm_content')
     .eq('form_id', id)
     .order('submitted_at', { ascending: true }) as { data: ResponseRow[] | null; error: { message: string } | null }
 
@@ -81,9 +86,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return str
   }
 
+  const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const
   const questionIds = questions.map(q => q.id)
   const questionTitles = questions.map(q => q.title)
-  const headers = ['ID', 'Submetido em', 'Completo', ...questionTitles]
+  const headers = ['ID', 'Submetido em', 'Completo', ...questionTitles, ...UTM_KEYS]
   const rows: string[] = [headers.map(escapeCSV).join(',')]
 
   for (const response of (responses || [])) {
@@ -93,6 +99,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       new Date(response.submitted_at).toLocaleString('pt-BR'),
       response.completed ? 'Sim' : 'Não',
       ...questionIds.map(qid => answerMap[qid] ?? ''),
+      ...UTM_KEYS.map(k => response[k] ?? ''),
     ]
     rows.push(row.map(escapeCSV).join(','))
   }

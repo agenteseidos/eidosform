@@ -5,6 +5,7 @@ import { getQuestionTypeInfo } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { X, GitBranch, CalendarClock, Plus } from 'lucide-react'
@@ -33,12 +34,24 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
   if (onlyLogic) {
     return (
       <div className="space-y-6">
+        {/* Jump Rules — prioritário: "se responder X → ir para Y / encerrar" */}
+        <div>
+          <JumpRulesEditor
+            rules={question.jumpRules || []}
+            questionId={question.id}
+            allQuestions={allQuestions}
+            onChange={(jumpRules) => onUpdate({ jumpRules })}
+          />
+        </div>
+
+        <Separator />
+
         {/* Conditional Logic */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <GitBranch className="w-4 h-4 text-slate-500" />
-              <Label className="text-sm font-medium text-slate-700">Lógica Condicional</Label>
+              <Label className="text-sm font-medium text-slate-700">Exibição Condicional</Label>
             </div>
           </div>
           {question.conditionalLogic ? (
@@ -98,18 +111,6 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
 
         <Separator />
 
-        {/* Jump Rules */}
-        <div>
-          <JumpRulesEditor
-            rules={question.jumpRules || []}
-            questionId={question.id}
-            allQuestions={allQuestions}
-            onChange={(jumpRules) => onUpdate({ jumpRules })}
-          />
-        </div>
-
-        <Separator />
-
         {/* Pixel Events */}
         <PixelEventRulesEditor
           rules={question.pixelEvents || []}
@@ -155,6 +156,39 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
               className="mt-2"
             />
             <p className="text-xs text-slate-500 mt-1.5">Cole a URL do seu evento Calendly</p>
+          </div>
+        </div>
+      )}
+
+      {/* Content Block config */}
+      {question.type === 'content_block' && (
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium text-slate-700 mb-1.5 block">Conteúdo</Label>
+            <Textarea
+              value={question.contentBody || ''}
+              onChange={(e) => onUpdate({ contentBody: e.target.value })}
+              placeholder="Escreva o conteúdo aqui... Use **negrito**, *itálico* e - listas"
+              className="text-sm min-h-[120px] resize-y"
+              rows={6}
+            />
+            <p className="text-[10px] text-slate-400 mt-1">Suporta Markdown: **negrito**, *itálico*, - lista</p>
+          </div>
+          <Separator />
+          <div>
+            <Label className="text-sm font-medium text-slate-700 mb-1.5 block">Botão (opcional)</Label>
+            <Input
+              value={question.contentButtonText || ''}
+              onChange={(e) => onUpdate({ contentButtonText: e.target.value })}
+              placeholder="Texto do botão (ex: Saiba mais)"
+              className="text-sm mb-2"
+            />
+            <Input
+              value={question.contentButtonUrl || ''}
+              onChange={(e) => onUpdate({ contentButtonUrl: e.target.value })}
+              placeholder="https://link-do-botao.com"
+              className="text-sm"
+            />
           </div>
         </div>
       )}
@@ -289,14 +323,27 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
       {!hideTypeAndRequired && <Separator />}
 
 
-      {/* Conditional Logic */}
+      {/* Logic sections */}
       {!hideLogic && (
       <>
+      {/* Lógica de Navegação (Jump Logic) — prioritário */}
+      <div>
+        <JumpRulesEditor
+          rules={question.jumpRules || []}
+          questionId={question.id}
+          allQuestions={allQuestions}
+          onChange={(jumpRules) => onUpdate({ jumpRules })}
+        />
+      </div>
+
+      <Separator />
+
+      {/* Exibição Condicional */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-slate-500" />
-            <Label className="text-sm font-medium text-slate-700">Lógica Condicional</Label>
+            <Label className="text-sm font-medium text-slate-700">Exibição Condicional</Label>
           </div>
         </div>
         {question.conditionalLogic ? (
@@ -352,18 +399,6 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
             Adicionar condição
           </Button>
         )}
-      </div>
-
-      <Separator />
-
-      {/* Lógica de Navegação (Jump Logic) */}
-      <div>
-        <JumpRulesEditor
-          rules={question.jumpRules || []}
-          questionId={question.id}
-          allQuestions={allQuestions}
-          onChange={(jumpRules) => onUpdate({ jumpRules })}
-        />
       </div>
 
       <Separator />

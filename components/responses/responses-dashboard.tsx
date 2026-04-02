@@ -265,6 +265,33 @@ function ResponseDetailDialog({
                   </div>
                 )
               })}
+
+              {/* UTM tracking data */}
+              {(() => {
+                const utmEntries = [
+                  ['utm_source', response.utm_source],
+                  ['utm_medium', response.utm_medium],
+                  ['utm_campaign', response.utm_campaign],
+                  ['utm_term', response.utm_term],
+                  ['utm_content', response.utm_content],
+                ].filter(([, v]) => v) as [string, string][]
+                if (utmEntries.length === 0) return null
+                return (
+                  <div className="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+                    <p className="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wide">
+                      UTM Tracking
+                    </p>
+                    <div className="space-y-1">
+                      {utmEntries.map(([key, val]) => (
+                        <div key={key} className="flex items-center gap-2 text-sm">
+                          <span className="text-slate-500 font-mono text-xs">{key}</span>
+                          <span className="text-slate-700">{val}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </ScrollArea>
 

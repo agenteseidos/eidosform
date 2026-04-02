@@ -63,6 +63,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
 
   const validateCurrentQuestion = useCallback(() => {
     if (!currentQuestion) return true
+    if (currentQuestion.type === 'content_block') return true
 
     const answer = answers[currentQuestion.id]
 

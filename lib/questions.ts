@@ -1,22 +1,23 @@
 import { QuestionType, QuestionConfig } from './database.types'
-import { 
-  Type, 
-  AlignLeft, 
-  List, 
-  CheckSquare, 
-  Mail, 
-  Phone, 
-  Hash, 
-  Calendar, 
-  Star, 
-  Gauge, 
-  ThumbsUp, 
-  Upload, 
+import {
+  Type,
+  AlignLeft,
+  List,
+  CheckSquare,
+  Mail,
+  Phone,
+  Hash,
+  Calendar,
+  Star,
+  Gauge,
+  ThumbsUp,
+  Upload,
   Link,
   LucideIcon,
   MapPin,
   Fingerprint,
   CalendarClock,
+  TextCursorInput,
 } from 'lucide-react'
 
 export interface QuestionTypeInfo {
@@ -179,6 +180,19 @@ export const questionTypes: QuestionTypeInfo[] = [
     icon: CalendarClock,
     defaultConfig: {
       calendlyUrl: '',
+    },
+  },
+  {
+    type: 'content_block',
+    label: 'Bloco de Conteúdo',
+    description: 'Texto rico com botão de ação',
+    icon: TextCursorInput,
+    defaultConfig: {
+      placeholder: '',
+      required: false,
+      contentBody: '',
+      contentButtonText: '',
+      contentButtonUrl: '',
     },
   },
 ]

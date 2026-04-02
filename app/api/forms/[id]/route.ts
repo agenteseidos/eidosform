@@ -161,9 +161,15 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     } catch (e: unknown) {
       console.error('Failed to connect Google Spreadsheet:', e)
       const gErr = e as { code?: number; errors?: Array<{ message?: string }> }
-      if (gErr.code === 403 || gErr.code === 404) {
+      if (gErr.code === 403) {
         return NextResponse.json(
-          { error: 'Não conseguimos acessar essa planilha. Verifique se foi compartilhada com eidosform-sheets@eidosform.iam.gserviceaccount.com com permissão de Editor.' },
+          { error: 'Sem permissão para acessar essa planilha. Compartilhe com eidosform-sheets@eidosform.iam.gserviceaccount.com com permissão de Editor.' },
+          { status: 400 }
+        )
+      }
+      if (gErr.code === 404) {
+        return NextResponse.json(
+          { error: 'Planilha não encontrada. Verifique se a URL está correta e se a planilha não foi excluída.' },
           { status: 400 }
         )
       }

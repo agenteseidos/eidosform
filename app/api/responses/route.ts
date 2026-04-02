@@ -71,9 +71,9 @@ function serializeAnswerValue(value: unknown): string {
 // Check if all required questions are answered (Bug #5)
 function isResponseComplete(
   answers: Record<string, unknown>,
-  questions: Array<{ id: string; required?: boolean }>
+  questions: Array<{ id: string; type?: string; required?: boolean }>
 ): boolean {
-  const requiredIds = questions.filter((q) => q.required).map((q) => q.id)
+  const requiredIds = questions.filter((q) => q.required && q.type !== 'content_block').map((q) => q.id)
   if (requiredIds.length === 0) return true
   return requiredIds.every((id) => {
     const val = answers[id]

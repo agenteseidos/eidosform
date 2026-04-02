@@ -7,7 +7,7 @@ import { formatCPF, validateCPF } from '@/lib/validators'
 import { countries, getCountryByCode } from '@/lib/countries'
 import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
-import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react'
+import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink } from 'lucide-react'
 
 interface FileUploadValue {
   name: string
@@ -966,6 +966,78 @@ export function QuestionRenderer({
           onSubmit={onSubmit}
         />
       )
+
+    case 'content_block': {
+      const escapeHtml = (text: string) =>
+        text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
+
+      const renderMarkdown = (text: string) =>
+        escapeHtml(text)
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          .replace(/^- (.+)$/gm, '<li>$1</li>')
+          .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul style="list-style:disc;padding-left:1.25rem">$1</ul>')
+          .replace(/\n/g, '<br />')
+
+      return (
+        <div className="space-y-5">
+          {question.contentBody && (
+            <div
+              style={{ color: theme.textColor }}
+              className="text-base md:text-lg leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(question.contentBody) }}
+            />
+          )}
+          {question.contentButtonText ? (
+            question.contentButtonUrl ? (
+              <a
+                href={question.contentButtonUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-base font-medium transition-opacity hover:opacity-80"
+                style={{
+                  backgroundColor: theme.primaryColor,
+                  color: theme.backgroundColor,
+                }}
+                onClick={() => { onChange('viewed'); onSubmit(true) }}
+              >
+                {question.contentButtonText}
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { onChange('viewed'); onSubmit(true) }}
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl text-base font-medium transition-opacity hover:opacity-80"
+                style={{
+                  backgroundColor: theme.primaryColor,
+                  color: theme.backgroundColor,
+                }}
+              >
+                {question.contentButtonText}
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              onClick={() => { onChange('viewed'); onSubmit(true) }}
+              className="inline-flex items-center justify-center px-6 py-3 rounded-xl text-base font-medium transition-opacity hover:opacity-80"
+              style={{
+                backgroundColor: theme.primaryColor,
+                color: theme.backgroundColor,
+              }}
+            >
+              Continuar
+            </button>
+          )}
+        </div>
+      )
+    }
 
     default:
       return (

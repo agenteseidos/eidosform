@@ -285,7 +285,7 @@ export function RightPanel({
         </div>
       </div>
 
-      <ScrollArea className="flex-1 max-w-full">
+      <div className="flex-1 overflow-y-auto max-w-full">
         <div className="max-w-full overflow-hidden">
 
           {/* Bloco 1 — Ações */}
@@ -397,7 +397,7 @@ export function RightPanel({
           </div>
 
         </div>
-      </ScrollArea>
+      </div>
     </div>
   )
 }

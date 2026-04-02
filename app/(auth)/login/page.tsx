@@ -85,7 +85,7 @@ function LoginForm() {
       >
         <Link href="/" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
         <div className="flex justify-center mb-8 pt-8">
-          <EidosLogo variant="full" theme="dark" href="/" height={72} />
+          <EidosLogo variant="full" theme="dark" href="/" height={48} />
         </div>
 
         {successMessage && (

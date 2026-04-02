@@ -1316,7 +1316,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                             <span className="ml-2 text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Plus+</span>
                           )}
                         </p>
-                        <p className="text-xs text-slate-500">Envio automático a cada nova resposta recebida.</p>
+                        <p className="text-xs text-slate-500">Você receberá um e-mail automaticamente a cada nova resposta enviada no formulário.</p>
                       </div>
                       {(userPlan === 'plus' || userPlan === 'professional') && (
                         <Switch

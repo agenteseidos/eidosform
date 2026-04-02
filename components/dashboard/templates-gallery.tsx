@@ -71,29 +71,41 @@ export function TemplatesGallery() {
           <div className="flex-1 overflow-y-auto px-6 py-4">
             <div className="space-y-2">
               {filtered.map(template => (
-                <button
+                <div
                   key={template.id}
-                  className="w-full flex items-center gap-4 p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all cursor-pointer group text-left"
-                  onClick={() => setPreview(template)}
+                  className="flex items-center gap-4 px-4 py-3.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all group"
                 >
-                  <div
-                    className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
-                    style={{ backgroundColor: template.theme.backgroundColor }}
+                  <button
+                    className="flex items-center gap-4 flex-1 min-w-0 text-left cursor-pointer"
+                    onClick={() => setPreview(template)}
                   >
-                    {template.emoji}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-900 text-sm leading-tight">{template.name}</p>
-                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{template.description}</p>
-                  </div>
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
+                      style={{ backgroundColor: template.theme.backgroundColor }}
+                    >
+                      {template.emoji}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-900 text-sm leading-tight">{template.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{template.description}</p>
+                    </div>
+                  </button>
                   <Badge className="bg-slate-100 text-slate-500 text-[10px] font-normal shrink-0">
                     {template.category}
                   </Badge>
-                  <span className="text-xs text-slate-400 shrink-0">
-                    {template.questions.length}p
+                  <span className="text-xs text-slate-400 shrink-0 tabular-nums">
+                    {template.questions.length} {template.questions.length === 1 ? 'pergunta' : 'perguntas'}
                   </span>
-                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 shrink-0 transition-colors" />
-                </button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs shrink-0 opacity-70 group-hover:opacity-100 transition-opacity"
+                    onClick={() => handleUseTemplate(template)}
+                  >
+                    Usar
+                    <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+                </div>
               ))}
             </div>
           </div>

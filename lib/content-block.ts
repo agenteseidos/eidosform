@@ -59,8 +59,33 @@ export function renderContentBlockHtml(text?: string | null): string {
   return blocks.join('')
 }
 
+/**
+ * Extrai texto puro de JSON do Tiptap (percorre recursivamente os nós `text`).
+ */
+function extractTextFromTiptapJson(node: Record<string, unknown>): string {
+  if (node.type === 'text' && typeof node.text === 'string') {
+    return node.text
+  }
+  if (Array.isArray(node.content)) {
+    return (node.content as Record<string, unknown>[]).map(extractTextFromTiptapJson).join('')
+  }
+  return ''
+}
+
 export function getContentBlockPreview(text?: string | null, maxLength = 120): string {
   if (!text?.trim()) return 'Bloco de conteúdo vazio'
+
+  // Detecta JSON do Tiptap e extrai texto puro
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed?.type === 'doc') {
+      const extracted = extractTextFromTiptapJson(parsed).replace(/\s+/g, ' ').trim()
+      if (!extracted) return 'Bloco de conteúdo vazio'
+      return extracted.length > maxLength ? `${extracted.slice(0, maxLength - 1)}…` : extracted
+    }
+  } catch {
+    // não é JSON — continua com Markdown legado abaixo
+  }
 
   const plain = text
     .replace(/\*\*(.+?)\*\*/g, '$1')

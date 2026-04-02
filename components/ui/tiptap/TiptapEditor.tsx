@@ -1,9 +1,10 @@
 'use client'
 
 import { useEditor, EditorContent } from '@tiptap/react'
+import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import { useEffect, useCallback, useState, useRef } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { Bold, Italic, List } from 'lucide-react'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -126,63 +127,14 @@ interface FloatingToolbarProps {
 }
 
 function FloatingToolbar({ editor, primaryColor }: FloatingToolbarProps) {
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
-  const [visible, setVisible] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!editor) return
-
-    const updateToolbar = () => {
-      const { from, to } = editor.state.selection
-      if (from === to) {
-        setVisible(false)
-        return
-      }
-
-      // Obter posição da seleção no DOM
-      const selection = window.getSelection()
-      if (!selection || selection.rangeCount === 0) {
-        setVisible(false)
-        return
-      }
-
-      const range = selection.getRangeAt(0)
-      const rect = range.getBoundingClientRect()
-      const container = containerRef.current?.closest('.tiptap-wrapper')
-      if (!container) {
-        setVisible(false)
-        return
-      }
-
-      const containerRect = container.getBoundingClientRect()
-      setCoords({
-        top: rect.top - containerRect.top - 44,
-        left: rect.left - containerRect.left + rect.width / 2,
-      })
-      setVisible(true)
-    }
-
-    editor.on('selectionUpdate', updateToolbar)
-    editor.on('transaction', updateToolbar)
-    return () => {
-      editor.off('selectionUpdate', updateToolbar)
-      editor.off('transaction', updateToolbar)
-    }
-  }, [editor])
-
-  if (!editor || !visible || !coords) return null
+  if (!editor) return null
 
   return (
-    <div
-      ref={containerRef}
-      className="absolute z-50 flex items-center gap-0.5 rounded-lg px-1 py-1 shadow-xl -translate-x-1/2"
-      style={{
-        backgroundColor: primaryColor,
-        top: coords.top,
-        left: coords.left,
-        pointerEvents: 'auto',
-      }}
+    <BubbleMenu
+      editor={editor}
+      options={{ placement: 'top', offset: 8 }}
+      className="flex items-center gap-0.5 rounded-lg px-1 py-1 shadow-xl"
+      style={{ backgroundColor: primaryColor, zIndex: 9999 }}
     >
       <ToolbarButton
         active={editor.isActive('bold')}
@@ -205,7 +157,7 @@ function FloatingToolbar({ editor, primaryColor }: FloatingToolbarProps) {
       >
         <List className="w-3.5 h-3.5" />
       </ToolbarButton>
-    </div>
+    </BubbleMenu>
   )
 }
 

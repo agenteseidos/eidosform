@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Star, CalendarClock, Plus, X } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 import { renderContentBlockHtml } from '@/lib/content-block'
-import { TiptapEditor } from '@/components/ui/tiptap/TiptapEditor'
+import { TiptapEditor, renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
 
 interface FormPreviewProps {
   questions: QuestionConfig[]
@@ -292,7 +292,7 @@ export function FormPreview({
                     className="text-base leading-relaxed [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ul:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&_strong]:font-semibold [&_em]:italic"
                     style={{ color: theme.textColor }}
                     dangerouslySetInnerHTML={{
-                      __html: renderContentBlockHtml(question.contentBody || 'Digite aqui o conteúdo desta etapa.'),
+                      __html: renderTiptapHtml(question.contentBody || 'Digite aqui o conteúdo desta etapa.', renderContentBlockHtml),
                     }}
                   />
                 )}

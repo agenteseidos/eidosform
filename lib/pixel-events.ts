@@ -11,9 +11,20 @@ declare global {
   }
 }
 
-export function matchesCondition(answer: string, condition: PixelEventCondition): boolean {
+function normalizeAnswer(answer: unknown): string {
+  if (answer === null || answer === undefined) return ''
+  if (Array.isArray(answer)) return answer.join(', ')
+  return String(answer)
+}
+
+function parseNumericValue(value: string): number {
+  return parseFloat(String(value).replace(/[^\d.,-]/g, '').replace(',', '.'))
+}
+
+export function matchesCondition(answer: unknown, condition: PixelEventCondition): boolean {
   const { operator, value } = condition
-  const answerLower = (answer ?? '').toLowerCase()
+  const normalizedAnswer = normalizeAnswer(answer)
+  const answerLower = normalizedAnswer.toLowerCase()
   const valueLower = (value ?? '').toLowerCase()
 
   switch (operator) {
@@ -21,20 +32,27 @@ export function matchesCondition(answer: string, condition: PixelEventCondition)
     case 'not_equals': return answerLower !== valueLower
     case 'contains': return answerLower.includes(valueLower)
     case 'not_contains': return !answerLower.includes(valueLower)
-    case 'greater_than': return parseFloat(answer) > parseFloat(value)
-    case 'less_than': return parseFloat(answer) < parseFloat(value)
-    case 'is_empty': return !answer || answer.trim() === ''
-    case 'is_not_empty': return !!(answer && answer.trim())
+    case 'greater_than': return parseNumericValue(normalizedAnswer) > parseNumericValue(value)
+    case 'less_than': return parseNumericValue(normalizedAnswer) < parseNumericValue(value)
+    case 'is_empty': return normalizedAnswer.trim() === ''
+    case 'is_not_empty': return normalizedAnswer.trim() !== ''
     default: return false
   }
 }
 
-export function firePixelEvent(event: PixelEventConfig) {
+export function firePixelEvent(event: PixelEventConfig, retries = 10) {
   if (typeof window === 'undefined') return
   const { fbq } = window
-  if (!fbq) return
+  if (!fbq) {
+    if (retries > 0) {
+      setTimeout(() => firePixelEvent(event, retries - 1), 300)
+    }
+    return
+  }
 
-  const params = event.value ? { value: event.value, currency: event.currency || 'BRL' } : {}
+  const params = event.value !== undefined
+    ? { value: event.value, currency: event.currency || 'BRL' }
+    : undefined
 
   if (event.type === 'standard') {
     fbq('track', event.name, params)
@@ -61,7 +79,7 @@ export function fireNamedPixelEvent(name: string, retries = 10) {
   }
 }
 
-export function evaluatePixelEvents(pixelEvents: PixelEventRule[] | undefined, answer: string) {
+export function evaluatePixelEvents(pixelEvents: PixelEventRule[] | undefined, answer: unknown) {
   if (!pixelEvents || pixelEvents.length === 0) return
   for (const rule of pixelEvents) {
     if (matchesCondition(answer, rule.condition)) {

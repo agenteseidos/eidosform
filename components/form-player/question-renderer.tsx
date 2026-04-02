@@ -445,7 +445,7 @@ interface CalendlyQuestionProps {
   value: string
   onChange: (value: string) => void
   theme: ThemeConfig
-  onSubmit: (skipValidation?: boolean) => void
+  onSubmit: (skipValidation?: boolean, valueOverride?: Json) => void
 }
 
 function CalendlyQuestion({ question, value, onChange, theme, onSubmit }: CalendlyQuestionProps) {
@@ -515,7 +515,7 @@ interface QuestionRendererProps {
   onChange: (value: Json) => void
   theme: ThemeConfig
   error?: string
-  onSubmit: (skipValidation?: boolean) => void
+  onSubmit: (skipValidation?: boolean, valueOverride?: Json) => void
   onClearError?: () => void
 }
 
@@ -545,12 +545,12 @@ export function QuestionRenderer({
           e.preventDefault()
           onChange('Sim')
           onClearError?.()
-          onSubmit(true)
+          onSubmit(true, 'Sim')
         } else if (key === 'N') {
           e.preventDefault()
           onChange('Não')
           onClearError?.()
-          onSubmit(true)
+          onSubmit(true, 'Não')
         }
       }
 
@@ -559,9 +559,10 @@ export function QuestionRenderer({
         const idx = key.charCodeAt(0) - 65 // A=0, B=1, ...
         if (idx >= 0 && idx < question.options.length) {
           e.preventDefault()
-          onChange(question.options[idx])
+          const selectedOption = question.options[idx]
+          onChange(selectedOption)
           onClearError?.()
-          onSubmit(true)
+          onSubmit(true, selectedOption)
         }
       }
 
@@ -665,7 +666,7 @@ export function QuestionRenderer({
                   e.stopPropagation()
                   onChange(option)
                   onClearError?.()
-                  onSubmit(true)
+                  onSubmit(true, option)
                 }}
                 className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
                 style={{
@@ -777,7 +778,7 @@ export function QuestionRenderer({
                   e.stopPropagation()
                   onChange(option)
                   onClearError?.()
-                  onSubmit(true)
+                  onSubmit(true, option)
                 }}
                 className="flex-1 flex items-center justify-center gap-3 p-5 rounded-xl border-2 transition-all relative"
                 style={{
@@ -864,7 +865,7 @@ export function QuestionRenderer({
                   e.stopPropagation()
                   onChange(num)
                   onClearError?.()
-                  onSubmit(true)
+                  onSubmit(true, num)
                 }}
                 className="w-12 h-12 md:w-14 md:h-14 rounded-xl border-2 flex items-center justify-center text-lg font-medium transition-all"
                 style={{
@@ -904,7 +905,7 @@ export function QuestionRenderer({
                     e.stopPropagation()
                     onChange(index)
                     onClearError?.()
-                    onSubmit(true)
+                    onSubmit(true, index)
                   }}
                   className="w-12 h-12 md:w-14 md:h-14 rounded-xl border-2 flex items-center justify-center text-lg font-medium transition-all"
                   style={{
@@ -989,7 +990,7 @@ export function QuestionRenderer({
                   backgroundColor: theme.primaryColor,
                   color: theme.backgroundColor,
                 }}
-                onClick={() => { onChange('viewed'); onSubmit(true) }}
+                onClick={() => { onChange('viewed'); onSubmit(true, 'viewed') }}
               >
                 {question.contentButtonText}
                 <ExternalLink className="w-4 h-4" />
@@ -997,7 +998,7 @@ export function QuestionRenderer({
             ) : (
               <button
                 type="button"
-                onClick={() => { onChange('viewed'); onSubmit(true) }}
+                onClick={() => { onChange('viewed'); onSubmit(true, 'viewed') }}
                 className="inline-flex items-center justify-center px-6 py-3 rounded-xl text-base font-medium transition-opacity hover:opacity-80"
                 style={{
                   backgroundColor: theme.primaryColor,
@@ -1010,7 +1011,7 @@ export function QuestionRenderer({
           ) : (
             <button
               type="button"
-              onClick={() => { onChange('viewed'); onSubmit(true) }}
+              onClick={() => { onChange('viewed'); onSubmit(true, 'viewed') }}
               className="inline-flex items-center justify-center px-6 py-3 rounded-xl text-base font-medium transition-opacity hover:opacity-80"
               style={{
                 backgroundColor: theme.primaryColor,

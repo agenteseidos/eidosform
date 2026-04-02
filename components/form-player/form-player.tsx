@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Form, QuestionConfig, Json } from '@/lib/database.types'
+import { PixelEventRule } from '@/types/pixel-events'
 import { getTheme, getThemeCSSVariables } from '@/lib/themes'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,11 @@ import { captureUtms, getUtms } from '@/lib/utm-tracker'
 interface FormPlayerProps {
   ownerPlan?: string
   form: Form
+}
+
+interface PendingAnswerOverride {
+  questionId: string
+  value: Json
 }
 
 function ensureHttps(url: string): string {
@@ -62,11 +68,12 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     return () => clearTimeout(timer)
   }, [progressFull])
 
-  const validateCurrentQuestion = useCallback(() => {
+  const validateCurrentQuestion = useCallback((candidateAnswers?: Record<string, Json>) => {
     if (!currentQuestion) return true
     if (currentQuestion.type === 'content_block') return true
 
-    const answer = answers[currentQuestion.id]
+    const answerSource = candidateAnswers ?? answers
+    const answer = answerSource[currentQuestion.id]
 
     if (currentQuestion.required) {
       if (answer === undefined || answer === null || answer === '') {
@@ -104,28 +111,30 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     return true
   }, [currentQuestion, answers])
 
-  const goToNext = useCallback((skipValidation?: boolean) => {
+  const goToNext = useCallback((skipValidation?: boolean, pendingAnswer?: PendingAnswerOverride) => {
     const shouldSkip = skipValidation || skipNextValidationRef.current
     skipNextValidationRef.current = false
 
-    if (!shouldSkip && !validateCurrentQuestion()) return
+    const updatedAnswers = pendingAnswer
+      ? { ...answers, [pendingAnswer.questionId]: pendingAnswer.value }
+      : { ...answers }
+
+    if (!shouldSkip && !validateCurrentQuestion(updatedAnswers)) return
 
     // Salvar progresso parcial antes de avançar
-    const updatedAnswers = { ...answers }
     if (currentQuestion) {
       savePartialResponse(updatedAnswers, currentQuestion.id).catch(console.warn)
-      // Avaliar pixel events condicionais da pergunta atual
+      // Avaliar pixel events condicionais da pergunta atual com a resposta recém-selecionada
       if (currentQuestion.pixelEvents) {
-        const answer = String(updatedAnswers[currentQuestion.id] ?? '')
-        evaluatePixelEvents(currentQuestion.pixelEvents, answer)
+        evaluatePixelEvents(currentQuestion.pixelEvents as PixelEventRule[], updatedAnswers[currentQuestion.id])
       }
 
-      // Avaliar jump rules
+      // Avaliar jump rules com answers atualizadas
       if (currentQuestion.jumpRules && currentQuestion.jumpRules.length > 0) {
         const jumpAction = evaluateJumpRules(currentQuestion.jumpRules, updatedAnswers)
         if (jumpAction) {
           if (jumpAction.type === 'submit') {
-            handleSubmit()
+            handleSubmit(updatedAnswers)
             return
           }
           if (jumpAction.type === 'jump' && jumpAction.targetQuestionId) {
@@ -142,14 +151,14 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     }
 
     if (isLastQuestion) {
-      handleSubmit()
+      handleSubmit(updatedAnswers)
     } else {
       setNavigationHistory(prev => [...prev, currentIndex])
       setDirection(1)
       setCurrentIndex(prev => Math.min(prev + 1, visibleQuestions.length - 1))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLastQuestion, visibleQuestions.length, validateCurrentQuestion, answers])
+  }, [isLastQuestion, visibleQuestions, validateCurrentQuestion, answers, currentQuestion, currentIndex])
 
   const goToPrevious = useCallback(() => {
     setDirection(-1)
@@ -163,63 +172,8 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     }
   }, [form, navigationHistory])
 
-  const handleSubmit = async () => {
-    if (!validateCurrentQuestion()) return
-    setIsSubmitting(true)
-
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (responseId) headers['x-response-id'] = responseId
-
-      const utms = getUtms()
-
-      const res = await fetch('/api/responses', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          form_id: form.id,
-          answers,
-          completed: true,
-          last_question_answered: currentQuestion?.id ?? null,
-          ...utms,
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json()
-        toast.error(data.error ?? 'Falha ao enviar resposta')
-        setIsSubmitting(false)
-        return
-      }
-
-      triggerPixelSubmitRef.current?.()
-      // Pixel events condicionais da última pergunta
-      if (currentQuestion?.pixelEvents) {
-        const answer = String(answers[currentQuestion.id] ?? '')
-        evaluatePixelEvents(currentQuestion.pixelEvents, answer)
-      }
-      // Pixel event global de conclusão
-      const completeEvent = form.pixel_event_on_complete
-      if (completeEvent) fireNamedPixelEvent(completeEvent)
-      setIsSubmitted(true)
-      if (form.redirect_url) {
-        setTimeout(() => { window.location.href = ensureHttps(form.redirect_url!) }, 2800)
-      }
-    } catch (e) {
-      toast.error('Falha ao enviar resposta')
-      setIsSubmitting(false)
-    }
-  }
-
-  const updateAnswer = (questionId: string, value: Json) => {
-    setAnswers(prev => ({ ...prev, [questionId]: value }))
-    if (errors[questionId]) {
-      setErrors(prev => { const e = { ...prev }; delete e[questionId]; return e })
-    }
-  }
-
   // Salva resposta parcial a cada pergunta respondida (upsert por responseId)
-  const savePartialResponse = useCallback(async (currentAnswers: Record<string, Json>, lastQuestionId: string) => {
+  async function savePartialResponse(currentAnswers: Record<string, Json>, lastQuestionId: string) {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (responseId) headers['x-response-id'] = responseId
@@ -245,7 +199,59 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       // Falha silenciosa — não impede o fluxo do player
       console.warn('Partial save failed:', e)
     }
-  }, [form.id, responseId])
+  }
+
+  const handleSubmit = async (submissionAnswers?: Record<string, Json>) => {
+    const finalAnswers = submissionAnswers ?? answers
+
+    if (!validateCurrentQuestion(finalAnswers)) return
+    setIsSubmitting(true)
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (responseId) headers['x-response-id'] = responseId
+
+      const utms = getUtms()
+
+      const res = await fetch('/api/responses', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          form_id: form.id,
+          answers: finalAnswers,
+          completed: true,
+          last_question_answered: currentQuestion?.id ?? null,
+          ...utms,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        toast.error(data.error ?? 'Falha ao enviar resposta')
+        setIsSubmitting(false)
+        return
+      }
+
+      triggerPixelSubmitRef.current?.()
+      // Pixel event global de conclusão
+      const completeEvent = form.pixel_event_on_complete
+      if (completeEvent) fireNamedPixelEvent(completeEvent)
+      setIsSubmitted(true)
+      if (form.redirect_url) {
+        setTimeout(() => { window.location.href = ensureHttps(form.redirect_url!) }, 2800)
+      }
+    } catch (e) {
+      toast.error('Falha ao enviar resposta')
+      setIsSubmitting(false)
+    }
+  }
+
+  const updateAnswer = (questionId: string, value: Json) => {
+    setAnswers(prev => ({ ...prev, [questionId]: value }))
+    if (errors[questionId]) {
+      setErrors(prev => { const e = { ...prev }; delete e[questionId]; return e })
+    }
+  }
 
   useEffect(() => {
     captureUtms()
@@ -265,6 +271,10 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       if (isSubmitted || isSubmitting) return
 
       if (e.key === 'Enter' && !e.shiftKey) {
+        if (currentQuestion?.type === 'content_block') {
+          e.preventDefault()
+          return
+        }
         if (currentQuestion?.type === 'long_text') {
           if (e.metaKey || e.ctrlKey) { e.preventDefault(); goToNext() }
           return
@@ -279,6 +289,10 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       }
 
       if (e.key === 'ArrowDown') {
+        if (currentQuestion?.type === 'content_block') {
+          e.preventDefault()
+          return
+        }
         e.preventDefault()
         goToNext()
       }
@@ -691,9 +705,13 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                   onChange={(value) => updateAnswer(currentQuestion.id, value)}
                   theme={theme}
                   error={errors[currentQuestion.id]}
-                  onSubmit={(skipValidation?: boolean) => {
+                  onSubmit={(skipValidation?: boolean, valueOverride?: Json) => {
+                    const pendingAnswer = valueOverride !== undefined
+                      ? { questionId: currentQuestion.id, value: valueOverride }
+                      : undefined
+
                     if (skipValidation) skipNextValidationRef.current = true
-                    goToNext(skipValidation)
+                    goToNext(skipValidation, pendingAnswer)
                   }}
                   onClearError={() => {
                     setErrors(prev => { const e = { ...prev }; delete e[currentQuestion.id]; return e })
@@ -716,39 +734,40 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 )}
               </AnimatePresence>
 
-              {/* CTA */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.27 }}
-                className="mt-6 sm:mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-4 relative z-10"
-              >
-                <Button
-                  onClick={() => goToNext()}
-                  disabled={isSubmitting}
-                  className="h-12 px-7 text-base font-semibold rounded-xl transition-transform active:scale-95 w-full sm:w-auto"
-                  style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
+              {!isContentStep && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.27 }}
+                  className="mt-6 sm:mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-4 relative z-10"
                 >
-                  {isSubmitting ? (
-                    <span className="flex items-center gap-2">
-                      <motion.span
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
-                        className="block w-4 h-4 border-2 border-current border-t-transparent rounded-full"
-                      />
-                      Enviando…
-                    </span>
-                  ) : isLastQuestion ? (
-                    <span className="flex items-center gap-2">Enviar <Check className="w-4 h-4" /></span>
-                  ) : (
-                    <span className="flex items-center gap-2">OK <Check className="w-4 h-4" /></span>
-                  )}
-                </Button>
+                  <Button
+                    onClick={() => goToNext()}
+                    disabled={isSubmitting}
+                    className="h-12 px-7 text-base font-semibold rounded-xl transition-transform active:scale-95 w-full sm:w-auto"
+                    style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
+                  >
+                    {isSubmitting ? (
+                      <span className="flex items-center gap-2">
+                        <motion.span
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
+                          className="block w-4 h-4 border-2 border-current border-t-transparent rounded-full"
+                        />
+                        Enviando…
+                      </span>
+                    ) : isLastQuestion ? (
+                      <span className="flex items-center gap-2">Enviar <Check className="w-4 h-4" /></span>
+                    ) : (
+                      <span className="flex items-center gap-2">OK <Check className="w-4 h-4" /></span>
+                    )}
+                  </Button>
 
-                <span className="hidden sm:inline text-sm opacity-40" style={{ color: theme.textColor }}>
-                  Pressione <kbd className="font-mono font-semibold">Enter ↵</kbd>
-                </span>
-              </motion.div>
+                  <span className="hidden sm:inline text-sm opacity-40" style={{ color: theme.textColor }}>
+                    Pressione <kbd className="font-mono font-semibold">Enter ↵</kbd>
+                  </span>
+                </motion.div>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -768,17 +787,19 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
           >
             <ChevronUp className="w-5 h-5" />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => goToNext()}
-            disabled={isSubmitting}
-            className="h-11 w-11 p-0 rounded-lg"
-            style={{ color: theme.textColor }}
-            aria-label="Próxima pergunta"
-          >
-            <ChevronDown className="w-5 h-5" />
-          </Button>
+          {!isContentStep && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => goToNext()}
+              disabled={isSubmitting}
+              className="h-11 w-11 p-0 rounded-lg"
+              style={{ color: theme.textColor }}
+              aria-label="Próxima pergunta"
+            >
+              <ChevronDown className="w-5 h-5" />
+            </Button>
+          )}
         </div>
 
         {!form.hide_branding && (

@@ -1,7 +1,6 @@
 'use client'
 
 import { useEditor, EditorContent } from '@tiptap/react'
-import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect, useCallback, useState } from 'react'
@@ -119,22 +118,20 @@ function ToolbarButton({
   )
 }
 
-// ── Floating BubbleMenu ───────────────────────────────────────────────────────
+// ── Fixed toolbar ────────────────────────────────────────────────────────────
 
-interface FloatingToolbarProps {
+interface FixedToolbarProps {
   editor: ReturnType<typeof useEditor>
   primaryColor: string
 }
 
-function FloatingToolbar({ editor, primaryColor }: FloatingToolbarProps) {
+function FixedToolbar({ editor, primaryColor }: FixedToolbarProps) {
   if (!editor) return null
 
   return (
-    <BubbleMenu
-      editor={editor}
-      options={{ placement: 'top', offset: 8 }}
-      className="flex items-center gap-0.5 rounded-lg px-1 py-1 shadow-xl"
-      style={{ backgroundColor: primaryColor, zIndex: 9999 }}
+    <div
+      className="mb-3 inline-flex items-center gap-0.5 rounded-xl px-1.5 py-1.5 shadow-sm border border-black/5"
+      style={{ backgroundColor: primaryColor, zIndex: 1 }}
     >
       <ToolbarButton
         active={editor.isActive('bold')}
@@ -157,7 +154,7 @@ function FloatingToolbar({ editor, primaryColor }: FloatingToolbarProps) {
       >
         <List className="w-3.5 h-3.5" />
       </ToolbarButton>
-    </BubbleMenu>
+    </div>
   )
 }
 
@@ -188,6 +185,7 @@ export function TiptapEditor({
   primaryColor = '#6366f1',
 }: TiptapEditorProps) {
   const [isActive, setIsActive] = useState(!clickToEdit)
+  const [hasFocus, setHasFocus] = useState(false)
   const initialContent = normalizeTiptapContent(value)
 
   const editor = useEditor({
@@ -207,7 +205,11 @@ export function TiptapEditor({
       onChange?.(JSON.stringify(editor.getJSON()))
     },
     onBlur: ({ editor }) => {
+      setHasFocus(false)
       onBlur?.(JSON.stringify(editor.getJSON()))
+    },
+    onFocus: () => {
+      setHasFocus(true)
     },
     editorProps: {
       attributes: {
@@ -257,14 +259,14 @@ export function TiptapEditor({
         </span>
       )}
 
-      {/* Toolbar flutuante ao selecionar texto */}
-      {editable && isActive && (
-        <FloatingToolbar editor={editor} primaryColor={primaryColor} />
+      {/* Toolbar fixa e confiável enquanto o editor está em foco */}
+      {editable && isActive && hasFocus && (
+        <FixedToolbar editor={editor} primaryColor={primaryColor} />
       )}
 
       <EditorContent
         editor={editor}
-        className="tiptap-content prose-sm max-w-none [&_.ProseMirror>p]:mb-3 [&_.ProseMirror>p:last-child]:mb-0 [&_.ProseMirror>ul]:mb-3 [&_.ProseMirror>ul:last-child]:mb-0 [&_.ProseMirror>ul]:list-disc [&_.ProseMirror>ul]:pl-5 [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_.is-editor-empty:first-child::before]:text-current [&_.ProseMirror_.is-editor-empty:first-child::before]:opacity-40 [&_.ProseMirror_.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_.is-editor-empty:first-child::before]:h-0"
+        className="tiptap-content prose-sm max-w-none [&_.ProseMirror]:min-h-[60px] [&_.ProseMirror>p]:mb-3 [&_.ProseMirror>p:last-child]:mb-0 [&_.ProseMirror>ul]:mb-3 [&_.ProseMirror>ul:last-child]:mb-0 [&_.ProseMirror>ul]:list-disc [&_.ProseMirror>ul]:pl-5 [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_.is-editor-empty:first-child::before]:text-current [&_.ProseMirror_.is-editor-empty:first-child::before]:opacity-40 [&_.ProseMirror_.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_.is-editor-empty:first-child::before]:h-0"
       />
     </div>
   )

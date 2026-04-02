@@ -164,7 +164,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
         <div className="space-y-4">
           <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5">
             <p className="text-xs text-blue-700 font-medium mb-0.5">✏️ Edição inline ativa</p>
-            <p className="text-[11px] text-blue-600 leading-snug">Clique no bloco de conteúdo no preview para editar. Selecione texto para formatar (negrito, itálico, lista).</p>
+            <p className="text-[11px] text-blue-600 leading-snug">Clique no bloco de conteúdo no preview para editar. A toolbar aparece no topo do editor quando o bloco entra em foco.</p>
           </div>
           <Separator />
           <div>

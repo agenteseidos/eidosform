@@ -56,6 +56,7 @@ export function RightPanel({
 }: RightPanelProps) {
   const [copied, setCopied] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [showTechnicalId, setShowTechnicalId] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const toggleBlock = useCallback((key: string) => {
@@ -408,17 +409,35 @@ export function RightPanel({
             </button>
             {!collapsed['config'] && (
               <div className="px-4 pb-4 space-y-4">
-                {/* ID copiável */}
-                <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  <span className="text-[11px] text-slate-400 font-mono flex-1 truncate">{selectedQuestion.id}</span>
+                {/* ID técnico minimizado */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80">
                   <button
-                    onClick={handleCopyId}
-                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors shrink-0"
-                    title="Copiar ID"
+                    type="button"
+                    onClick={() => setShowTechnicalId((prev) => !prev)}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
                   >
-                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? "Copiado!" : "Copiar ID"}
+                    <div>
+                      <p className="text-xs font-medium text-slate-600">ID técnico do campo</p>
+                      <p className="text-[10px] text-slate-400">Use só se precisar referenciar este bloco em automações ou suporte.</p>
+                    </div>
+                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showTechnicalId ? 'rotate-180' : ''}`} />
                   </button>
+
+                  {showTechnicalId && (
+                    <div className="border-t border-slate-200 px-3 py-2.5">
+                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <span className="text-[11px] text-slate-400 font-mono flex-1 truncate">{selectedQuestion.id}</span>
+                        <button
+                          onClick={handleCopyId}
+                          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors shrink-0"
+                          title="Copiar ID"
+                        >
+                          {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copied ? 'Copiado!' : 'Copiar'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Type-specific technical config (without title/description/options/placeholder) */}

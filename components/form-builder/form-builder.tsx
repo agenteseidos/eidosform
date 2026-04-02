@@ -958,7 +958,15 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   <div className="space-y-4">
                     {/* Meta Pixel — agrupado com Eventos */}
                     <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-4">
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Meta Pixel</p>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                          <Crosshair className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">Meta Pixel</p>
+                          <p className="text-xs text-slate-500">Rastreie conversões e eventos no Meta Ads.</p>
+                        </div>
+                      </div>
                       <div>
                         <Label htmlFor="meta_pixel" className="text-sm font-medium text-slate-700">Pixel ID</Label>
                         <Input
@@ -974,6 +982,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       </div>
                       {userPlan === 'plus' || userPlan === 'professional' ? (
                         <>
+                          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Eventos</p>
                           <div>
                             <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Evento ao iniciar</Label>
                             <Input
@@ -1211,7 +1220,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                             onClick={async () => {
                               const url = sheetsUrl.trim()
                               if (!url) {
-                                toast.error('Cole a URL da planilha')
+                                toast.error('Link de planilha inválido. Cole a URL completa do Google Sheets.')
                                 return
                               }
                               try {
@@ -1225,7 +1234,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                 })
                                 const data = await res.json()
                                 if (!res.ok) {
-                                  throw new Error(data.error || 'Não foi possível conectar a planilha agora. Tente novamente.')
+                                  throw new Error(data.error || 'Não foi possível conectar a planilha. Tente novamente.')
                                 }
                                 const updated = data.form
                                 setForm({
@@ -1238,7 +1247,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                 setHasUnsavedChanges(false)
                                 toast.success('Planilha conectada com sucesso!', { id: 'sheets-connect' })
                               } catch (err: unknown) {
-                                const message = err instanceof Error ? err.message : 'Não foi possível conectar a planilha agora. Tente novamente.'
+                                const message = err instanceof Error ? err.message : 'Não foi possível conectar a planilha. Tente novamente.'
                                 toast.error(message, { id: 'sheets-connect' })
                               }
                             }}

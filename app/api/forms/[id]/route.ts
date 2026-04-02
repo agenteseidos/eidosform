@@ -147,7 +147,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const spreadsheetId = extractSpreadsheetId(google_sheets_url as string)
     if (!spreadsheetId) {
       return NextResponse.json(
-        { error: 'Link de planilha inválido. Cole a URL completa.' },
+        { error: 'Link de planilha inválido. Cole a URL completa do Google Sheets.' },
         { status: 400 }
       )
     }
@@ -163,7 +163,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       const gErr = e as { code?: number; errors?: Array<{ message?: string }> }
       if (gErr.code === 403) {
         return NextResponse.json(
-          { error: 'Sem permissão para acessar essa planilha. Compartilhe com eidosform-sheets@eidosform.iam.gserviceaccount.com com permissão de Editor.' },
+          { error: 'Não foi possível acessar a planilha. Verifique se compartilhou com o e-mail do serviço.' },
           { status: 400 }
         )
       }
@@ -174,7 +174,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         )
       }
       return NextResponse.json(
-        { error: 'Não foi possível conectar a planilha agora. Tente novamente.' },
+        { error: 'Não foi possível conectar a planilha. Tente novamente.' },
         { status: 500 }
       )
     }

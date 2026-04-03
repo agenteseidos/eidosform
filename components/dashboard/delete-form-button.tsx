@@ -19,9 +19,11 @@ import { toast } from 'sonner'
 interface DeleteFormButtonProps {
   formId: string
   formTitle: string
+  mode?: 'menu' | 'icon'
+  className?: string
 }
 
-export function DeleteFormButton({ formId, formTitle }: DeleteFormButtonProps) {
+export function DeleteFormButton({ formId, formTitle, mode = 'menu', className }: DeleteFormButtonProps) {
   const [open, setOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const router = useRouter()
@@ -46,16 +48,30 @@ export function DeleteFormButton({ formId, formTitle }: DeleteFormButtonProps) {
 
   return (
     <>
-      <DropdownMenuItem
-        onClick={(e) => {
-          e.preventDefault()
-          setOpen(true)
-        }}
-        className="cursor-pointer text-red-600 focus:text-red-600"
-      >
-        <Trash2 className="mr-2 h-4 w-4" />
-        Excluir
-      </DropdownMenuItem>
+      {mode === 'icon' ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={() => setOpen(true)}
+          className={className}
+          title="Excluir formulário"
+          aria-label="Excluir formulário"
+        >
+          <Trash2 className="h-4 w-4 text-red-600" />
+        </Button>
+      ) : (
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.preventDefault()
+            setOpen(true)
+          }}
+          className={className ?? 'cursor-pointer text-red-600 focus:text-red-600'}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Excluir
+        </DropdownMenuItem>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

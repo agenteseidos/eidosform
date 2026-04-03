@@ -3,14 +3,17 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { Button } from '@/components/ui/button'
 import { CopyPlus } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DuplicateFormButtonProps {
   formId: string
+  mode?: 'menu' | 'icon'
+  className?: string
 }
 
-export function DuplicateFormButton({ formId }: DuplicateFormButtonProps) {
+export function DuplicateFormButton({ formId, mode = 'menu', className }: DuplicateFormButtonProps) {
   const [isDuplicating, setIsDuplicating] = useState(false)
   const router = useRouter()
 
@@ -39,6 +42,23 @@ export function DuplicateFormButton({ formId }: DuplicateFormButtonProps) {
     }
   }
 
+  if (mode === 'icon') {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        onClick={handleDuplicate}
+        disabled={isDuplicating}
+        className={className}
+        title="Duplicar formulário"
+        aria-label="Duplicar formulário"
+      >
+        <CopyPlus className="h-4 w-4" />
+      </Button>
+    )
+  }
+
   return (
     <DropdownMenuItem
       onClick={(e) => {
@@ -46,7 +66,7 @@ export function DuplicateFormButton({ formId }: DuplicateFormButtonProps) {
         handleDuplicate()
       }}
       disabled={isDuplicating}
-      className="cursor-pointer"
+      className={className ?? 'cursor-pointer'}
     >
       <CopyPlus className="mr-2 h-4 w-4" />
       {isDuplicating ? 'Duplicando...' : 'Duplicar formulário'}

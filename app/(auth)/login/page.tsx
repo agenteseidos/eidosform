@@ -83,7 +83,7 @@ function LoginForm() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md px-6 sm:px-8 relative z-10"
       >
-        <Link href="/" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
+        <Link href="/" className="fixed top-4 left-4 text-slate-400 hover:text-white transition-colors text-sm min-h-[44px] min-w-[44px] px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
         <div className="flex justify-center mb-8 pt-8">
           <EidosLogo variant="full" theme="dark" href="/" height={48} />
         </div>
@@ -125,7 +125,7 @@ function LoginForm() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-slate-300">Senha</Label>
-                <Link href="/forgot-password" className="text-sm text-[#F5B731] hover:text-[#E8923A] transition-colors py-2 inline-block">
+                <Link href="/forgot-password" className="text-sm text-[#F5B731] hover:text-[#E8923A] transition-colors min-h-[44px] inline-flex items-center">
                   Esqueci minha senha
                 </Link>
               </div>

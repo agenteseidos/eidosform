@@ -260,7 +260,7 @@ export default function LandingPage() {
               }
             ].map(({ q, a }, i) => (
               <details key={i} className="group p-5 rounded-2xl bg-white/[0.04] border border-white/5 hover:border-white/10 transition-all cursor-pointer">
-                <summary className="flex items-center justify-between font-semibold text-white text-sm sm:text-base list-none">
+                <summary className="flex items-center justify-between font-semibold text-white text-sm sm:text-base list-none min-h-[44px]">
                   {q}
                   <ChevronDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform flex-shrink-0 ml-4" />
                 </summary>
@@ -305,25 +305,25 @@ export default function LandingPage() {
             </div>
             <div>
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Produto</h4>
-              <ul className="space-y-2 text-sm text-slate-500">
-                <li><a href="#recursos" className="hover:text-white transition-colors">Recursos</a></li>
-                <li><a href="#precos" className="hover:text-white transition-colors">Preços</a></li>
-                <li><Link href="/login" className="hover:text-white transition-colors">Painel</Link></li>
+              <ul className="space-y-1 text-sm text-slate-500">
+                <li><a href="#recursos" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Recursos</a></li>
+                <li><a href="#precos" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Preços</a></li>
+                <li><Link href="/login" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Painel</Link></li>
               </ul>
             </div>
             <div>
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Suporte</h4>
-              <ul className="space-y-2 text-sm text-slate-500">
-                <li><a href="#faq" className="hover:text-white transition-colors">FAQ</a></li>
-                <li><a href="mailto:suporte@eidosform.com" className="hover:text-white transition-colors">Contato</a></li>
-                <li><span className="text-slate-600 cursor-not-allowed">Documentação API</span></li>
+              <ul className="space-y-1 text-sm text-slate-500">
+                <li><a href="#faq" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">FAQ</a></li>
+                <li><a href="mailto:suporte@eidosform.com" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
+                <li><span className="text-slate-600 cursor-not-allowed inline-flex items-center min-h-[44px] py-2">Documentação API</span></li>
               </ul>
             </div>
             <div>
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Legal</h4>
-              <ul className="space-y-2 text-sm text-slate-500">
-                <li><Link href="/privacidade" className="hover:text-white transition-colors">Privacidade</Link></li>
-                <li><Link href="/termos" className="hover:text-white transition-colors">Termos de uso</Link></li>
+              <ul className="space-y-1 text-sm text-slate-500">
+                <li><Link href="/privacidade" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Privacidade</Link></li>
+                <li><Link href="/termos" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Termos de uso</Link></li>
               </ul>
             </div>
           </div>

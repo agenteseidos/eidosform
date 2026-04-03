@@ -111,7 +111,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
         <div className="inline-flex items-center gap-1 bg-slate-900 border border-white/10 rounded-full p-1.5">
           <button
             onClick={() => setBilling('monthly')}
-            className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+            className={`px-5 min-h-[44px] rounded-full text-sm font-semibold transition-all ${
               billing === 'monthly'
                 ? 'bg-white text-slate-900 shadow'
                 : 'text-slate-400 hover:text-white'
@@ -121,7 +121,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
           </button>
           <button
             onClick={() => setBilling('annual')}
-            className={`relative px-5 py-2 rounded-full text-sm font-semibold transition-all flex items-center gap-2 ${
+            className={`relative px-5 min-h-[44px] rounded-full text-sm font-semibold transition-all flex items-center gap-2 ${
               billing === 'annual'
                 ? 'bg-[#F5B731] text-black shadow'
                 : 'text-slate-400 hover:text-white'

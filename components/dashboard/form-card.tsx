@@ -103,31 +103,31 @@ export function FormCard({
               <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
+          <DropdownMenuContent align="end" className="min-w-52">
+            <DropdownMenuItem asChild className="min-h-11">
               <Link href={`/forms/${form.id}/edit`} className="cursor-pointer">
                 <Pencil className="mr-2 h-4 w-4" />
                 Editar
               </Link>
             </DropdownMenuItem>
             {form.status === 'published' && (
-              <DropdownMenuItem asChild>
+              <DropdownMenuItem asChild className="min-h-11">
                 <Link href={`/f/${form.slug}`} target="_blank" className="cursor-pointer">
                   <ExternalLink className="mr-2 h-4 w-4" />
                   Ver formulário
                 </Link>
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem asChild>
+            <DropdownMenuItem asChild className="min-h-11">
               <Link href={`/forms/${form.id}/responses`} className="cursor-pointer">
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Respostas
               </Link>
             </DropdownMenuItem>
-            <DuplicateFormButton formId={form.id} />
+            <DuplicateFormButton formId={form.id} className="cursor-pointer min-h-11" />
             <DropdownMenuItem 
               onClick={copyFormLink}
-              className="cursor-pointer"
+              className="cursor-pointer min-h-11"
             >
               <Copy className="mr-2 h-4 w-4" />
               Copiar link
@@ -160,7 +160,7 @@ export function FormCard({
               </DropdownMenuSub>
             )}
             <DropdownMenuSeparator />
-            <DeleteFormButton formId={form.id} formTitle={form.title} />
+            <DeleteFormButton formId={form.id} formTitle={form.title} className="cursor-pointer min-h-11 text-red-600 focus:text-red-600" />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -179,7 +179,43 @@ export function FormCard({
         </div>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2">
+      <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-4 gap-2 sm:hidden">
+        <Link href={`/forms/${form.id}/edit`}>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-11 w-full hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors"
+            aria-label="Editar formulário"
+            title="Editar formulário"
+          >
+            <Pencil className="w-4 h-4" />
+          </Button>
+        </Link>
+        <Link href={`/forms/${form.id}/responses`}>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-11 w-full hover:bg-sky-50 hover:text-sky-700 hover:border-sky-200 transition-colors"
+            aria-label="Ver respostas"
+            title="Ver respostas"
+          >
+            <BarChart3 className="w-4 h-4" />
+          </Button>
+        </Link>
+        <DuplicateFormButton
+          formId={form.id}
+          mode="icon"
+          className="h-11 w-full hover:bg-slate-50"
+        />
+        <DeleteFormButton
+          formId={form.id}
+          formTitle={form.title}
+          mode="icon"
+          className="h-11 w-full hover:bg-red-50 hover:border-red-200"
+        />
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-100 hidden sm:flex items-center gap-2">
         <Link href={`/forms/${form.id}/edit`} className="flex-1">
           <Button variant="outline" size="sm" className="w-full hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors">
             <Pencil className="w-3 h-3 mr-2" />

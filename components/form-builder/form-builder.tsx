@@ -143,6 +143,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
+  const isMobileUtilityTab = activeTab === 'integrations' || activeTab === 'share'
+  const shouldShowMobileSidebar = mobilePanel === 'questions' || isMobileUtilityTab
+  const shouldShowMobilePreview = !isMobileUtilityTab && (mobilePanel === 'preview' || mobilePanel === 'editor')
+  const shouldShowMobileRightPanel = !isMobileUtilityTab && mobilePanel === 'editor'
 
   useEffect(() => {
     if (previewMode !== 'step') return
@@ -169,6 +173,12 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       setSidebarSection(null)
     }
   }, [previewMode, questions, stepPreviewIndex, selectedQuestionId])
+
+  useEffect(() => {
+    if (activeTab === 'integrations' || activeTab === 'share') {
+      setMobilePanel('questions')
+    }
+  }, [activeTab])
 
   // Warn user about unsaved changes when leaving the page
   useEffect(() => {
@@ -593,13 +603,16 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden pb-14 md:pb-0">
         {/* Sidebar */}
-        <aside className={`${mobilePanel === 'questions' ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:min-w-[280px] bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
+        <aside className={`${shouldShowMobileSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:min-w-[280px] bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
             {/* Mobile-only: main section selector */}
             <div className="shrink-0 p-2 border-b border-slate-100 md:hidden">
               <div className="grid w-full grid-cols-3 bg-slate-100 rounded-lg p-0.5 gap-0.5">
                 <button
-                  onClick={() => { if (!['questions', 'design', 'config'].includes(activeTab)) setActiveTab('questions') }}
+                  onClick={() => {
+                    if (!['questions', 'design', 'config'].includes(activeTab)) setActiveTab('questions')
+                    setMobilePanel('questions')
+                  }}
                   className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
                     ['questions', 'design', 'config'].includes(activeTab)
                       ? 'bg-white text-slate-900 shadow-sm'
@@ -610,7 +623,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   Editar
                 </button>
                 <button
-                  onClick={() => setActiveTab('integrations')}
+                  onClick={() => {
+                    setActiveTab('integrations')
+                    setMobilePanel('questions')
+                  }}
                   className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
                     activeTab === 'integrations'
                       ? 'bg-white text-slate-900 shadow-sm'
@@ -621,7 +637,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   Integr.
                 </button>
                 <button
-                  onClick={() => setActiveTab('share')}
+                  onClick={() => {
+                    setActiveTab('share')
+                    setMobilePanel('questions')
+                  }}
                   className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
                     activeTab === 'share'
                       ? 'bg-white text-slate-900 shadow-sm'
@@ -1456,7 +1475,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         </aside>
 
         {/* Center: Preview */}
-        <div className={`${mobilePanel === 'preview' || mobilePanel === 'editor' ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0 overflow-auto bg-slate-100 p-4 md:p-8`}>
+        <div className={`${shouldShowMobilePreview ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0 overflow-auto bg-slate-100 p-4 md:p-8`}>
           <div className="max-w-2xl mx-auto w-full">
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-4">
               <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
@@ -1553,7 +1572,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         </div>
 
         {/* Right Panel - Fixed property editor */}
-        <aside className={`${mobilePanel === 'editor' ? 'flex' : 'hidden'} md:flex w-full max-w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0 overflow-hidden`}>
+        <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} md:flex w-full max-w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0 overflow-hidden`}>
           <RightPanel
             selectedQuestion={selectedQuestion || null}
             allQuestions={questions}
@@ -1578,21 +1597,27 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex z-50">
         <button
           onClick={() => setMobilePanel('questions')}
-          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: mobilePanel === 'questions' ? '#F5B731' : undefined }}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: shouldShowMobileSidebar ? '#F5B731' : undefined }}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
           Perguntas
         </button>
         <button
-          onClick={() => setMobilePanel('editor')}
-          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: mobilePanel === 'editor' ? '#F5B731' : undefined }}
+          onClick={() => {
+            if (isMobileUtilityTab) setActiveTab('questions')
+            setMobilePanel('editor')
+          }}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: !isMobileUtilityTab && mobilePanel === 'editor' ? '#F5B731' : undefined }}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
           Editar
         </button>
         <button
-          onClick={() => setMobilePanel('preview')}
-          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: mobilePanel === 'preview' ? '#F5B731' : undefined }}
+          onClick={() => {
+            if (isMobileUtilityTab) setActiveTab('questions')
+            setMobilePanel('preview')
+          }}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: !isMobileUtilityTab && mobilePanel === 'preview' ? '#F5B731' : undefined }}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
           Preview

@@ -974,12 +974,19 @@ export function QuestionRenderer({
       const contentHtml = renderTiptapHtml(question.contentBody, renderContentBlockHtml)
       return (
         <div className="space-y-5">
-          {contentHtml && (
+          {contentHtml ? (
             <div
               style={{ color: theme.textColor }}
               className="content-block-body text-base md:text-lg leading-relaxed [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ul:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&_strong]:font-semibold [&_em]:italic"
               dangerouslySetInnerHTML={{ __html: contentHtml }}
             />
+          ) : (
+            <p
+              className="text-base md:text-lg italic opacity-40"
+              style={{ color: theme.textColor }}
+            >
+              (Conteúdo não preenchido)
+            </p>
           )}
           {question.contentButtonText ? (
             question.contentButtonUrl ? (

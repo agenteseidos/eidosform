@@ -78,7 +78,7 @@ export function RightPanel({
             <div className="flex items-center justify-between gap-3 py-1 max-w-full">
               <div>
                 <Label className="text-xs font-medium text-slate-700">Ativar tela de boas vindas</Label>
-                <p className="text-[10px] text-slate-400">Mostrar antes das perguntas</p>
+                <p className="text-[10px] text-slate-500">Mostrar antes das perguntas</p>
               </div>
               <Switch
                 checked={form.welcome_enabled || false}
@@ -133,7 +133,7 @@ export function RightPanel({
                         <div className="flex flex-col items-center gap-1">
                           <Upload className="w-5 h-5 text-slate-400" />
                           <span className="text-xs text-slate-500">Clique ou arraste</span>
-                          <span className="text-[10px] text-slate-400">SVG, PNG, JPG, GIF (até 2MB)</span>
+                          <span className="text-[10px] text-slate-500">SVG, PNG, JPG, GIF (até 2MB)</span>
                         </div>
                       )}
                       <input
@@ -220,7 +220,7 @@ export function RightPanel({
                 placeholder="Obrigado pela sua resposta!"
                 rows={2}
               />
-              <p className="text-[10px] text-slate-400 mt-1">Usada como fallback se título estiver vazio</p>
+              <p className="text-[10px] text-slate-500 mt-1">Usada como fallback se título estiver vazio</p>
             </div>
           </div>
         </ScrollArea>
@@ -237,7 +237,7 @@ export function RightPanel({
         <p className="text-sm font-medium text-slate-500">
           Selecione uma pergunta para editar suas propriedades
         </p>
-        <p className="text-xs text-slate-400 mt-1">
+        <p className="text-xs text-slate-500 mt-1">
           Clique em uma pergunta na lista à esquerda
         </p>
       </div>
@@ -332,7 +332,7 @@ export function RightPanel({
                   <div className="flex items-start justify-between gap-3 py-1 max-w-full overflow-hidden">
                     <div className="min-w-0 flex-1">
                       <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
-                      <p className="text-[10px] text-slate-400">Respondentes devem responder</p>
+                      <p className="text-[10px] text-slate-500">Respondentes devem responder</p>
                     </div>
                     <Switch
                       checked={selectedQuestion.required}
@@ -418,7 +418,7 @@ export function RightPanel({
                   >
                     <div>
                       <p className="text-xs font-medium text-slate-600">ID técnico do campo</p>
-                      <p className="text-[10px] text-slate-400">Use só se precisar referenciar este bloco em automações ou suporte.</p>
+                      <p className="text-[10px] text-slate-500">Use só se precisar referenciar este bloco em automações ou suporte.</p>
                     </div>
                     <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showTechnicalId ? 'rotate-180' : ''}`} />
                   </button>
@@ -426,7 +426,7 @@ export function RightPanel({
                   {showTechnicalId && (
                     <div className="border-t border-slate-200 px-3 py-2.5">
                       <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                        <span className="text-[11px] text-slate-400 font-mono flex-1 truncate">{selectedQuestion.id}</span>
+                        <span className="text-[11px] text-slate-500 font-mono flex-1 truncate">{selectedQuestion.id}</span>
                         <button
                           onClick={handleCopyId}
                           className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors shrink-0"

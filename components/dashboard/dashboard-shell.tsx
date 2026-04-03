@@ -153,7 +153,7 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
       <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
           <div className="mb-3 px-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Organização</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Organização</p>
           </div>
 
           <div className="space-y-1.5">
@@ -183,7 +183,7 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
 
             {folders.length > 0 && (
               <div className="pt-2">
-                <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Pastas</p>
+                <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Pastas</p>
                 <div className="space-y-1">
                   {folders.map((folder) => (
                     <button

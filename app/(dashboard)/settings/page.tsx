@@ -104,13 +104,13 @@ export default async function SettingsPage() {
       <div className="pt-4 border-t border-slate-100">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-slate-300">Você continuará no plano Free</p>
+            <p className="text-xs text-slate-500">Você continuará no plano Free</p>
             <button className="text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors min-h-[44px] px-2 inline-flex items-center">
               Cancelar assinatura
             </button>
           </div>
           <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-slate-300">Remove todos os dados permanentemente</p>
+            <p className="text-xs text-slate-500">Remove todos os dados permanentemente</p>
             <button className="text-xs text-slate-400 hover:text-red-500 underline underline-offset-2 transition-colors min-h-[44px] px-2 inline-flex items-center">
               Deletar conta
             </button>

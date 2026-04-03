@@ -225,7 +225,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                   isCurrentPlan
                     ? 'bg-white/5 text-slate-500 border border-white/10 cursor-not-allowed'
                     : isLowerPlan
-                    ? 'bg-white/5 text-slate-600 border border-white/[0.06] cursor-not-allowed'
+                    ? 'bg-white/5 text-slate-400 border border-white/[0.06] cursor-not-allowed'
                     : 'bg-[#F5B731] hover:bg-[#e5a820] text-black font-bold shadow-lg shadow-[#F5B731]/25'
                 }`}
                 disabled={isCurrentPlan || isLowerPlan}

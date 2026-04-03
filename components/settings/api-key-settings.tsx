@@ -142,7 +142,7 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
         <div>
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4 flex items-center gap-3">
             <Key className="w-4 h-4 text-slate-500" />
-            <span className="text-sm text-slate-400 font-mono">Nenhuma API Key gerada</span>
+            <span className="text-sm text-slate-500 font-mono">Nenhuma API Key gerada</span>
           </div>
           <Button
             onClick={handleGenerate}

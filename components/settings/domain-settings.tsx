@@ -193,7 +193,7 @@ export function DomainSettings({ isProfessional, defaultFormId }: DomainSettings
       {fetching ? (
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
           <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
-          <span className="text-sm text-slate-400">Carregando...</span>
+          <span className="text-sm text-slate-500">Carregando...</span>
         </div>
       ) : !domainRecord ? (
         <div className="space-y-3">
@@ -240,7 +240,7 @@ export function DomainSettings({ isProfessional, defaultFormId }: DomainSettings
                 ].map(({ label, value, copyable }) => (
                   <div key={label} className="flex items-center justify-between bg-white rounded-lg p-3 border border-amber-100">
                     <div className="text-xs font-mono text-slate-600">
-                      <span className="text-slate-400 mr-2">{label}:</span>{value}
+                      <span className="text-slate-500 mr-2">{label}:</span>{value}
                     </div>
                     {copyable && (
                       <Button variant="ghost" size="sm" onClick={copyCname} className="h-7 text-xs">

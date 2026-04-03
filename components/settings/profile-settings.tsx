@@ -73,7 +73,7 @@ export function ProfileSettings({
         <div>
           <p className="font-medium text-slate-900">{fullName || email}</p>
           <p className="text-sm text-slate-500">{email}</p>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             Membro desde {memberSince}
           </p>
         </div>
@@ -100,7 +100,7 @@ export function ProfileSettings({
             disabled
             className="mt-1.5 bg-slate-50 text-slate-500"
           />
-          <p className="text-xs text-slate-400 mt-1">O e-mail não pode ser alterado</p>
+          <p className="text-xs text-slate-500 mt-1">O e-mail não pode ser alterado</p>
         </div>
         <Button
           className="bg-blue-600 hover:bg-blue-700"

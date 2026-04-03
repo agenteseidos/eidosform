@@ -389,7 +389,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 href="/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
+                className="inline-flex items-center gap-1.5 text-sm opacity-60 hover:opacity-90 transition-opacity"
                 style={{ color: theme.textColor }}
               >
                 Feito com <span className="font-semibold">EidosForm</span>
@@ -456,7 +456,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 href="/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
+                className="inline-flex items-center gap-1.5 text-sm opacity-60 hover:opacity-90 transition-opacity"
                 style={{ color: theme.textColor }}
               >
                 Feito com <span className="font-semibold">EidosForm</span>
@@ -557,7 +557,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
                 href="/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm opacity-40 hover:opacity-60 transition-opacity"
+                className="inline-flex items-center gap-1.5 text-sm opacity-60 hover:opacity-90 transition-opacity"
                 style={{ color: theme.textColor }}
               >
                 Feito com <span className="font-semibold">EidosForm</span>
@@ -807,7 +807,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             href="/"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[13px] opacity-40 hover:opacity-60 transition-opacity"
+            className="text-[13px] opacity-60 hover:opacity-90 transition-opacity"
             style={{ color: theme.textColor }}
           >
             Feito com <span className="font-semibold">EidosForm</span>

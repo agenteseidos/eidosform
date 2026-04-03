@@ -181,7 +181,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
               placeholder="URL opcional (se quiser abrir link externo)"
               className="text-sm"
             />
-            <p className="text-[10px] text-slate-400 mt-1">Sem URL, o botão continua para a próxima etapa.</p>
+            <p className="text-[10px] text-slate-500 mt-1">Sem URL, o botão continua para a próxima etapa.</p>
           </div>
         </div>
       )}

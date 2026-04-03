@@ -93,7 +93,7 @@ export function TemplatesGallery() {
                   <Badge className="bg-slate-100 text-slate-500 text-[10px] font-normal shrink-0">
                     {template.category}
                   </Badge>
-                  <span className="text-xs text-slate-400 shrink-0 tabular-nums">
+                  <span className="text-xs text-slate-500 shrink-0 tabular-nums">
                     {template.questions.length} {template.questions.length === 1 ? 'pergunta' : 'perguntas'}
                   </span>
                   <Button
@@ -136,10 +136,10 @@ export function TemplatesGallery() {
             <div className="flex-1 overflow-y-auto space-y-2 mb-4">
               {preview.questions.map((q, i) => (
                 <div key={q.id} className="flex gap-3 p-3 bg-slate-50 rounded-lg">
-                  <span className="text-xs text-slate-400 font-mono mt-0.5 w-4 flex-shrink-0">{i + 1}</span>
+                  <span className="text-xs text-slate-500 font-mono mt-0.5 w-4 flex-shrink-0">{i + 1}</span>
                   <div>
                     <p className="text-sm text-slate-800 font-medium leading-snug">{q.title}</p>
-                    <p className="text-xs text-slate-400 mt-0.5 capitalize">{questionTypes.find(qt => qt.type === q.type)?.label ?? q.type.replace('_', ' ')} {q.required ? '· obrigatória' : ''}</p>
+                    <p className="text-xs text-slate-500 mt-0.5 capitalize">{questionTypes.find(qt => qt.type === q.type)?.label ?? q.type.replace('_', ' ')} {q.required ? '· obrigatória' : ''}</p>
                   </div>
                 </div>
               ))}

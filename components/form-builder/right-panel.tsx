@@ -66,7 +66,7 @@ export function RightPanel({
   // B08: Welcome screen editor
   if (sidebarSection === 'welcome' && form && onUpdateForm) {
     return (
-      <div className="h-full max-w-full overflow-hidden flex flex-col">
+      <div className="h-full w-full max-w-full overflow-x-hidden flex flex-col">
         <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-amber-50/50">
           <div className="flex items-center gap-2">
             <HandMetal className="w-4 h-4 text-amber-500" />
@@ -166,7 +166,7 @@ export function RightPanel({
   // B08: Thank you screen editor
   if (sidebarSection === 'thankyou' && form && onUpdateForm) {
     return (
-      <div className="h-full max-w-full overflow-hidden flex flex-col">
+      <div className="h-full w-full max-w-full overflow-x-hidden flex flex-col">
         <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-emerald-50/50">
           <div className="flex items-center gap-2">
             <PartyPopper className="w-4 h-4 text-emerald-500" />
@@ -281,7 +281,7 @@ export function RightPanel({
   }
 
   return (
-    <div className="h-full max-w-full overflow-hidden flex flex-col">
+    <div className="h-full w-full max-w-full overflow-x-hidden flex flex-col">
       {/* Header with question info */}
       <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-slate-50/50">
         <div className="flex items-center gap-2">
@@ -329,8 +329,8 @@ export function RightPanel({
 
                 {/* Campo obrigatório */}
                 {selectedQuestion.type !== 'content_block' && (
-                  <div className="flex items-start justify-between py-1 pr-1 w-full" style={{maxWidth: "100%"}}>
-                    <div className="min-w-0 flex-1 pr-2">
+                  <div className="flex items-center justify-between py-1 w-full">
+                    <div className="flex-1 min-w-0 mr-3">
                       <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
                       <p className="text-[10px] text-slate-500">Respondentes devem responder</p>
                     </div>
@@ -339,7 +339,7 @@ export function RightPanel({
                       onCheckedChange={(checked) =>
                         onUpdateQuestion(selectedQuestion.id, { required: checked })
                       }
-                      className="shrink-0 flex-shrink-0 self-start"
+                      className="flex-none"
                     />
                   </div>
                 )}

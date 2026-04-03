@@ -1606,7 +1606,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         </div>
 
         {/* Right Panel - Fixed property editor */}
-        <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} md:flex w-full max-w-[100vw] overflow-x-hidden md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0`}>
+        <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} md:flex fixed md:relative inset-0 md:inset-auto z-40 md:z-auto w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col md:shrink-0 overflow-y-auto overflow-x-hidden pb-16 md:pb-0`}>
           <RightPanel
             selectedQuestion={selectedQuestion || null}
             allQuestions={questions}

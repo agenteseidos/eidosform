@@ -197,7 +197,7 @@ export function TiptapEditor({
         horizontalRule: false,
         code: false,
       }),
-      Placeholder.configure({ placeholder }),
+      Placeholder.configure({ placeholder, showOnlyWhenEditable: false }),
     ],
     content: initialContent,
     editable: editable && isActive,

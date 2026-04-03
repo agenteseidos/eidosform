@@ -547,7 +547,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
   return (
     <>
-    <div className="flex flex-col h-screen bg-slate-50">
+    <div className="flex flex-col h-screen bg-slate-50 overflow-x-hidden">
       {/* Header */}
       <header className="min-h-14 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-2 px-3 sm:px-4 py-2 min-w-0 overflow-hidden">
@@ -1606,7 +1606,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         </div>
 
         {/* Right Panel - Fixed property editor */}
-        <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} md:flex w-full max-w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0 overflow-hidden`}>
+        <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} md:flex w-full max-w-[100vw] overflow-x-hidden md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col shrink-0`}>
           <RightPanel
             selectedQuestion={selectedQuestion || null}
             allQuestions={questions}

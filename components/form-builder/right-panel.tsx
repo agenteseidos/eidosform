@@ -329,8 +329,8 @@ export function RightPanel({
 
                 {/* Campo obrigatório */}
                 {selectedQuestion.type !== 'content_block' && (
-                  <div className="flex items-start justify-between gap-3 py-1 max-w-full overflow-hidden">
-                    <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between py-1 pr-1 w-full" style={{maxWidth: "100%"}}>
+                    <div className="min-w-0 flex-1 pr-2">
                       <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
                       <p className="text-[10px] text-slate-500">Respondentes devem responder</p>
                     </div>
@@ -339,7 +339,7 @@ export function RightPanel({
                       onCheckedChange={(checked) =>
                         onUpdateQuestion(selectedQuestion.id, { required: checked })
                       }
-                      className="shrink-0 self-start"
+                      className="shrink-0 flex-shrink-0 self-start"
                     />
                   </div>
                 )}

@@ -81,7 +81,7 @@ function LoginForm() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full max-w-md px-6 sm:px-8 relative z-10"
+        className="w-full max-w-md px-6 sm:px-8 relative z-10 flex flex-col items-center"
       >
         <Link href="/" className="fixed top-4 left-4 text-slate-400 hover:text-white transition-colors text-sm min-h-[44px] min-w-[44px] px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
         <div className="flex justify-center mb-8 pt-8">
@@ -108,7 +108,7 @@ function LoginForm() {
           </motion.div>
         )}
 
-        <div className="bg-[#111111] rounded-2xl shadow-xl shadow-black/20 p-8 border border-white/5">
+        <div className="w-full bg-[#111111] rounded-2xl shadow-xl shadow-black/20 p-8 border border-white/5">
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-slate-300">E-mail</Label>
@@ -190,7 +190,7 @@ function LoginForm() {
           </Button>
         </div>
 
-        <p className="mt-6 pb-8 text-center text-sm text-slate-500">
+        <p className="w-full mt-6 pb-8 text-center text-sm text-slate-500">
           Não tem conta?{' '}
           <Link href="/register" className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors py-2 inline-block">
             Cadastre-se

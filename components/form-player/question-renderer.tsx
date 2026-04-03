@@ -429,7 +429,7 @@ function PhoneQuestion({ question, value, onChange, theme, error }: PhoneQuestio
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         placeholder={selectedCountry.format}
-        className="flex-1 text-xl md:text-2xl h-auto py-3 px-0 border-0 border-b-2 rounded-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-40"
+        className="flex-1 text-xl md:text-2xl h-auto py-3 px-0 border-0 border-b-2 rounded-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-60"
         style={{
           borderColor: error ? '#EF4444' : isFocused ? theme.primaryColor : `${theme.textColor}30`,
           color: theme.textColor,
@@ -616,7 +616,7 @@ export function QuestionRenderer({
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           placeholder={question.placeholder || 'Digite sua resposta aqui...'}
-          className="text-xl md:text-2xl h-auto py-3 px-0 border-0 border-b-2 rounded-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-40"
+          className="text-xl md:text-2xl h-auto py-3 px-0 border-0 border-b-2 rounded-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-60"
           style={inputStyles}
           autoFocus
         />
@@ -630,7 +630,7 @@ export function QuestionRenderer({
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           placeholder={question.placeholder || 'Digite sua resposta aqui...'}
-          className="text-lg md:text-xl min-h-[150px] p-4 border-2 rounded-xl bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-40 resize-none"
+          className="text-lg md:text-xl min-h-[150px] p-4 border-2 rounded-xl bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-60 resize-none"
           style={inputStyles}
           autoFocus
         />

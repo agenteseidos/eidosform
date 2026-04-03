@@ -23,7 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { motion, AnimatePresence, Reorder } from 'framer-motion'
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import {
   ArrowLeft,
   Plus,
@@ -114,6 +114,100 @@ interface FormBuilderProps {
   form: Form
   userPlan?: string
   userInfo?: UserInfo
+}
+
+function QuestionReorderItem({
+  question,
+  index,
+  isSelected,
+  onClick,
+  onDuplicate,
+  onDelete,
+  children,
+}: {
+  question: QuestionConfig
+  index: number
+  isSelected: boolean
+  onClick: () => void
+  onDuplicate: () => void
+  onDelete: () => void
+  children?: React.ReactNode
+}) {
+  const dragControls = useDragControls()
+  return (
+    <Reorder.Item key={question.id} value={question} dragListener={false} dragControls={dragControls}>
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className={`
+          group p-3 rounded-lg cursor-pointer mb-2 border-l-4 border transition-all
+          ${isSelected
+            ? 'bg-blue-50/70 border-blue-500 border-l-blue-500 ring-1 ring-blue-200 shadow-sm'
+            : 'bg-white border-slate-100 border-l-transparent hover:border-slate-200 hover:border-l-slate-300'
+          }
+        `}
+        onClick={onClick}
+      >
+        <div className="flex items-start gap-2">
+          <div
+            onPointerDown={(e) => dragControls.start(e)}
+            className="mt-0 cursor-grab active:cursor-grabbing p-2 -m-2 touch-none"
+          >
+            <GripVertical className="w-5 h-5 text-slate-300" />
+          </div>
+          {(() => {
+            const visual = getQuestionVisual(question.type)
+            const IconComp = visual.icon
+            return <IconComp className={`w-4 h-4 mt-0.5 shrink-0 ${visual.color}`} />
+          })()}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-medium text-slate-600">
+                {index + 1}
+              </span>
+              <span className="text-xs text-slate-500">
+                {getQuestionTypeInfo(question.type)?.label || question.type}
+              </span>
+              {question.required && (
+                <span className="text-xs text-red-500">*</span>
+              )}
+            </div>
+            <p className="text-sm font-medium text-slate-900 line-clamp-2">
+              {question.type === 'content_block'
+                ? getContentBlockPreview(question.contentBody || question.title || '')
+                : (question.title || 'Pergunta sem título')}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
+            title="Duplicar pergunta"
+            data-testid="duplicate-question"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDuplicate()
+            }}
+          >
+            <Copy className="w-4 h-4 text-slate-400 hover:text-blue-500" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+          >
+            <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
+          </Button>
+        </div>
+      </motion.div>
+    </Reorder.Item>
+  )
 }
 
 export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: FormBuilderProps) {
@@ -728,75 +822,15 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     <Reorder.Group axis="y" values={questions} onReorder={handleReorder}>
                       <AnimatePresence>
                         {questions.map((question, index) => (
-                          <Reorder.Item key={question.id} value={question}>
-                            <motion.div
-                              layout
-                              initial={{ opacity: 0, y: -10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              className={`
-                                group p-3 rounded-lg cursor-pointer mb-2 border-l-4 border transition-all
-                                ${selectedQuestionId === question.id 
-                                  ? 'bg-blue-50/70 border-blue-500 border-l-blue-500 ring-1 ring-blue-200 shadow-sm' 
-                                  : 'bg-white border-slate-100 border-l-transparent hover:border-slate-200 hover:border-l-slate-300'
-                                }
-                              `}
-                              onClick={() => { setSelectedQuestionId(question.id); setSidebarSection(null); setMobilePanel('editor'); }}
-                            >
-                              <div className="flex items-start gap-2">
-                                <div className="mt-0 cursor-grab active:cursor-grabbing p-2 -m-2">
-                                  <GripVertical className="w-5 h-5 text-slate-300" />
-                                </div>
-                                {(() => {
-                                  const visual = getQuestionVisual(question.type)
-                                  const IconComp = visual.icon
-                                  return <IconComp className={`w-4 h-4 mt-0.5 shrink-0 ${visual.color}`} />
-                                })()}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs font-medium text-slate-600">
-                                      {index + 1}
-                                    </span>
-                                    <span className="text-xs text-slate-500">
-                                      {getQuestionTypeInfo(question.type)?.label || question.type}
-                                    </span>
-                                    {question.required && (
-                                      <span className="text-xs text-red-500">*</span>
-                                    )}
-                                  </div>
-                                  <p className="text-sm font-medium text-slate-900 line-clamp-2">
-                                    {question.type === 'content_block'
-                                      ? getContentBlockPreview(question.contentBody || question.title || '')
-                                      : (question.title || 'Pergunta sem título')}
-                                  </p>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
-                                  title="Duplicar pergunta"
-                                  data-testid="duplicate-question"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    duplicateQuestion(question.id)
-                                  }}
-                                >
-                                  <Copy className="w-4 h-4 text-slate-400 hover:text-blue-500" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    deleteQuestion(question.id)
-                                  }}
-                                >
-                                  <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
-                                </Button>
-                              </div>
-                            </motion.div>
-                          </Reorder.Item>
+                          <QuestionReorderItem
+                            key={question.id}
+                            question={question}
+                            index={index}
+                            isSelected={selectedQuestionId === question.id}
+                            onClick={() => { setSelectedQuestionId(question.id); setSidebarSection(null); setMobilePanel('editor'); }}
+                            onDuplicate={() => duplicateQuestion(question.id)}
+                            onDelete={() => deleteQuestion(question.id)}
+                          />
                         ))}
                       </AnimatePresence>
                     </Reorder.Group>

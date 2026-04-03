@@ -73,7 +73,7 @@ export function RightPanel({
             <span className="text-sm font-medium text-slate-700">Tela de Boas Vindas</span>
           </div>
         </div>
-        <ScrollArea className="flex-1 max-w-full">
+        <ScrollArea className="flex-1 max-w-full overflow-x-hidden">
           <div className="p-4 space-y-5 max-w-full overflow-hidden">
             <div className="flex items-center justify-between gap-3 py-1 max-w-full">
               <div>
@@ -173,7 +173,7 @@ export function RightPanel({
             <span className="text-sm font-medium text-slate-700">Tela de Agradecimento</span>
           </div>
         </div>
-        <ScrollArea className="flex-1 max-w-full">
+        <ScrollArea className="flex-1 max-w-full overflow-x-hidden">
           <div className="p-4 space-y-5 max-w-full overflow-hidden">
             <div>
               <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Título</Label>
@@ -294,7 +294,7 @@ export function RightPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto max-w-full">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden max-w-full">
         <div className="max-w-full overflow-hidden">
 
           {/* Bloco 1 — Ações */}
@@ -317,7 +317,7 @@ export function RightPanel({
                   <select
                     value={selectedQuestion.type}
                     onChange={(e) => handleTypeChange(e.target.value as QuestionType)}
-                    className="w-full max-w-full text-sm text-slate-900 border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                    className="w-full max-w-full text-sm text-slate-900 border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all appearance-none"
                   >
                     {questionTypes.map((qt) => (
                       <option key={qt.type} value={qt.type}>

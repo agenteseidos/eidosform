@@ -482,7 +482,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   setForm({ ...form, title: e.target.value })
                   setHasUnsavedChanges(true)
                 }}
-                className="w-full min-w-0 max-w-[140px] sm:max-w-[220px] truncate text-sm sm:text-base font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 transition-colors"
+                className="w-full min-w-0 max-w-[150px] sm:max-w-[220px] truncate text-xs sm:text-base font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 transition-colors"
                 placeholder="Sem título"
               />
               <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-0 transition-opacity pointer-events-none" />
@@ -607,19 +607,19 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
             {/* Mobile-only: main section selector */}
             <div className="shrink-0 p-2 border-b border-slate-100 md:hidden">
-              <div className="grid w-full grid-cols-3 bg-slate-100 rounded-lg p-0.5 gap-0.5">
+              <div className="flex w-full bg-slate-100 rounded-lg p-0.5 gap-0.5 overflow-x-auto scrollbar-none">
                 <button
                   onClick={() => {
                     if (!['questions', 'design', 'config'].includes(activeTab)) setActiveTab('questions')
                     setMobilePanel('questions')
                   }}
-                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0 ${
                     ['questions', 'design', 'config'].includes(activeTab)
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-500'
                   }`}
                 >
-                  <Pencil className="w-3 h-3" />
+                  <Pencil className="w-3 h-3 shrink-0" />
                   Editar
                 </button>
                 <button
@@ -627,28 +627,28 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     setActiveTab('integrations')
                     setMobilePanel('questions')
                   }}
-                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0 ${
                     activeTab === 'integrations'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-500'
                   }`}
                 >
-                  <Zap className="w-3 h-3" />
-                  Integr.
+                  <Zap className="w-3 h-3 shrink-0" />
+                  Integrações
                 </button>
                 <button
                   onClick={() => {
                     setActiveTab('share')
                     setMobilePanel('questions')
                   }}
-                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0 ${
                     activeTab === 'share'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-500'
                   }`}
                 >
-                  <Share2 className="w-3 h-3" />
-                  Comp.
+                  <Share2 className="w-3 h-3 shrink-0" />
+                  Compartilhar
                 </button>
               </div>
             </div>
@@ -1045,7 +1045,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-3">
                       <div>
                         <Label htmlFor="google_ads_id" className="text-sm font-medium text-slate-700">Google Ads ID</Label>
                         <Input

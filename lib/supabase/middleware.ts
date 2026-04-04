@@ -1,5 +1,11 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import {
+  hasInactivityTimeout,
+  getInactivityTimeoutCookieOptions,
+  getInactivityTimeoutValue,
+  getLastActivityCookieName,
+} from '@/lib/auth'
 
 export async function updateSession(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -47,6 +53,29 @@ export async function updateSession(request: NextRequest) {
   const isProtectedRoute = protectedRoutes.some(route => 
     request.nextUrl.pathname.startsWith(route)
   )
+
+  // Check for inactivity timeout if user is authenticated
+  if (user && isProtectedRoute) {
+    const lastActivityCookie = request.cookies.get(getLastActivityCookieName())?.value
+    const hasTimedOut = hasInactivityTimeout(lastActivityCookie)
+
+    if (hasTimedOut) {
+      // Clear session and redirect to login
+      await supabase.auth.signOut()
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      url.searchParams.set('message', 'Your session has expired due to inactivity. Please log in again.')
+      return NextResponse.redirect(url, 307)
+    }
+
+    // Update last activity timestamp
+    const cookieOptions = getInactivityTimeoutCookieOptions()
+    supabaseResponse.cookies.set(
+      cookieOptions.name,
+      getInactivityTimeoutValue(),
+      cookieOptions
+    )
+  }
 
   // Redirect to login if accessing protected route without auth
   if (isProtectedRoute && !user) {

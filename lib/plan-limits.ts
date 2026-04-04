@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { sendLimitAlert } from '@/lib/resend'
 import { PlanId } from '@/lib/plans'
+import { logError } from '@/lib/logger'
 
 /** @deprecated Use PlanId from lib/plans.ts */
 export type PlanName = PlanId
@@ -233,7 +234,7 @@ export async function checkResponseLimit(userId: string): Promise<{
         usage,
         limit,
         plan,
-      }).catch(console.error)
+      }).catch((err) => logError('Failed to send limit alert', err))
     }
   }
 

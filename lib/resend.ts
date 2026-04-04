@@ -5,6 +5,7 @@
  */
 
 import { escapeHtml } from '@/lib/html'
+import { logWarn, logError } from '@/lib/logger'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
@@ -15,7 +16,7 @@ async function sendEmail(payload: {
   html: string
 }): Promise<{ id?: string; error?: string }> {
   if (!RESEND_API_KEY) {
-    console.warn('[resend] RESEND_API_KEY não configurada — email não enviado:', payload.subject)
+    logWarn('[resend] RESEND_API_KEY not configured')
     return { error: 'RESEND_API_KEY not configured' }
   }
 
@@ -37,7 +38,7 @@ async function sendEmail(payload: {
     if (!res.ok) return { error: JSON.stringify(data) }
     return { id: data.id }
   } catch (err) {
-    console.error('[resend] Erro ao enviar email:', err)
+    logError('[resend] Error sending email:', err)
     return { error: String(err) }
   }
 }

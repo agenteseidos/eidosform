@@ -5,6 +5,7 @@
  */
 
 import { validateWebhookUrl } from './webhook-validator'
+import { logError } from '@/lib/logger'
 
 export interface WebhookFieldMeta {
   question_id: string
@@ -41,8 +42,9 @@ export async function dispatchWebhook(params: {
   // SSRF validation
   const urlCheck = validateWebhookUrl(webhookUrl)
   if (!urlCheck.safe) {
-    console.error(
-      `[webhook-dispatcher] BLOCKED form=${formId} url=${webhookUrl} reason=${urlCheck.reason}`
+    logError(
+      `[webhook-dispatcher] BLOCKED`,
+      { formId, reason: urlCheck.reason }
     )
     return { success: false, error: urlCheck.reason }
   }
@@ -74,8 +76,9 @@ export async function dispatchWebhook(params: {
     clearTimeout(timeout)
 
     if (!res.ok) {
-      console.error(
-        `[webhook-dispatcher] FAILED form=${formId} response=${responseId} url=${webhookUrl} status=${res.status}`
+      logError(
+        `[webhook-dispatcher] FAILED`,
+        { formId, responseId, status: res.status }
       )
       return { success: false, statusCode: res.status, error: `HTTP ${res.status}` }
     }
@@ -84,8 +87,9 @@ export async function dispatchWebhook(params: {
   } catch (err) {
     clearTimeout(timeout)
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(
-      `[webhook-dispatcher] ERROR form=${formId} response=${responseId} url=${webhookUrl} error=${msg}`
+    logError(
+      `[webhook-dispatcher] ERROR`,
+      { formId, responseId, error: msg }
     )
     return { success: false, error: msg }
   }

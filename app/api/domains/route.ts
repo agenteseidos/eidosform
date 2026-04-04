@@ -2,6 +2,7 @@ import type { CustomDomainInsert, CustomDomainUpdate } from '@/lib/database.type
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { addDomain, removeDomain, checkDomainStatus } from '@/lib/custom-domain'
+import { logError } from '@/lib/logger'
 
 // POST /api/domains — adicionar domínio personalizado
 // Body: { domain: string, form_id: string }
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
     } as CustomDomainInsert)
 
   if (dbError) {
-    console.error('Failed to save domain to DB:', dbError)
+    logError('Failed to save domain to DB:', dbError)
   }
 
   return NextResponse.json({

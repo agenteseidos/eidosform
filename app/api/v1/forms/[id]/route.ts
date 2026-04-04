@@ -6,6 +6,7 @@ import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
 import { validateAllAnswers } from '@/lib/field-validators'
+import { logError } from '@/lib/logger'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -284,7 +285,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     responseId = response.id
-    await incrementResponseCount(form.user_id).catch(console.error)
+    await incrementResponseCount(form.user_id).catch((err) => logError('Failed to increment response count', err))
   }
 
   const answerItems = Object.entries(answers).map(([questionId, value]) => ({
@@ -307,7 +308,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       formId: id,
       responseId,
       responseData: answers,
-    }).catch(console.error)
+    }).catch((err) => logError('Failed to dispatch webhook', err))
   }
 
   return NextResponse.json(

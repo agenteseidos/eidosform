@@ -4,6 +4,7 @@
  */
 
 import { escapeHtml } from '@/lib/html'
+import { logWarn, logError } from '@/lib/logger'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@eidosform.com'
@@ -17,7 +18,7 @@ interface EmailPayload {
 
 async function sendEmail(payload: EmailPayload): Promise<void> {
   if (!RESEND_API_KEY) {
-    console.warn('[email] RESEND_API_KEY not set — skipping:', payload.subject)
+    logWarn('[email] RESEND_API_KEY not set')
     return
   }
 
@@ -48,7 +49,7 @@ export async function sendNewResponseNotification(
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !serviceKey) {
-    console.warn('[email] Supabase credentials not configured')
+    logWarn('[email] Supabase credentials not configured')
     return
   }
 

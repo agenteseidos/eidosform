@@ -4,6 +4,7 @@
  */
 
 import { escapeHtml } from '@/lib/html'
+import { logWarn, logError } from '@/lib/logger'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <notificacoes@eidosform.com.br>'
@@ -20,7 +21,7 @@ export async function sendEmailNotification({
   answersCount: number
 }) {
   if (!RESEND_API_KEY) {
-    console.warn('[notify] RESEND_API_KEY not set — skipping notification')
+    logWarn('[notify] RESEND_API_KEY not set')
     return
   }
 
@@ -55,10 +56,10 @@ export async function sendEmailNotification({
 
     if (!res.ok) {
       const error = await res.text()
-      console.error('[notify] Resend API error:', res.status, error)
+      logError('[notify] Resend API error', { status: res.status })
     }
   } catch (e) {
     // Silencioso — não quebrar o fluxo principal
-    console.error('Email notification failed:', e)
+    logError('Email notification failed:', e)
   }
 }

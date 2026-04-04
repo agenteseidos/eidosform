@@ -6,6 +6,7 @@ import { validateWebhookUrl } from '@/lib/webhook-validator'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { validateFormIntegrations } from '@/lib/form-integrations'
 import { extractSpreadsheetId, connectSpreadsheet } from '@/lib/google-sheets'
+import { logError } from '@/lib/logger'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -173,7 +174,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       connectedSheetsId = spreadsheetId
       connectedSheetsTitle = result.title
     } catch (e: unknown) {
-      console.error('Failed to connect Google Spreadsheet:', e)
+      logError('Failed to connect Google Spreadsheet:', e)
       const gErr = e as { code?: number; errors?: Array<{ message?: string }> }
       if (gErr.code === 403) {
         return NextResponse.json(

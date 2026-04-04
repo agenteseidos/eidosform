@@ -1,9 +1,11 @@
+import { logWarn } from '@/lib/logger'
+
 export async function sendWhatsAppNotificationStub(params: {
   formId: string
   responseId: string
   phoneNumber: string
 }) {
-  console.warn('[responses] WhatsApp notification not implemented on backend — skipping', params)
+  logWarn('[responses] WhatsApp notification not implemented on backend')
 }
 
 export async function syncGoogleSheetsStub(params: {
@@ -11,5 +13,5 @@ export async function syncGoogleSheetsStub(params: {
   responseId: string
   googleSheetsId: string
 }) {
-  console.warn('[responses] Google Sheets sync not implemented on backend — skipping', params)
+  logWarn('[responses] Google Sheets sync not implemented on backend')
 }

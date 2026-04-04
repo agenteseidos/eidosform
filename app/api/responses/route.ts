@@ -10,6 +10,7 @@ import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers } from '@/lib/field-validators'
 import { sendWhatsAppNotificationStub } from '@/lib/integration-stubs'
 import { appendSubmission } from '@/lib/google-sheets'
+import { logError } from '@/lib/logger'
 
 // Maximum payload size (50KB — generous for form data, blocks abuse)
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -248,7 +249,7 @@ export async function POST(req: NextRequest) {
     responseId = newResponse.id
 
     // Bug #1: Always increment response count on new responses
-    await incrementResponseCount(form.user_id).catch(console.error)
+    await incrementResponseCount(form.user_id).catch((err) => logError('Failed to increment response count', err))
   }
 
   // Inserir answer_items normalizados para analytics
@@ -261,7 +262,7 @@ export async function POST(req: NextRequest) {
 
   if (answerItems.length > 0) {
     const { error: itemsError } = await supabase.from('answer_items').insert(answerItems as AnswerItemInsert[])
-    if (itemsError) console.error('Failed to insert answer_items:', (itemsError as { message: string }).message)
+    if (itemsError) logError('Failed to insert answer_items:', itemsError)
   }
 
   // Notificar por email e disparar webhook se resposta completa
@@ -280,7 +281,7 @@ export async function POST(req: NextRequest) {
       const { sendNewResponseNotification } = await import('@/lib/email')
       await sendNewResponseNotification(form_id as string, form.user_id, responseId)
     } catch (e) {
-      console.error('Email notification failed:', e)
+      logError('Email notification failed:', e)
     }
 
     // Notificação por email configurada no form — feature gated
@@ -290,7 +291,7 @@ export async function POST(req: NextRequest) {
         formTitle: form.title ?? 'Formulário',
         formId: form_id as string,
         answersCount: Object.keys(answers as Record<string, unknown>).length,
-      }).catch(console.error)
+      }).catch((err) => logError('Failed to send email notification', err))
     }
 
     if (form.notify_whatsapp_enabled && form.notify_whatsapp_number && ownerPlanConfig?.emailNotifications) {
@@ -298,7 +299,7 @@ export async function POST(req: NextRequest) {
         formId: form_id as string,
         responseId,
         phoneNumber: form.notify_whatsapp_number,
-      }).catch(console.error)
+      }).catch((err) => logError('Failed to send WhatsApp notification', err))
     }
 
     if (form.google_sheets_enabled && form.google_sheets_id) {
@@ -314,7 +315,7 @@ export async function POST(req: NextRequest) {
         answers as Record<string, unknown>,
         questionIdToLabel,
         utmData,
-      ).catch((e) => console.error('Google Sheets sync failed:', e))
+      ).catch((e) => logError('Google Sheets sync failed:', e))
     }
 
     // Webhook externo configurado pelo usuário — feature gated
@@ -332,7 +333,7 @@ export async function POST(req: NextRequest) {
         responseId,
         responseData: answers as Record<string, unknown>,
         fields,
-      }).catch(console.error) // fire-and-forget, não bloqueia resposta
+      }).catch((err) => logError('Failed to dispatch webhook', err)) // fire-and-forget, não bloqueia resposta
     }
   }
 

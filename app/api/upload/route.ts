@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { createClient } from '@/lib/supabase/server'
 import { checkUploadRateLimitAsync } from '@/lib/upload-rate-limit'
+import { logError } from '@/lib/logger'
 
 // Check if R2 is configured
 function isR2Configured(): boolean {
@@ -113,7 +114,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Upload error:', error)
+    logError('Upload error:', error)
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
   }
 }

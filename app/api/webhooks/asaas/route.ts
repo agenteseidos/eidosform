@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName } from '@/lib/plan-limits'
+import { logError, logWarn, log } from '@/lib/logger'
 
 function getSupabase() {
   return createClient(
@@ -57,7 +58,7 @@ interface AsaasWebhookBody {
 export async function POST(req: NextRequest) {
   const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN
   if (!expectedToken) {
-    console.error('[asaas-webhook] ASAAS_WEBHOOK_TOKEN not configured — rejecting all requests')
+    logError('[asaas-webhook] ASAAS_WEBHOOK_TOKEN not configured — rejecting all requests')
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
   const token = headerToken || queryToken
 
   if (!token || token !== expectedToken) {
-    console.warn('[asaas-webhook] Token mismatch. Header:', headerToken, 'Query:', queryToken)
+    logWarn('[asaas-webhook] Token mismatch')
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
   const { event, payment, subscription } = body
   const supabase = getSupabase()
 
-  console.log('[asaas-webhook]', event, body)
+  log('[asaas-webhook] Event received', { event })
 
   try {
     switch (event) {
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', user.id)
 
-        await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch(console.error)
+        await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
         break
       }
 
@@ -145,7 +146,7 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', user.id)
 
-        await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan }).catch(console.error)
+        await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan }).catch((err) => logError('Failed to send plan cancellation email', err))
         break
       }
 
@@ -153,7 +154,7 @@ export async function POST(req: NextRequest) {
         break
     }
   } catch (err) {
-    console.error('[asaas-webhook] Erro ao processar evento:', err)
+    logError('[asaas-webhook] Erro ao processar evento:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 

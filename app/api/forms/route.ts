@@ -95,8 +95,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Bug P2: Inherit plan from user profile
-  // profiles.id = auth.uid() (not user_id — that column doesn't exist on profiles)
+  // P1-01 FIX: Fetch plan directly (getRequestUser already authenticated, just get plan once)
+  // profiles.id = auth.uid()
   const { data: profile } = await supabase
     .from('profiles')
     .select('plan')

@@ -3,7 +3,7 @@
 import { useEditor, EditorContent, Extension } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import TextStyle from '@tiptap/extension-text-style'
+import { TextStyle } from '@tiptap/extension-text-style'
 import { useEffect, useCallback, useState } from 'react'
 import { Bold, Italic, List } from 'lucide-react'
 
@@ -357,7 +357,7 @@ export function TiptapEditor({
 
 import { generateHTML } from '@tiptap/core'
 import StarterKitPkg from '@tiptap/starter-kit'
-import TextStylePkg from '@tiptap/extension-text-style'
+import { TextStyle as TextStylePkg } from '@tiptap/extension-text-style'
 
 /**
  * Renderiza contentBody como HTML seguro.

@@ -47,7 +47,7 @@ export function TemplatesGallery() {
               </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-slate-500 mt-1">
-              10 formulários prontos para usar — edite como quiser depois
+              11 templates prontos para usar — edite como quiser depois
             </p>
 
             {/* Filtros de categoria */}

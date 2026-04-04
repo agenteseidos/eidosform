@@ -1,10 +1,50 @@
 'use client'
 
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, Extension } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import TextStyle from '@tiptap/extension-text-style'
 import { useEffect, useCallback, useState } from 'react'
 import { Bold, Italic, List } from 'lucide-react'
+
+// ── FontSize extension ─────────────────────────────────────────────────────────
+
+const FontSize = Extension.create({
+  name: 'fontSize',
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['textStyle'],
+        attributes: {
+          fontSize: {
+            default: null,
+            parseHTML: (element) => element.style.fontSize || null,
+            renderHTML: (attributes) => {
+              if (!attributes.fontSize) return {}
+              return { style: `font-size: ${attributes.fontSize}` }
+            },
+          },
+        },
+      },
+    ]
+  },
+  addCommands() {
+    return {
+      setFontSize:
+        (fontSize: string) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ({ chain }: { chain: () => any }) => {
+          return chain().setMark('textStyle', { fontSize }).run()
+        },
+      unsetFontSize:
+        () =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ({ chain }: { chain: () => any }) => {
+          return chain().setMark('textStyle', { fontSize: null }).run()
+        },
+    } as Record<string, unknown>
+  },
+})
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -118,6 +158,15 @@ function ToolbarButton({
   )
 }
 
+// ── Font sizes ────────────────────────────────────────────────────────────────
+
+const FONT_SIZES = [
+  { label: 'Pequeno', value: '12px' },
+  { label: 'Normal', value: '16px' },
+  { label: 'Grande', value: '20px' },
+  { label: 'Muito grande', value: '24px' },
+]
+
 // ── Fixed toolbar ────────────────────────────────────────────────────────────
 
 interface FixedToolbarProps {
@@ -127,6 +176,17 @@ interface FixedToolbarProps {
 
 function FixedToolbar({ editor, primaryColor }: FixedToolbarProps) {
   if (!editor) return null
+
+  const currentFontSize =
+    FONT_SIZES.find((s) =>
+      editor.isActive('textStyle', { fontSize: s.value })
+    )?.value ?? '16px'
+
+  const handleFontSize = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    e.preventDefault()
+    const size = e.target.value
+    editor.chain().focus().setFontSize(size).run()
+  }
 
   return (
     <div
@@ -154,6 +214,25 @@ function FixedToolbar({ editor, primaryColor }: FixedToolbarProps) {
       >
         <List className="w-3.5 h-3.5" />
       </ToolbarButton>
+
+      {/* Separador */}
+      <div className="w-px h-4 bg-white/25 mx-0.5" />
+
+      {/* Seletor de tamanho */}
+      <select
+        value={currentFontSize}
+        onChange={handleFontSize}
+        onMouseDown={(e) => e.stopPropagation()}
+        title="Tamanho da fonte"
+        className="text-[11px] text-white bg-transparent border-none outline-none cursor-pointer px-1 py-0.5 rounded hover:bg-white/15 transition-colors appearance-none"
+        style={{ minWidth: '80px' }}
+      >
+        {FONT_SIZES.map((s) => (
+          <option key={s.value} value={s.value} style={{ backgroundColor: primaryColor, color: 'white' }}>
+            {s.label}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -198,6 +277,8 @@ export function TiptapEditor({
         code: false,
       }),
       Placeholder.configure({ placeholder, showOnlyWhenEditable: false }),
+      TextStyle,
+      FontSize,
     ],
     content: initialContent,
     editable: editable && isActive,
@@ -276,6 +357,7 @@ export function TiptapEditor({
 
 import { generateHTML } from '@tiptap/core'
 import StarterKitPkg from '@tiptap/starter-kit'
+import TextStylePkg from '@tiptap/extension-text-style'
 
 /**
  * Renderiza contentBody como HTML seguro.
@@ -297,6 +379,7 @@ export function renderTiptapHtml(
           codeBlock: false,
           code: false,
         }),
+        TextStylePkg,
       ])
     } catch {
       return renderMarkdownFallback(contentBody)

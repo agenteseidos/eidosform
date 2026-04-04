@@ -25,6 +25,7 @@
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
     "@tiptap/extension-placeholder": "^3.22.1",
+    "@tiptap/extension-text-style": "^3.22.2",
     "@tiptap/pm": "^3.22.1",
     "@tiptap/react": "^3.22.1",
     "@tiptap/starter-kit": "^3.22.1",

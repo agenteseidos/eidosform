@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Form, QuestionConfig, Json } from '@/lib/database.types'
 import { PixelEventRule } from '@/types/pixel-events'
 import { getTheme, getThemeCSSVariables } from '@/lib/themes'
@@ -30,7 +30,7 @@ function ensureHttps(url: string): string {
   return 'https://' + url
 }
 
-export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
+export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
   const questions = (form.questions as QuestionConfig[]) || []
   const theme = getTheme(form.theme)
   const themeStyles = getThemeCSSVariables(theme)
@@ -246,12 +246,12 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     }
   }
 
-  const updateAnswer = (questionId: string, value: Json) => {
+  const updateAnswer = useCallback((questionId: string, value: Json) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }))
     if (errors[questionId]) {
       setErrors(prev => { const e = { ...prev }; delete e[questionId]; return e })
     }
-  }
+  }, [errors])
 
   useEffect(() => {
     captureUtms()
@@ -264,6 +264,12 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const handleWelcomeStart = useCallback(() => {
+    setDirection(1)
+    setCurrentIndex(0)
+    if (form.pixel_event_on_start) fireNamedPixelEvent(form.pixel_event_on_start)
+  }, [form.pixel_event_on_start])
 
   // Keyboard navigation
   useEffect(() => {
@@ -533,11 +539,7 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
             transition={{ delay: 0.4 }}
           >
             <Button
-              onClick={() => {
-                setDirection(1)
-                setCurrentIndex(0)
-                if (form.pixel_event_on_start) fireNamedPixelEvent(form.pixel_event_on_start)
-              }}
+              onClick={handleWelcomeStart}
               className="h-14 px-10 text-lg font-semibold rounded-xl transition-transform active:scale-95"
               style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
             >
@@ -816,4 +818,8 @@ export function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
       </footer>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  // Memoização customizada: apenas re-render se form.id ou ownerPlan mudar
+  return prevProps.form.id === nextProps.form.id && 
+         prevProps.ownerPlan === nextProps.ownerPlan
+})

@@ -25,7 +25,7 @@ interface FileUploadQuestionProps {
   theme: ThemeConfig
 }
 
-function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQuestionProps) {
+const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQuestionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -176,7 +176,7 @@ function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQues
       )}
     </div>
   )
-}
+})
 
 
 
@@ -189,10 +189,10 @@ interface CpfQuestionProps {
   error?: string | null
 }
 
-function CpfQuestion({ question, value, onChange, theme, error }: CpfQuestionProps) {
+const CpfQuestion = React.memo(function CpfQuestion({ question, value, onChange, theme, error }: CpfQuestionProps) {
   const [cpfError, setCpfError] = useState<string | null>(null)
 
-  const handleChange = (raw: string) => {
+  const handleChange = useCallback((raw: string) => {
     const formatted = formatCPF(raw)
     onChange(formatted)
     const clean = raw.replace(/\D/g, '')
@@ -201,7 +201,7 @@ function CpfQuestion({ question, value, onChange, theme, error }: CpfQuestionPro
     } else {
       setCpfError(null)
     }
-  }
+  }, [onChange])
 
   return (
     <div>
@@ -220,7 +220,7 @@ function CpfQuestion({ question, value, onChange, theme, error }: CpfQuestionPro
       {cpfError && <p className="text-xs mt-1" style={{ color: '#EF4444' }}>{cpfError}</p>}
     </div>
   )
-}
+})
 
 interface AddressQuestionProps {
   question: QuestionConfig
@@ -230,17 +230,17 @@ interface AddressQuestionProps {
   error?: string
 }
 
-function AddressQuestion({ question, value, onChange, theme, error }: AddressQuestionProps) {
+const AddressQuestion = React.memo(function AddressQuestion({ question, value, onChange, theme, error }: AddressQuestionProps) {
   const [isLoadingCep, setIsLoadingCep] = useState(false)
   const [cepError, setCepError] = useState<string | null>(null)
   const addr = value || { cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '' }
 
-  const updateField = (field: string, val: string) => {
+  const updateField = useCallback((field: string, val: string) => {
     const updated = { ...addr, [field]: val }
     onChange(updated)
-  }
+  }, [addr, onChange])
 
-  const handleCepChange = async (cepValue: string) => {
+  const handleCepChange = useCallback(async (cepValue: string) => {
     const clean = cepValue.replace(/\D/g, '').slice(0, 8)
     const formatted = clean.length > 5 ? `${clean.slice(0, 5)}-${clean.slice(5)}` : clean
     updateField('cep', formatted)
@@ -269,7 +269,7 @@ function AddressQuestion({ question, value, onChange, theme, error }: AddressQue
         setIsLoadingCep(false)
       }
     }
-  }
+  }, [addr, onChange])
 
   const fieldStyle = {
     borderColor: `${theme.textColor}30`,
@@ -329,7 +329,7 @@ function AddressQuestion({ question, value, onChange, theme, error }: AddressQue
       </div>
     </div>
   )
-}
+})
 
 
 interface PhoneQuestionProps {
@@ -340,7 +340,7 @@ interface PhoneQuestionProps {
   error?: string
 }
 
-function PhoneQuestion({ question, value, onChange, theme, error }: PhoneQuestionProps) {
+const PhoneQuestion = React.memo(function PhoneQuestion({ question, value, onChange, theme, error }: PhoneQuestionProps) {
   const defaultCode = question.defaultCountry || 'BR'
   const [selectedCountry, setSelectedCountry] = useState(() => getCountryByCode(defaultCode))
   const [phoneNumber, setPhoneNumber] = useState(() => {
@@ -368,19 +368,19 @@ function PhoneQuestion({ question, value, onChange, theme, error }: PhoneQuestio
     return () => document.removeEventListener('mousedown', handleClick)
   }, [isOpen])
 
-  const handlePhoneChange = (num: string) => {
+  const handlePhoneChange = useCallback((num: string) => {
     const clean = num.replace(/[^\d]/g, '')
     setPhoneNumber(clean)
     onChange(clean ? selectedCountry.dial + clean : '')
-  }
+  }, [selectedCountry, onChange])
 
-  const handleCountrySelect = (country: typeof selectedCountry) => {
+  const handleCountrySelect = useCallback((country: typeof selectedCountry) => {
     setSelectedCountry(country)
     setIsOpen(false)
     if (phoneNumber) {
       onChange(country.dial + phoneNumber)
     }
-  }
+  }, [phoneNumber, onChange])
 
   return (
     <div className="flex items-end gap-2">
@@ -438,7 +438,7 @@ function PhoneQuestion({ question, value, onChange, theme, error }: PhoneQuestio
       />
     </div>
   )
-}
+})
 
 // ── Calendly Question ──
 interface CalendlyQuestionProps {
@@ -449,7 +449,7 @@ interface CalendlyQuestionProps {
   onSubmit: (skipValidation?: boolean, valueOverride?: Json) => void
 }
 
-function CalendlyQuestion({ question, value, onChange, theme, onSubmit }: CalendlyQuestionProps) {
+const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value, onChange, theme, onSubmit }: CalendlyQuestionProps) {
   const calendlyUrl = question.calendlyUrl
   const containerRef = React.useRef<HTMLDivElement>(null)
   const scriptLoadedRef = React.useRef(false)
@@ -508,7 +508,7 @@ function CalendlyQuestion({ question, value, onChange, theme, onSubmit }: Calend
       />
     </div>
   )
-}
+})
 
 interface QuestionRendererProps {
   question: QuestionConfig
@@ -520,7 +520,7 @@ interface QuestionRendererProps {
   onClearError?: () => void
 }
 
-export function QuestionRenderer({ 
+export const QuestionRenderer = React.memo(function QuestionRenderer({ 
   question, 
   value, 
   onChange, 
@@ -1041,5 +1041,11 @@ export function QuestionRenderer({
         </p>
       )
   }
-}
+}, (prevProps, nextProps) => {
+  // Memoização customizada: re-render se question, value, error, theme ou callbacks mudarem
+  return prevProps.question.id === nextProps.question.id &&
+         JSON.stringify(prevProps.value) === JSON.stringify(nextProps.value) &&
+         prevProps.error === nextProps.error &&
+         prevProps.theme === nextProps.theme
+})
 

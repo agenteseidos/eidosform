@@ -1,10 +1,11 @@
 import Link from 'next/link'
+import React from 'react'
 
 interface WatermarkProps {
   plan?: 'free' | 'starter' | 'plus' | 'professional'
 }
 
-export function EidosFormWatermark({ plan = 'free' }: WatermarkProps) {
+export const EidosFormWatermark = React.memo(function EidosFormWatermark({ plan = 'free' }: WatermarkProps) {
   // Só mostra para free e starter
   if (plan === 'plus' || plan === 'professional') return null
 
@@ -30,4 +31,4 @@ export function EidosFormWatermark({ plan = 'free' }: WatermarkProps) {
       </Link>
     </div>
   )
-}
+})

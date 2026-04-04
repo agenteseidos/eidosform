@@ -1,52 +1,74 @@
-## Handoff — Zéfa (Auditoria ETAPA 4) — 2026-04-04 18:55 GMT-3
+# Handoff — Zéfa — 2026-04-04 20:10 GMT-3
 
-### O que foi feito
-- Auditoria completa de **23 endpoints (42 métodos HTTP)** em `app/api/*`
-- Análise profunda de:
-  - Autenticação (JWT, API Key, Admin Email, Webhook Token)
-  - Autorização (ownership checks, feature gating)
-  - Input validation (type-specific validators, field counts, sizes)
-  - Error handling (não há exposição de stack traces)
-  - Rate limiting (3 camadas: respostas/IP, uploads/user, API/key)
-  - SSRF protection (webhook URL validation)
-  - Data isolation (100% dos endpoints sensitivos têm checks)
-  - SQL injection protection (prepared statements via SDK)
-  - XSS prevention (sanitização de input)
+## O que foi feito
 
-### Decisões tomadas
-- Classificar riscos como P0/P1/P2/P3 (nenhum P0/P1 encontrado)
-- Identificar 3 issues P2 (médios) e 3 P3 (baixos)
-- Recomendar mitigações para cada issue
-- Gerar relatório formal em `/home/sidney/eidosform/audit-etapa-4.md`
+✅ **ETAPA 6: Form Builder & Data Handling — AUDITORIA COMPLETA**
 
-### Arquivos alterados/criados
-- ✅ Criado: `/home/sidney/eidosform/audit-etapa-4.md` (relatório completo, 400+ linhas)
+Auditados todos os 6 pontos:
+1. ✅ Arquitetura do Form Builder (bem estruturada)
+2. ⚠️ Validação de Schema (P2: sem limite de campos)
+3. ✅ Salvamento de Respostas (robusto com rate limit + sanitização)
+4. ✅ Large Payload Protection (50KB limit + 200 fields max)
+5. ⚠️ UUIDs Exposure (**P1 encontrado**: user_id em /f/[slug])
+6. ✅ Data Isolation (bem protegido)
 
-### Estado atual
-- API está **95%+ segura** com padrões de indústria bem implementados
-- Autenticação centralizada via `getRequestUser()`, API key validation, admin checks
-- Ownership checks em 100% dos endpoints sensitivos
-- Validação extensiva de input (type-specific, field counts, sizes, SSRF)
-- Rate limiting em 3 camadas (RPC primário + in-memory fallback)
-- Nenhum SQL injection, nenhum hardcoded secrets, nenhum stack trace exposto
-- Feature gating por plano implementado corretamente
-- XSS sanitization no input de respostas
+## Issues Encontrados
 
-### Pendências
-1. **P2-01**: CSV export sem rate limit separado → pode ser explorado para DoS de grande volume
-2. **P2-02**: In-memory rate limiting em serverless é best-effort → considerar Upstash Redis
-3. **P2-03**: Domain ownership validação: CNAME não é verificado antes de `verified=true`
+### P1 (Critical/High) — PRECISA CORREÇÃO
 
-### Próximo passo sugerido
-- **Toin/Zeca**: Priorizar fixes dos 3 issues P2 (quick wins)
-  - CSV export rate limiting (talvez em middleware)
-  - Domain CNAME validation async (retry mechanism)
-  - In-memory RPC fallback é aceitável por enquanto
-- Depois: relançar Zéfa para revalidação
-- Ciclo QA continua até zero P0/P1
+1. **user_id exposto em formulário público** [HIGH]
+   - **Arquivo:** `app/f/[slug]/page.tsx` linhas 20, 31
+   - **Issue:** `user_id` é selecionado desnecessariamente e pode ser exposto
+   - **Risk:** Enumeration de UUIDs de usuários
+   - **Fix:** Remover `user_id` do `.select()` em ambas as queries
+   - **Esforço:** ~5 minutos
 
-### Notas adicionais
-- Código está bem estruturado com funções de validação centralizadas
-- Comentários explicam decisões de segurança (CORS, SSRF, etc.)
-- TODOs já anotados para Upstash Redis quando escalar
-- Padrão de error handling é consistente (nenhuma exposição de detalhes internos)
+2. **HTML sanitization fraca pode falhar** [HIGH]
+   - **Arquivo:** `app/api/responses/route.ts` linha 53
+   - **Issue:** Regex `/<[^>]*>/g` é simples, não previne entities
+   - **Risk:** Stored XSS se respostas exibidas sem escaping
+   - **Fix:** Usar `DOMPurify` ou `sanitize-html`
+   - **Esforço:** ~10 minutos
+
+### P2 (Medium) — PODE ESPERAR (MAS RECOMENDADO)
+
+1. **Sem limite de campos por formulário** [MEDIUM]
+   - **Risk:** DoS via formulário com 10.000+ campos
+   - **Fix:** Validação em PATCH/POST /api/forms
+   - **Config sugerida:** Free=50, Starter=100, Plus=500, Professional=Unlimited
+   - **Esforço:** ~30 minutos
+
+## Decisões tomadas
+
+1. **P1s são bloqueantes** para release (user_id exposure é enumeration risk)
+2. **P2 é recomendado** mas pode ser planejado em sprint seguinte
+3. **Code quality:** Schema sem Zod não é segurança, é tech debt
+
+## Arquivos alterados
+
+- ✅ `/home/sidney/eidosform/audit-etapa-6.md` — CRIADO (relatório completo)
+
+## Estado atual
+
+- ⏳ **BLOQUEADO** em P1s
+- Esperando **Toin** corrigir user_id exposure
+- Esperando **Zeca** corrigir HTML sanitization (ou escolher)
+
+## Pendências
+
+- [ ] Remover user_id do select em `/app/f/[slug]/page.tsx`
+- [ ] Implementar DOMPurify ou sanitize-html em responses
+- [ ] (Optional) Adicionar limite de campos por formulário
+
+## Próximo passo sugerido
+
+1. **Toin + Zeca:** Ler `audit-etapa-6.md`, priorizar P1s
+2. **Toin:** Corrigir user_id exposure (5 min) → Commit + Push
+3. **Zeca:** Corrigir HTML sanitization (10 min) → Commit + Push
+4. **Zéfa:** Revalidação dos fixes
+
+---
+
+**Zéfa**  
+Agente de Auditoria — EidosForm  
+Status: Auditoria Completa ✅ | Aguardando Fixes ⏳

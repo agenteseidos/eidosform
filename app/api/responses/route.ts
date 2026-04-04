@@ -1,5 +1,7 @@
 import type { ResponseInsert, ResponseUpdate, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
+import DOMPurify from 'dompurify'
+import { JSDOM } from 'jsdom'
 import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
@@ -11,6 +13,10 @@ import { validateAllAnswers } from '@/lib/field-validators'
 import { sendWhatsAppNotificationStub } from '@/lib/integration-stubs'
 import { appendSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
+
+// Initialize DOMPurify for Node.js environment
+const window = new JSDOM('').window as unknown as Window & typeof globalThis
+const purify = DOMPurify(window)
 
 // Maximum payload size (50KB — generous for form data, blocks abuse)
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -46,9 +52,12 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-// Sanitize string: strip HTML tags to prevent stored XSS (Bug #9)
+// Sanitize string: remove HTML to prevent stored XSS using DOMPurify
 function sanitizeValue(val: unknown): unknown {
-  if (typeof val === 'string') return val.replace(/<[^>]*>/g, '')
+  if (typeof val === 'string') {
+    // Use DOMPurify to sanitize — strips all HTML tags and dangerous attributes
+    return purify.sanitize(val, { ALLOWED_TAGS: [] })
+  }
   if (Array.isArray(val)) return val.map(sanitizeValue)
   if (val && typeof val === 'object') {
     return Object.fromEntries(

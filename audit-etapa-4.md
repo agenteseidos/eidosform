@@ -599,3 +599,109 @@ git log --oneline origin/main..HEAD → (empty)
 3. Re-acionar Zéfa para revalidação após fixes
 
 **Revalidação iniciada em:** 2026-04-04 18:59 GMT-3
+
+---
+
+## ✅ REVALIDAÇÃO FINAL — 2026-04-04 19:06 GMT-3 — APROVADA
+
+### Status das 2 Correções P2
+
+| Issue | Verificado | Status |
+|-------|-----------|--------|
+| P2-01: CSV export rate limit | ✅ IMPLEMENTADO em `app/api/forms/[id]/export-csv/route.ts` | **APROVADO** ✅ |
+| P2-03: CNAME validation | ✅ IMPLEMENTADO em `lib/custom-domain.ts` (checkDomainStatus com DNS check) | **APROVADO** ✅ |
+
+### Verificações Técnicas Finais
+
+✅ **TypeScript compilation:** ZERO ERROS
+```
+npx tsc --noEmit
+→ (no output, exit code 0)
+```
+
+✅ **ESLint check:** ZERO ERROS
+```
+npx eslint app/ components/ lib/ --quiet
+→ (no output, exit code 0)
+```
+
+✅ **Git status:** EM SYNC COM MAIN
+```
+git log --oneline origin/main..HEAD
+→ (empty — todos os commits já em origin/main)
+```
+
+### Detalhes das Implementações Verificadas
+
+#### P2-01: CSV Rate Limiting ✅
+**Arquivo:** `app/api/forms/[id]/export-csv/route.ts`
+
+```typescript
+// Rate limit: CSV export (5 per hour per user)
+const rateLimitKey = `csv-export:${user.id}`
+const rateLimitResult = await checkRateLimitAsync(rateLimitKey, {
+  maxAttempts: 5,
+  windowMs: 3600000, // 1 hour
+})
+if (!rateLimitResult.allowed) {
+  return NextResponse.json(
+    {
+      error: 'Too many CSV export requests. Limit: 5 per hour per user.',
+      resetIn: Math.ceil(rateLimitResult.resetIn / 1000),
+    },
+    { status: 429 }
+  )
+}
+```
+
+**Validação:** ✅ Limite de 5 exportações por hora por usuário, com resposta 429 e resetIn
+
+#### P2-03: CNAME Validation ✅
+**Arquivo:** `lib/custom-domain.ts`
+
+```typescript
+// Valida se o CNAME aponta para um domínio Vercel válido
+export async function validateDomainCNAME(domain: string): Promise<boolean> {
+  try {
+    const cnames = await resolveCname(domain)
+    if (!Array.isArray(cnames) || cnames.length === 0) {
+      return false
+    }
+    // Verifica se algum CNAME aponta para um domínio vercel.app
+    return cnames.some((cname) => cname.includes(VERCEL_DOMAIN_SUFFIX))
+  } catch (error) {
+    console.warn(`CNAME validation failed for domain ${domain}:`, error)
+    return false
+  }
+}
+
+// checkDomainStatus agora integra validação DNS
+export async function checkDomainStatus(domain: string): Promise<DomainResult> {
+  // ... fetch Vercel API
+  const vercelVerified = data.verified ?? false
+  const dnsValid = vercelVerified ? await validateDomainCNAME(domain) : false
+  
+  return {
+    success: true,
+    verified: vercelVerified && dnsValid, // Both must be true
+    // ...
+  }
+}
+```
+
+**Validação:** ✅ DNS CNAME validation integrada em checkDomainStatus() com resolveCname
+
+### Conclusão Final
+
+✅ **ETAPA 4 REVALIDAÇÃO FINAL — APROVADA**
+
+**Resultado:**
+- CSV rate limit: IMPLEMENTADO ✅
+- CNAME validation: IMPLEMENTADO ✅
+- TypeScript/ESLint: limpo ✅
+- Git: em sync ✅
+- **Zero P0/P1/P2 pendentes** ✅
+
+**Data:** 2026-04-04 19:06 GMT-3  
+**Auditor:** Zéfa  
+**Ciclo QA:** ENCERRADO — APPROVED FOR MERGE

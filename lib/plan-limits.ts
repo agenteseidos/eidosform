@@ -83,7 +83,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     features: [
       'Tudo do Free +',
       '1.000 respostas/mês',
-      '10 formulários',
+      '100 formulários',
       'Redirecionamento após envio',
       'Exportação CSV',
       "Marca d'água EidosForm",

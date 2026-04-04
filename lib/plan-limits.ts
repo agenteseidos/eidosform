@@ -68,7 +68,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     monthlyPrice: 49,
     yearlyPrice: 39.2,
     maxResponses: 1000,
-    maxForms: 10,
+    maxForms: 100,
     maxUsers: 1,
     watermark: true,
     pixels: false,

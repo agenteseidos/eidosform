@@ -167,6 +167,23 @@ export const templates: FormTemplate[] = [
     ],
   },
   {
+    id: 'agencia-trafego-captura',
+    name: 'Agência de Tráfego: Captura',
+    description: 'Formulário de captura de leads otimizado para campanhas de tráfego pago — rápido, direto e focado em conversão',
+    category: 'Agência',
+    emoji: '🚦',
+    theme: { primaryColor: '#F97316', backgroundColor: '#FFF7ED', fontFamily: 'inter' },
+    questions: [
+      { id: 'q1', type: 'short_text', title: 'Qual é o seu nome?', required: true },
+      { id: 'q2', type: 'short_text', title: 'Qual é o seu WhatsApp?', required: true },
+      { id: 'q3', type: 'email', title: 'Qual é o seu melhor e-mail?', required: false },
+      { id: 'q4', type: 'multiple_choice', title: 'Qual é o seu maior desafio hoje?', required: true, options: ['Gerar mais leads', 'Aumentar vendas', 'Reduzir custo por lead', 'Melhorar taxa de conversão', 'Outro'] },
+      { id: 'q5', type: 'multiple_choice', title: 'Qual é o seu orçamento mensal em tráfego pago?', required: false, options: ['Até R$1.000', 'R$1.000–R$5.000', 'R$5.000–R$20.000', 'Acima de R$20.000'] },
+      { id: 'q6', type: 'multiple_choice', title: 'Você já investe em tráfego pago hoje?', required: true, options: ['Sim, no Meta Ads', 'Sim, no Google Ads', 'Sim, em ambos', 'Ainda não'] },
+      { id: 'q7', type: 'short_text', title: 'Qual é o nome do seu negócio ou produto?', required: false },
+    ],
+  },
+  {
     id: 'briefing-agencia',
     name: 'Briefing para Agência',
     description: 'Colete todas as informações para iniciar um projeto criativo',

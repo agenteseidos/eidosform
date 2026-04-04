@@ -48,7 +48,7 @@ export default function PrivacidadePage() {
             {/* Intro */}
             <section>
               <p>
-                A <strong className="text-white">Eidos Tecnologia Ltda.</strong> ("Eidos", "nós" ou "nosso"), CNPJ 00.000.000/0001-00, com sede em Recife/PE, é a controladora dos dados pessoais tratados no âmbito do serviço <strong className="text-white">EidosForm</strong> (doravante "Plataforma"). Esta Política de Privacidade descreve como coletamos, usamos, compartilhamos e protegemos seus dados, em conformidade com a <strong className="text-white">Lei Geral de Proteção de Dados (Lei nº 13.709/2018 — LGPD)</strong>.
+                A <strong className="text-white">Eidos Tecnologia Ltda.</strong> (&quot;Eidos&quot;, &quot;nós&quot; ou &quot;nosso&quot;), CNPJ 00.000.000/0001-00, com sede em Recife/PE, é a controladora dos dados pessoais tratados no âmbito do serviço <strong className="text-white">EidosForm</strong> (doravante &quot;Plataforma&quot;). Esta Política de Privacidade descreve como coletamos, usamos, compartilhamos e protegemos seus dados, em conformidade com a <strong className="text-white">Lei Geral de Proteção de Dados (Lei nº 13.709/2018 — LGPD)</strong>.
               </p>
               <p className="mt-4">
                 Ao criar uma conta ou utilizar a Plataforma, você declara ter lido e concordar com os termos desta Política.
@@ -200,7 +200,7 @@ export default function PrivacidadePage() {
                 <li><strong className="text-slate-200">Oposição:</strong> se opor ao tratamento realizado com base em legítimo interesse.</li>
               </ul>
               <p className="text-slate-400 mt-4">
-                Para exercer seus direitos, envie um e-mail para <a href="mailto:privacidade@eidosform.com.br" className="text-[#F5B731] hover:underline">privacidade@eidosform.com.br</a> com o assunto "Direitos LGPD". Responderemos em até 15 dias úteis.
+                Para exercer seus direitos, envie um e-mail para <a href="mailto:privacidade@eidosform.com.br" className="text-[#F5B731] hover:underline">privacidade@eidosform.com.br</a> com o assunto &quot;Direitos LGPD&quot;. Responderemos em até 15 dias úteis.
               </p>
             </section>
 

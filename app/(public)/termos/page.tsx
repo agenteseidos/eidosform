@@ -48,7 +48,7 @@ export default function TermosPage() {
             {/* Intro */}
             <section>
               <p>
-                Estes Termos de Uso ("Termos") regulam o acesso e o uso da plataforma <strong className="text-white">EidosForm</strong>, operada pela <strong className="text-white">Eidos Tecnologia Ltda.</strong> ("Eidos"), CNPJ 00.000.000/0001-00, com sede em Recife/PE. Ao criar uma conta ou utilizar o EidosForm, você ("Usuário") concorda com estes Termos integralmente.
+                Estes Termos de Uso (&quot;Termos&quot;) regulam o acesso e o uso da plataforma <strong className="text-white">EidosForm</strong>, operada pela <strong className="text-white">Eidos Tecnologia Ltda.</strong> (&quot;Eidos&quot;), CNPJ 00.000.000/0001-00, com sede em Recife/PE. Ao criar uma conta ou utilizar o EidosForm, você (&quot;Usuário&quot;) concorda com estes Termos integralmente.
               </p>
               <p className="mt-4">
                 Se você utiliza o EidosForm em nome de uma empresa ou organização, declara ter poderes para vinculá-la a estes Termos.
@@ -72,7 +72,7 @@ export default function TermosPage() {
               <p className="text-slate-400">O EidosForm oferece os seguintes planos (valores sujeitos a atualização periódica):</p>
               <ul className="list-disc list-inside space-y-2 mt-3 text-slate-400">
                 <li><strong className="text-slate-200">Free:</strong> gratuito para sempre, até 3 formulários e 100 respostas/mês. Sem necessidade de cartão de crédito.</li>
-                <li><strong className="text-slate-200">Plus:</strong> cobrança mensal ou anual; inclui mais formulários, respostas ilimitadas, pixels de rastreamento, notificações e sem marca d'água.</li>
+                <li><strong className="text-slate-200">Plus:</strong> cobrança mensal ou anual; inclui mais formulários, respostas ilimitadas, pixels de rastreamento, notificações e sem marca d&apos;água.</li>
                 <li><strong className="text-slate-200">Professional:</strong> todas as funcionalidades do Plus, mais API REST, domínio personalizado, Google Sheets e suporte prioritário.</li>
               </ul>
               <p className="mt-4 text-slate-400">
@@ -101,7 +101,7 @@ export default function TermosPage() {
                 Nos termos do art. 49 do <strong className="text-white">Código de Defesa do Consumidor (Lei nº 8.078/1990)</strong>, o consumidor que contratar um plano anual por meio eletrônico tem direito ao arrependimento e ao reembolso integral, desde que o exercício se dê no prazo de <strong className="text-white">7 (sete) dias corridos</strong> a contar da data da contratação.
               </p>
               <p className="mt-3 text-slate-400">
-                Para solicitar o arrependimento, envie um e-mail para <a href="mailto:suporte@eidosform.com.br" className="text-[#F5B731] hover:underline">suporte@eidosform.com.br</a> com o assunto "Arrependimento — Plano Anual". O reembolso será processado pelo mesmo meio de pagamento utilizado na contratação em até 7 dias úteis.
+                Para solicitar o arrependimento, envie um e-mail para <a href="mailto:suporte@eidosform.com.br" className="text-[#F5B731] hover:underline">suporte@eidosform.com.br</a> com o assunto &quot;Arrependimento — Plano Anual&quot;. O reembolso será processado pelo mesmo meio de pagamento utilizado na contratação em até 7 dias úteis.
               </p>
               <p className="mt-3 text-slate-400">
                 Para planos mensais, não há reembolso proporcional ao período não utilizado, mas o cancelamento interrompe a renovação imediata.

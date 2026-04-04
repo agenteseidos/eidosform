@@ -63,8 +63,14 @@ export function checkRateLimit(key: string): { allowed: boolean; remaining: numb
   return checkMemoryFallback(key)
 }
 
-// Async version using Supabase persistent store
-export async function checkRateLimitAsync(key: string): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
+// Async version using Supabase persistent store with custom limits
+export async function checkRateLimitAsync(
+  key: string,
+  options?: { maxAttempts?: number; windowMs?: number }
+): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
+  const maxAttempts = options?.maxAttempts ?? MAX_REQUESTS
+  const windowMs = options?.windowMs ?? WINDOW_MS
+
   try {
     const supabase = createPublicClient()
     const rpc = supabase.rpc as unknown as (
@@ -73,21 +79,54 @@ export async function checkRateLimitAsync(key: string): Promise<{ allowed: boole
     ) => Promise<{ data: unknown; error: { message?: string } | null }>
     const { data, error } = await rpc('check_rate_limit', {
       p_key: `api:${key}`,
-      p_window_ms: WINDOW_MS,
-      p_max_requests: MAX_REQUESTS,
+      p_window_ms: windowMs,
+      p_max_requests: maxAttempts,
     })
 
     if (error || !data || !Array.isArray(data) || data.length === 0) {
-      return checkMemoryFallback(key)
+      // Fallback to memory with custom window
+      return checkMemoryFallbackCustom(key, maxAttempts, windowMs)
     }
 
     const row = data[0] as { allowed: boolean; current_count: number; reset_in_ms: number }
     return {
       allowed: row.allowed,
-      remaining: Math.max(0, MAX_REQUESTS - row.current_count),
-      resetIn: row.reset_in_ms ?? WINDOW_MS,
+      remaining: Math.max(0, maxAttempts - row.current_count),
+      resetIn: row.reset_in_ms ?? windowMs,
     }
   } catch {
-    return checkMemoryFallback(key)
+    return checkMemoryFallbackCustom(key, maxAttempts, windowMs)
+  }
+}
+
+// In-memory fallback with custom limits
+function checkMemoryFallbackCustom(
+  key: string,
+  maxAttempts: number,
+  windowMs: number
+): { allowed: boolean; remaining: number; resetIn: number } {
+  const now = Date.now()
+  const entry = store.get(key)
+
+  if (!entry || now - entry.windowStart > windowMs) {
+    // Prevent unbounded memory growth
+    if (store.size >= MAX_STORE_SIZE) {
+      const oldest = store.keys().next().value
+      if (oldest) store.delete(oldest)
+    }
+    store.set(key, { count: 1, windowStart: now })
+    return { allowed: true, remaining: maxAttempts - 1, resetIn: windowMs }
+  }
+
+  if (entry.count >= maxAttempts) {
+    const resetIn = windowMs - (now - entry.windowStart)
+    return { allowed: false, remaining: 0, resetIn }
+  }
+
+  entry.count++
+  return {
+    allowed: true,
+    remaining: maxAttempts - entry.count,
+    resetIn: windowMs - (now - entry.windowStart),
   }
 }

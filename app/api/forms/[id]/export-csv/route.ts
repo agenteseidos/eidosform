@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 interface QuestionRow {
   id: string
@@ -31,6 +32,22 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Rate limit: CSV export (5 per hour per user)
+  const rateLimitKey = `csv-export:${user.id}`
+  const rateLimitResult = await checkRateLimitAsync(rateLimitKey, {
+    maxAttempts: 5,
+    windowMs: 3600000, // 1 hour
+  })
+  if (!rateLimitResult.allowed) {
+    return NextResponse.json(
+      {
+        error: 'Too many CSV export requests. Limit: 5 per hour per user.',
+        resetIn: Math.ceil(rateLimitResult.resetIn / 1000),
+      },
+      { status: 429 }
+    )
   }
 
   // Feature gate: csvExport

@@ -1,6 +1,9 @@
-// lib/custom-domain.ts — Vercel Custom Domains API
+// lib/custom-domain.ts — Vercel Custom Domains API + DNS CNAME validation
+
+import { resolveCname } from 'dns/promises'
 
 const VERCEL_API = 'https://api.vercel.com'
+const VERCEL_DOMAIN_SUFFIX = 'vercel.app' // Expected target for CNAME validation
 
 function getVercelConfig() {
   const token = process.env.VERCEL_TOKEN
@@ -78,7 +81,28 @@ export async function removeDomain(domain: string): Promise<DomainResult> {
 }
 
 /**
+ * Valida se o CNAME de um domínio aponta para um domínio Vercel válido.
+ * Retorna true se o DNS está configurado corretamente.
+ */
+export async function validateDomainCNAME(domain: string): Promise<boolean> {
+  try {
+    const cnames = await resolveCname(domain)
+    if (!Array.isArray(cnames) || cnames.length === 0) {
+      return false
+    }
+
+    // Verifica se algum CNAME aponta para um domínio vercel.app
+    return cnames.some((cname) => cname.includes(VERCEL_DOMAIN_SUFFIX))
+  } catch (error) {
+    // DNS resolution failed or domain doesn't exist
+    console.warn(`CNAME validation failed for domain ${domain}:`, error)
+    return false
+  }
+}
+
+/**
  * Verifica o status de verificação de um domínio no Vercel.
+ * Agora também valida DNS CNAME antes de marcar como verified=true.
  */
 export async function checkDomainStatus(domain: string): Promise<DomainResult> {
   const { token, projectId } = getVercelConfig()
@@ -98,10 +122,14 @@ export async function checkDomainStatus(domain: string): Promise<DomainResult> {
     }
   }
 
+  // Validar DNS CNAME antes de confirmar verificação
+  const vercelVerified = data.verified ?? false
+  const dnsValid = vercelVerified ? await validateDomainCNAME(domain) : false
+
   return {
     success: true,
     domain: data.name,
-    verified: data.verified ?? false,
+    verified: vercelVerified && dnsValid, // Both must be true
     cname: data.cname,
     aRecords: data.aRecords,
   }

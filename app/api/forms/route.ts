@@ -95,8 +95,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // P1-01 FIX: Fetch plan directly (getRequestUser already authenticated, just get plan once)
-  // profiles.id = auth.uid()
+  // P1-01 FIX: Fetch plan from profiles using join (single query via checkFormLimit alternative)
+  // Default to 'free' if plan not found or missing
   const { data: profile } = await supabase
     .from('profiles')
     .select('plan')

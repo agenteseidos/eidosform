@@ -18,9 +18,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // P2-04 FIX: Avoid select('*') — specify needed columns for folders
   const { data, error } = await supabase
     .from('folders')
-    .select('*')
+    .select('id, name, user_id, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: true })
 

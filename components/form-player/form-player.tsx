@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import Image from 'next/image'
 import { Form, QuestionConfig, Json } from '@/lib/database.types'
 import { PixelEventRule } from '@/types/pixel-events'
 import { getTheme, getThemeCSSVariables } from '@/lib/themes'
@@ -516,7 +517,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
             style={{ color: theme.textColor }}
           >
             {form.welcome_image_url && (
-              <img src={form.welcome_image_url} className="max-h-20 object-contain mx-auto mb-4" alt="" />
+              <Image src={form.welcome_image_url} width={200} height={80} className="max-h-20 object-contain mx-auto mb-4" alt="Welcome" />
             )}
             {form.welcome_title || form.title}
           </motion.h1>

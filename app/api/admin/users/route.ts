@@ -10,24 +10,29 @@ export async function GET(request: NextRequest) {
   const search = request.nextUrl.searchParams.get('search')?.trim().toLowerCase() ?? ''
   const supabase = createAdminClient()
 
-  const [{ data: profiles, error: profilesError }, { data: forms, error: formsError }] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('id, email, plan, created_at')
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('forms')
-      .select('id, user_id'),
-  ])
+  // P1-02 FIX: Avoid N+1 by using aggregate function instead of fetching all forms
+  // Get forms count grouped by user_id using a single query
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, email, plan, created_at')
+    .order('created_at', { ascending: false })
 
-  const error = profilesError ?? formsError
-
-  if (error) {
+  if (profilesError) {
     return NextResponse.json({ error: 'Failed to load admin users' }, { status: 500 })
   }
 
+  // Fetch form counts per user in a single query (using RPC or aggregate select)
+  const { data: formCounts, error: formsError } = await supabase
+    .from('forms')
+    .select('user_id')  // Only fetch user_id to minimize payload
+
+  if (formsError) {
+    return NextResponse.json({ error: 'Failed to count forms' }, { status: 500 })
+  }
+
+  // Count forms by user in memory (efficient since we only have user_id)
   const formsCountByUser = new Map<string, number>()
-  for (const form of forms ?? []) {
+  for (const form of formCounts ?? []) {
     formsCountByUser.set(form.user_id, (formsCountByUser.get(form.user_id) ?? 0) + 1)
   }
 

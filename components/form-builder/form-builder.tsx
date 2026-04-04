@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
@@ -677,9 +678,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 title={userInfo.name || userInfo.email}
               >
                 {userInfo.avatarUrl ? (
-                  <img
+                  <Image
                     src={userInfo.avatarUrl}
                     alt={userInfo.name || 'Avatar'}
+                    width={32}
+                    height={32}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import { QuestionConfig, QuestionType, Form } from '@/lib/database.types'
 import { questionTypes, getQuestionTypeInfo } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
@@ -111,7 +112,7 @@ export function RightPanel({
                   {form.welcome_image_url ? (
                     <div className="space-y-2">
                       <div className="relative rounded-lg overflow-hidden border border-slate-200">
-                        <img src={form.welcome_image_url} alt="Welcome" className="w-full h-28 object-contain bg-slate-50" />
+                        <Image src={form.welcome_image_url} alt="Welcome" width={500} height={112} className="w-full h-28 object-contain bg-slate-50" />
                       </div>
                       <Button variant="outline" size="sm" onClick={onRemoveWelcomeImage} className="text-red-600 hover:text-red-700 hover:bg-red-50">
                         <Trash2 className="w-3 h-3 mr-1" /> Remover

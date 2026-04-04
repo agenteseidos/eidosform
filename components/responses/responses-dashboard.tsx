@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Form, Response, QuestionConfig, Json } from '@/lib/database.types'
 import { motion } from 'framer-motion'
@@ -316,7 +317,7 @@ function ResponseDetailDialog({
             </DialogHeader>
             <div className="flex-1 overflow-auto mt-4">
               {filePreview.type?.startsWith('image/') ? (
-                <img src={getFileUrl(filePreview)} alt={filePreview.name} className="max-w-full h-auto rounded-lg mx-auto" />
+                <Image src={getFileUrl(filePreview)} alt={filePreview.name} width={800} height={600} className="max-w-full h-auto rounded-lg mx-auto" />
               ) : filePreview.type === 'application/pdf' ? (
                 <iframe src={getFileUrl(filePreview)} className="w-full h-[60vh] rounded-lg border" title={filePreview.name} />
               ) : (

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { cn } from '@/lib/utils'
 
 const LOGO_MAP = {
@@ -48,13 +49,15 @@ export function EidosLogo({
   const aspectRatio = ASPECT_RATIOS[variant]
   const computedWidth = Math.round(height * aspectRatio)
 
+  // P2-05 FIX: Use Next.js Image component for automatic optimization
   const image = (
-    <img
+    <Image
       src={src}
       alt="EidosForm"
       width={computedWidth}
       height={height}
       className={cn('object-contain', className)}
+      priority
     />
   )
 

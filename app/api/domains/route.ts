@@ -72,9 +72,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // P2-01 FIX: Avoid select('*') — specify only needed columns
   const { data: domains, error } = await supabase
     .from('custom_domains')
-    .select('*')
+    .select('id, domain, form_id, verified, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 

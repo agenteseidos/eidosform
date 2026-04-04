@@ -54,9 +54,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const { id } = await params
   const supabase = createAdminClient()
 
+  // P2-02 FIX: Avoid select('*') — specify only needed columns for duplication
   const { data: sourceForm, error: sourceError } = await supabase
     .from('forms')
-    .select('*')
+    .select('id, title, description, slug, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
@@ -98,10 +99,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     updated_at: now,
   }
 
+  // P2-02 FIX: Avoid select('*') after insert — specify needed columns
   const { data: duplicated, error: duplicateError } = await supabase
     .from('forms')
     .insert(duplicateForm)
-    .select('*')
+    .select('id, title, slug, status, created_at')
     .single()
 
   if (duplicateError || !duplicated) {

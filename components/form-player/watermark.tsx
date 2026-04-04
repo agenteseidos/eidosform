@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import React from 'react'
 
 interface WatermarkProps {
@@ -17,7 +18,8 @@ export const EidosFormWatermark = React.memo(function EidosFormWatermark({ plan 
         rel="noopener noreferrer"
         className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800 transition-colors group"
       >
-        <img
+        {/* P2-05 FIX: Use Next.js Image for SVG watermark icon */}
+        <Image
           src="/logo-icon-only.svg"
           alt="EidosForm"
           width={16}

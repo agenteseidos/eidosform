@@ -4,8 +4,8 @@ import { useEditor, EditorContent, Extension } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TextStyle } from '@tiptap/extension-text-style'
-import { useEffect, useCallback, useState } from 'react'
-import { Bold, Italic, List } from 'lucide-react'
+import { useEffect, useCallback, useRef, useState } from 'react'
+import { Bold, Italic, List, ChevronDown } from 'lucide-react'
 
 // ── FontSize extension ─────────────────────────────────────────────────────────
 
@@ -172,26 +172,32 @@ const FONT_SIZES = [
 interface FixedToolbarProps {
   editor: ReturnType<typeof useEditor>
   primaryColor: string
+  onInteractStart: () => void
+  onInteractEnd: () => void
 }
 
-function FixedToolbar({ editor, primaryColor }: FixedToolbarProps) {
+function FixedToolbar({ editor, primaryColor, onInteractStart, onInteractEnd }: FixedToolbarProps) {
   if (!editor) return null
 
-  const currentFontSize =
-    FONT_SIZES.find((s) =>
-      editor.isActive('textStyle', { fontSize: s.value })
-    )?.value ?? '16px'
+  // Detecta tamanho ativo — se não houver mark textStyle com fontSize, assume 'normal'
+  const attrs = editor.getAttributes('textStyle')
+  const activeFontSize = (attrs?.fontSize as string | undefined) ?? '16px'
+  const currentFontSize = FONT_SIZES.find((s) => s.value === activeFontSize)?.value ?? '16px'
 
   const handleFontSize = (e: React.ChangeEvent<HTMLSelectElement>) => {
     e.preventDefault()
+    e.stopPropagation()
     const size = e.target.value
     editor.chain().focus().setFontSize(size).run()
+    onInteractEnd()
   }
 
   return (
     <div
       className="mb-3 inline-flex items-center gap-0.5 rounded-xl px-1.5 py-1.5 shadow-sm border border-black/5"
       style={{ backgroundColor: primaryColor, zIndex: 1 }}
+      // Impede que clicar na toolbar tire o foco do editor
+      onMouseDown={(e) => e.preventDefault()}
     >
       <ToolbarButton
         active={editor.isActive('bold')}
@@ -219,20 +225,24 @@ function FixedToolbar({ editor, primaryColor }: FixedToolbarProps) {
       <div className="w-px h-4 bg-white/25 mx-0.5" />
 
       {/* Seletor de tamanho */}
-      <select
-        value={currentFontSize}
-        onChange={handleFontSize}
-        onMouseDown={(e) => e.stopPropagation()}
-        title="Tamanho da fonte"
-        className="text-[11px] text-white bg-transparent border-none outline-none cursor-pointer px-1 py-0.5 rounded hover:bg-white/15 transition-colors appearance-none"
-        style={{ minWidth: '80px' }}
-      >
-        {FONT_SIZES.map((s) => (
-          <option key={s.value} value={s.value} style={{ backgroundColor: primaryColor, color: 'white' }}>
-            {s.label}
-          </option>
-        ))}
-      </select>
+      <div className="relative flex items-center">
+        <select
+          value={currentFontSize}
+          onChange={handleFontSize}
+          onMouseDown={(e) => { e.stopPropagation(); onInteractStart() }}
+          onBlur={onInteractEnd}
+          title="Tamanho da fonte"
+          className="text-[11px] text-white border-none outline-none cursor-pointer pl-1.5 pr-5 py-0.5 rounded hover:bg-white/15 transition-colors"
+          style={{ backgroundColor: 'transparent', appearance: 'none', WebkitAppearance: 'none' }}
+        >
+          {FONT_SIZES.map((s) => (
+            <option key={s.value} value={s.value} style={{ backgroundColor: '#374151', color: 'white' }}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="w-3 h-3 text-white/70 absolute right-0.5 pointer-events-none" />
+      </div>
     </div>
   )
 }
@@ -265,6 +275,7 @@ export function TiptapEditor({
 }: TiptapEditorProps) {
   const [isActive, setIsActive] = useState(!clickToEdit)
   const [hasFocus, setHasFocus] = useState(false)
+  const toolbarInteractingRef = useRef(false)
   const initialContent = normalizeTiptapContent(value)
 
   const editor = useEditor({
@@ -286,6 +297,8 @@ export function TiptapEditor({
       onChange?.(JSON.stringify(editor.getJSON()))
     },
     onBlur: ({ editor }) => {
+      // Não esconde toolbar se o blur foi causado por interação com ela
+      if (toolbarInteractingRef.current) return
       setHasFocus(false)
       onBlur?.(JSON.stringify(editor.getJSON()))
     },
@@ -342,7 +355,12 @@ export function TiptapEditor({
 
       {/* Toolbar fixa e confiável enquanto o editor está em foco */}
       {editable && isActive && hasFocus && (
-        <FixedToolbar editor={editor} primaryColor={primaryColor} />
+        <FixedToolbar
+          editor={editor}
+          primaryColor={primaryColor}
+          onInteractStart={() => { toolbarInteractingRef.current = true }}
+          onInteractEnd={() => { toolbarInteractingRef.current = false }}
+        />
       )}
 
       <EditorContent

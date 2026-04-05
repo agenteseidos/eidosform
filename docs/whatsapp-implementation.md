@@ -391,6 +391,7 @@ npx eslint lib/whatsapp.ts lib/types/whatsapp.ts
 
 ## Migration Checklist
 
+### ETAPA 1-2 (Database & Types)
 - [x] Create `form_whatsapp_settings` table
 - [x] Enable RLS with 4 policies
 - [x] Create indexes on `form_id` and `created_by`
@@ -400,16 +401,205 @@ npx eslint lib/whatsapp.ts lib/types/whatsapp.ts
 - [x] Run TypeScript validation
 - [x] Run ESLint validation
 
+### ETAPA 3 (API Endpoints)
+- [x] Create GET `/api/form/[id]/whatsapp/settings`
+- [x] Create POST `/api/form/[id]/whatsapp/settings`
+- [x] Create PATCH `/api/form/[id]/whatsapp/settings`
+- [x] Create DELETE `/api/form/[id]/whatsapp/settings`
+- [x] Auth check (Bearer token)
+- [x] Plan validation (Plus+ required for POST/PATCH)
+- [x] Form ownership validation (user_id)
+- [x] Input validation (owner_phone non-empty)
+- [x] Proper HTTP status codes
+- [x] Error handling
+- [x] TypeScript validation (npx tsc --noEmit → 0 errors)
+- [x] ESLint validation (npx eslint → 0 errors)
+- [x] Documentation with curl examples
+
 ## Files Modified/Created
 
-- ✅ `supabase/migrations/20260405_form_whatsapp_settings.sql` (new)
-- ✅ `lib/types/whatsapp.ts` (new)
-- ✅ `lib/whatsapp.ts` (new)
-- ✅ `docs/whatsapp-implementation.md` (this file)
+- ✅ `supabase/migrations/20260405_form_whatsapp_settings.sql` (ETAPA 2)
+- ✅ `lib/types/whatsapp.ts` (ETAPA 2)
+- ✅ `lib/whatsapp.ts` (ETAPA 2)
+- ✅ `app/api/form/[id]/whatsapp/settings/route.ts` (ETAPA 3, new)
+- ✅ `docs/whatsapp-implementation.md` (updated with ETAPA 3 docs)
+
+### ETAPA 3: API Endpoints
+
+**File:** `app/api/form/[id]/whatsapp/settings/route.ts`
+
+RESTful API endpoints for managing WhatsApp settings.
+
+#### GET `/api/form/[id]/whatsapp/settings`
+
+Returns WhatsApp settings for a form.
+
+**Request:**
+```bash
+curl -H "Authorization: Bearer TOKEN" \
+  http://localhost:3000/api/form/FORM_ID/whatsapp/settings
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "uuid",
+  "form_id": "form-uuid",
+  "enabled": true,
+  "owner_phone": "+5511987654321",
+  "message_template": "Nova resposta em {form_name}: {nome}",
+  "instance_name": "default",
+  "rate_limit_per_hour": 100,
+  "created_at": "2026-04-05T00:00:00Z",
+  "updated_at": "2026-04-05T00:00:00Z",
+  "created_by": "user-uuid"
+}
+```
+
+**Response Codes:**
+- `200` - Settings found
+- `401` - Unauthorized (no auth)
+- `403` - Forbidden (not form owner)
+- `404` - Form or settings not found
+
+---
+
+#### POST `/api/form/[id]/whatsapp/settings`
+
+Creates WhatsApp settings for a form.
+
+**Request:**
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer TOKEN" \
+  -d '{
+    "owner_phone": "+5511987654321",
+    "message_template": "Nova resposta: {nome}",
+    "enabled": true,
+    "instance_name": "default",
+    "rate_limit_per_hour": 100
+  }' \
+  http://localhost:3000/api/form/FORM_ID/whatsapp/settings
+```
+
+**Request Body:**
+- `owner_phone` (required): Phone number (non-empty string)
+- `enabled` (optional, default: false): Enable WhatsApp notifications
+- `message_template` (optional): Custom message template
+- `instance_name` (optional, default: "default"): wacli instance
+- `rate_limit_per_hour` (optional, default: 100): Rate limit
+
+**Response (201 Created):**
+```json
+{
+  "id": "uuid",
+  "form_id": "form-uuid",
+  "enabled": false,
+  "owner_phone": "+5511987654321",
+  "message_template": "Nova resposta em {form_name}: {nome}",
+  "instance_name": "default",
+  "rate_limit_per_hour": 100,
+  "created_at": "2026-04-05T00:00:00Z",
+  "updated_at": "2026-04-05T00:00:00Z",
+  "created_by": "user-uuid"
+}
+```
+
+**Response Codes:**
+- `201` - Settings created
+- `400` - Bad Request (validation error)
+- `401` - Unauthorized (no auth)
+- `403` - Forbidden (not Plus+ plan or not form owner)
+- `404` - Form not found
+- `409` - Conflict (settings already exist)
+
+**Validation:**
+- `owner_phone` must be non-empty string
+- User must have Plus+ plan (plus or professional)
+- User must be form owner
+- Form must exist
+- Settings must not already exist for this form
+
+---
+
+#### PATCH `/api/form/[id]/whatsapp/settings`
+
+Updates WhatsApp settings for a form.
+
+**Request:**
+```bash
+curl -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer TOKEN" \
+  -d '{
+    "enabled": true,
+    "message_template": "Updated: {form_name}"
+  }' \
+  http://localhost:3000/api/form/FORM_ID/whatsapp/settings
+```
+
+**Request Body (all optional):**
+- `enabled`: Enable/disable notifications
+- `owner_phone`: Update phone number (must be non-empty if provided)
+- `message_template`: Update message template
+- `instance_name`: Update wacli instance
+- `rate_limit_per_hour`: Update rate limit
+
+**Response (200 OK):**
+```json
+{
+  "id": "uuid",
+  "form_id": "form-uuid",
+  "enabled": true,
+  "owner_phone": "+5511987654321",
+  "message_template": "Updated: EidosForm",
+  "instance_name": "default",
+  "rate_limit_per_hour": 100,
+  "created_at": "2026-04-05T00:00:00Z",
+  "updated_at": "2026-04-05T00:01:00Z",
+  "created_by": "user-uuid"
+}
+```
+
+**Response Codes:**
+- `200` - Settings updated
+- `400` - Bad Request (validation error)
+- `401` - Unauthorized (no auth)
+- `403` - Forbidden (not Plus+ plan or not form owner)
+- `404` - Form or settings not found
+
+**Validation:**
+- User must have Plus+ plan
+- User must be form owner
+- Settings must exist
+- `owner_phone` must be non-empty if provided
+
+---
+
+#### DELETE `/api/form/[id]/whatsapp/settings`
+
+Deletes WhatsApp settings for a form.
+
+**Request:**
+```bash
+curl -X DELETE -H "Authorization: Bearer TOKEN" \
+  http://localhost:3000/api/form/FORM_ID/whatsapp/settings
+```
+
+**Response (204 No Content):**
+```
+(no body)
+```
+
+**Response Codes:**
+- `204` - Settings deleted
+- `401` - Unauthorized (no auth)
+- `403` - Forbidden (not form owner)
+- `404` - Form or settings not found
+
+---
 
 ## Next Steps
 
-- **ETAPA 3:** Create API endpoint `/api/form/[id]/whatsapp/settings` (GET/POST/PATCH/DELETE)
 - **ETAPA 4:** Integrate settings into form response handlers (auto-send WhatsApp on response)
 - **ETAPA 5:** Add WhatsApp dashboard UI component
 - **ETAPA 6:** Implement webhook handling for WhatsApp delivery/read receipts

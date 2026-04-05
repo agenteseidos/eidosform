@@ -59,9 +59,9 @@ function isValidPhoneNumber(phone: string): boolean {
  */
 function sendViaWacli(instance: string, phone: string, message: string): { messageId: string } {
   try {
-    // wacli send --number=INSTANCE --phone=TO --message="MESSAGE"
+    // wacli send text --to=TO --message="MESSAGE"
     // Expect response: message ID or success indicator
-    const cmd = `wacli send --number=${instance} --phone=${phone} --message="${message.replace(/"/g, '\\"')}"`
+    const cmd = `wacli send text --to=${phone} --message="${message.replace(/"/g, '\\"')}"`
 
     const output = execSync(cmd, {
       encoding: 'utf-8',
@@ -78,7 +78,7 @@ function sendViaWacli(instance: string, phone: string, message: string): { messa
     return { messageId }
   } catch (error: unknown) {
     const stderr = error instanceof Error
-      ? (error as NodeJS.ErrnoException).stderr?.toString() || error.message
+      ? error.message
       : String(error)
 
     // Check for specific wacli errors

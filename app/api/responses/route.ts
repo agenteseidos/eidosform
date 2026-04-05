@@ -10,7 +10,7 @@ import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers } from '@/lib/field-validators'
-import { sendWhatsAppNotificationStub } from '@/lib/integration-stubs'
+import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { appendSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 
@@ -304,10 +304,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (form.notify_whatsapp_enabled && form.notify_whatsapp_number && ownerPlanConfig?.emailNotifications) {
-      sendWhatsAppNotificationStub({
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      sendWhatsAppOnFormResponse({
         formId: form_id as string,
         responseId,
-        phoneNumber: form.notify_whatsapp_number,
+        responseData: answers as Record<string, unknown>,
+        form: {
+          id: form.id,
+          title: form.title,
+          user_id: form.user_id,
+        },
+        appUrl,
       }).catch((err) => logError('Failed to send WhatsApp notification', err))
     }
 

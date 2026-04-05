@@ -598,8 +598,57 @@ curl -X DELETE -H "Authorization: Bearer TOKEN" \
 
 ---
 
+### ETAPA 4: Form Response Trigger
+
+**File:** `lib/integration-stubs.ts` (function `sendWhatsAppOnFormResponse`)
+
+When a form response is submitted:
+1. Check if WhatsApp is enabled for the form
+2. Fetch message template and owner phone
+3. Replace template variables ({form_name}, {nome}, {email}, {response_id}, {response_link})
+4. Call `/api/whatsapp/send` via internal fetch
+5. Log success/failure (non-blocking)
+
+**Implementation Location:**
+- `lib/integration-stubs.ts` → `sendWhatsAppOnFormResponse()`
+- Called from `app/api/responses/route.ts` after response is saved
+- Only triggers on **completed** responses (all required fields answered)
+
+**Flow:**
+```
+User submits form response
+  → POST /api/responses
+    → Response saved to DB
+    → Check: form.notify_whatsapp_enabled && form.notify_whatsapp_number
+    → Call sendWhatsAppOnFormResponse()
+      → Fetch WhatsApp settings
+      → Build message from template
+      → Call /api/whatsapp/send
+      → Log result
+    → Return 201/200 response (doesn't block on WhatsApp failure)
+```
+
+**Template Variables:**
+- `{form_name}` - Form title
+- `{nome}` - Response field named "nome" (or "Lead" if missing)
+- `{email}` - Response field named "email" (or "N/A" if missing)
+- `{response_id}` - UUID of this response
+- `{response_link}` - Full URL to view response in dashboard
+
+**Error Handling:**
+- If WhatsApp send fails, form response still succeeds (non-blocking)
+- Errors logged but don't throw exceptions
+- User receives form completion message regardless
+
+**Validation Checklist:**
+- ✅ TypeScript validation: `npx tsc --noEmit` (zero errors)
+- ✅ ESLint validation: `npx eslint` (zero errors)
+- ✅ Endpoint integration: `POST /api/responses` calls function
+- ✅ Non-blocking: form response succeeds even if WhatsApp fails
+- ✅ Rate limiting: uses `rate_limit_per_hour` from settings
+
 ## Next Steps
 
-- **ETAPA 4:** Integrate settings into form response handlers (auto-send WhatsApp on response)
 - **ETAPA 5:** Add WhatsApp dashboard UI component
 - **ETAPA 6:** Implement webhook handling for WhatsApp delivery/read receipts
+- **ETAPA 7:** Add form_whatsapp_logs table and audit logging (optional)

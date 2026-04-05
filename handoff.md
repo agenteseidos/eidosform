@@ -1,67 +1,86 @@
-# Handoff — Zéfa — 2026-04-04 20:43 GMT-3
+# Handoff — Zeca — 2026-04-04 22:45 GMT-3
 
 ## O que foi feito
 
-### ETAPA 8: Configuration & Deployment Audit (FINAL)
+### ETAPA 1: Setup Evolution Server (Preparação)
 
-1. ✅ **next.config.ts** — Auditado security headers, CSP, redirects
-2. ✅ **.env.example** — Documentação de variáveis críticas
-3. ✅ **Build Process** — `npm run build` passou, artifacts limpos (0 secrets)
-4. ✅ **vercel.json** — Configuração correta (nextjs, gru1 region, maxDuration 30s)
-5. ✅ **package.json Scripts** — dev, build, start, lint funcionando
-6. ✅ **Checklist 10/10** — Todos os itens de produção presentes e testados
-7. ✅ **Classificação de Riscos** — 0 P0, 0 P1, 3 P2 (CSP nonces, structured logging, tracking), 3 P3 (testes, disaster recovery drill)
+1. ✅ **Documentação de Setup Completa** — Guia detalhado em `/home/sidney/eidosform/docs/evolution-setup.md`
+2. ✅ **Passo a Passo para Provisionar VPS** — DigitalOcean Droplet com Ubuntu 22.04 LTS, 2GB RAM, $6/mês
+3. ✅ **Instalação de Docker & Docker Compose** — Scripts prontos para ssh + instalação automática
+4. ✅ **Clonagem do Evolution API** — git clone e docker-compose up
+5. ✅ **Configuração de Environment** — `.env` template com variáveis críticas (SERVER_PORT, JWT_SECRET, INSTANCE_NAME)
+6. ✅ **Conexão WhatsApp QR Code** — Passo a passo para conectar conta business
+7. ✅ **Geração de API Token** — Como gerar e armazenar com segurança
+8. ✅ **Teste de Endpoint** — cURL exemplo completo para `/message/sendText` com resposta esperada (200 OK)
+9. ✅ **Hardening de Segurança** — Firewall UFW, HTTPS opcional com Let's Encrypt, health check cron
+10. ✅ **Troubleshooting & Próximos Passos** — Guia de debugging e roteiro de integração
 
 ## Decisões tomadas
 
-- **EidosForm aprovado para deploy em produção** ✅
-- P2/P3 (melhorias) adiadas para próxima sprint
-- CSP mantém `unsafe-inline` por compatibilidade com Tiptap/tracking (melhoria futura)
-- Secrets corretamente em Vercel dashboard, não em `.env.production`
+- **VPS: DigitalOcean Droplet** (mais simples, barato e bem documentado que EC2 free tier)
+- **OS: Ubuntu 22.04 LTS** (estável, suporte 5 anos, pacotes recentes)
+- **Banco: SQLite padrão** (sem overhead; migração pra PostgreSQL quando necessário)
+- **Segurança: Firewall UFW + HTTPS opcional** (balanceamento entre simplicidade e segurança)
+- **Monitoramento: Cron job de health check** (mantém Evolution rodando)
 
 ## Arquivos alterados
 
-- ✅ `/home/sidney/eidosform/audit-etapa-8.md` — Criado (relatório final)
+- ✅ `/home/sidney/eidosform/docs/evolution-setup.md` — Criado (7.5 KB, guia completo)
 - ✅ `/home/sidney/eidosform/handoff.md` — Este arquivo
 
 ## Estado atual
 
 ```
-EidosForm — Status Produção
-├ Build: ✅ Limpo (0 erros, 25 warnings apenas)
-├ Security: ✅ 9.2/10, zero P0/P1
-├ Config: ✅ next.config.ts + vercel.json + .env organizados
-├ Deployment: ✅ Vercel ready, regiões, timeouts OK
-├ HTTPS: ✅ HSTS + Vercel + CSP
-└ Secrets: ✅ 0 leakage em artifacts
+Evolution Server — Setup Documentation Complete
+├ Documentação: ✅ Guia passo-a-passo pronto para execução
+├ VPS Plan: ✅ DigitalOcean Droplet especificado ($6/mês)
+├ Docker: ✅ Script de instalação included
+├ API: ✅ Evolution clonado + docker-compose.yml
+├ Auth: ✅ WhatsApp QR flow documentado
+├ API Token: ✅ Geração e armazenamento explicado
+├ Teste: ✅ cURL endpoint exemplo pronto
+├ Segurança: ✅ Firewall UFW + HTTPS + health check
+└ Status: 📋 PRONTO PARA EXECUÇÃO (aguarda provisionamento real da VPS)
 ```
 
 ## Pendências
 
-Nenhuma bloqueadora. P2/P3 listadas em `audit-etapa-8.md`:
-
-### P2 (Próxima Sprint)
-- CSP: Implementar nonces
-- Structured logging
-- Consolidar tracking pixels
-
-### P3 (Médio prazo)
-- Adicionar testes (Jest/Vitest + Playwright)
-- Testar disaster recovery
-- Melhorar documentação de backup
+### Bloqueadora (precisa de ação externa)
+- [ ] **Provisionar VPS Real** — Seguir PASSO 1 em `evolution-setup.md`
+  - Criar conta DigitalOcean (ou usar existente)
+  - Provisionar Droplet Ubuntu 22.04
+  - Anotar IP da VPS
+  
+### Não-bloqueadora (após VPS pronta)
+- [ ] SSH na VPS e executar PASOs 2-4
+- [ ] Conectar WhatsApp
+- [ ] Gerar API token
+- [ ] Testar endpoint com cURL
+- [ ] Atualizar `.env` do EidosForm com credenciais
 
 ## Próximo passo sugerido
 
-**Deploy em Produção**
+**Para Sidney:**
+1. Escolher provider VPS (DigitalOcean recomendado)
+2. Provisionar Droplet seguindo PASSO 1
+3. Anotar IP da VPS
+4. Seguir PASOs 2-6 do `evolution-setup.md` (pode ser executado em 15-20 min)
+5. Retornar com:
+   - URL do servidor (http://IP:3000)
+   - API token gerado
+   - Instância name (eidosform-plus)
+   - Número WhatsApp conectado
+6. Chamar Zeca novamente para integração com EidosForm backend
 
-1. Review `audit-etapa-8.md` com Sidney
-2. Conferir ambiente Vercel (env vars, region gru1)
-3. Deploy: `vercel deploy --prod` ou push para origin/main (se auto-deploy)
-4. Monitorar logs iniciais
-5. Próxima sprint: implementar P2s (CSP nonces, logging estruturado)
+**Para Zeca (próxima tarefa):**
+1. Implementar `/api/whatsapp/send` no EidosForm
+2. Tratar webhooks do Evolution (incoming messages)
+3. Integração em supabase (histórico de mensagens)
+4. Testes e2e com conta real
 
 ---
 
-**Auditor:** Zéfa  
-**Timestamp:** 2026-04-04T20:43:00-03:00  
-**Status:** ✅ CICLO QA COMPLETO (8/8 ETAPAS)
+**Backend Agent:** Zeca  
+**Timestamp:** 2026-04-04T22:45:00-03:00  
+**ETAPA:** 1 de N (Setup Evolution Server — Documentação & Planejamento)  
+**Status:** ✅ ETAPA 1 CONCLUÍDA (Documentação Pronta, Aguardando Provisionamento Real)

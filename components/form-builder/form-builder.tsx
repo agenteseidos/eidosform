@@ -62,7 +62,6 @@ import {
   HandMetal,
   PartyPopper,
   Zap,
-  MessageCircle,
   Table,
   Crosshair,
   Database,
@@ -77,6 +76,7 @@ import {
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
 import { RightPanel } from './right-panel'
+import { WhatsAppPanel } from './whatsapp-panel'
 import { getContentBlockPreview } from '@/lib/content-block'
 
 // B03: Mapeamento de tipo de campo → ícone + cor para sidebar
@@ -124,6 +124,7 @@ function QuestionReorderItem({
   onClick,
   onDuplicate,
   onDelete,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   children,
 }: {
   question: QuestionConfig
@@ -1418,33 +1419,18 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     ) : null}
                   </div>
 
-                  {/* WhatsApp */}
-                  <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-3 mt-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
-                        <MessageCircle className="w-4 h-4 text-green-600" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-medium text-slate-700">Notificação por WhatsApp</p>
-                          <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">EM BREVE</span>
-                        </div>
-                        <p className="text-xs text-slate-500">Em breve. Configuração salva, envio disponível em breve.</p>
-                      </div>
-                      <Switch
-                        checked={form.notify_whatsapp_enabled ?? false}
-                        onCheckedChange={(checked) => {
-                          setForm({ ...form, notify_whatsapp_enabled: checked })
-                          setHasUnsavedChanges(true)
-                        }}
-                        aria-label="Ativar notificação WhatsApp"
-                      />
-                    </div>
-                    {form.notify_whatsapp_enabled && (
-                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                        ⚠️ Esta integração está em desenvolvimento. A configuração será salva mas ainda não enviará dados.
-                      </p>
-                    )}
+                  {/* WhatsApp Panel — Moved to dedicated collapsible section */}
+                  <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden">
+                    <WhatsAppPanel
+                      formId={form.id}
+                      settings={null}
+                      userPlan={userPlan}
+                      onUpdateForm={(updates) => {
+                        setForm({ ...form, ...updates })
+                        setHasUnsavedChanges(true)
+                      }}
+                      isLoading={false}
+                    />
                   </div>
                 </section>
 

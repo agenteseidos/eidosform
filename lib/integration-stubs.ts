@@ -1,36 +1,14 @@
 import { logWarn, logError } from '@/lib/logger'
 import { getWhatsAppSettings } from '@/lib/whatsapp'
 
-// Deprecated stubs — use real implementations below
-// export async function sendWhatsAppNotificationStub(params: {
-//   formId: string
-//   responseId: string
-//   phoneNumber: string
-// }) {
-//   logWarn('[responses] WhatsApp notification not implemented on backend')
-// }
-
-// export async function syncGoogleSheetsStub(params: {
-//   formId: string
-//   responseId: string
-//   googleSheetsId: string
-// }) {
-//   logWarn('[responses] Google Sheets sync not implemented on backend')
-// }
-
 /**
  * Send WhatsApp notification when form response is submitted
- * 
- * This function:
- * 1. Fetches form details and WhatsApp settings
- * 2. Builds message by replacing template variables
- * 3. Calls /api/whatsapp/send to send via wacli
- * 4. Logs result for auditing
- * 
- * @param formId - Form ID that received the response
- * @param responseId - Response ID to include in message
- * @param responseData - Answer data from response (answers object)
- * @param responseEmail - Email field from response (if available)
+ *
+ * Flow:
+ * 1. Fetches WhatsApp settings for the form
+ * 2. Builds message from template with lead data
+ * 3. Calls /api/whatsapp/send internally with formId + leadData
+ * 4. Fire-and-forget: never blocks the form response
  */
 export async function sendWhatsAppOnFormResponse(params: {
   formId: string
@@ -46,65 +24,59 @@ export async function sendWhatsAppOnFormResponse(params: {
   const { formId, responseId, responseData, form, appUrl } = params
 
   try {
-    // 1. Get WhatsApp settings for this form
+    // Early check: are WhatsApp settings enabled for this form?
     const settings = await getWhatsAppSettings(formId)
-    
     if (!settings || !settings.enabled) {
-      logWarn(`[WhatsApp] Settings not enabled for form ${formId}`)
-      return
+      return // Not configured — silent skip
     }
 
-    // 2. Build message by replacing template variables
+    // Build lead data from response answers
+    const leadData = {
+      name: String(responseData.nome || responseData.name || 'Lead'),
+      email: String(responseData.email || 'N/A'),
+      phone: String(responseData.phone || responseData.telefone || ''),
+      form_name: form.title || 'Formulário',
+      response_id: responseId,
+      response_link: `${appUrl}/form/${formId}/responses/${responseId}`,
+      ...Object.fromEntries(
+        Object.entries(responseData).map(([k, v]) => [k, String(v)])
+      ),
+    }
+
+    // Build message from template
     let message = settings.message_template
-
-    // Replace {form_name}
-    message = message.replace('{form_name}', form.title || 'Formulário')
-
-    // Replace response-specific variables from answers
-    // Extract nome, email, and other fields from responseData
-    const extractedName = responseData.nome || responseData.name || 'Lead'
-    const extractedEmail = responseData.email || 'N/A'
-    
-    message = message.replace('{nome}', String(extractedName))
-    message = message.replace('{email}', String(extractedEmail))
-    message = message.replace('{response_id}', responseId)
-    
-    // Add link to view response if appUrl provided
-    const responseLink = `${appUrl}/form/${formId}/responses/${responseId}`
-    message = message.replace('{response_link}', responseLink)
-
-    // 3. Call /api/whatsapp/send
-    const whatsappResponse = await fetch(
-      `${appUrl}/api/whatsapp/send`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.INTERNAL_API_SECRET}`,
-        },
-        body: JSON.stringify({
-          instance: settings.instance_name,
-          to: settings.owner_phone,
-          message,
-        }),
-      }
+    message = message.replace(/\{form_name\}/g, form.title || 'Formulário')
+    message = message.replace(/\{nome\}/g, leadData.name)
+    message = message.replace(/\{email\}/g, leadData.email)
+    message = message.replace(/\{response_id\}/g, responseId)
+    message = message.replace(/\{response_link\}/g, leadData.response_link)
+    // Replace any remaining template vars
+    message = message.replace(/\{(\w+)\}/g, (_, key: string) =>
+      String(responseData[key] ?? '')
     )
 
-    if (!whatsappResponse.ok) {
-      const errorText = await whatsappResponse.text()
-      logError(
-        `[WhatsApp] Failed to send notification for form ${formId}: ${whatsappResponse.status} ${errorText}`
-      )
-      // Don't throw — let form response succeed even if WhatsApp fails
+    // Call the send endpoint internally
+    const sendResponse = await fetch(`${appUrl}/api/whatsapp/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.INTERNAL_API_SECRET || ''}`,
+      },
+      body: JSON.stringify({ formId, leadData }),
+    })
+
+    if (!sendResponse.ok) {
+      const errorBody = await sendResponse.text()
+      logWarn(`[WhatsApp] Send returned ${sendResponse.status}: ${errorBody}`)
       return
     }
 
-    const result = await whatsappResponse.json() as { success?: boolean; messageId?: string }
-    
-    // 4. Log success
-    logWarn(`[WhatsApp] Notification sent for form ${formId}, response ${responseId}, messageId: ${result.messageId || 'unknown'}`)
+    const result = await sendResponse.json() as { success?: boolean; messageId?: string }
+    logWarn(`[WhatsApp] ✅ Sent for form ${formId}, response ${responseId}, msgId: ${result.messageId || 'N/A'}`)
   } catch (error) {
-    logError(`[WhatsApp] Error sending notification: ${error instanceof Error ? error.message : String(error)}`)
-    // Silently fail — don't block form response
+    logError(
+      `[WhatsApp] Error for form ${formId}: ${error instanceof Error ? error.message : String(error)}`
+    )
+    // Never throw — form response must succeed regardless
   }
 }

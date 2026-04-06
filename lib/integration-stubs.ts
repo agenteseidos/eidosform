@@ -1,14 +1,12 @@
 import { logWarn, logError } from '@/lib/logger'
-import { getWhatsAppSettings } from '@/lib/whatsapp'
 
 /**
  * Send WhatsApp notification when form response is submitted
  *
  * Flow:
- * 1. Fetches WhatsApp settings for the form
- * 2. Builds message from template with lead data
- * 3. Calls /api/whatsapp/send internally with formId + leadData
- * 4. Fire-and-forget: never blocks the form response
+ * 1. Calls /api/whatsapp/send internally with formId + leadData
+ * 2. The send endpoint handles settings fetch, template building, and delivery
+ * 3. Fire-and-forget: never blocks the form response
  */
 export async function sendWhatsAppOnFormResponse(params: {
   formId: string
@@ -21,21 +19,15 @@ export async function sendWhatsAppOnFormResponse(params: {
   }
   appUrl: string
 }): Promise<void> {
-  const { formId, responseId, responseData, form, appUrl } = params
+  const { formId, responseId, responseData, appUrl } = params
 
   try {
-    // Early check: are WhatsApp settings enabled for this form?
-    const settings = await getWhatsAppSettings(formId)
-    if (!settings || !settings.enabled) {
-      return // Not configured — silent skip
-    }
-
     // Build lead data from response answers
     const leadData = {
       name: String(responseData.nome || responseData.name || 'Lead'),
       email: String(responseData.email || 'N/A'),
       phone: String(responseData.phone || responseData.telefone || ''),
-      form_name: form.title || 'Formulário',
+      form_name: params.form.title || 'Formulário',
       response_id: responseId,
       response_link: `${appUrl}/form/${formId}/responses/${responseId}`,
       ...Object.fromEntries(
@@ -43,19 +35,7 @@ export async function sendWhatsAppOnFormResponse(params: {
       ),
     }
 
-    // Build message from template
-    let message = settings.message_template
-    message = message.replace(/\{form_name\}/g, form.title || 'Formulário')
-    message = message.replace(/\{nome\}/g, leadData.name)
-    message = message.replace(/\{email\}/g, leadData.email)
-    message = message.replace(/\{response_id\}/g, responseId)
-    message = message.replace(/\{response_link\}/g, leadData.response_link)
-    // Replace any remaining template vars
-    message = message.replace(/\{(\w+)\}/g, (_, key: string) =>
-      String(responseData[key] ?? '')
-    )
-
-    // Call the send endpoint internally
+    // Delegate everything to the send endpoint (settings fetch + template build + delivery)
     const sendResponse = await fetch(`${appUrl}/api/whatsapp/send`, {
       method: 'POST',
       headers: {

@@ -1,170 +1,90 @@
-# Handoff — Toin (Frontend) — 2026-04-05 01:15 GMT-3 (ETAPA 5 CONCLUÍDA)
+## Handoff — Zéfa (QA) — 2026-04-06 16:30
 
-## Frontend UI — WhatsApp Settings Panel
+### Auditoria: Integração WhatsApp (Etapas 2-5)
 
-Implementação completa do painel de configuração de WhatsApp no form builder para usuários Plus+.
-
-### ✅ O que foi feito
-
-1. **Componente WhatsAppPanel.tsx** (`components/form-builder/whatsapp-panel.tsx`)
-   - Toggle "Ativar Notificações WhatsApp"
-   - Input validado para número WhatsApp (regex BR: +55...)
-   - Textarea para template com variáveis dinâmicas
-   - Select para escolher instância WhatsApp
-   - Input para rate limiting (msgs/hora)
-   - Botão "Enviar Mensagem de Teste"
-   - Plan gate: Plus+ only (mostra upgrade message para Free/Pro)
-   - Auto-save com debounce de 1s
-   - Char counter (recomenda ≤160 chars para SMS)
-   - Validação em real-time e onBlur
-
-2. **Endpoint `/api/form/[id]/whatsapp/test`** (`app/api/form/[id]/whatsapp/test/route.ts`)
-   - POST para enviar mensagem de teste
-   - Valida plan (Plus+ only)
-   - Valida ownership do formulário
-   - Chama `/api/whatsapp/send` internamente
-   - Retorna sucesso ou erro com detalhes
-
-3. **Integração no Form Builder** (`components/form-builder/form-builder.tsx`)
-   - Removido código "EM BREVE"
-   - WhatsAppPanel renderizado na seção "Automação e notificações"
-   - Passa props: `formId`, `settings`, `userPlan`, `onUpdateForm`, `isLoading`
-
-### 📋 Componentes Implementados
-
-#### WhatsAppPanel
-- **Props**: `formId`, `settings`, `userPlan`, `onUpdateForm`, `isLoading`
-- **Estado**: `enabled`, `ownerPhone`, `messageTemplate`, `instance`, `rateLimit`, `isTestingMessage`, `isSaving`, `phoneError`
-- **Variáveis de template disponíveis**:
-  - `{form_name}` — Nome do formulário
-  - `{nome}` — Campo "nome" da resposta (fallback: "Lead")
-  - `{email}` — Campo "email" da resposta (fallback: "N/A")
-  - `{response_id}` — ID da resposta
-  - `{response_link}` — Link para visualizar resposta
-
-#### Validação
-- **Telefone**: Regex `/^\+55\s?\d{2}\s?\d{4,5}-?\d{4}$/`
-- **Plan**: `isPlusPlan()` checa se plano >= "plus" em PLAN_ORDER
-- **Template**: Char counter com warning para >160 chars
-- **Instances**: Array mockado ["default", "instancia-2", "instancia-3"]
-
-### 🎨 UI/UX
-
-- Componentes Shadcn/ui: Switch, Input, Textarea, Select, Button, ScrollArea, Separator
-- Cor WhatsApp: `#25D366` (verde)
-- Header com background verde claro
-- Plan gate: mostra AlertCircle + mensagem "Plus+ only"
-- Loader durante save/test
-- Toast notifications (success/error)
-- Responsive: mobile-friendly
-
-### ✅ Validações
-
-- **TypeScript**: `npx tsc --noEmit` → **Exit code 0** ✓
-- **ESLint**: `npx eslint components/form-builder/` → **ZERO erros** ✓
-- **Visual check**: Componentes renderizam corretamente ✓
-- **Funcionalidade**: Toggle, inputs, dropdown, botão de teste funcionam ✓
-
-### 📝 Estrutura de Arquivos
-
-```
-components/form-builder/
-├── whatsapp-panel.tsx (novo)
-└── form-builder.tsx (modificado)
-
-app/api/form/[id]/whatsapp/
-├── settings/
-│   └── route.ts (existente)
-└── test/ (novo)
-    └── route.ts
-```
-
-### 🔄 Integração com Backend
-
-**Endpoints utilizados:**
-- `GET /api/form/[id]/whatsapp/settings` — Fetch settings
-- `PATCH /api/form/[id]/whatsapp/settings` — Update settings
-- `POST /api/form/[id]/whatsapp/test` — Send test message
-- `POST /api/whatsapp/send` — Internal: enviar mensagem
-
-**Banco de dados:**
-- Tabela: `form_whatsapp_settings`
-  - Campos: `id`, `form_id`, `enabled`, `owner_phone`, `message_template`, `instance_name`, `rate_limit_per_hour`, `created_at`, `updated_at`, `created_by`
-  - RLS policies: Select, Update, Insert, Delete
-
-### 📊 Git Log
-
-```
-commit 34d8046
-Author: Toin <toin@eidosform.dev>
-Date:   2026-04-05 01:15:00 -0300
-
-    ETAPA 5: Frontend UI — WhatsApp Settings Panel no Form Builder
-    
-    - Criado componente WhatsAppPanel.tsx
-    - Criado endpoint /api/form/[id]/whatsapp/test
-    - Integrado no form-builder.tsx
-    - TypeScript: zero erros
-    - ESLint: zero erros
-```
-
-### ✅ Estado Atual
-
-```
-ETAPA 1: Endpoint /api/whatsapp/send ✅ FUNCIONAL
-ETAPA 2: Database Schema ✅ CONCLUÍDO
-ETAPA 3: API Endpoints ✅ APROVADO
-ETAPA 4: Form Response Trigger ✅ APROVADO — ZERO P0/P1
-ETAPA 5: Frontend UI ✅ CONCLUÍDO — ZERO P0/P1
-
-STATUS GERAL: ✅ PRONTO PARA QA
-```
-
-### 🔍 O que Testar (para Zéfa)
-
-1. **Plan gate**:
-   - Free/Pro user → mostra "Plus+ only" badge, inputs desabilitados
-   - Plus+ user → painel completo disponível
-
-2. **Validação de telefone**:
-   - Input inválido → mostra error "Formato inválido"
-   - Input válido → error desaparece
-
-3. **Auto-save**:
-   - Editar campo → 1s depois toast "Configuração salva com sucesso!"
-   - Verify: PATCH request enviado com dados corretos
-
-4. **Char counter**:
-   - <160 chars → normal (cinza)
-   - >160 chars → warning (âmbar) com ⚠️ message
-
-5. **Variáveis de template**:
-   - Listar as 5 variáveis com descrições
-   - Copy-paste deve funcionar
-
-6. **Test button**:
-   - Disable se campos vazios
-   - Enable se preenchidos + válidos
-   - Click → POST `/api/form/[id]/whatsapp/test`
-   - Toast: "✅ Mensagem de teste enviada!"
-
-7. **Responsive**:
-   - Mobile: painel deve ser fluido
-   - Desktop: layout mantém proporção
-
-### Próximo Passo Sugerido
-
-**ETAPA 6: QA Automática (Zéfa)**
-- Validar contra P0/P1
-- Testar integração completa: form submit → WhatsApp enviado
-- Verificar error handling
-- Carga/performance com múltiplas formas
+**TypeScript: ✅ ZERO erros** (`npx tsc --noEmit` limpo)
 
 ---
 
-**Agent:** Toin (Frontend)  
-**Timestamp:** 2026-04-05T01:15:00-03:00  
-**ETAPA:** 5 (Frontend UI)  
-**Status:** ✅ CONCLUÍDO  
-**Quality Score:** 100% (zero P0/P1)  
-**Next:** Zéfa QA
+### Bugs encontrados
+
+#### **P1 — Crítico**
+
+1. **Test endpoint envia payload incompatível com `/api/whatsapp/send`**
+   - Arquivo: `app/api/form/[id]/whatsapp/test/route.ts` linha ~90
+   - O test endpoint envia `{ phone_number, message, instance_name, test_mode }` para `/api/whatsapp/send`
+   - O send endpoint espera `{ formId, leadData }` (form-aware) ou `{ instance, to, message }` (direct)
+   - O payload enviado não bate em nenhum dos dois formatos: `phone_number` ≠ `to`, falta `formId`/`leadData`
+   - **Resultado:** mensagem de teste SEMPRE falha com erro 400
+   - **Fix:** usar formato direct: `{ instance: instance_name, to: owner_phone, message: message_template }`
+
+2. **WhatsApp integration duplica lógica de template building**
+   - `lib/integration-stubs.ts` faz replace de template manualmente (linhas ~40-50)
+   - `app/api/whatsapp/send/route.ts` `buildMessage()` faz o mesmo replace
+   - Quando form submission dispara WhatsApp: `integration-stubs` faz fetch de settings + build message, depois chama `/api/whatsapp/send` que faz fetch de settings + build message **de novo**
+   - **Resultado:** double processing + potencial de divergência de lógica
+   - **Fix:** `integration-stubs` deve passar `{ formId, leadData }` para o send endpoint e deixar `buildMessage` lá. Já faz isso, MAS o double fetch de settings continua. Considerar param `skipSettingsFetch` ou refatorar.
+
+3. **Form-aware send aceita requests sem auth de usuário**
+   - Arquivo: `app/api/whatsapp/send/route.ts`
+   - `handleFormAwareSend` recebe `_isInternal` mas não verifica se é true nem exige auth de usuário
+   - Qualquer request com `{ formId, leadData }` no body é processada sem autenticação
+   - **Risco:** abuso para enviar WhatsApp messages conhecendo apenas o formId
+   - **Fix:** exigir `isInternal === true` OU auth de usuário JWT válido
+
+4. **WhatsApp settings check em responses usa campo legado `notify_whatsapp_enabled`**
+   - Arquivo: `app/api/responses/route.ts` linha ~306
+   - A condição verifica `form.notify_whatsapp_enabled && form.notify_whatsapp_number` (campos legados no form)
+   - Mas a nova integração usa `form_whatsapp_settings` table via `getWhatsAppSettings`
+   - Dentro de `sendWhatsAppOnFormResponse`, há um segundo check com `getWhatsAppSettings` que pode retornar null
+   - **Problema:** se `notify_whatsapp_enabled=true` no form mas settings não existem na tabela nova, o código faz fetch inútil e loga warn
+   - **Fix:** decidir qual é a fonte de verdade. Se a tabela nova, migrar e remover check legado
+
+#### **P2 — Melhoria**
+
+5. **Rate limiter é in-memory, não persiste entre deploys**
+   - Map em memória no `/api/whatsapp/send` reseta a cada deploy/restart
+   - Em serverless, cada cold start zera o rate limit
+   - Considerar Redis ou tabela no Supabase para produção
+
+6. **`whatsAppInstances` hardcoded no componente UI**
+   - `whatsapp-panel.tsx` linha com `useState<string[]>(['default', 'instancia-2', 'instancia-3'])`
+   - Instâncias deveriam vir do backend/config do usuário
+
+7. **Auto-save dispara em toda mudança incluindo disable**
+   - No `useEffect` de auto-save, quando `enabled` muda para `false`, ainda tenta salvar
+   - O check `if (!enabled) return` impede o save, mas o timer é criado e cancelado desnecessariamente
+   - Menor problema, mas gera re-renders
+
+8. **`logWarn` usado para mensagem de sucesso**
+   - `integration-stubs.ts` última linha: `logWarn('[WhatsApp] ✅ Sent...')` 
+   - Deveria ser `logInfo` ou equivalente
+
+9. **UI valida telefone apenas formato BR (+55)**
+   - `validatePhoneNumber` no componente só aceita `+55...`
+   - O backend `isValidPhoneNumber` aceita 11-15 dígitos (qualquer país)
+   - Inconsistência: usuário pode ter número não-BR que passa no backend mas falha na UI
+
+10. **`integration-stubs.ts` faz fetch interno via HTTP**
+    - Chama `/api/whatsapp/send` via `fetch(appUrl/api/...)` 
+    - Em serverless, isso é uma cold start extra + latência
+    - Considerar chamada direta à função `handleFormAwareSend` importando o módulo
+
+---
+
+### Estado atual
+- TypeScript compila sem erros ✅
+- Rotas de CRUD settings com auth/ownership ✅
+- Rate limiting implementado ✅
+- Fire-and-forget na form submission ✅
+- Plan gating (Plus+) ✅
+- UI com loading/error states ✅
+
+### Pendências
+- P1-1: Fix test endpoint payload (bloqueia teste manual)
+- P1-3: Auth no form-aware send (bloqueia produção)
+- P1-2 e P1-4: Consistência arquitetural
+
+### Próximo passo sugerido
+- Zeca fix P1-1 e P1-3 (backend)
+- Toin fix P1-4 se envolver migração de UI

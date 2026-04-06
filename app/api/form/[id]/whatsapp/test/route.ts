@@ -126,10 +126,9 @@ export async function POST(
         Authorization: `Bearer ${internalApiSecret}`,
       },
       body: JSON.stringify({
-        phone_number: owner_phone,
+        instance: instance_name,
+        to: owner_phone,
         message: message_template,
-        instance_name,
-        test_mode: true,
       }),
     })
 

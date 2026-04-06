@@ -140,7 +140,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Mode 1: Form-aware send
     if (body.formId && body.leadData) {
-      return await handleFormAwareSend(body as unknown as FormAwareRequest, isInternal)
+      if (!isInternal) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      return await handleFormAwareSend(body as unknown as FormAwareRequest)
     }
 
     // Mode 2: Direct send (backward compat)
@@ -163,7 +166,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
 async function handleFormAwareSend(
   data: FormAwareRequest,
-  _isInternal: boolean
 ): Promise<NextResponse> {
   // 1. Fetch WhatsApp settings for this form
   const settings = await getWhatsAppSettings(data.formId)

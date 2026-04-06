@@ -303,19 +303,25 @@ export async function POST(req: NextRequest) {
       }).catch((err) => logError('Failed to send email notification', err))
     }
 
-    if (form.notify_whatsapp_enabled && form.notify_whatsapp_number && ownerPlanConfig?.emailNotifications) {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      sendWhatsAppOnFormResponse({
-        formId: form_id as string,
-        responseId,
-        responseData: answers as Record<string, unknown>,
-        form: {
-          id: form.id,
-          title: form.title,
-          user_id: form.user_id,
-        },
-        appUrl,
-      }).catch((err) => logError('Failed to send WhatsApp notification', err))
+    // WhatsApp notification — delegated to sendWhatsAppOnFormResponse which checks form_whatsapp_settings
+    // Plan gating: only Plus+ users have WhatsApp integration enabled
+    {
+      const PLAN_ORDER = ['free', 'starter', 'plus', 'professional'] as const
+      const planLevel = PLAN_ORDER.indexOf(ownerPlan as typeof PLAN_ORDER[number])
+      if (planLevel >= 1) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        sendWhatsAppOnFormResponse({
+          formId: form_id as string,
+          responseId,
+          responseData: answers as Record<string, unknown>,
+          form: {
+            id: form.id,
+            title: form.title,
+            user_id: form.user_id,
+          },
+          appUrl,
+        }).catch((err) => logError('Failed to send WhatsApp notification', err))
+      }
     }
 
     if (form.google_sheets_enabled && form.google_sheets_id) {

@@ -308,7 +308,7 @@ export async function POST(req: NextRequest) {
     {
       const PLAN_ORDER = ['free', 'starter', 'plus', 'professional'] as const
       const planLevel = PLAN_ORDER.indexOf(ownerPlan as typeof PLAN_ORDER[number])
-      if (planLevel >= 1) {
+      if (planLevel >= 2) {
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
         sendWhatsAppOnFormResponse({
           formId: form_id as string,

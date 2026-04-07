@@ -28,29 +28,20 @@ const MOCK_LOGS: SendLog[] = [
 
 const QR_EXPIRY_MS = 60_000
 
-export function AdminWhatsappPanel() {
+export function AdminWhatsAppPanel() {
   const [status, setStatus] = useState<WaStatus | null>(null)
   const [statusLoading, setStatusLoading] = useState(true)
   const [statusError, setStatusError] = useState<string | null>(null)
-
-  const [qrBlob, setQrBlob] = useState<Blob | null>(null)
-  const [qrObjectUrl, setQrObjectUrl] = useState<string | null>(null)
-  const [qrLoading, setQrLoading] = useState(false)
-  const [qrError, setQrError] = useState<string | null>(null)
+  const [qrAscii, setQrAscii] = useState<string | null>(null)
   const [qrGeneratedAt, setQrGeneratedAt] = useState<number | null>(null)
+  const [qrLoading, setQrLoading] = useState(false)
   const [qrExpired, setQrExpired] = useState(false)
-
+  const [qrError, setQrError] = useState<string | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [logs, setLogs] = useState<SendLog[]>(MOCK_LOGS)
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  // Clean up object URLs
-  useEffect(() => {
-    return () => {
-      if (qrObjectUrl) URL.revokeObjectURL(qrObjectUrl)
-    }
-  }, [qrObjectUrl])
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -111,9 +102,7 @@ export function AdminWhatsappPanel() {
   }
 
   const clearQr = () => {
-    setQrBlob(null)
-    if (qrObjectUrl) URL.revokeObjectURL(qrObjectUrl)
-    setQrObjectUrl(null)
+    setQrAscii(null)
     setQrGeneratedAt(null)
     setQrExpired(false)
     setQrError(null)
@@ -131,10 +120,8 @@ export function AdminWhatsappPanel() {
         throw new Error(body?.error || 'Falha ao gerar QR code')
       }
 
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      setQrBlob(blob)
-      setQrObjectUrl(url)
+      const data = await res.json()
+      setQrAscii(data.qr)
       setQrGeneratedAt(Date.now())
       startPolling()
     } catch (err) {
@@ -153,222 +140,164 @@ export function AdminWhatsappPanel() {
       clearQr()
       stopPolling()
       await fetchStatus()
-    } catch {
-      alert('Erro ao desconectar.')
+    } catch (err) {
+      setQrError(err instanceof Error ? err.message : 'Erro ao desconectar')
     } finally {
       setDisconnecting(false)
     }
   }
 
-  const connected = status?.connected ?? false
-
   return (
     <div className="space-y-6">
-      {/* Connection Status Card */}
+      {/* Status Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <MessageSquare className="h-5 w-5 text-green-600" />
-            Status da Conexão
+          <CardTitle className="flex items-center gap-2">
+            <Smartphone className="w-5 h-5" />
+            Status WhatsApp
           </CardTitle>
         </CardHeader>
         <CardContent>
           {statusLoading ? (
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              Verificando...
-            </div>
+            <div className="text-center py-8 text-gray-500">Carregando...</div>
           ) : statusError ? (
-            <p className="text-sm text-red-600">{statusError}</p>
-          ) : (
-            <div className="flex flex-wrap items-center gap-4">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${
-                  connected
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-red-100 text-red-800'
-                }`}
-              >
-                {connected ? '✅ Conectado' : '❌ Desconectado'}
-              </span>
-              {status?.phoneNumber && (
-                <span className="text-sm text-slate-600">
-                  📞 {status.phoneNumber}
-                </span>
+            <div className="text-center py-8 text-red-500">{statusError}</div>
+          ) : !status ? null : status.connected ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-green-600 font-medium">
+                <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+                Conectado
+              </div>
+              {status.phoneNumber && (
+                <div className="text-sm text-gray-600">
+                  Número: {status.phoneNumber}
+                </div>
               )}
+            </div>
+          ) : status.authenticated ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-yellow-600 font-medium">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Autenticando...
+              </div>
+              <div className="text-sm text-gray-600">
+                Aguarde a conexão ser estabelecida.
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="text-gray-500">Não conectado</div>
+              <button
+                onClick={handleGenerateQr}
+                disabled={qrLoading}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {qrLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Gerando...
+                  </>
+                ) : (
+                  <>
+                    <QrCode className="w-4 h-4" />
+                    Gerar QR Code
+                  </>
+                )}
+              </button>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* QR Code + Actions */}
-      {!connected && (
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <QrCode className="h-5 w-5" />
-                QR Code
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {qrObjectUrl && !qrExpired ? (
-                <div className="space-y-3">
-                  <img
-                    src={qrObjectUrl}
-                    alt="WhatsApp QR Code"
-                    className="mx-auto rounded-lg border border-slate-200 bg-white p-2"
-                    width={256}
-                    height={256}
-                  />
-                  <p className="text-center text-xs text-slate-500">
-                    Aguardando escaneamento...
-                  </p>
-                </div>
-              ) : qrExpired ? (
-                <div className="space-y-3 text-center">
-                  <p className="text-sm text-amber-600">
-                    ⏰ QR Code expirado
-                  </p>
-                  <button
-                    onClick={handleGenerateQr}
-                    disabled={qrLoading}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${qrLoading ? 'animate-spin' : ''}`} />
-                    Gerar novo QR
-                  </button>
+      {/* QR Code Card */}
+      {qrAscii && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <QrCode className="w-5 h-5" />
+              QR Code WhatsApp
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {qrExpired ? (
+                <div className="text-center py-8 text-orange-600">
+                  QR Code expirado. Gere um novo.
                 </div>
               ) : (
-                <button
-                  onClick={handleGenerateQr}
-                  disabled={qrLoading}
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {qrLoading ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Gerando...
-                    </>
-                  ) : (
-                    <>
-                      <QrCode className="h-4 w-4" />
-                      Gerar QR Code
-                    </>
-                  )}
-                </button>
+                <>
+                  <div className="flex justify-center">
+                    <pre className="text-xs leading-none bg-black text-green-400 p-4 rounded overflow-hidden">
+                      {qrAscii}
+                    </pre>
+                  </div>
+                  <div className="text-center text-sm text-gray-600">
+                    Escaneie com o WhatsApp Business → Dispositivos conectados
+                  </div>
+                  <div className="text-center text-sm text-blue-600">
+                    {status?.authenticated ? 'Aguardando escaneamento...' : 'Aguardando autenticação...'}
+                  </div>
+                </>
               )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-              {qrError && (
-                <p className="text-sm text-red-600">{qrError}</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Instructions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Smartphone className="h-5 w-5" />
-                Como conectar
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ol className="space-y-3 text-sm text-slate-700">
-                <li className="flex gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
-                    1
-                  </span>
-                  <span>Abra o <strong>WhatsApp</strong> no celular</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
-                    2
-                  </span>
-                  <span>Toque em <strong>Dispositivos conectados</strong></span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
-                    3
-                  </span>
-                  <span>Toque em <strong>Conectar dispositivo</strong></span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
-                    4
-                  </span>
-                  <span>Aponte a câmera para o <strong>QR Code</strong> ao lado</span>
-                </li>
-              </ol>
-            </CardContent>
-          </Card>
+      {qrError && (
+        <div className="text-center py-4 text-red-500 bg-red-50 rounded-lg">
+          {qrError}
         </div>
       )}
 
       {/* Disconnect Button */}
-      {connected && (
-        <div>
-          <button
-            onClick={handleDisconnect}
-            disabled={disconnecting}
-            className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-          >
-            {disconnecting ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Desconectando...
-              </>
-            ) : (
-              <>
-                <Unplug className="h-4 w-4" />
-                Desconectar WhatsApp
-              </>
-            )}
-          </button>
-        </div>
+      {status?.connected && (
+        <button
+          onClick={handleDisconnect}
+          disabled={disconnecting}
+          className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          {disconnecting ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Desconectando...
+            </>
+          ) : (
+            <>
+              <Unplug className="w-4 h-4" />
+              Desconectar WhatsApp
+            </>
+          )}
+        </button>
       )}
 
-      {/* Send Logs */}
+      {/* Logs Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Últimos envios</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="w-5 h-5" />
+            Últimos envios
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-500">
-                  <th className="pb-2 pr-4 font-medium">Destinatário</th>
-                  <th className="pb-2 pr-4 font-medium">Formulário</th>
-                  <th className="pb-2 pr-4 font-medium">Data</th>
-                  <th className="pb-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {MOCK_LOGS.map((log) => (
-                  <tr key={log.id} className="text-slate-700">
-                    <td className="py-2 pr-4">{log.recipient}</td>
-                    <td className="py-2 pr-4">{log.form}</td>
-                    <td className="py-2 pr-4 text-slate-500">{log.date}</td>
-                    <td className="py-2">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                          log.status === 'enviado'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}
-                      >
-                        {log.status === 'enviado' ? 'Enviado' : 'Erro'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-2">
+            {logs.map(log => (
+              <div key={log.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      log.status === 'enviado' ? 'bg-green-500' : 'bg-red-500'
+                    }`}
+                  />
+                  <div>
+                    <div className="font-medium">{log.recipient}</div>
+                    <div className="text-sm text-gray-500">{log.form}</div>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-500">{log.date}</div>
+              </div>
+            ))}
           </div>
-          <p className="mt-3 text-xs text-slate-400">
-            Dados de demonstração. Logs reais serão exibidos quando o backend de envio estiver integrado.
-          </p>
         </CardContent>
       </Card>
     </div>

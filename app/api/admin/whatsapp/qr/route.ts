@@ -5,7 +5,8 @@ const RATE_LIMIT_MS = 60_000
 let lastQrTime = 0
 
 function getWhatsappUrl(path: string): string {
-  const base = process.env.WHATSAPP_API_URL || 'http://localhost:3456'
+  // Try HTTPS domain first, fallback to HTTP IP:port
+  const base = process.env.WHATSAPP_API_URL || 'http://187.77.225.83:3457'
   return `${base}${path}`
 }
 
@@ -60,12 +61,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const pngBuffer = await response.arrayBuffer()
-    console.log(`[${ts}] [QR] PNG received: ${pngBuffer.byteLength} bytes`);
+    const data = await response.json()
+    console.log(`[${ts}] [QR] QR received: ${data.qr ? data.qr.length : 0} chars`);
 
-    return new Response(new Uint8Array(pngBuffer), {
+    return NextResponse.json(data, {
       headers: {
-        'Content-Type': 'image/png',
         'Cache-Control': 'no-store, max-age=0',
       },
     })

@@ -5,7 +5,8 @@ const RATE_LIMIT_MS = 60_000
 let lastQrTime = 0
 
 function getWhatsappUrl(path: string): string {
-  const base = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br'
+  // Force production domain — Vercel env var may not be loaded in time
+  const base = 'https://wpp.eidosform.com.br'
   return `${base}${path}`
 }
 

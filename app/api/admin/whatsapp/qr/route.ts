@@ -112,9 +112,10 @@ export async function POST(request: NextRequest) {
 
   // Rate limit
   const now = Date.now()
-  if (now - lastQrTime < RATE_LIMIT_MS) {
+  const remaining = RATE_LIMIT_MS - (now - lastQrTime)
+  if (remaining > 0) {
     return NextResponse.json(
-      { error: 'Rate limited. Try again in a minute.' },
+      { error: `Rate limited. Try again in ${Math.ceil(remaining / 1000)} seconds.` },
       { status: 429 }
     )
   }

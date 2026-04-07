@@ -26,7 +26,7 @@ export async function getWhatsAppSettings(
   formId: string
 ): Promise<FormWhatsAppSettings | null> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('form_whatsapp_settings')
       .select('*')
       .eq('form_id', formId)

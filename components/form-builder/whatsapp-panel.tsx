@@ -80,8 +80,6 @@ export function WhatsAppPanel({
     if (!onUpdateForm) return
     
     const timer = setTimeout(() => {
-      if (!enabled) return
-      
       const saveSettings = async () => {
         try {
           setIsSaving(true)
@@ -93,18 +91,30 @@ export function WhatsAppPanel({
           }
           
           setPhoneError(null)
-          
-          const response = await fetch(`/api/form/${formId}/whatsapp/settings`, {
+
+          const body = {
+            enabled,
+            owner_phone: ownerPhone,
+            message_template: messageTemplate,
+            instance_name: instance,
+            rate_limit_per_hour: rateLimit,
+          }
+
+          // Try PATCH first (update existing), fall back to POST (create new)
+          let response = await fetch(`/api/form/${formId}/whatsapp/settings`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              enabled,
-              owner_phone: ownerPhone,
-              message_template: messageTemplate,
-              instance_name: instance,
-              rate_limit_per_hour: rateLimit,
-            }),
+            body: JSON.stringify(body),
           })
+
+          if (response.status === 404) {
+            // Settings don't exist yet — create them
+            response = await fetch(`/api/form/${formId}/whatsapp/settings`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            })
+          }
 
           if (!response.ok) {
             const error = await response.json()

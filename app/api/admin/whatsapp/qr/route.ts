@@ -5,8 +5,7 @@ const RATE_LIMIT_MS = 60_000
 let lastQrTime = 0
 
 function getWhatsappUrl(path: string): string {
-  // Try HTTPS domain first, fallback to HTTP IP:port
-  const base = process.env.WHATSAPP_API_URL || 'http://187.77.225.83:3457'
+  const base = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br'
   return `${base}${path}`
 }
 
@@ -18,7 +17,7 @@ function getAuthHeaders(): Record<string, string> {
 
 export async function POST(request: NextRequest) {
   const ts = new Date().toISOString();
-  const whatsappUrl = process.env.WHATSAPP_API_URL || 'http://localhost:3456';
+  const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br';
   console.log(`[${ts}] [QR] API called. WHATSAPP_API_URL: ${whatsappUrl}`);
 
   const auth = await requireAdmin(request)

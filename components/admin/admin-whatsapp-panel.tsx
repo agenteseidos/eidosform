@@ -227,7 +227,7 @@ export function AdminWhatsAppPanel() {
               ) : (
                 <>
                   <div className="flex justify-center">
-                    <pre className="text-xs leading-none bg-black text-green-400 p-4 rounded overflow-x-auto">
+                    <pre className="text-sm leading-none bg-black text-green-400 p-2 rounded whitespace-pre-wrap w-full">
                       {qrAscii}
                     </pre>
                   </div>

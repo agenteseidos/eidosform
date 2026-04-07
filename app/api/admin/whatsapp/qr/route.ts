@@ -16,13 +16,22 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 export async function POST(request: NextRequest) {
+  const ts = new Date().toISOString();
+  const whatsappUrl = process.env.WHATSAPP_API_URL || 'http://localhost:3456';
+  console.log(`[${ts}] [QR] API called. WHATSAPP_API_URL: ${whatsappUrl}`);
+
   const auth = await requireAdmin(request)
-  if (!auth.ok) return auth.response
+  if (!auth.ok) {
+    console.log(`[${ts}] [QR] Auth failed.`);
+    return auth.response
+  }
+  console.log(`[${ts}] [QR] Auth OK. User: ${auth.user?.email || 'unknown'}`);
 
   // Rate limit
   const now = Date.now()
   const remaining = RATE_LIMIT_MS - (now - lastQrTime)
   if (remaining > 0) {
+    console.log(`[${ts}] [QR] Rate limited. Remaining: ${remaining}ms`);
     return NextResponse.json(
       { error: `Rate limited. Try again in ${Math.ceil(remaining / 1000)} seconds.` },
       { status: 429 }
@@ -30,15 +39,21 @@ export async function POST(request: NextRequest) {
   }
   lastQrTime = now
 
+  const fetchUrl = getWhatsappUrl('/api/whatsapp/qr');
+  console.log(`[${ts}] [QR] Fetching: ${fetchUrl}`);
+
   try {
-    const response = await fetch(getWhatsappUrl('/api/whatsapp/qr'), {
+    const fetchStart = Date.now();
+    const response = await fetch(fetchUrl, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(15_000),
     })
+    const fetchTime = Date.now() - fetchStart;
+    console.log(`[${ts}] [QR] Fetch response: status=${response.status}, time=${fetchTime}ms, content-type=${response.headers.get('content-type')}`);
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')
-      console.error('WhatsApp QR proxy failed:', response.status, text)
+      console.error(`[${ts}] [QR] Fetch failed. Status: ${response.status}. Body (first 500): ${text.substring(0, 500)}`);
       return NextResponse.json(
         { error: 'Failed to generate QR code' },
         { status: 502 }
@@ -46,6 +61,7 @@ export async function POST(request: NextRequest) {
     }
 
     const pngBuffer = await response.arrayBuffer()
+    console.log(`[${ts}] [QR] PNG received: ${pngBuffer.byteLength} bytes`);
 
     return new Response(new Uint8Array(pngBuffer), {
       headers: {
@@ -54,9 +70,9 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (err: unknown) {
-    console.error('WhatsApp QR generation failed:', err)
+    console.error(`[${ts}] [QR] Generation failed. Error:`, err);
     return NextResponse.json(
-      { error: 'Failed to generate QR code' },
+      { error: 'Failed to generate QR code', debug: String(err) },
       { status: 500 }
     )
   }

@@ -218,7 +218,7 @@ export function AdminWhatsAppPanel() {
               QR Code WhatsApp
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-h-[500px]">
             <div className="space-y-4">
               {qrExpired ? (
                 <div className="text-center py-8 text-orange-600">

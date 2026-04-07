@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { BarChart3, Shield, Users } from 'lucide-react'
+import { BarChart3, MessageSquare, Shield, Users } from 'lucide-react'
 import { requireAdminUser } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
@@ -14,6 +14,11 @@ const navItems = [
     href: '/admin/users',
     label: 'Usuários',
     icon: Users,
+  },
+  {
+    href: '/admin/whatsapp',
+    label: 'WhatsApp',
+    icon: MessageSquare,
   },
 ]
 

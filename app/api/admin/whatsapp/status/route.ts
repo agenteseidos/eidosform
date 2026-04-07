@@ -1,31 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 
-const execFileAsync = promisify(execFile)
-const WACLI = '/home/linuxbrew/.linuxbrew/bin/wacli'
+function getWhatsappUrl(path: string): string {
+  const base = process.env.WHATSAPP_API_URL || 'http://localhost:3456'
+  return `${base}${path}`
+}
+
+function getAuthHeaders(): Record<string, string> {
+  return {
+    'Authorization': `Bearer ${process.env.WHATSAPP_API_KEY || ''}`,
+  }
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request)
   if (!auth.ok) return auth.response
 
   try {
-    const { stdout } = await execFileAsync(WACLI, ['auth', 'status', '--json'], {
-      timeout: 10_000,
+    const response = await fetch(getWhatsappUrl('/api/whatsapp/status'), {
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(10_000),
     })
 
-    const result = JSON.parse(stdout)
-
-    if (!result.success) {
-      return NextResponse.json({
-        authenticated: false,
-        connected: false,
-        phoneNumber: null,
-      })
+    if (!response.ok) {
+      console.error('WhatsApp status proxy failed:', response.status)
+      return NextResponse.json(
+        { authenticated: false, connected: false, phoneNumber: null },
+        { status: 200 }
+      )
     }
 
-    const data = result.data ?? result
+    const data = await response.json()
     return NextResponse.json({
       authenticated: data.authenticated ?? false,
       connected: data.connected ?? data.authenticated ?? false,

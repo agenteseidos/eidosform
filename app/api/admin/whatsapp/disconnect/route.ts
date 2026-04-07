@@ -1,30 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 
-const execFileAsync = promisify(execFile)
-const WACLI = '/home/linuxbrew/.linuxbrew/bin/wacli'
+function getWhatsappUrl(path: string): string {
+  const base = process.env.WHATSAPP_API_URL || 'http://localhost:3456'
+  return `${base}${path}`
+}
+
+function getAuthHeaders(): Record<string, string> {
+  return {
+    'Authorization': `Bearer ${process.env.WHATSAPP_API_KEY || ''}`,
+  }
+}
 
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin(request)
   if (!auth.ok) return auth.response
 
   try {
-    const { stdout } = await execFileAsync(WACLI, ['auth', 'logout', '--json'], {
-      timeout: 15_000,
+    const response = await fetch(getWhatsappUrl('/api/whatsapp/disconnect'), {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(15_000),
     })
 
-    const result = JSON.parse(stdout)
-
-    if (result.success === false) {
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      console.error('WhatsApp disconnect proxy failed:', response.status, text)
       return NextResponse.json(
-        { error: 'Disconnect failed' },
-        { status: 500 }
+        { error: 'Failed to disconnect' },
+        { status: 502 }
       )
     }
 
-    return NextResponse.json({ success: true })
+    const data = await response.json()
+    return NextResponse.json({ success: data.success !== false })
   } catch (err: unknown) {
     console.error('WhatsApp disconnect failed:', err)
     return NextResponse.json(

@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import { getWhatsAppSettings } from '@/lib/whatsapp'
 import { logError, logWarn } from '@/lib/logger'
-
-const execFileAsync = promisify(execFile)
-
-const WACLI_PATH = '/home/linuxbrew/.linuxbrew/bin/wacli'
 
 // In-memory rate limiter: tracks sends per phone number per hour
 const rateLimiter = new Map<string, { count: number; resetAt: number }>()
@@ -77,31 +71,63 @@ function buildMessage(template: string, leadData: FormAwareRequest['leadData'], 
   return msg
 }
 
+function getWhatsappUrl(path: string): string {
+  const base = process.env.WHATSAPP_API_URL || 'http://localhost:3456'
+  return `${base}${path}`
+}
+
+function getAuthHeaders(): Record<string, string> {
+  return {
+    'Authorization': `Bearer ${process.env.WHATSAPP_API_KEY || ''}`,
+  }
+}
+
 /**
- * Send message via wacli CLI
+ * Send message via WhatsApp VPS server
  */
-async function sendViaWacli(phone: string, message: string): Promise<{ messageId: string }> {
+async function sendViaVps(phone: string, message: string): Promise<{ messageId: string }> {
   const cleanPhone = phone.replace(/\D/g, '')
 
   try {
-    const { stdout } = await execFileAsync(
-      WACLI_PATH,
-      ['send', '--to', cleanPhone, '--text', message],
-      { timeout: 30_000, env: { ...process.env, HOME: process.env.HOME } }
-    )
+    const response = await fetch(getWhatsappUrl('/api/whatsapp/send'), {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: cleanPhone,
+        message,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    })
 
-    const idMatch = stdout.match(/["']?messageId["']?\s*:\s*["']?([^"'\s,}]+)/)
-    return { messageId: idMatch?.[1] ?? `wacli-${Date.now()}` }
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      const status = response.status
+
+      if (status === 401 || status === 403) {
+        throw new Error('WHATSAPP_NOT_AUTH: VPS authentication failed')
+      }
+      if (status === 503) {
+        throw new Error('WHATSAPP_UNAVAILABLE: VPS service unavailable')
+      }
+
+      throw new Error(`VPS_ERROR: ${status} ${text.slice(0, 200)}`)
+    }
+
+    const data = await response.json()
+    return { messageId: data.messageId ?? `vps-${Date.now()}` }
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error)
 
-    if (errMsg.includes('not logged in') || errMsg.includes('unauthorized')) {
-      throw new Error('WHATCLI_NOT_AUTH: wacli is not authenticated')
+    if (errMsg.includes('timeout') || errMsg.includes('ECONNREFUSED')) {
+      throw new Error('WHATSAPP_UNAVAILABLE: VPS server unreachable')
     }
-    if (errMsg.includes('not found') || errMsg.includes('ENOENT')) {
-      throw new Error('WHATCLI_MISSING: wacli CLI not found')
+    if (errMsg.includes('not authenticated') || errMsg.includes('not logged in')) {
+      throw new Error('WHATSAPP_NOT_AUTH: VPS WhatsApp not authenticated')
     }
-    throw new Error(`WHATCLI_ERROR: ${errMsg.slice(0, 200)}`)
+    throw new Error(`WHATSAPP_ERROR: ${errMsg.slice(0, 200)}`)
   }
 }
 
@@ -120,12 +146,12 @@ function isInternalRequest(req: NextRequest): boolean {
  *
  * Two modes:
  * 1. Form-aware (recommended): { formId, leadData: { name, email, phone, ... } }
- *    Fetches settings from DB, builds message from template, sends via wacli.
+ *    Fetches settings from DB, builds message from template, sends via VPS.
  *
  * 2. Direct (legacy): { instance, to, message }
- *    Sends directly via wacli. Requires user auth.
+ *    Sends directly via VPS. Requires internal auth.
  *
- * Auth: Bearer token (user JWT via getRequestUser) or INTERNAL_API_SECRET for server-to-server
+ * Auth: Bearer token (INTERNAL_API_SECRET) for server-to-server
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
@@ -204,9 +230,9 @@ async function handleFormAwareSend(
     )
   }
 
-  // 5. Send via wacli
+  // 5. Send via VPS
   try {
-    const result = await sendViaWacli(settings.owner_phone, message)
+    const result = await sendViaVps(settings.owner_phone, message)
     return NextResponse.json({
       success: true,
       messageId: result.messageId,
@@ -214,13 +240,13 @@ async function handleFormAwareSend(
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    logError(`[whatsapp/send] wacli error for form ${data.formId}:`, msg)
+    logError(`[whatsapp/send] VPS error for form ${data.formId}:`, msg)
 
-    if (msg.startsWith('WHATCLI_NOT_AUTH')) {
+    if (msg.startsWith('WHATSAPP_NOT_AUTH')) {
       return NextResponse.json({ success: false, error: 'WhatsApp not authenticated' }, { status: 503 })
     }
-    if (msg.startsWith('WHATCLI_MISSING')) {
-      return NextResponse.json({ success: false, error: 'WhatsApp CLI not available' }, { status: 503 })
+    if (msg.startsWith('WHATSAPP_UNAVAILABLE')) {
+      return NextResponse.json({ success: false, error: 'WhatsApp service unavailable' }, { status: 503 })
     }
     return NextResponse.json({ success: false, error: 'Failed to send WhatsApp message' }, { status: 502 })
   }
@@ -244,7 +270,7 @@ async function handleDirectSend(data: DirectSendRequest): Promise<NextResponse> 
   }
 
   try {
-    const result = await sendViaWacli(cleanPhone, data.message)
+    const result = await sendViaVps(cleanPhone, data.message)
     return NextResponse.json({
       success: true,
       messageId: result.messageId,
@@ -254,8 +280,11 @@ async function handleDirectSend(data: DirectSendRequest): Promise<NextResponse> 
     const msg = err instanceof Error ? err.message : String(err)
     logError('[whatsapp/send] direct send error:', msg)
 
-    if (msg.startsWith('WHATCLI_NOT_AUTH')) {
+    if (msg.startsWith('WHATSAPP_NOT_AUTH')) {
       return NextResponse.json({ success: false, error: 'WhatsApp not authenticated' }, { status: 503 })
+    }
+    if (msg.startsWith('WHATSAPP_UNAVAILABLE')) {
+      return NextResponse.json({ success: false, error: 'WhatsApp service unavailable' }, { status: 503 })
     }
     return NextResponse.json({ success: false, error: 'Failed to send message' }, { status: 502 })
   }

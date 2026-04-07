@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
 
-const RATE_LIMIT_MS = 60_000
+const RATE_LIMIT_MS = 30_000
 let lastQrTime = 0
 
 function getWhatsappUrl(path: string): string {

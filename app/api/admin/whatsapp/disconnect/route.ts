@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
 
 function getWhatsappUrl(path: string): string {
-  const base = process.env.WHATSAPP_API_URL || 'http://localhost:3456'
+  const base = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br'
   return `${base}${path}`
 }
 

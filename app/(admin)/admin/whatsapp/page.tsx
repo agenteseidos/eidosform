@@ -1,4 +1,4 @@
-import { AdminWhatsappPanel } from '@/components/admin/admin-whatsapp-panel'
+import { AdminWhatsAppPanel } from '@/components/admin/admin-whatsapp-panel'
 
 export default function AdminWhatsappPage() {
   return (
@@ -10,7 +10,7 @@ export default function AdminWhatsappPage() {
         </p>
       </div>
 
-      <AdminWhatsappPanel />
+      <AdminWhatsAppPanel />
     </div>
   )
 }

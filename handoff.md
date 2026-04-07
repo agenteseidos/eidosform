@@ -1,22 +1,32 @@
-## Handoff — Zeca (P1 WhatsApp Fixes) — 2026-04-06 20:30
+## Handoff — Zeca — 2026-04-06 21:56
 
 ### O que foi feito
-- P1-1 (test payload): Já estava corrigido — test/route.ts usa `{ instance, to, message }`
-- P1-2 (auth em form-aware): Já estava corrigido — `isInternalRequest()` verifica em ambos os modos
-- P1-3 (dupla lógica template): Já estava corrigido — integration-stubs delega ao send endpoint
-- P1-4 (campo legado responses): **Corrigido** — removido `notify_whatsapp_enabled` e `notify_whatsapp_number` da query em responses/route.ts
+- Implementadas 3 APIs de gerenciamento WhatsApp no painel admin
 
-### Arquivos alterados
-- `app/api/responses/route.ts` — removidos campos legados do select e type assertion
-- `handoff.md` — atualizado
-
-### Estado atual
-- TypeScript strict: zero erros
-- Commit: e948af9
-- Push: origin/main ✅
+### APIs criadas
+1. **POST /api/admin/whatsapp/qr** — Gera QR code PNG real a partir do output do `wacli auth`. Rate limit 1/min.
+2. **GET /api/admin/whatsapp/status** — Retorna `{ authenticated, connected, phoneNumber }` via `wacli auth status --json`
+3. **POST /api/admin/whatsapp/disconnect** — Desconecta via `wacli auth logout`
 
 ### Decisões tomadas
-- 3 dos 4 P1s já estavam resolvidos em rounds anteriores; só P1-4 precisava de limpeza
+- QR parsing: converte Unicode block art (█▀▄) para matriz booleana, depois gera PNG com `pngjs`
+- Rate limit: variável em memória (suficiente para single-server, não funciona em serverless multi-instance)
+- Erros internos nunca são expostos — sempre resposta genérica 500
+- Todas as rotas usam `requireAdmin()` (pattern existente do projeto)
+
+### Arquivos alterados
+- `app/api/admin/whatsapp/qr/route.ts` (novo)
+- `app/api/admin/whatsapp/status/route.ts` (novo)
+- `app/api/admin/whatsapp/disconnect/route.ts` (novo)
+- `package.json` — adicionado `pngjs`
+- `package-lock.json` — atualizado
+
+### Estado atual
+- ✅ TypeScript strict, zero erros (`tsc --noEmit`)
+- ✅ Commit `6a08a90` pushed para origin/main
+
+### Pendências
+- Nenhuma
 
 ### Próximo passo sugerido
-- Zéfa revalidar os 4 P1s para confirmar que estão todos resolvidos
+- QA com Zéfa se necessário

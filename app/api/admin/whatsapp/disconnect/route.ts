@@ -8,7 +8,7 @@ function getWhatsappUrl(path: string): string {
 
 function getAuthHeaders(): Record<string, string> {
   return {
-    'Authorization': `Bearer ${process.env.WHATSAPP_API_KEY || ''}`,
+    'Authorization': `Bearer ${process.env.WHATSAPP_API_KEY || 'd740b16263d6e361d169d5a9b0a7c714054160f069756eff60456ee20b8d6d76'}`,
   }
 }
 

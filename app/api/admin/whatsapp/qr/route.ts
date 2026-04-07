@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
   try {
     const fetchStart = Date.now();
     const response = await fetch(fetchUrl, {
+      method: 'POST',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(15_000),
     })

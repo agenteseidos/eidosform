@@ -110,29 +110,38 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 })
     }
 
-    if (typeof owner_phone !== 'string' || owner_phone.trim() === '') {
-      return NextResponse.json(
-        { error: 'owner_phone is required and must be a non-empty string' },
-        { status: 400 }
-      )
-    }
-
-    const upsertData: Record<string, unknown> = {
+    // Validação do owner_phone
+    const updateData: Record<string, unknown> = {
       form_id: id,
       user_id: user.id,
       enabled,
-      owner_phone: owner_phone.trim(),
       updated_at: new Date().toISOString(),
     }
 
+    if (owner_phone !== undefined) {
+      if (owner_phone === null || owner_phone === '') {
+        // Permitir limpar o número
+        updateData.owner_phone = null
+      } else {
+        const cleaned = String(owner_phone).replace(/\D/g, '')
+        if (cleaned.length < 10 || cleaned.length > 15) {
+          return NextResponse.json(
+            { error: 'Número de WhatsApp inválido. Use formato: 5511999999999' },
+            { status: 400 }
+          )
+        }
+        updateData.owner_phone = cleaned
+      }
+    }
+
     if (typeof message_template === 'string') {
-      upsertData.message_template = message_template
+      updateData.message_template = message_template
     }
 
     // Upsert into form_whatsapp_settings
     const { data: settings, error: upsertError } = await supabase
       .from('form_whatsapp_settings')
-      .upsert(upsertData, { onConflict: 'form_id' })
+      .upsert(updateData, { onConflict: 'form_id' })
       .select()
       .single()
 

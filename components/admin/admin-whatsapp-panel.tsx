@@ -227,7 +227,7 @@ export function AdminWhatsAppPanel() {
               ) : (
                 <>
                   <div className="w-full overflow-x-auto">
-                    <pre className="text-sm leading-none bg-black text-green-400 p-4 rounded whitespace-pre inline-block min-w-full">
+                    <pre className="text-2xl leading-none bg-black text-green-400 p-8 rounded whitespace-pre block w-full text-center">
                       {qrAscii}
                     </pre>
                   </div>

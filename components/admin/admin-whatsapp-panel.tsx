@@ -32,7 +32,7 @@ export function AdminWhatsAppPanel() {
   const [status, setStatus] = useState<WaStatus | null>(null)
   const [statusLoading, setStatusLoading] = useState(true)
   const [statusError, setStatusError] = useState<string | null>(null)
-  const [qrAscii, setQrAscii] = useState<string | null>(null)
+  const [qrBase64, setQrBase64] = useState<string | null>(null)
   const [qrGeneratedAt, setQrGeneratedAt] = useState<number | null>(null)
   const [qrLoading, setQrLoading] = useState(false)
   const [qrExpired, setQrExpired] = useState(false)
@@ -59,12 +59,10 @@ export function AdminWhatsAppPanel() {
     }
   }, [])
 
-  // Initial status load
   useEffect(() => {
     fetchStatus()
   }, [fetchStatus])
 
-  // QR expiry timer
   useEffect(() => {
     if (!qrGeneratedAt) return
     setQrExpired(false)
@@ -102,7 +100,7 @@ export function AdminWhatsAppPanel() {
   }
 
   const clearQr = () => {
-    setQrAscii(null)
+    setQrBase64(null)
     setQrGeneratedAt(null)
     setQrExpired(false)
     setQrError(null)
@@ -121,7 +119,7 @@ export function AdminWhatsAppPanel() {
       }
 
       const data = await res.json()
-      setQrAscii(data.qr)
+      setQrBase64(data.qr)
       setQrGeneratedAt(Date.now())
       startPolling()
     } catch (err) {
@@ -210,7 +208,7 @@ export function AdminWhatsAppPanel() {
       </Card>
 
       {/* QR Code Card */}
-      {qrAscii && (
+      {qrBase64 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -218,7 +216,7 @@ export function AdminWhatsAppPanel() {
               QR Code WhatsApp
             </CardTitle>
           </CardHeader>
-          <CardContent className="min-h-[700px]">
+          <CardContent>
             <div className="space-y-4">
               {qrExpired ? (
                 <div className="text-center py-8 text-orange-600">
@@ -226,10 +224,13 @@ export function AdminWhatsAppPanel() {
                 </div>
               ) : (
                 <>
-                  <div className="w-full overflow-x-auto">
-                    <pre className="text-2xl leading-none bg-black text-green-400 p-8 rounded whitespace-pre block w-full text-center">
-                      {qrAscii}
-                    </pre>
+                  <div className="flex justify-center">
+                    <img
+                      src={`data:image/png;base64,${qrBase64}`}
+                      alt="QR Code WhatsApp"
+                      className="w-64 h-64 object-contain"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
                   </div>
                   <div className="text-center text-sm text-gray-600">
                     Escaneie com o WhatsApp Business → Dispositivos conectados

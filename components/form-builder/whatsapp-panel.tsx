@@ -37,10 +37,10 @@ function isPlusPlan(plan: string | null | undefined): boolean {
   return PLAN_ORDER.indexOf(normalizedPlan as typeof PLAN_ORDER[number]) >= PLAN_ORDER.indexOf('plus')
 }
 
-// Phone validation (BR format: +55...)
+// Phone validation (digits only, 10-15 chars)
 function validatePhoneNumber(phone: string): boolean {
-  const phoneRegex = /^\+55\s?\d{2}\s?\d{4,5}-?\d{4}$/
-  return phoneRegex.test(phone.trim())
+  const digits = phone.replace(/\D/g, '')
+  return digits.length >= 10 && digits.length <= 15
 }
 
 // Available template variables
@@ -114,8 +114,8 @@ export function WhatsAppPanel({
           setIsSaving(true)
 
           // Validate phone if enabled
-          if (enabled && !validatePhoneNumber(ownerPhone)) {
-            setPhoneError('Número de WhatsApp inválido. Use formato: +55 11 98765-4321')
+          if (enabled && ownerPhone && !validatePhoneNumber(ownerPhone)) {
+            setPhoneError('Número muito curto. Inclua o código do país (55) e o DDD.')
             return
           }
 
@@ -285,24 +285,24 @@ export function WhatsAppPanel({
                   type="tel"
                   value={ownerPhone}
                   onChange={(e) => {
-                    setOwnerPhone(e.target.value)
-                    if (e.target.value && !validatePhoneNumber(e.target.value)) {
-                      setPhoneError('Formato inválido')
+                    // Aceita apenas dígitos
+                    const digits = e.target.value.replace(/\D/g, '')
+                    setOwnerPhone(digits)
+                    if (digits && digits.length >= 10) {
+                      setPhoneError(null)
+                    } else if (digits) {
+                      setPhoneError('Número muito curto. Inclua o código do país (55) e o DDD.')
                     } else {
                       setPhoneError(null)
                     }
                   }}
-                  onBlur={() => {
-                    if (ownerPhone && !validatePhoneNumber(ownerPhone)) {
-                      setPhoneError('Número de WhatsApp inválido. Use formato: +55 11 98765-4321')
-                    }
-                  }}
                   disabled={isLoading || isSaving}
-                  placeholder="+55 11 98765-4321"
+                  placeholder="5511999999999"
+                  maxLength={15}
                   className={`text-sm ${phoneError ? 'border-red-500 focus:border-red-500' : ''}`}
                 />
                 <p className="text-[10px] text-slate-500 mt-1">
-                  Número que receberá as notificações (formato BR: +55)
+                  Digite com código do país e DDD, sem espaços ou traços. Ex: 5511999999999
                 </p>
                 {phoneError && (
                   <p className="text-[10px] text-red-500 mt-1">{phoneError}</p>

@@ -12,8 +12,10 @@ export function isValidNotificationEmail(value: string): boolean {
 }
 
 export function isValidWhatsAppNumber(value: string): boolean {
-  const normalized = value.replace(/[\s\-().]/g, '')
-  return /^\+?\d{10,15}$/.test(normalized)
+  const cleaned = value.replace(/\D/g, '')
+  // Brasil: 55 + DDD (2) + número (8 ou 9) = 12 ou 13 dígitos
+  // Internacional: mínimo 10, máximo 15 dígitos
+  return cleaned.length >= 10 && cleaned.length <= 15
 }
 
 export function isValidGoogleSheetsId(value: string): boolean {
@@ -21,7 +23,8 @@ export function isValidGoogleSheetsId(value: string): boolean {
 }
 
 export function normalizeWhatsAppNumber(value: string): string {
-  return value.replace(/[\s\-().]/g, '')
+  // Remove tudo que não é dígito
+  return value.replace(/\D/g, '')
 }
 
 export function validateFormIntegrations(input: {

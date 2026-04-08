@@ -56,65 +56,81 @@ const DEFAULT_MESSAGE_TEMPLATE = 'Nova resposta em {form_name}: {nome}'
 
 export function WhatsAppPanel({
   formId,
-  settings,
+  settings: initialSettings,
   userPlan = 'free',
   onUpdateForm,
   isLoading = false,
 }: WhatsAppPanelProps) {
-  const [enabled, setEnabled] = useState(settings?.enabled ?? false)
-  const [ownerPhone, setOwnerPhone] = useState(settings?.owner_phone ?? '')
+  const [enabled, setEnabled] = useState(initialSettings?.enabled ?? false)
+  const [ownerPhone, setOwnerPhone] = useState(initialSettings?.owner_phone ?? '')
   const [messageTemplate, setMessageTemplate] = useState(
-    settings?.message_template ?? DEFAULT_MESSAGE_TEMPLATE
+    initialSettings?.message_template ?? DEFAULT_MESSAGE_TEMPLATE
   )
-  const [instance, setInstance] = useState(settings?.instance_name ?? 'default')
-  const [rateLimit, setRateLimit] = useState(settings?.rate_limit_per_hour ?? 100)
+  const [instance, setInstance] = useState(initialSettings?.instance_name ?? 'default')
+  const [rateLimit, setRateLimit] = useState(initialSettings?.rate_limit_per_hour ?? 100)
   const [isTestingMessage, setIsTestingMessage] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true)
   const [whatsAppInstances] = useState<string[]>(['default', 'instancia-2', 'instancia-3'])
   const [phoneError, setPhoneError] = useState<string | null>(null)
+  const [settingsInitialized, setSettingsInitialized] = useState(false)
 
   const isPlusUser = isPlusPlan(userPlan)
 
-  // Auto-save on change (debounce)
+  // Load settings from unified endpoint on mount
   useEffect(() => {
-    if (!onUpdateForm) return
-    
+    const loadSettings = async () => {
+      try {
+        setIsLoadingSettings(true)
+        const response = await fetch(`/api/forms/${formId}/whatsapp`)
+        if (response.ok) {
+          const data = await response.json()
+          const s = data.settings
+          if (s) {
+            setEnabled(s.enabled ?? false)
+            setOwnerPhone(s.owner_phone ?? '')
+            setMessageTemplate(s.message_template ?? DEFAULT_MESSAGE_TEMPLATE)
+            setInstance(s.instance_name ?? 'default')
+            setRateLimit(s.rate_limit_per_hour ?? 100)
+          }
+        }
+      } catch (error) {
+        console.error('Error loading WhatsApp settings:', error)
+      } finally {
+        setIsLoadingSettings(false)
+        setSettingsInitialized(true)
+      }
+    }
+    loadSettings()
+  }, [formId])
+
+  // Auto-save on change (debounce) — only after initial load
+  useEffect(() => {
+    if (!settingsInitialized) return
+
     const timer = setTimeout(() => {
       const saveSettings = async () => {
         try {
           setIsSaving(true)
-          
+
           // Validate phone if enabled
           if (enabled && !validatePhoneNumber(ownerPhone)) {
             setPhoneError('Número de WhatsApp inválido. Use formato: +55 11 98765-4321')
             return
           }
-          
+
           setPhoneError(null)
 
-          const body = {
-            enabled,
-            owner_phone: ownerPhone,
-            message_template: messageTemplate,
-            instance_name: instance,
-            rate_limit_per_hour: rateLimit,
-          }
-
-          // Try PATCH first (update existing), fall back to POST (create new)
-          let response = await fetch(`/api/form/${formId}/whatsapp/settings`, {
-            method: 'PATCH',
+          // Upsert via unified endpoint
+          const response = await fetch(`/api/forms/${formId}/whatsapp`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+            body: JSON.stringify({
+              enabled,
+              owner_phone: ownerPhone,
+              message_template: messageTemplate,
+            }),
           })
-
-          if (response.status === 404) {
-            // Settings don't exist yet — create them
-            response = await fetch(`/api/form/${formId}/whatsapp/settings`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            })
-          }
 
           if (!response.ok) {
             const error = await response.json()
@@ -135,7 +151,7 @@ export function WhatsAppPanel({
     }, 1000) // 1 second debounce
 
     return () => clearTimeout(timer)
-  }, [enabled, ownerPhone, messageTemplate, instance, rateLimit, formId, onUpdateForm])
+  }, [enabled, ownerPhone, messageTemplate, formId, settingsInitialized])
 
   const handleToggle = useCallback((checked: boolean) => {
     setEnabled(checked)
@@ -181,6 +197,23 @@ export function WhatsAppPanel({
   const validated = enabled && ownerPhone && validatePhoneNumber(ownerPhone)
   const charCount = messageTemplate.length
   const isCharCountWarning = charCount > 160
+
+  // Show loading while fetching settings
+  if (isLoadingSettings) {
+    return (
+      <div className="h-full w-full flex flex-col">
+        <div className="shrink-0 px-4 py-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="w-4 h-4" style={{ color: WHATSAPP_GREEN }} />
+            <span className="text-sm font-medium text-slate-700">WhatsApp Notifications</span>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center py-8">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        </div>
+      </div>
+    )
+  }
 
   // If not Plus+ plan, show upgrade message
   if (!isPlusUser) {

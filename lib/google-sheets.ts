@@ -1,5 +1,6 @@
 import { google } from 'googleapis'
 
+const META_EVENTS_COLUMN = 'meta_events'
 const UTM_COLUMNS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
 
 function getAuth() {
@@ -94,7 +95,7 @@ export async function connectSpreadsheet(
 
   if (!existingHeaders || existingHeaders.length === 0) {
     // Write header row: Data/Hora | field labels | UTM columns
-    const headers = ['Data/Hora', ...fieldLabels, ...UTM_COLUMNS]
+    const headers = ['Data/Hora', ...fieldLabels, META_EVENTS_COLUMN, ...UTM_COLUMNS]
 
     await sheets.spreadsheets.values.update({
       spreadsheetId,
@@ -175,7 +176,7 @@ export async function appendSubmission(
 
   if (newLabels.length > 0) {
     // Rebuild full header row: Data/Hora | existing data headers | new labels | UTMs
-    const updatedHeaders = ['Data/Hora', ...dataHeaders, ...newLabels, ...UTM_COLUMNS]
+    const updatedHeaders = ['Data/Hora', ...dataHeaders, ...newLabels, META_EVENTS_COLUMN, ...UTM_COLUMNS]
 
     await sheets.spreadsheets.values.update({
       spreadsheetId,
@@ -205,8 +206,13 @@ export async function appendSubmission(
   const now = new Date()
   const timestamp = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
+  const metaEventsValue = Array.isArray(answers.meta_events)
+    ? (answers.meta_events as unknown[]).map(formatAnswerValue).join('; ')
+    : ''
+
   const row = finalHeaders.map((header) => {
     if (header === 'Data/Hora') return timestamp
+    if (header === META_EVENTS_COLUMN) return metaEventsValue
     if (UTM_COLUMNS.includes(header)) return utmData[header] ?? ''
     return labelToValue[header] ?? ''
   })

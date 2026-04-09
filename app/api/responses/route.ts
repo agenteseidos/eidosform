@@ -311,6 +311,7 @@ export async function POST(req: NextRequest) {
             id: form.id,
             title: form.title,
             user_id: form.user_id,
+            questions: form.questions as Array<{ id: string; title?: string; type?: string }>,
           },
           appUrl,
         }).catch((err) => logError('Failed to send WhatsApp notification', err))

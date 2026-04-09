@@ -16,23 +16,46 @@ export async function sendWhatsAppOnFormResponse(params: {
     id: string
     title: string | null
     user_id: string
+    questions?: Array<{ id: string; title?: string; type?: string }>
   }
   appUrl: string
 }): Promise<void> {
   const { formId, responseId, responseData, appUrl } = params
 
   try {
-    // Build lead data from response answers
+    // Map question IDs to titles for readable data
+    const questionsMap = new Map<string, string>()
+    if (params.form.questions) {
+      for (const q of params.form.questions) {
+        if (q.id && q.title) questionsMap.set(q.id, q.title.toLowerCase().trim())
+      }
+    }
+
+    // Build lead data by matching answer keys to question titles
+    const mappedAnswers: Record<string, string> = {}
+    for (const [key, value] of Object.entries(responseData)) {
+      const label = questionsMap.get(key) || key
+      mappedAnswers[label] = String(value ?? '')
+    }
+
+    // Find name, email, phone by scanning question titles
+    const findByLabel = (...labels: string[]): string => {
+      for (const label of labels) {
+        for (const [key, val] of Object.entries(mappedAnswers)) {
+          if (key.includes(label)) return val
+        }
+      }
+      return ''
+    }
+
     const leadData = {
-      name: String(responseData.nome || responseData.name || 'Lead'),
-      email: String(responseData.email || 'N/A'),
-      phone: String(responseData.phone || responseData.telefone || ''),
+      name: findByLabel('nome', 'name', 'nome completo') || 'Lead',
+      email: findByLabel('email', 'e-mail') || 'N/A',
+      phone: findByLabel('telefone', 'phone', 'celular', 'whatsapp') || '',
       form_name: params.form.title || 'Formulário',
       response_id: responseId,
       response_link: `${appUrl}/form/${formId}/responses/${responseId}`,
-      ...Object.fromEntries(
-        Object.entries(responseData).map(([k, v]) => [k, String(v)])
-      ),
+      ...mappedAnswers,
     }
 
     // Delegate everything to the send endpoint (settings fetch + template build + delivery)

@@ -51,10 +51,10 @@ export default async function DashboardPage() {
   const responseCountsByForm = Object.fromEntries(responseCountMap.entries())
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <Suspense><ErrorToast /></Suspense>
       <OnboardingWrapper isNewUser={isNewUser} />
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-6 sm:mb-8 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Meus Formulários</h1>
           <p className="mt-1 text-slate-600">Crie e gerencie seus formulários</p>

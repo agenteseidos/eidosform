@@ -44,7 +44,7 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
   return (
     <>
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/60">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <EidosLogo variant="reduced" theme="light" href="/dashboard" height={34} />
             <div className="hidden md:flex items-center gap-6">
@@ -130,22 +130,22 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
       </nav>
 
       {mobileOpen && (
-        <div className="md:hidden fixed top-16 left-0 right-0 z-40 bg-white border-b border-slate-200 shadow-lg px-6 py-4 flex flex-col gap-3">
-          <Link href="/dashboard" className="text-sm font-medium text-slate-700 hover:text-slate-900" onClick={() => setMobileOpen(false)}>
+        <div className="md:hidden fixed top-16 left-0 right-0 z-40 bg-white border-b border-slate-200 shadow-lg px-4 py-3 flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-4rem)]">
+          <Link href="/dashboard" className="text-sm font-medium text-slate-700 hover:text-slate-900 rounded-lg px-3 py-3 min-h-[44px] flex items-center" onClick={() => setMobileOpen(false)}>
             Meus Formulários
           </Link>
-          <Link href="/forms/new" className="text-sm font-medium text-blue-600 hover:text-blue-700" onClick={() => setMobileOpen(false)}>
+          <Link href="/forms/new" className="text-sm font-medium text-blue-600 hover:text-blue-700 rounded-lg px-3 py-3 min-h-[44px] flex items-center" onClick={() => setMobileOpen(false)}>
             + Criar Formulário
           </Link>
           {showUpgradeButton && (
-            <Link href="/billing" className="text-sm font-semibold text-yellow-700 hover:text-yellow-800" onClick={() => setMobileOpen(false)}>
+            <Link href="/billing" className="text-sm font-semibold text-yellow-700 hover:text-yellow-800 rounded-lg px-3 py-3 min-h-[44px] flex items-center" onClick={() => setMobileOpen(false)}>
               ✨ Fazer upgrade
             </Link>
           )}
-          <Link href="/settings" className="text-sm font-medium text-slate-700 hover:text-slate-900" onClick={() => setMobileOpen(false)}>
+          <Link href="/settings" className="text-sm font-medium text-slate-700 hover:text-slate-900 rounded-lg px-3 py-3 min-h-[44px] flex items-center" onClick={() => setMobileOpen(false)}>
             Configurações
           </Link>
-          <button onClick={() => { setMobileOpen(false); handleSignOut() }} className="text-sm font-medium text-red-600 hover:text-red-700 text-left">
+          <button onClick={() => { setMobileOpen(false); handleSignOut() }} className="text-sm font-medium text-red-600 hover:text-red-700 text-left rounded-lg px-3 py-3 min-h-[44px] flex items-center">
             Sair
           </button>
         </div>

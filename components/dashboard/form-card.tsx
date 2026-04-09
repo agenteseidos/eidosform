@@ -168,14 +168,14 @@ export function FormCard({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           {getStatusBadge(form.status)}
-          <Badge variant="outline" className="border-slate-200 text-slate-500">
+          <Badge variant="outline" className="border-slate-200 text-slate-500 max-w-[140px] truncate">
             <Folder className="mr-1 h-3 w-3" />
-            {currentFolder?.name || 'Sem pasta'}
+            <span className="truncate">{currentFolder?.name || 'Sem pasta'}</span>
           </Badge>
         </div>
         <div className="flex items-center gap-1 text-sm text-slate-500 shrink-0">
           <BarChart3 className="w-4 h-4" />
-          <span>{responseCount} respostas</span>
+          <span className="tabular-nums">{responseCount} resp.</span>
         </div>
       </div>
 
@@ -217,13 +217,13 @@ export function FormCard({
 
       <div className="mt-4 pt-4 border-t border-slate-100 hidden sm:flex items-center gap-2">
         <Link href={`/forms/${form.id}/edit`} className="flex-1">
-          <Button variant="outline" size="sm" className="w-full hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors">
+          <Button variant="outline" size="sm" className="w-full h-11 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors">
             <Pencil className="w-3 h-3 mr-2" />
             Editar
           </Button>
         </Link>
         <Link href={`/forms/${form.id}/responses`} className="flex-1">
-          <Button variant="outline" size="sm" className="w-full hover:bg-sky-50 hover:text-sky-700 hover:border-sky-200 transition-colors">
+          <Button variant="outline" size="sm" className="w-full h-11 hover:bg-sky-50 hover:text-sky-700 hover:border-sky-200 transition-colors">
             <BarChart3 className="w-3 h-3 mr-2" />
             Respostas
           </Button>

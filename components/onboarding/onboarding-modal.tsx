@@ -70,9 +70,9 @@ export function OnboardingModal({ open, onClose }: OnboardingModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden border-0 shadow-2xl">
+      <DialogContent className="sm:max-w-md p-0 overflow-hidden border-0 shadow-2xl mx-4">
         {/* Header colorido */}
-        <div className={`${colors.bg} px-8 pt-10 pb-8 text-center`}>
+        <div className={`${colors.bg} px-6 sm:px-8 pt-8 sm:pt-10 pb-6 sm:pb-8 text-center`}>
           <div className="text-5xl mb-4">{step.emoji}</div>
           <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl ${colors.icon} mb-4`}>
             <Icon className="w-7 h-7" />
@@ -82,7 +82,7 @@ export function OnboardingModal({ open, onClose }: OnboardingModalProps) {
         </div>
 
         {/* Body */}
-        <div className="px-8 py-6">
+        <div className="px-6 sm:px-8 py-5 sm:py-6">
           <p className="text-slate-600 text-sm leading-relaxed text-center mb-6">
             {step.description}
           </p>

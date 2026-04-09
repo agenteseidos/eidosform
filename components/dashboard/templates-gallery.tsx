@@ -73,10 +73,10 @@ export function TemplatesGallery() {
               {filtered.map(template => (
                 <div
                   key={template.id}
-                  className="flex items-center gap-4 px-4 py-3.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all group"
+                  className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 py-3.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all group"
                 >
                   <button
-                    className="flex items-center gap-4 flex-1 min-w-0 text-left cursor-pointer"
+                    className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 text-left cursor-pointer"
                     onClick={() => setPreview(template)}
                   >
                     <div
@@ -90,21 +90,23 @@ export function TemplatesGallery() {
                       <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{template.description}</p>
                     </div>
                   </button>
-                  <Badge className="bg-slate-100 text-slate-500 text-[10px] font-normal shrink-0">
-                    {template.category}
-                  </Badge>
-                  <span className="text-xs text-slate-500 shrink-0 tabular-nums">
-                    {template.questions.length} {template.questions.length === 1 ? 'pergunta' : 'perguntas'}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs shrink-0 opacity-70 group-hover:opacity-100 transition-opacity"
-                    onClick={() => handleUseTemplate(template)}
-                  >
-                    Usar
-                    <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                  </Button>
+                  <div className="flex items-center gap-2 pl-12 sm:pl-0">
+                    <Badge className="bg-slate-100 text-slate-500 text-[10px] font-normal shrink-0">
+                      {template.category}
+                    </Badge>
+                    <span className="text-xs text-slate-500 shrink-0 tabular-nums">
+                      {template.questions.length} {template.questions.length === 1 ? 'pergunta' : 'perguntas'}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs shrink-0 h-9 min-w-[70px] opacity-70 group-hover:opacity-100 transition-opacity"
+                      onClick={() => handleUseTemplate(template)}
+                    >
+                      Usar
+                      <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

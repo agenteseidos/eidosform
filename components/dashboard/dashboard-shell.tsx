@@ -18,6 +18,13 @@ import { Form, Folder } from '@/lib/database.types'
 import { FormCard } from '@/components/dashboard/form-card'
 import { Folder as FolderIcon, FolderOpen, Plus, Files } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 type FolderFilter = 'all' | 'unassigned' | string
 
@@ -150,8 +157,8 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
 
   return (
     <>
-      <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:block hidden">
           <div className="mb-3 px-2">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Organização</p>
           </div>
@@ -219,13 +226,42 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
         </aside>
 
         <div>
-          <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">{selectedFolderName}</h2>
-              <p className="mt-1 text-sm text-slate-500">
+          {/* Mobile folder filter */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-3 sm:py-4 shadow-sm">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-semibold text-slate-900 truncate">{selectedFolderName}</h2>
+              <p className="mt-0.5 sm:mt-1 text-sm text-slate-500">
                 {visibleForms.length} formulário{visibleForms.length === 1 ? '' : 's'} nesta visualização
               </p>
             </div>
+            <Select
+              value={selectedFilter}
+              onValueChange={(value) => setSelectedFilter(value as FolderFilter)}
+            >
+              <SelectTrigger className="lg:hidden w-full sm:w-auto sm:min-w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">📋 Todos ({forms.length})</SelectItem>
+                <SelectItem value="unassigned">📁 Sem pasta ({formsWithFolders.filter((f) => !f.folder_id).length})</SelectItem>
+                {folders.map((folder) => (
+                  <SelectItem key={folder.id} value={folder.id}>
+                    📂 {folder.name} ({formsWithFolders.filter((f) => f.folder_id === folder.id).length})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              className="lg:hidden h-11 w-11 shrink-0"
+              onClick={() => setIsFolderDialogOpen(true)}
+              disabled={isPending}
+              aria-label="Nova pasta"
+              title="Nova pasta"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
           </div>
 
           {visibleForms.length === 0 ? (
@@ -233,7 +269,7 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
               Nenhum formulário encontrado nessa pasta.
             </Card>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {visibleForms.map((form) => (
                 <FormCard
                   key={form.id}

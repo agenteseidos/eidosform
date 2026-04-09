@@ -104,3 +104,48 @@
 ### Pendências
 - Teste visual em dispositivos reais (foco em telas curtas com register)
 - Verificar toggle de senha no reset em touch targets pequenos
+
+---
+
+## Handoff — Toin (Fix Responsividade ETAPA 4 Dashboard) — 2026-04-09 17:13 GMT-3
+
+### O que foi feito
+- Corrigidos bugs de responsividade no Dashboard (layout, cards, nav, modais)
+- Todos os fixes em um único commit `64a3cb0`
+- `npx tsc --noEmit` passou sem erros
+
+### Componentes afetados
+- `app/(dashboard)/dashboard/page.tsx`
+- `components/dashboard/dashboard-shell.tsx`
+- `components/dashboard/nav.tsx`
+- `components/dashboard/form-card.tsx`
+- `components/dashboard/templates-gallery.tsx`
+- `components/onboarding/onboarding-modal.tsx`
+
+### Correções aplicadas
+
+| Item | Antes | Depois | Arquivo |
+|---|---|---|---|
+| Nav padding | `px-6` fixo | `px-4 sm:px-6` | `page.tsx` | |
+| Mobile menu items | sem touch target | `min-h-[44px] rounded-lg py-3` | `nav.tsx` |
+| Mobile menu overflow | sem scroll | `overflow-y-auto max-h-[calc(100vh-4rem)]` | `nav.tsx` |
+| Sidebar em mobile | sempre visível | `lg:block hidden`, select inline substitui | `dashboard-shell.tsx` |
+| Grid cards | `md:grid-cols-2` | `sm:grid-cols-2` | `dashboard-shell.tsx` |
+| Header bar | sem wrap | `flex-wrap gap-3` | `dashboard-shell.tsx` |
+| Filtro mobile | inexistente | Select inline + botão Nova pasta | `dashboard-shell.tsx` |
+| Badge pasta | overflow de texto | `max-w-[140px] truncate` | `form-card.tsx` |
+| Botões desktop | `size-sm` (~36px) | `h-11` (44px touch target) | `form-card.tsx` |
+| Label respostas | "X respostas" | "X resp." em mobile | `form-card.tsx` |
+| Template row | 5 itens inline | `flex-col sm:flex-row` responsivo | `templates-gallery.tsx` |
+| Template actions | inline overflow | wrapper flex com gap | `templates-gallery.tsx` |
+| Onboarding padding | `px-8` fixo | `px-6 sm:px-8` | `onboarding-modal.tsx` |
+| Dialog mobile | sem margem | `mx-4` no DialogContent | `onboarding-modal.tsx` |
+
+### Validação
+- `npx tsc --noEmit` ✅ (zero erros)
+
+### Pendências
+- Teste visual em 375px (iPhone SE) para sidebar select
+- Verificar Templates Gallery dialog em viewports 320-375px
+- Validar onboarding modal em telas curtas (<600px altura)
+- Confirmar que select de pastas mobile funciona bem com muitas pastas

@@ -114,13 +114,13 @@ export default function RegisterPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md px-6 sm:px-8 py-8 relative z-10"
       >
-        <Link href="/" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
+        <Link href="/" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm min-h-[44px] min-w-[44px] px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
         <div className="flex flex-col items-center mb-8 pt-12">
           <EidosLogo variant="full" theme="dark" href="/" height={72} />
           <p className="mt-3 text-slate-400">Crie sua conta gratuita</p>
         </div>
 
-        <div className="bg-[#111111] rounded-2xl shadow-xl shadow-black/20 p-8 border border-white/5">
+        <div className="bg-[#111111] rounded-2xl shadow-xl shadow-black/20 p-6 sm:p-8 border border-white/5">
           <form onSubmit={handleRegister} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="fullName" className="text-slate-300">Nome completo</Label>
@@ -291,7 +291,7 @@ export default function RegisterPage() {
           </Button>
         </div>
 
-        <p className="mt-6 pb-8 text-center text-sm text-slate-500">
+        <p className="mt-6 pb-12 text-center text-sm text-slate-500">
           Já tem conta?{' '}
           <Link href="/login" className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors py-2 inline-block">
             Entrar

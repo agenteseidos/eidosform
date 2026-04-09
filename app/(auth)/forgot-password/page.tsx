@@ -53,13 +53,13 @@ export default function ForgotPasswordPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md px-6 sm:px-8 relative z-10"
       >
-        <Link href="/login" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm py-2 px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
+        <Link href="/login" className="fixed top-6 left-6 text-slate-400 hover:text-white transition-colors text-sm min-h-[44px] min-w-[44px] px-3 inline-flex items-center gap-1 z-20">← Voltar</Link>
         <div className="flex flex-col items-center mb-8 pt-12">
           <EidosLogo variant="full" theme="dark" href="/" height={72} />
           <p className="mt-3 text-slate-400">Recupere o acesso à sua conta</p>
         </div>
 
-        <div className="bg-[#111111] rounded-2xl shadow-xl shadow-black/20 p-8 border border-white/5">
+        <div className="bg-[#111111] rounded-2xl shadow-xl shadow-black/20 p-6 sm:p-8 border border-white/5">
           {sent ? (
             <motion.div
               initial={{ opacity: 0 }}
@@ -88,7 +88,7 @@ export default function ForgotPasswordPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={isLoading}
-                  className="h-12 text-base bg-[#1a1a1a] border-white/10 text-white placeholder:text-slate-500 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
+                  className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
                 />
               </div>
               <Button
@@ -100,13 +100,6 @@ export default function ForgotPasswordPage() {
               </Button>
             </form>
           )}
-
-          <Link
-            href="/login"
-            className="block mt-6 text-center text-sm text-[#F5B731] hover:text-[#E8923A] transition-colors"
-          >
-            Voltar para login
-          </Link>
         </div>
       </motion.div>
     </div>

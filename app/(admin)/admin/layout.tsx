@@ -70,7 +70,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               </div>
             </div>
 
-            <nav className="flex gap-2 border-t border-slate-100 px-6 py-3 lg:hidden">
+            <nav className="flex gap-2 border-t border-slate-100 px-4 sm:px-6 py-3 lg:hidden">
               {navItems.map((item) => (
                 <Link
                   key={item.href}

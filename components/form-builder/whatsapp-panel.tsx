@@ -55,6 +55,16 @@ const TEMPLATE_VARIABLES = [
 
 const DEFAULT_MESSAGE_TEMPLATE = 'Nova resposta em {form_name}: {nome}'
 
+function normalizeSettingsSnapshot(
+  settings: Pick<FormWhatsAppSettings, 'enabled' | 'owner_phone' | 'message_template'>
+) {
+  return JSON.stringify({
+    enabled: settings.enabled ?? false,
+    owner_phone: settings.owner_phone ?? '',
+    message_template: settings.message_template ?? DEFAULT_MESSAGE_TEMPLATE,
+  })
+}
+
 export function WhatsAppPanel({
   formId,
   settings: initialSettings,
@@ -75,6 +85,7 @@ export function WhatsAppPanel({
   const [whatsAppInstances] = useState<string[]>(['default', 'instancia-2', 'instancia-3'])
   const [phoneError, setPhoneError] = useState<string | null>(null)
   const [settingsInitialized, setSettingsInitialized] = useState(false)
+  const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
   const isPlusUser = isPlusPlan(userPlan)
 
@@ -93,6 +104,21 @@ export function WhatsAppPanel({
             setMessageTemplate(s.message_template ?? DEFAULT_MESSAGE_TEMPLATE)
             setInstance(s.instance_name ?? 'default')
             setRateLimit(s.rate_limit_per_hour ?? 100)
+            setInitialSnapshot(
+              normalizeSettingsSnapshot({
+                enabled: s.enabled ?? false,
+                owner_phone: s.owner_phone ?? '',
+                message_template: s.message_template ?? DEFAULT_MESSAGE_TEMPLATE,
+              })
+            )
+          } else {
+            setInitialSnapshot(
+              normalizeSettingsSnapshot({
+                enabled: false,
+                owner_phone: '',
+                message_template: DEFAULT_MESSAGE_TEMPLATE,
+              })
+            )
           }
         }
       } catch (error) {
@@ -107,7 +133,15 @@ export function WhatsAppPanel({
 
   // Auto-save on change (debounce 3s) — only after initial load, silent on success
   useEffect(() => {
-    if (!settingsInitialized) return
+    if (!settingsInitialized || !initialSnapshot) return
+
+    const currentSnapshot = normalizeSettingsSnapshot({
+      enabled,
+      owner_phone: ownerPhone,
+      message_template: messageTemplate,
+    })
+
+    if (currentSnapshot === initialSnapshot) return
 
     const timer = setTimeout(() => {
       const saveSettings = async () => {
@@ -152,7 +186,7 @@ export function WhatsAppPanel({
     }, 3000) // 3 second debounce — gives user time to type without interruption
 
     return () => clearTimeout(timer)
-  }, [enabled, ownerPhone, messageTemplate, formId, settingsInitialized])
+  }, [enabled, ownerPhone, messageTemplate, formId, settingsInitialized, initialSnapshot])
 
   const handleToggle = useCallback((checked: boolean) => {
     setEnabled(checked)

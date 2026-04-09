@@ -262,3 +262,12 @@
   - escreve valor formatado com `join('; ')` a partir de `answers.meta_events`
 - Validação: `npx tsc --noEmit` executado sem erros.
 - Commit: `feat(export): add meta_events to CSV and Google Sheets sync` (`edc3df8`).
+
+## ETAPA E — Frontend: UI para meta_events (Toin)
+- WhatsApp Panel (`components/form-builder/whatsapp-panel.tsx`): adicionada variável `{meta_events}` em “Variáveis disponíveis” com descrição dos eventos Meta Pixel.
+- Responses Dashboard (`components/responses/responses-dashboard.tsx`):
+  - adicionada coluna `Eventos` na tabela de respostas;
+  - renderização de `meta_events` com `join("; ")`;
+  - no dialog de detalhe, adicionada seção `Meta Events` com badges quando existir.
+- Ajuste de formatação de arrays na UI para separador `; `, mantendo consistência com a nova coluna.
+- Validação: `npx tsc --noEmit` sem erros.

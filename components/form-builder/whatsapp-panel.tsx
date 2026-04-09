@@ -50,6 +50,7 @@ const TEMPLATE_VARIABLES = [
   { key: '{email}', description: 'Campo "email" da resposta (fallback: "N/A")' },
   { key: '{response_id}', description: 'ID da resposta' },
   { key: '{response_link}', description: 'Link para ver a resposta' },
+  { key: '{meta_events}', description: 'Eventos do Meta Pixel disparados pelo lead' },
 ]
 
 const DEFAULT_MESSAGE_TEMPLATE = 'Nova resposta em {form_name}: {nome}'

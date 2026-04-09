@@ -119,7 +119,7 @@ function formatResponseValue(value: unknown): string {
     return value
   }
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
-  if (Array.isArray(value)) return value.map(v => formatResponseValue(v)).join(', ')
+  if (Array.isArray(value)) return value.map(v => formatResponseValue(v)).join('; ')
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>
     const addressKeys = ['cep', 'rua', 'street', 'logradouro', 'bairro', 'neighborhood', 'cidade', 'city', 'estado', 'state', 'uf', 'numero', 'number', 'complemento']
@@ -151,7 +151,7 @@ function formatResponseValue(value: unknown): string {
 function formatAnswer(answer: Json): string {
   if (answer === null || answer === undefined) return '-'
   if (typeof answer === 'boolean') return answer ? 'Sim' : 'Não'
-  if (Array.isArray(answer)) return answer.join(', ')
+  if (Array.isArray(answer)) return answer.join('; ')
   if (typeof answer === 'object') {
     if (isFileUpload(answer)) return asFileUpload(answer).name
     return formatResponseValue(answer)
@@ -268,6 +268,29 @@ function ResponseDetailDialog({
               })}
 
               {/* UTM tracking data */}
+              {(() => {
+                const metaEvents = Array.isArray(response.meta_events)
+                  ? response.meta_events.filter((event): event is string => typeof event === 'string' && event.trim().length > 0)
+                  : []
+
+                if (metaEvents.length === 0) return null
+
+                return (
+                  <div className="border border-slate-100 rounded-xl p-4">
+                    <p className="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wide">
+                      Meta Events
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {metaEvents.map((event) => (
+                        <Badge key={event} variant="secondary" className="text-[11px]">
+                          {event}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+
               {(() => {
                 const utmEntries = [
                   ['utm_source', response.utm_source],
@@ -627,6 +650,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                   <TableRow className="bg-slate-50/80">
                     <TableHead className="w-[160px] sticky left-0 bg-slate-50 z-10 pl-5 text-xs">Enviado em</TableHead>
                     <TableHead className="w-[100px] text-xs">Status</TableHead>
+                    <TableHead className="min-w-[200px] text-xs">Eventos</TableHead>
                     {questions.map((q, i) => (
                       <TableHead key={q.id} className="min-w-[180px] text-xs">
                         <span className="text-slate-400 mr-1">{i + 1}.</span>{q.title || 'Sem título'}
@@ -658,6 +682,13 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                           ) : (
                             <Badge className="bg-amber-50 text-amber-600 border-0 text-xs">Parcial</Badge>
                           )}
+                        </TableCell>
+                        <TableCell className="max-w-[280px]">
+                          <span className="line-clamp-2 text-sm text-slate-700">
+                            {Array.isArray(response.meta_events) && response.meta_events.length > 0
+                              ? response.meta_events.join('; ')
+                              : '-'}
+                          </span>
                         </TableCell>
                         {questions.map(q => {
                           const answer = ans[q.id]

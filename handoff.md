@@ -65,3 +65,42 @@
 - Teste visual em iPhone SE (320px) para footer logo
 - Verificar animação do mobile menu em Safari (pode precisar `-webkit-` prefix)
 - Validar pricing toggle em viewports 320-360px
+
+---
+
+## Handoff — Toin (Fix Responsividade ETAPA 3 Auth) — 2026-04-09 17:05 GMT-3
+
+### O que foi feito
+- Padronizadas todas as 5 telas de autenticação para consistência visual
+- Todos os fixes em um único commit `849a780`
+- `npx tsc --noEmit` passou sem erros
+
+### Telas afetadas
+- `app/(auth)/login/page.tsx`
+- `app/(auth)/register/page.tsx`
+- `app/(auth)/forgot-password/page.tsx`
+- `app/(auth)/reset-password/page.tsx`
+- `app/(auth)/verify-email/page.tsx`
+
+### Correções aplicadas
+
+| Item | Antes | Depois | Telas |
+|---|---|---|---|
+| Logo height | 48 (login), 144 (verify) | 72 unificado | login, verify |
+| Botão Voltar | `py-2 px-3` ou sem min-dim | `min-h-[44px] min-w-[44px]` | todas |
+| Botão Voltar posição | `top-4 left-4` (login) | `top-6 left-6` | login |
+| Padding topo | `pt-8` (login) | `pt-12` | login |
+| Bordas inputs | `border-white/10` | `border-slate-500` | forgot, reset |
+| Placeholder | `text-slate-500` | `text-slate-400` | forgot, reset |
+| Card padding | `p-8` fixo | `p-6 sm:p-8` | todas |
+| Toggle senha | sem dim fixa | `w-11 h-11 flex items-center justify-center` | reset |
+| Container bottom | `pb-8` (register) | `pb-12` | register |
+| Container bottom | sem pb | `pb-8` | verify |
+| Link duplicado | "Voltar para login" dentro do card | removido | forgot |
+
+### Validação
+- `npx tsc --noEmit` ✅ (zero erros)
+
+### Pendências
+- Teste visual em dispositivos reais (foco em telas curtas com register)
+- Verificar toggle de senha no reset em touch targets pequenos

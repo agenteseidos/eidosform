@@ -113,7 +113,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Validação do owner_phone
     const updateData: Record<string, unknown> = {
       form_id: id,
-      user_id: user.id,
+      created_by: user.id,
       enabled,
       updated_at: new Date().toISOString(),
     }

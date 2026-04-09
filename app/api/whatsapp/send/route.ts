@@ -57,11 +57,14 @@ function isValidPhoneNumber(phone: string): boolean {
  */
 function buildMessage(template: string, leadData: FormAwareRequest['leadData'], formId: string): string {
   let msg = template
-  msg = msg.replace(/\{form_name\}/g, 'Formulário')
+
+  // Named variables (higher priority)
+  msg = msg.replace(/\{form_name\}/g, String(leadData.form_name || 'Formulário'))
   msg = msg.replace(/\{nome\}/g, String(leadData.name || leadData.nome || 'Lead'))
   msg = msg.replace(/\{email\}/g, String(leadData.email || 'N/A'))
-  msg = msg.replace(/\{phone\}/g, String(leadData.phone || 'N/A'))
-  msg = msg.replace(/\{response_id\}/g, 'N/A')
+  msg = msg.replace(/\{phone\}/g, String(leadData.phone || leadData.telefone || 'N/A'))
+  msg = msg.replace(/\{response_id\}/g, String(leadData.response_id || 'N/A'))
+  msg = msg.replace(/\{response_link\}/g, String(leadData.response_link || 'N/A'))
 
   // Replace any remaining {key} with leadData values
   msg = msg.replace(/\{(\w+)\}/g, (_, key) => {

@@ -418,7 +418,7 @@ export function FormPreview({
             )}
 
             {question.type === 'rating' && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {Array.from({ length: question.maxValue || 5 }).map((_, i) => (
                   <Star 
                     key={i}
@@ -430,7 +430,7 @@ export function FormPreview({
             )}
 
             {question.type === 'opinion_scale' && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {Array.from({ length: (question.maxValue || 10) - (question.minValue || 1) + 1 }).map((_, i) => (
                   <div 
                     key={i}
@@ -481,7 +481,7 @@ export function FormPreview({
                   <iframe
                     src={question.calendlyUrl}
                     title="Prévia do Calendly"
-                    className="h-[520px] w-full bg-white"
+                    className="h-[clamp(300px,60vh,520px)] w-full bg-white"
                   />
                 </div>
               ) : (

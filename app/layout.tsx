@@ -29,6 +29,10 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+export const viewport = {
+  viewportFit: 'cover',
+};
+
 export const metadata: Metadata = {
   metadataBase: new URL('https://eidosform.com.br'),
   openGraph: {

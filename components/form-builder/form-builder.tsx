@@ -185,7 +185,7 @@ function QuestionReorderItem({
           <Button
             variant="ghost"
             size="sm"
-            className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
+            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 h-7 w-7 p-0"
             title="Duplicar pergunta"
             data-testid="duplicate-question"
             onClick={(e) => {
@@ -198,7 +198,7 @@ function QuestionReorderItem({
           <Button
             variant="ghost"
             size="sm"
-            className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
+            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 h-7 w-7 p-0"
             onClick={(e) => {
               e.stopPropagation()
               onDelete()
@@ -547,7 +547,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
   return (
     <>
-    <div className="flex flex-col h-screen bg-slate-50 overflow-x-hidden">
+    <div className="flex flex-col h-screen supports-[height:100dvh]:h-[100dvh] bg-slate-50 overflow-x-hidden">
       {/* Header */}
       <header className="min-h-14 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-2 px-3 sm:px-4 py-2 min-w-0 overflow-hidden">
@@ -1615,7 +1615,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex z-50">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex z-50 pb-[env(safe-area-inset-bottom)]">
         <button
           onClick={() => setMobilePanel('questions')}
           className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: shouldShowMobileSidebar ? '#F5B731' : undefined }}

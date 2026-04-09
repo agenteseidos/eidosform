@@ -107,10 +107,10 @@ export function PricingSection() {
           <p className="text-slate-400 text-lg mb-8">Comece grátis, escale quando precisar.</p>
 
           {/* Toggle */}
-          <div className="inline-flex items-center gap-1 bg-slate-900 border border-white/10 rounded-full p-1.5">
+          <div className="inline-flex items-center gap-1 bg-slate-900 border border-white/10 rounded-full p-1 sm:p-1.5">
             <button
               onClick={() => setBilling('monthly')}
-              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+              className={`px-3 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all ${
                 billing === 'monthly'
                   ? 'bg-white text-slate-900 shadow'
                   : 'text-slate-400 hover:text-white'
@@ -120,14 +120,14 @@ export function PricingSection() {
             </button>
             <button
               onClick={() => setBilling('annual')}
-              className={`relative px-5 py-2 rounded-full text-sm font-semibold transition-all flex items-center gap-2.5 ${
+              className={`relative px-3 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 sm:gap-2.5 ${
                 billing === 'annual'
                   ? 'bg-[#F5B731] text-black shadow'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               Anual
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+              <span className={`text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded-full ${
                 billing === 'annual'
                   ? 'bg-black/20 text-black'
                   : 'bg-[#F5B731]/20 text-[#F5B731]'

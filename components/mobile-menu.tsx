@@ -17,9 +17,11 @@ export function MobileMenu() {
     return () => { document.body.style.overflow = '' }
   }, [canRenderPortal, open])
 
-  const overlay = open ? (
+  const overlay = (
     <div
-      className="fixed inset-x-0 bottom-0 bg-[#0A0A0F]/98 backdrop-blur-xl border-t border-white/5 flex flex-col p-6 gap-6"
+      className={`fixed inset-x-0 bottom-0 bg-[#0A0A0F]/98 backdrop-blur-xl border-t border-white/5 flex flex-col p-6 gap-6 transition-all duration-200 ${
+        open ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+      }`}
       style={{ top: '64px', zIndex: 99999 }}
     >
       <nav className="flex flex-col gap-2">
@@ -52,7 +54,7 @@ export function MobileMenu() {
         </Link>
       </div>
     </div>
-  ) : null
+  )
 
   return (
     <div className="md:hidden">

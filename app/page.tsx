@@ -40,14 +40,14 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="pt-24 sm:pt-32 pb-16 sm:pb-24 px-4 sm:px-6 relative">
         {/* Background glow */}
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-[#F5B731]/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[300px] sm:w-[600px] h-[400px] bg-[#F5B731]/5 rounded-full blur-3xl pointer-events-none" />
         <div className="max-w-4xl mx-auto text-center relative">
           <Badge className="mb-6 bg-[#F5B731]/10 text-[#F5B731] border border-[#F5B731]/20 px-3 py-1.5 text-sm font-medium max-w-fit">
             <Sparkles className="w-3.5 h-3.5 mr-1.5" />
             A nova geração de formulários
           </Badge>
 
-          <h1 className="text-[28px] sm:text-6xl lg:text-7xl font-black tracking-tight mb-4 sm:mb-6 leading-none">
+          <h1 className="text-[28px] sm:text-4xl md:text-6xl lg:text-7xl font-black tracking-tight mb-4 sm:mb-6 leading-none">
             Formulários que
             <span className="block bg-gradient-to-r from-[#F5B731] to-[#E8923A] bg-clip-text text-transparent">
               as pessoas querem
@@ -74,7 +74,7 @@ export default function LandingPage() {
             </a>
           </div>
 
-          <p className="mt-6 text-sm sm:text-sm text-[14px] text-slate-400">
+          <p className="mt-6 text-sm text-slate-400 text-slate-400">
             Sem cartão de crédito · Setup em 30 segundos
           </p>
         </div>
@@ -173,7 +173,7 @@ export default function LandingPage() {
             <p className="text-slate-400 text-lg">Do zero ao formulário publicado em menos de 5 minutos.</p>
           </div>
 
-          <div className="grid sm:grid-cols-3 gap-8">
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-8">
             {[
               {
                 step: '01',
@@ -294,9 +294,9 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-white/5 py-12 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto">
-          <div className="grid sm:grid-cols-4 gap-8 mb-10">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
             <div>
-              <div className="mb-4">
+              <div className="mb-4 max-w-full">
                 <EidosLogo variant="full" theme="dark" href="/" height={67} />
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">

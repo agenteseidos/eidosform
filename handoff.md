@@ -243,3 +243,22 @@
   - lib/database.types.ts
 - Pendências: aplicar migration no ambiente (db push/deploy) antes das próximas etapas consumirem a coluna.
 - Próximo passo: ETAPA B (usar  em template WhatsApp/exports/sync).
+
+## 2026-04-09 — ETAPA B (WhatsApp meta_events)
+- Incluído `meta_events` no `leadData` em `lib/integration-stubs.ts`, formatado como string com `join('; ')`.
+- Atualizado builder em `app/api/whatsapp/send/route.ts` para substituir `{meta_events}`.
+- Ajustado fluxo em `app/api/responses/route.ts` para selecionar e propagar `meta_events` da response (`select('id, meta_events')`) para o envio WhatsApp.
+- Validação: `npx tsc --noEmit` executado com sucesso.
+
+## 2026-04-09 — ETAPA C (Zeca)
+- Backend exportação atualizado para incluir `meta_events`.
+- CSV (`/api/forms/[id]/export-csv` e `/api/forms/[id]/export?format=csv`) agora:
+  - seleciona `meta_events` no select de responses
+  - inclui coluna `meta_events` no header
+  - serializa valor com `join('; ')`
+- Google Sheets (`lib/google-sheets.ts`) agora:
+  - adiciona coluna fixa `meta_events` no header inicial
+  - preserva `meta_events` ao reconstruir header dinâmico
+  - escreve valor formatado com `join('; ')` a partir de `answers.meta_events`
+- Validação: `npx tsc --noEmit` executado sem erros.
+- Commit: `feat(export): add meta_events to CSV and Google Sheets sync` (`edc3df8`).

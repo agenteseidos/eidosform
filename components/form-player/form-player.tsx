@@ -14,6 +14,7 @@ import { PixelInjector } from '@/components/pixels/pixel-injector'
 import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
+import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
 
 interface FormPlayerProps {
   ownerPlan?: string
@@ -45,6 +46,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const [progressAnim, setProgressAnim] = useState(0)
   const [responseId, setResponseId] = useState<string | null>(null)
   const [navigationHistory, setNavigationHistory] = useState<number[]>([])
+  const metaEvents = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
 
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerPixelSubmitRef = useRef<(() => void) | null>(null)
@@ -223,6 +225,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           completed: true,
           last_question_answered: currentQuestion?.id ?? null,
           ...utms,
+          meta_events: metaEvents,
         }),
       })
 

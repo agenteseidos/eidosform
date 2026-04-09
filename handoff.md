@@ -271,3 +271,23 @@
   - no dialog de detalhe, adicionada seção `Meta Events` com badges quando existir.
 - Ajuste de formatação de arrays na UI para separador `; `, mantendo consistência com a nova coluna.
 - Validação: `npx tsc --noEmit` sem erros.
+
+## 2026-04-09 — Fix WhatsApp Panel auto-save no mount (Zeca)
+- Demanda: corrigir erro "Erro ao salvar: Failed to save settings" ao abrir aba Integrações.
+- O que foi feito:
+  - Adicionada função `normalizeSettingsSnapshot` para serializar o estado relevante de auto-save.
+  - Criado estado `initialSnapshot` para guardar snapshot carregado da API no primeiro load.
+  - No load inicial, snapshot agora é definido tanto quando há settings salvas quanto no fallback sem settings.
+  - `useEffect` de auto-save passou a bloquear quando `settingsInitialized`/`initialSnapshot` ainda não estão prontos.
+  - Incluída guarda para não salvar quando estado atual ainda é igual ao snapshot inicial (evita save no mount).
+- Resultado/estado atual: auto-save só dispara após mudanças reais do usuário, evitando POST indevido com defaults ao abrir a aba.
+- Arquivos alterados:
+  - `components/form-builder/whatsapp-panel.tsx`
+- Validação:
+  - `npx tsc --noEmit` ✅
+- Commit:
+  - `1004880` — `fix(whatsapp): prevent autosave before settings initialization`
+- Pendências:
+  - Teste manual no navegador para confirmar ausência de erro toast ao abrir Integrações.
+- Próximo passo:
+  - Validar fluxo completo (abrir aba, editar campo, aguardar debounce, confirmar save normal).

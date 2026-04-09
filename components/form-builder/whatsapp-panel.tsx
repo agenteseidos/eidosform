@@ -24,6 +24,7 @@ import { PLAN_ORDER } from '@/lib/plans'
 interface WhatsAppPanelProps {
   formId: string
   settings: FormWhatsAppSettings | null
+  questions?: Array<{ id: string; title: string }>
   userPlan?: string
   onUpdateForm?: (updates: Record<string, unknown>) => void
   isLoading?: boolean
@@ -43,11 +44,9 @@ function validatePhoneNumber(phone: string): boolean {
   return digits.length >= 10 && digits.length <= 15
 }
 
-// Available template variables
-const TEMPLATE_VARIABLES = [
+// Available fixed template variables
+const FIXED_TEMPLATE_VARIABLES = [
   { key: '{form_name}', description: 'Nome do formulário' },
-  { key: '{nome}', description: 'Campo "nome" da resposta (fallback: "Lead")' },
-  { key: '{email}', description: 'Campo "email" da resposta (fallback: "N/A")' },
   { key: '{response_id}', description: 'ID da resposta' },
   { key: '{response_link}', description: 'Link para ver a resposta' },
   { key: '{meta_events}', description: 'Eventos do Meta Pixel disparados pelo lead' },
@@ -68,6 +67,7 @@ function normalizeSettingsSnapshot(
 export function WhatsAppPanel({
   formId,
   settings: initialSettings,
+  questions = [],
   userPlan = 'free',
   onUpdateForm,
   isLoading = false,
@@ -233,6 +233,27 @@ export function WhatsAppPanel({
   const charCount = messageTemplate.length
   const isCharCountWarning = charCount > 160
 
+  const dynamicQuestionVariables = questions
+    .map((question) => question?.title?.trim())
+    .filter((title): title is string => Boolean(title))
+    .map((title) => {
+      const normalized = title
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+      return normalized
+    })
+    .filter(Boolean)
+
+  const uniqueDynamicQuestionVariables = Array.from(new Set(dynamicQuestionVariables)).map((key) => ({
+    key: `{${key}}`,
+    description: `Campo "${key}" da resposta`,
+  }))
+
+  const templateVariables = [...FIXED_TEMPLATE_VARIABLES, ...uniqueDynamicQuestionVariables]
+
   // Show loading while fetching settings
   if (isLoadingSettings) {
     return (
@@ -366,7 +387,7 @@ export function WhatsAppPanel({
                   Variáveis disponíveis:
                 </p>
                 <div className="mt-2 space-y-1">
-                  {TEMPLATE_VARIABLES.map((variable) => (
+                  {templateVariables.map((variable) => (
                     <div key={variable.key} className="flex items-start gap-2">
                       <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono whitespace-nowrap">
                         {variable.key}
@@ -382,7 +403,8 @@ export function WhatsAppPanel({
                 )}
               </div>
 
-              {/* WhatsApp Instance Dropdown */}
+              {/* WhatsApp Instance Dropdown (hidden for now) */}
+              {/*
               <div>
                 <Label htmlFor="whatsapp-instance" className="text-xs font-medium text-slate-600 mb-1.5 block">
                   Instância WhatsApp
@@ -403,8 +425,10 @@ export function WhatsAppPanel({
                   Qual número WhatsApp vai enviar as notificações
                 </p>
               </div>
+              */}
 
-              {/* Rate Limit */}
+              {/* Rate Limit (hidden for now) */}
+              {/*
               <div>
                 <Label htmlFor="whatsapp-rate-limit" className="text-xs font-medium text-slate-600 mb-1.5 block">
                   Limite de Notificações (msgs/hora)
@@ -423,6 +447,7 @@ export function WhatsAppPanel({
                   Máximo de notificações que serão enviadas por hora
                 </p>
               </div>
+              */}
 
               {/* Test Message Button */}
               <div className="pt-2">

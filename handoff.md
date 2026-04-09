@@ -1,32 +1,32 @@
-## Handoff — Zéfa (Auditoria WhatsApp) — 2026-04-07 19:54 GMT-3
+## Handoff — Toin (Fix Responsividade ETAPA 1 Form Player) — 2026-04-09 16:40 GMT-3
 
 ### O que foi feito
-- Auditoria completa da integração WhatsApp do EidosForm
-- Identificados 4 bugs (2 P0, 1 P1, 1 P2)
-- Zeca corrigiu P0 e P1 — commit ef82840 em origin/main
+- Corrigidos 9 bugs de responsividade identificados pela Zefa no Form Player
+- Todos os fixes em um único commit `a7c7e5d`
+- `npx tsc --noEmit` passou sem erros
 
-### Decisões tomadas
-- URL fallback de `localhost:3456` trocada por `https://wpp.eidosform.com.br` em todos os 3 routes
-- Rate limit do QR reduzido de 60s para 30s para melhor UX
-- Bug P2 (qrToPng ERR_INVALID_ARG_TYPE) não corrigido — não afeta fluxo principal (servidor usa ASCII QR, não PNG)
+### Bugs corrigidos
+
+| Prioridade | Bug | Arquivo | Correção |
+|---|---|---|---|
+| P0 | NPS overflow horizontal em mobile | `question-renderer.tsx` | `w-8 h-8 sm:w-12 sm:h-12` + `justify-center` + `gap-1 sm:gap-2` |
+| P1 | Calendly widget altura fixa 630px | `question-renderer.tsx` | `height: 'clamp(400px, 60vh, 630px)'` |
+| P1 | Dropdown país overflow lateral | `question-renderer.tsx` | `right-0 sm:right-auto sm:left-0` + `max-w-[calc(100vw-2rem)]` |
+| P1 | CEP w-40 frágil em mobile | `question-renderer.tsx` | `w-36 sm:w-40` |
+| P2 | Número/Complemento sem empilhamento | `question-renderer.tsx` | `flex flex-col sm:flex-row` |
+| P2 | Cidade/Estado sem empilhamento | `question-renderer.tsx` | `flex flex-col sm:flex-row` |
+| P2 | Footer sem background | `form-player.tsx` | `bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm` |
+| P3 | Progress label sem safe area | `form-player.tsx` | `top-[env(safe-area-inset-top,12px)]` |
+| P3 | Opinion Scale assimétrico | `question-renderer.tsx` | `justify-center` + `w-9 h-9 sm:w-12 sm:h-12` |
 
 ### Arquivos alterados
-- `app/api/admin/whatsapp/status/route.ts` — URL fallback corrigida
-- `app/api/admin/whatsapp/disconnect/route.ts` — URL fallback corrigida  
-- `app/api/admin/whatsapp/qr/route.ts` — rate limit 60s→30s
+- `components/form-player/question-renderer.tsx` — 9 linhas alteradas
+- `components/form-player/form-player.tsx` — 2 linhas alteradas
 
-### Estado atual
-- ✅ VPS operacional: QR sendo gerado, status respondendo
-- ✅ Código corrigido e em produção (commit ef82840)
-- ⚠️ Variáveis de ambiente no Vercel ainda precisam ser verificadas por Sidney
-- ⚠️ O erro "Empty token!" só desaparecerá quando Vercel tiver `WHATSAPP_API_KEY` configurada corretamente
+### Validação
+- `npx tsc --noEmit` ✅ (zero erros)
 
 ### Pendências
-- Sidney precisa confirmar no painel Vercel que as env vars estão setadas:
-  - `WHATSAPP_API_URL` = `https://wpp.eidosform.com.br`
-  - `WHATSAPP_API_KEY` = `d740b16263d6e361d169d5a9b0a7c714054160f069756eff60456ee20b8d6d76`
-- Após redeploy automático do Vercel, testar login em https://eidosform.com.br/admin/whatsapp
-- Bug P2 (qrToPng/PNG generation no server.js) pode ser corrigido se Sidney quiser suporte a QR em imagem futuramente
-
-### Próximo passo sugerido
-Sidney confirma env vars no Vercel → aguarda redeploy → testa `/admin/whatsapp` → escaneia QR com WhatsApp Business
+- Teste visual em dispositivos reais (iPhone notch, Android small screens)
+- Verificar Calendly widget em viewports entre 400-630px
+- Dark mode do footer precisa validação visual

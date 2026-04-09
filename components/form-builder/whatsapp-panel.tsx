@@ -104,7 +104,7 @@ export function WhatsAppPanel({
     loadSettings()
   }, [formId])
 
-  // Auto-save on change (debounce) — only after initial load
+  // Auto-save on change (debounce 3s) — only after initial load, silent on success
   useEffect(() => {
     if (!settingsInitialized) return
 
@@ -138,7 +138,7 @@ export function WhatsAppPanel({
             return
           }
 
-          toast.success('Configuração salva com sucesso!')
+          // Silent success — no toast on auto-save to avoid interrupting typing
         } catch (error) {
           console.error('Error saving WhatsApp settings:', error)
           toast.error('Erro ao salvar configurações de WhatsApp')
@@ -148,7 +148,7 @@ export function WhatsAppPanel({
       }
 
       saveSettings()
-    }, 1000) // 1 second debounce
+    }, 3000) // 3 second debounce — gives user time to type without interruption
 
     return () => clearTimeout(timer)
   }, [enabled, ownerPhone, messageTemplate, formId, settingsInitialized])

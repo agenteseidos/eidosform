@@ -12,6 +12,7 @@ export async function sendWhatsAppOnFormResponse(params: {
   formId: string
   responseId: string
   responseData: Record<string, unknown>
+  meta_events?: string[]
   form: {
     id: string
     title: string | null
@@ -55,6 +56,7 @@ export async function sendWhatsAppOnFormResponse(params: {
       form_name: params.form.title || 'Formulário',
       response_id: responseId,
       response_link: `${appUrl}/form/${formId}/responses/${responseId}`,
+      meta_events: Array.isArray(params.meta_events) ? params.meta_events.join('; ') : '',
       ...mappedAnswers,
     }
 

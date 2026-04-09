@@ -224,6 +224,7 @@ export async function POST(req: NextRequest) {
   }
 
   let responseId: string
+  let responseMetaEvents: string[] = []
 
   if (existingResponseId) {
     const { data: updated, error: updateError } = await supabase
@@ -231,27 +232,29 @@ export async function POST(req: NextRequest) {
       .update({ answers, meta_events: metaEvents, completed, last_question_answered: last_question_answered ?? null, ...utmData } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
-      .select('id')
-      .single() as { data: { id: string } | null; error: unknown }
+      .select('id, meta_events')
+      .single() as { data: { id: string; meta_events?: string[] } | null; error: unknown }
 
     if (updateError || !updated) {
       return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
     }
 
     responseId = updated.id
+    responseMetaEvents = Array.isArray((updated as { meta_events?: unknown }).meta_events) ? ((updated as { meta_events: string[] }).meta_events) : []
     await supabase.from('answer_items').delete().eq('response_id', responseId)
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
       .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: last_question_answered as string ?? null, ...utmData } as ResponseInsert)
-      .select('id')
-      .single() as { data: { id: string } | null; error: { message: string } | null }
+      .select('id, meta_events')
+      .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string } | null }
 
     if (insertError || !newResponse) {
       return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
     }
 
     responseId = newResponse.id
+    responseMetaEvents = Array.isArray(newResponse.meta_events) ? newResponse.meta_events : []
 
     // Bug #1: Always increment response count on new responses
     await incrementResponseCount(form.user_id).catch((err) => logError('Failed to increment response count', err))
@@ -310,6 +313,7 @@ export async function POST(req: NextRequest) {
           formId: form_id as string,
           responseId,
           responseData: answers as Record<string, unknown>,
+          meta_events: responseMetaEvents,
           form: {
             id: form.id,
             title: form.title,

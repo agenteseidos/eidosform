@@ -65,6 +65,7 @@ function buildMessage(template: string, leadData: FormAwareRequest['leadData'], 
   msg = msg.replace(/\{phone\}/g, String(leadData.phone || leadData.telefone || 'N/A'))
   msg = msg.replace(/\{response_id\}/g, String(leadData.response_id || 'N/A'))
   msg = msg.replace(/\{response_link\}/g, String(leadData.response_link || 'N/A'))
+  msg = msg.replace(/\{meta_events\}/g, String(leadData.meta_events || ''))
 
   // Replace any remaining {key} with leadData values
   msg = msg.replace(/\{(\w+)\}/g, (_, key) => {

@@ -229,3 +229,17 @@
 - Verificar Templates Gallery dialog em viewports 320-375px
 - Validar onboarding modal em telas curtas (<600px altura)
 - Confirmar que select de pastas mobile funciona bem com muitas pastas
+
+## ETAPA A — Meta Events storage (2026-04-09)
+- Demanda: adicionar captura/armazenamento de meta_events no backend de responses.
+- O que foi feito:
+  - Migration criada:  adicionando .
+  - Endpoint  atualizado para aceitar  (array de strings), persistir em insert/update e retornar no GET de responses.
+  - Tipos em  atualizados ( de ).
+- Resultado/estado atual: ETAPA A concluída e compilando ().
+- Arquivos alterados:
+  - supabase/migrations/20260409_add_meta_events_to_responses.sql
+  - app/api/responses/route.ts
+  - lib/database.types.ts
+- Pendências: aplicar migration no ambiente (db push/deploy) antes das próximas etapas consumirem a coluna.
+- Próximo passo: ETAPA B (usar  em template WhatsApp/exports/sync).

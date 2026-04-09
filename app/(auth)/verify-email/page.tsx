@@ -80,12 +80,7 @@ function VerifyEmailContent() {
             {isResending ? 'Reenviando...' : 'Reenviar e-mail'}
           </Button>
 
-          <Link
-            href="/login"
-            className="block mt-4 text-sm text-[#F5B731] hover:text-[#E8923A] transition-colors"
-          >
-            Voltar para login
-          </Link>
+
         </div>
       </motion.div>
     </div>

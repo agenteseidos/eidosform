@@ -47,6 +47,9 @@ function validatePhoneNumber(phone: string): boolean {
 // Available fixed template variables
 const FIXED_TEMPLATE_VARIABLES = [
   { key: '{form_name}', description: 'Nome do formulário' },
+  { key: '{nome}', description: 'Campo "nome" da resposta (fallback: "Lead")' },
+  { key: '{email}', description: 'Campo "email" da resposta (fallback: "N/A")' },
+  { key: '{telefone}', description: 'Campo "telefone" da resposta (fallback: "")' },
   { key: '{response_id}', description: 'ID da resposta' },
   { key: '{response_link}', description: 'Link para ver a resposta' },
   { key: '{meta_events}', description: 'Eventos do Meta Pixel disparados pelo lead' },
@@ -247,7 +250,11 @@ export function WhatsAppPanel({
     })
     .filter(Boolean)
 
-  const uniqueDynamicQuestionVariables = Array.from(new Set(dynamicQuestionVariables)).map((key) => ({
+  const fixedVariableNames = new Set(['nome', 'email', 'telefone'])
+
+  const uniqueDynamicQuestionVariables = Array.from(
+    new Set(dynamicQuestionVariables.filter((key) => !fixedVariableNames.has(key)))
+  ).map((key) => ({
     key: `{${key}}`,
     description: `Campo "${key}" da resposta`,
   }))

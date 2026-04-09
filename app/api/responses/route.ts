@@ -136,6 +136,9 @@ export async function POST(req: NextRequest) {
   }
 
   const { form_id, last_question_answered } = body
+  const metaEvents = Array.isArray(body.meta_events)
+    ? body.meta_events.filter((e): e is string => typeof e === 'string')
+    : []
   const utmData = {
     utm_source: typeof body.utm_source === 'string' ? body.utm_source : null,
     utm_medium: typeof body.utm_medium === 'string' ? body.utm_medium : null,
@@ -225,7 +228,7 @@ export async function POST(req: NextRequest) {
   if (existingResponseId) {
     const { data: updated, error: updateError } = await supabase
       .from('responses')
-      .update({ answers, completed, last_question_answered: last_question_answered ?? null, ...utmData } as ResponseUpdate)
+      .update({ answers, meta_events: metaEvents, completed, last_question_answered: last_question_answered ?? null, ...utmData } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
       .select('id')
@@ -240,7 +243,7 @@ export async function POST(req: NextRequest) {
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
-      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, completed, last_question_answered: last_question_answered as string ?? null, ...utmData } as ResponseInsert)
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: last_question_answered as string ?? null, ...utmData } as ResponseInsert)
       .select('id')
       .single() as { data: { id: string } | null; error: { message: string } | null }
 
@@ -396,7 +399,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('responses')
-    .select('id, form_id, answers, completed, submitted_at, last_question_answered, utm_source, utm_medium, utm_campaign, utm_term, utm_content', { count: 'exact' })
+    .select('id, form_id, answers, meta_events, completed, submitted_at, last_question_answered, utm_source, utm_medium, utm_campaign, utm_term, utm_content', { count: 'exact' })
     .order('submitted_at', { ascending: false })
     .range(offset, offset + limit - 1)
 

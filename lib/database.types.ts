@@ -367,6 +367,7 @@ export interface Database {
           id: string
           form_id: string
           answers: Record<string, Json>
+          meta_events: string[]
           completed: boolean
           last_question_answered: string | null
           utm_source: string | null
@@ -382,6 +383,7 @@ export interface Database {
           id?: string
           form_id: string
           answers: Record<string, Json>
+          meta_events?: string[]
           completed?: boolean
           last_question_answered?: string | null
           utm_source?: string | null
@@ -395,6 +397,7 @@ export interface Database {
         }
         Update: {
           answers?: Record<string, Json>
+          meta_events?: string[]
           completed?: boolean
           last_question_answered?: string | null
           utm_source?: string | null

@@ -74,7 +74,7 @@ export default function LandingPage() {
             </a>
           </div>
 
-          <p className="mt-6 text-sm text-slate-400 text-slate-400">
+          <p className="mt-6 text-sm text-slate-400">
             Sem cartão de crédito · Setup em 30 segundos
           </p>
         </div>

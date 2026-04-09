@@ -188,7 +188,7 @@ export function AdminWhatsAppPanel() {
               <button
                 onClick={handleGenerateQr}
                 disabled={qrLoading}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                className="min-h-[44px] px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {qrLoading ? (
                   <>
@@ -228,7 +228,7 @@ export function AdminWhatsAppPanel() {
                     <img
                       src={`data:image/png;base64,${qrBase64}`}
                       alt="QR Code WhatsApp"
-                      className="w-64 h-64 object-contain"
+                      className="w-56 h-56 sm:w-64 sm:h-64 object-contain"
                       style={{ imageRendering: 'pixelated' }}
                     />
                   </div>
@@ -283,19 +283,19 @@ export function AdminWhatsAppPanel() {
         <CardContent>
           <div className="space-y-2">
             {logs.map(log => (
-              <div key={log.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                <div className="flex items-center gap-3">
+              <div key={log.id} className="flex items-start sm:items-center justify-between gap-2 py-2 border-b last:border-0">
+                <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={`w-2 h-2 rounded-full ${
                       log.status === 'enviado' ? 'bg-green-500' : 'bg-red-500'
                     }`}
                   />
-                  <div>
-                    <div className="font-medium">{log.recipient}</div>
-                    <div className="text-sm text-gray-500">{log.form}</div>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{log.recipient}</div>
+                    <div className="text-sm text-gray-500 truncate">{log.form}</div>
                   </div>
                 </div>
-                <div className="text-sm text-gray-500">{log.date}</div>
+                <div className="text-sm text-gray-500 whitespace-nowrap flex-shrink-0">{log.date}</div>
               </div>
             ))}
           </div>

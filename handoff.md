@@ -1,3 +1,83 @@
+## Handoff — Toin (Fix Responsividade ETAPA 6 Admin + Responses) — 2026-04-09 17:28 GMT-3
+
+### O que foi feito
+- Corrigidos bugs de responsividade no Admin Panel e tela de Responses
+- `npx tsc --noEmit` passou sem erros
+
+### Componentes verificados
+- `app/(admin)/admin/layout.tsx` — layout admin com sidebar
+- `components/admin/admin-users-table.tsx` — tabela de usuários
+- `components/admin/admin-metrics-cards.tsx` — grid de métricas
+- `components/admin/admin-whatsapp-panel.tsx` — WhatsApp panel
+- `components/responses/responses-dashboard.tsx` — dashboard de respostas
+- `app/(admin)/admin/page.tsx` — página admin principal
+- `app/(admin)/admin/whatsapp/page.tsx` — página WhatsApp admin
+- `app/(dashboard)/forms/[id]/responses/page.tsx` — página de respostas
+
+### Correções aplicadas
+
+| Item | Antes | Depois | Arquivo |
+|---|---|---|---|
+| Main padding | `px-6 py-8` fixo | `px-4 py-6 sm:px-6 sm:py-8` | `admin/layout.tsx` |
+| Header padding | `px-6` fixo | `px-4 sm:px-6` | `admin/layout.tsx` |
+| Users table | sem overflow-x-auto | `overflow-x-auto -mx-6 px-6` wrapper | `admin-users-table.tsx` |
+| Coluna "Nº forms" | sempre visível | `hidden sm:table-cell` | `admin-users-table.tsx` |
+| Botão "Alterar plano" | sem size/touch target | `size="sm" min-h-[44px]` | `admin-users-table.tsx` |
+| QR code | `w-64 h-64` fixo | `w-56 h-56 sm:w-64 sm:h-64` | `admin-whatsapp-panel.tsx` |
+| Botão "Gerar QR" | sem min-height | `min-h-[44px] justify-center` | `admin-whatsapp-panel.tsx` |
+| Logs layout | `items-center justify-between` | `items-start sm:items-center gap-2 min-w-0` | `admin-whatsapp-panel.tsx` |
+| Logs texto | sem truncate | `truncate` + `whitespace-nowrap flex-shrink-0` | `admin-whatsapp-panel.tsx` |
+| Status/Date selects | `w-40` fixo | `w-full sm:w-40` | `responses-dashboard.tsx` |
+
+### Itens verificados e OK (sem alteração necessária)
+- **Admin sidebar** — já tem nav mobile (`lg:hidden` no header) ✅
+- **Metrics cards grid** — Tailwind default `grid-cols-1` como base ✅
+- **Responses table** — já tem `ScrollArea` com `overflow-x-auto` ✅
+- **Stats grid** — `grid-cols-2` funciona em 375px ✅
+- **Dialogs** — `DialogContent` base já tem `max-w-[calc(100%-2rem)]` ✅
+- **Admin page** — cards e layout ok ✅
+
+### Validação
+- `npx tsc --noEmit` ✅ (zero erros)
+
+### Pendências
+- Teste visual em 375px para users table com scroll horizontal
+- Verificar QR code em 320px (iPhone SE)
+
+---
+
+## Handoff — Toin (Fix Responsividade ETAPA 5 Form Builder) — 2026-04-09 17:22 GMT-3
+
+### O que foi feito
+- Corrigidos 6 bugs de responsividade no Form Builder (mobile/iOS)
+- Commit `992f58e`
+- `npx tsc --noEmit` passou sem erros
+
+### Bugs corrigidos
+
+| Prioridade | Bug | Arquivo | Correção |
+|---|---|---|---|
+| P2 | h-screen não considera viewport dinâmico iOS Safari | `form-builder.tsx` | `h-screen supports-[height:100dvh]:h-[100dvh]` |
+| P2 | Bottom nav sem safe-area padding (home indicator) | `form-builder.tsx` | `pb-[env(safe-area-inset-bottom)]` + `viewport-fit=cover` no `layout.tsx` |
+| P2 | Botões duplicar/excluir inacessíveis em touch | `form-builder.tsx` | `opacity-100 md:opacity-0 md:group-hover:opacity-100` |
+| P3 | Opinion Scale overflow no preview | `form-preview.tsx` | `flex flex-wrap` |
+| P3 | Rating stars overflow no preview | `form-preview.tsx` | `flex flex-wrap` |
+| P3 | Calendly iframe 520px fixo | `form-preview.tsx` | `h-[clamp(300px,60vh,520px)]` |
+
+### Arquivos alterados
+- `components/form-builder/form-builder.tsx` — 4 linhas alteradas
+- `components/form-builder/form-preview.tsx` — 3 linhas alteradas
+- `app/layout.tsx` — export `viewport` com `viewportFit: cover` adicionado
+
+### Validação
+- `npx tsc --noEmit` ✅ (zero erros)
+
+### Pendências
+- Teste visual em iPhone real (home indicator + notch)
+- Verificar dvh fallback em Safari 15 (sem suporte a supports-[])
+
+---
+
 ## Handoff — Toin (Fix Responsividade ETAPA 1 Form Player) — 2026-04-09 16:40 GMT-3
 
 ### O que foi feito

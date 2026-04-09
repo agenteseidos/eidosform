@@ -134,44 +134,46 @@ export function AdminUsersTable() {
             </p>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>E-mail</TableHead>
-                <TableHead>Plano atual</TableHead>
-                <TableHead>Criação</TableHead>
-                <TableHead>Nº de forms</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.length > 0 ? (
-                users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="max-w-[280px] truncate font-medium text-slate-900">{user.email}</TableCell>
-                    <TableCell>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                        {PLAN_LABELS[user.plan]}
-                      </span>
-                    </TableCell>
-                    <TableCell>{new Date(user.createdAt).toLocaleDateString('pt-BR')}</TableCell>
-                    <TableCell>{user.formsCount}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="outline" onClick={() => openPlanDialog(user)}>
-                        Alterar plano
-                      </Button>
+          <div className="overflow-x-auto -mx-6 px-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>E-mail</TableHead>
+                  <TableHead>Plano atual</TableHead>
+                  <TableHead>Criação</TableHead>
+                  <TableHead className="hidden sm:table-cell">Nº de forms</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.length > 0 ? (
+                  users.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="max-w-[200px] sm:max-w-[280px] truncate font-medium text-slate-900">{user.email}</TableCell>
+                      <TableCell>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                          {PLAN_LABELS[user.plan]}
+                        </span>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{new Date(user.createdAt).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{user.formsCount}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => openPlanDialog(user)}>
+                          Alterar plano
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">
+                      {emptyMessage}
                     </TableCell>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">
-                    {emptyMessage}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 

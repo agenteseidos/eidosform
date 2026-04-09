@@ -580,7 +580,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
             </div>
 
             <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full sm:w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -591,7 +591,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
             </Select>
 
             <Select value={dateFilter} onValueChange={v => setDateFilter(v as typeof dateFilter)}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full sm:w-40">
                 <SelectValue placeholder="Período" />
               </SelectTrigger>
               <SelectContent>

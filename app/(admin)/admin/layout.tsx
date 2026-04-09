@@ -58,7 +58,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
         <div className="flex min-h-screen flex-1 flex-col">
           <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-            <div className="flex h-16 items-center justify-between px-6">
+            <div className="flex h-16 items-center justify-between px-4 sm:px-6">
               <div>
                 <h1 className="text-lg font-semibold">Admin Panel</h1>
                 <p className="text-sm text-slate-500">Acesso restrito para administradores</p>
@@ -83,7 +83,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </nav>
           </header>
 
-          <main className="flex-1 px-6 py-8">{children}</main>
+          <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
         </div>
       </div>
     </div>

@@ -632,7 +632,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
       {/* Progress label */}
       <motion.div
-        className="fixed top-3 right-4 z-50 text-xs font-semibold tabular-nums"
+        className="fixed top-[env(safe-area-inset-top,12px)] right-4 z-50 text-xs font-semibold tabular-nums"
         style={{ color: theme.primaryColor }}
         animate={{ opacity: progressAnim > 0 ? 1 : 0 }}
         transition={{ duration: 0.3 }}
@@ -777,7 +777,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       </main>
 
       {/* ── Nav footer ── */}
-      <footer className="fixed bottom-0 left-0 right-0 p-4 flex items-center justify-between">
+      <footer className="fixed bottom-0 left-0 right-0 p-4 flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"

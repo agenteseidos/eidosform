@@ -280,7 +280,7 @@ const AddressQuestion = React.memo(function AddressQuestion({ question, value, o
   return (
     <div className="space-y-4">
       <div className="flex gap-3">
-        <div className="w-40">
+        <div className="w-36 sm:w-40">
           <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>CEP</label>
           <div className="relative">
             <Input
@@ -303,7 +303,7 @@ const AddressQuestion = React.memo(function AddressQuestion({ question, value, o
         <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Rua</label>
         <Input value={addr.rua} onChange={(e) => updateField('rua', e.target.value)} placeholder="Rua / Avenida" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
       </div>
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="w-32">
           <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Número</label>
           <Input value={addr.numero} onChange={(e) => updateField('numero', e.target.value)} placeholder="Nº" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
@@ -317,7 +317,7 @@ const AddressQuestion = React.memo(function AddressQuestion({ question, value, o
         <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Bairro</label>
         <Input value={addr.bairro} onChange={(e) => updateField('bairro', e.target.value)} placeholder="Bairro" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
       </div>
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <label className="text-sm font-medium mb-1 block" style={{ color: theme.textColor }}>Cidade</label>
           <Input value={addr.cidade} onChange={(e) => updateField('cidade', e.target.value)} placeholder="Cidade" className="text-lg h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0" style={fieldStyle} />
@@ -400,7 +400,7 @@ const PhoneQuestion = React.memo(function PhoneQuestion({ question, value, onCha
         </button>
         {isOpen && (
           <div
-            className="absolute top-full left-0 mt-1 z-50 min-w-[220px] max-h-[280px] overflow-y-auto rounded-xl border shadow-lg"
+            className="absolute top-full right-0 sm:right-auto sm:left-0 mt-1 z-50 min-w-[220px] max-w-[calc(100vw-2rem)] max-h-[280px] overflow-y-auto rounded-xl border shadow-lg"
             style={{ backgroundColor: theme.backgroundColor, borderColor: `${theme.textColor}20` }}
           >
             {countries.map((country) => (
@@ -504,7 +504,7 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
       <div
         className="calendly-inline-widget"
         data-url={calendlyUrl}
-        style={{ minWidth: '280px', height: '630px' }}
+        style={{ minWidth: '280px', height: 'clamp(400px, 60vh, 630px)' }}
       />
     </div>
   )
@@ -851,7 +851,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
       const maxScale = question.maxValue || 10
       const scaleValue = typeof value === 'number' ? value : null
       return (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap justify-center gap-2">
           {Array.from({ length: maxScale - minScale + 1 }).map((_, index) => {
             const num = minScale + index
             const isSelected = scaleValue === num
@@ -868,7 +868,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
                   onClearError?.()
                   onSubmit(true, num)
                 }}
-                className="w-12 h-12 md:w-14 md:h-14 rounded-xl border-2 flex items-center justify-center text-lg font-medium transition-all"
+                className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl border-2 flex items-center justify-center text-sm sm:text-lg font-medium transition-all"
                 style={{
                   borderColor: isSelected ? theme.primaryColor : `${theme.textColor}30`,
                   backgroundColor: isSelected ? theme.primaryColor : 'transparent',
@@ -886,7 +886,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
       const npsValue = typeof value === 'number' ? value : null
       return (
         <div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-center gap-1 sm:gap-2">
             {Array.from({ length: 11 }).map((_, index) => {
               const isSelected = npsValue === index
               let borderHint = `${theme.textColor}30`
@@ -908,7 +908,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
                     onClearError?.()
                     onSubmit(true, index)
                   }}
-                  className="w-12 h-12 md:w-14 md:h-14 rounded-xl border-2 flex items-center justify-center text-lg font-medium transition-all"
+                  className="w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl border-2 flex items-center justify-center text-sm sm:text-lg font-medium transition-all"
                   style={{
                     borderColor: isSelected ? theme.primaryColor : borderHint,
                     backgroundColor: isSelected ? theme.primaryColor : 'transparent',

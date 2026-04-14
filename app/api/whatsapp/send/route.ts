@@ -286,6 +286,10 @@ async function handleFormAwareSend(
 }
 
 async function handleDirectSend(data: DirectSendRequest): Promise<NextResponse> {
+  // NOTE: Direct send bypasses plan gate. Only internal services with INTERNAL_API_SECRET
+  // can reach this point. For user-facing sends, always use the form-aware path.
+  logWarn('[whatsapp/send] Direct send used — no plan gate applied')
+
   const cleanPhone = data.to.replace(/\D/g, '')
 
   if (!isValidPhoneNumber(cleanPhone)) {

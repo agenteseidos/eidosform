@@ -1,23 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { PLAN_ORDER } from '@/lib/plans'
+import { PLANS } from '@/lib/plan-limits'
+import { PlanId } from '@/lib/plans'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-/**
- * Validate that user has Plus+ plan (plus or professional)
- */
-function isPlusPlan(plan: string | null | undefined): boolean {
-  const normalizedPlan = (plan?.trim().toLowerCase() ?? 'free') as typeof PLAN_ORDER[number]
-  return PLAN_ORDER.indexOf(normalizedPlan as typeof PLAN_ORDER[number]) >= PLAN_ORDER.indexOf('plus')
-}
-
-/**
- * Get Supabase client with service role for server operations
- */
 function getServiceClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -64,7 +54,7 @@ export async function POST(
     const supabase = getServiceClient()
     const { data: form, error: formError } = await supabase
       .from('forms')
-      .select('id, user_id, title, plan')
+      .select('id, user_id, title')
       .eq('id', id)
       .single()
 
@@ -82,8 +72,15 @@ export async function POST(
       )
     }
 
-    // 3. Check if user has Plus+ plan
-    if (!isPlusPlan(form.plan)) {
+    // 3. Check if user has Plus+ plan (from profiles, not forms)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', user.id)
+      .single()
+
+    const plan = (profile?.plan ?? 'free') as PlanId
+    if (!PLANS[plan]?.whatsappNotifications) {
       return NextResponse.json(
         { error: 'This feature is only available for Plus+ plans' },
         { status: 403 }

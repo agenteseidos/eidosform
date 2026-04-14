@@ -29,6 +29,7 @@ export interface PlanConfig {
   webhooks: boolean
   redirect: boolean
   emailNotifications: boolean
+  whatsappNotifications: boolean
   prioritySupport: boolean
   features: string[]
 }
@@ -50,6 +51,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     webhooks: false,
     redirect: false,
     emailNotifications: false,
+    whatsappNotifications: false,
     prioritySupport: false,
     features: [
       '100 respostas/mês',
@@ -80,6 +82,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     webhooks: false,
     redirect: true,
     emailNotifications: false,
+    whatsappNotifications: false,
     prioritySupport: false,
     features: [
       'Tudo do Free +',
@@ -107,6 +110,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     webhooks: true,
     redirect: true,
     emailNotifications: true,
+    whatsappNotifications: true,
     prioritySupport: true,
     features: [
       'Tudo do Starter +',
@@ -116,6 +120,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
       'Respostas parciais',
       'Taxa de abandono por pergunta',
       'Notificação por email',
+      'Notificação por WhatsApp',
       'Alerta de limite (80%)',
       'Meta Pixel (Facebook)',
       'Google Ads (Conversões)',
@@ -141,6 +146,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     webhooks: true,
     redirect: true,
     emailNotifications: true,
+    whatsappNotifications: true,
     prioritySupport: true,
     features: [
       'Tudo do Plus +',
@@ -151,6 +157,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
       'Chave de API dedicada',
       'Exportação CSV avançada',
       'Suporte prioritário com SLA',
+      'Notificação por WhatsApp',
     ],
   },
 }

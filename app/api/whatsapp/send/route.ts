@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getWhatsAppSettings } from '@/lib/whatsapp'
 import { logError, logWarn } from '@/lib/logger'
+import { createServerClient } from '@supabase/ssr'
+import { PLANS } from '@/lib/plan-limits'
+import { PlanId } from '@/lib/plans'
 
 // In-memory rate limiter: tracks sends per phone number per hour
 const rateLimiter = new Map<string, { count: number; resetAt: number }>()
@@ -213,6 +216,32 @@ async function handleFormAwareSend(
       { success: false, error: 'No WhatsApp phone configured' },
       { status: 400 }
     )
+  }
+
+  // 1b. Plan check — verify form owner has Plus or Professional
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { cookies: { getAll: () => [], setAll: () => {} } }
+  )
+  const { data: formData } = await supabase
+    .from('forms')
+    .select('user_id')
+    .eq('id', data.formId)
+    .single()
+  if (formData?.user_id) {
+    const { data: ownerProfile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', formData.user_id)
+      .single()
+    const plan = (ownerProfile?.plan ?? 'free') as PlanId
+    if (!PLANS[plan]?.whatsappNotifications) {
+      return NextResponse.json(
+        { success: false, error: 'WhatsApp requires Plus or Professional plan' },
+        { status: 403 }
+      )
+    }
   }
 
   // 2. Rate limit check

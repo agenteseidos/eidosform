@@ -1,4 +1,4 @@
-import type { CustomDomainInsert, CustomDomainUpdate } from '@/lib/database.types'
+import type { CustomDomainInsert } from '@/lib/database.types'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { addDomain, removeDomain, checkDomainStatus } from '@/lib/custom-domain'
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/domains — listar domínios do usuário
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = await createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()

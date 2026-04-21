@@ -52,6 +52,7 @@ export async function connectSpreadsheet(
   spreadsheetId: string,
   fieldLabels: string[]
 ): Promise<{ title: string }> {
+  try {
   const auth = getAuth()
   const sheets = google.sheets({ version: 'v4', auth })
 
@@ -141,6 +142,10 @@ export async function connectSpreadsheet(
   }
 
   return { title }
+  } catch (error) {
+    console.error('[google-sheets] connectSpreadsheet error:', error)
+    throw error
+  }
 }
 
 /**
@@ -154,6 +159,7 @@ export async function appendSubmission(
   questionIdToLabel: Record<string, string>,
   utmData: Record<string, string | null>
 ): Promise<void> {
+  try {
   const auth = getAuth()
   const sheets = google.sheets({ version: 'v4', auth })
 
@@ -224,6 +230,9 @@ export async function appendSubmission(
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: [row] },
   })
+  } catch (error) {
+    console.error('[google-sheets] appendSubmission error:', error)
+  }
 }
 
 function formatAnswerValue(value: unknown): string {

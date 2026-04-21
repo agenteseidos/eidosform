@@ -25,30 +25,19 @@ export async function requireAdmin(req: NextRequest): Promise<
 > {
   const user = await getRequestUser(req)
 
-  console.log('[AUTH] User email:', user?.email)
-  console.log('[AUTH] User exists:', !!user)
-
   if (!user?.email) {
-    console.log('[AUTH] No email in user')
     return {
       ok: false,
-      response: NextResponse.json({ error: 'Unauthorized', debug: 'no_email' }, { status: 401 }),
+      response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
     }
   }
-
-  const adminEmails = getAdminEmails()
-  console.log('[AUTH] Admin emails:', adminEmails)
-  console.log('[AUTH] Is admin?', adminEmails.includes(user.email.trim().toLowerCase()))
 
   if (!isAdminEmail(user.email)) {
-    console.log('[AUTH] User NOT in admin list')
     return {
       ok: false,
-      response: NextResponse.json({ error: 'Forbidden', debug: 'not_admin' }, { status: 403 }),
+      response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
     }
   }
-
-  console.log('[AUTH] ADMIN ACCESS GRANTED')
   return { ok: true, user }
 }
 

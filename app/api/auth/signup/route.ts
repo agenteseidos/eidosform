@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     // Rate limit by email (5 signup attempts per 15 minutes)
     const rateLimitKey = `signup:${email.toLowerCase()}`
-    const { allowed, remaining, resetIn } = await checkRateLimitAsync(rateLimitKey, {
+    const { allowed, resetIn } = await checkRateLimitAsync(rateLimitKey, {
       maxAttempts: 5,
       windowMs: 15 * 60 * 1000, // 15 minutes
     })

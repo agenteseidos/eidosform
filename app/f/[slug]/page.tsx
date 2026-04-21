@@ -107,6 +107,11 @@ export default async function FormPage({ params }: FormPageProps) {
   const metaPixelId = rawPixelId && /^\d{10,20}$/.test(rawPixelId.trim()) ? rawPixelId.trim() : null
   const canShowPixels = ownerPlan === 'plus' || ownerPlan === 'professional'
 
+  // Gate pixel data: strip from payload if plan doesn't allow pixels
+  if (!canShowPixels && form.pixels) {
+    form.pixels = null as unknown as typeof form.pixels
+  }
+
   return (
     <>
       {/* Meta Pixel — injected server-side in <head> for reliable E2E detection */}

@@ -58,7 +58,7 @@ function isValidPhoneNumber(phone: string): boolean {
 /**
  * Build message from template and lead data
  */
-function buildMessage(template: string, leadData: FormAwareRequest['leadData'], formId: string): string {
+function buildMessage(template: string, leadData: FormAwareRequest['leadData']): string {
   let msg = template
 
   // Named variables (higher priority)
@@ -253,7 +253,7 @@ async function handleFormAwareSend(
   }
 
   // 3. Build message from template
-  const message = buildMessage(settings.message_template, data.leadData, data.formId)
+  const message = buildMessage(settings.message_template, data.leadData)
 
   // 4. Validate phone
   if (!isValidPhoneNumber(settings.owner_phone)) {

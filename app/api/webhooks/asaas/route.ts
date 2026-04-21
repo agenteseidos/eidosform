@@ -25,8 +25,17 @@ const VALUE_TO_PLAN: Record<number, string> = {
   2467.2: 'professional', // R$205,60/mês × 12
 }
 
-function detectPlan(value: number): string {
-  return VALUE_TO_PLAN[value] ?? 'starter'
+// ATTENTION: Update VALUE_TO_PLAN when plan prices change!
+function detectPlan(value: number, description?: string): string {
+  const mapped = VALUE_TO_PLAN[value]
+  if (mapped) return mapped
+
+  // Fallback: try to infer plan from payment description or external reference
+  logWarn('[asaas-webhook] Unmapped payment value', { value, description })
+  const desc = (description ?? '').toLowerCase()
+  if (desc.includes('professional') || desc.includes('profissional')) return 'professional'
+  if (desc.includes('plus')) return 'plus'
+  return 'starter'
 }
 
 async function getUserByCustomerId(asaasCustomerId: string) {
@@ -94,7 +103,7 @@ export async function POST(req: NextRequest) {
         const user = await getUserByCustomerId(customerId)
         if (!user) break
 
-        const plan = detectPlan(payment.value)
+        const plan = detectPlan(payment.value, (body as unknown as Record<string, unknown>).description as string | undefined)
         const planConfig = PLANS[plan as PlanName]
 
         await supabase

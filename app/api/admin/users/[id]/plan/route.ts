@@ -27,13 +27,18 @@ export async function PATCH(
   }
 
   const supabase = getAdminSupabase()
-  const { error } = await supabase
-    .from('profiles')
-    .update({ plan: body.plan })
-    .eq('id', id)
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ plan: body.plan })
+      .eq('id', id)
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+  } catch (err) {
+    console.error('[admin/plan] Update error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   return NextResponse.json({ success: true })

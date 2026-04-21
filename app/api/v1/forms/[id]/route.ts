@@ -12,16 +12,25 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization',
-  'Access-Control-Max-Age': '86400',
+const ALLOWED_ORIGINS = [
+  process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br',
+  'https://eidosform.com.br',
+].filter(Boolean)
+
+function getCorsHeaders(origin?: string | null) {
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin)
+  return {
+    'Access-Control-Allow-Origin': allowed ? origin! : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
+  }
 }
 
 // OPTIONS — CORS preflight
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders(req.headers.get('origin')) })
 }
 
 function getServiceClient() {
@@ -38,7 +47,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   if (!auth.ok) {
     return NextResponse.json(
       { error: auth.error, retryAfter: auth.retryAfter },
-      { status: auth.status, headers: CORS_HEADERS }
+      { status: auth.status, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -63,7 +72,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     if (!form) {
       return NextResponse.json(
         { error: 'Form not found' },
-        { status: 404, headers: CORS_HEADERS }
+        { status: 404, headers: getCorsHeaders(req.headers.get("origin")) }
       )
     }
 
@@ -78,7 +87,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     if (error) {
       return NextResponse.json(
         { error: 'Failed to fetch responses' },
-        { status: 500, headers: CORS_HEADERS }
+        { status: 500, headers: getCorsHeaders(req.headers.get("origin")) }
       )
     }
 
@@ -92,7 +101,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
           total_pages: Math.ceil((count ?? 0) / limit),
         },
       },
-      { headers: CORS_HEADERS }
+      { headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -107,11 +116,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   if (error || !formData) {
     return NextResponse.json(
       { error: 'Form not found' },
-      { status: 404, headers: CORS_HEADERS }
+      { status: 404, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
-  return NextResponse.json({ form: formData }, { headers: CORS_HEADERS })
+  return NextResponse.json({ form: formData }, { headers: getCorsHeaders(req.headers.get("origin")) })
 }
 
 // POST /api/v1/forms/[id]
@@ -120,7 +129,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (!auth.ok) {
     return NextResponse.json(
       { error: auth.error, retryAfter: auth.retryAfter },
-      { status: auth.status, headers: CORS_HEADERS }
+      { status: auth.status, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -132,7 +141,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       {
         status: 429,
         headers: {
-          ...CORS_HEADERS,
+          ...getCorsHeaders(req.headers.get("origin")),
           'Retry-After': String(retryAfter),
           'X-RateLimit-Limit': '10',
           'X-RateLimit-Remaining': '0',
@@ -145,7 +154,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_BYTES) {
     return NextResponse.json(
       { error: 'Payload muito grande' },
-      { status: 413, headers: CORS_HEADERS }
+      { status: 413, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -159,14 +168,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (rawBody.length > MAX_PAYLOAD_BYTES) {
       return NextResponse.json(
         { error: 'Payload muito grande' },
-        { status: 413, headers: CORS_HEADERS }
+        { status: 413, headers: getCorsHeaders(req.headers.get("origin")) }
       )
     }
     body = JSON.parse(rawBody)
   } catch {
     return NextResponse.json(
       { error: 'Dados inválidos' },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -184,14 +193,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (!answers || typeof answers !== 'object') {
     return NextResponse.json(
       { error: 'answers is required' },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
   if (Object.keys(answers).length > MAX_ANSWER_KEYS) {
     return NextResponse.json(
       { error: 'Número de respostas excede o limite' },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -214,7 +223,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (!form) {
     return NextResponse.json(
       { error: 'Form not found or not published' },
-      { status: 404, headers: CORS_HEADERS }
+      { status: 404, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -223,7 +232,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (validationErrors.length > 0) {
     return NextResponse.json(
       { error: 'Respostas inválidas', details: validationErrors },
-      { status: 422, headers: CORS_HEADERS }
+      { status: 422, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -234,7 +243,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (!limitCheck.allowed) {
       return NextResponse.json(
         { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit },
-        { status: 429, headers: CORS_HEADERS }
+        { status: 429, headers: getCorsHeaders(req.headers.get("origin")) }
       )
     }
   }
@@ -258,7 +267,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (error || !updated) {
       return NextResponse.json(
         { error: 'Response not found' },
-        { status: 404, headers: CORS_HEADERS }
+        { status: 404, headers: getCorsHeaders(req.headers.get("origin")) }
       )
     }
 
@@ -280,7 +289,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (error || !response) {
       return NextResponse.json(
         { error: 'Failed to save response' },
-        { status: 500, headers: CORS_HEADERS }
+        { status: 500, headers: getCorsHeaders(req.headers.get("origin")) }
       )
     }
 
@@ -316,7 +325,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     {
       status: existingResponseId ? 200 : 201,
       headers: {
-        ...CORS_HEADERS,
+        ...getCorsHeaders(req.headers.get("origin")),
         'X-RateLimit-Limit': '10',
         'X-RateLimit-Remaining': String(rateCheck.remaining),
       },

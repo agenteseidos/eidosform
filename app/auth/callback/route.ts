@@ -4,9 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const rawNext = searchParams.get('next') ?? '/billing'
+  const rawNext = searchParams.get('next') ?? '/forms'
   // Prevent open redirect: only allow relative paths starting with /
-  const next = (rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '/billing'
+  const next = (rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '/forms'
   const type = searchParams.get('type')
 
   if (code) {

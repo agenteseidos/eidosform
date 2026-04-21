@@ -46,10 +46,10 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <EidosLogo variant="reduced" theme="light" href="/billing" height={34} />
+            <EidosLogo variant="reduced" theme="light" href="/forms" height={34} />
             <div className="hidden md:flex items-center gap-6">
               <Link
-                href="/billing"
+                href="/forms"
                 className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
               >
                 Meus Formulários
@@ -101,7 +101,7 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/billing" className="cursor-pointer">
+                  <Link href="/forms" className="cursor-pointer">
                     <UserIcon className="mr-2 h-4 w-4" />
                     Meus Formulários
                   </Link>
@@ -131,7 +131,7 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
 
       {mobileOpen && (
         <div className="md:hidden fixed top-16 left-0 right-0 z-40 bg-white border-b border-slate-200 shadow-lg px-4 py-3 flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-4rem)]">
-          <Link href="/billing" className="text-sm font-medium text-slate-700 hover:text-slate-900 rounded-lg px-3 py-3 min-h-[44px] flex items-center" onClick={() => setMobileOpen(false)}>
+          <Link href="/forms" className="text-sm font-medium text-slate-700 hover:text-slate-900 rounded-lg px-3 py-3 min-h-[44px] flex items-center" onClick={() => setMobileOpen(false)}>
             Meus Formulários
           </Link>
           <Link href="/forms/new" className="text-sm font-medium text-blue-600 hover:text-blue-700 rounded-lg px-3 py-3 min-h-[44px] flex items-center" onClick={() => setMobileOpen(false)}>

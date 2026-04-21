@@ -89,7 +89,7 @@ export async function sendLimitAlert(params: {
         <p>Olá, <strong>${name}</strong>!</p>
         <p>Você já usou <strong>${usage} de ${limit}</strong> respostas do plano <strong>${plan}</strong>.</p>
         <p>Para não perder respostas, considere fazer upgrade.</p>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/upgrade"
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/billing"
            style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
           Fazer upgrade
         </a>
@@ -140,7 +140,7 @@ export async function sendPlanCancelled(params: {
         <p>Olá, <strong>${name}</strong>!</p>
         <p>Sua assinatura do plano <strong>${plan}</strong> foi cancelada. Você voltou para o plano Free.</p>
         <p>Se foi um engano ou quer reativar, acesse seu dashboard.</p>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/upgrade"
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/billing"
            style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
           Reativar plano
         </a>

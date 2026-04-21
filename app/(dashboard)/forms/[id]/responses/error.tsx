@@ -30,7 +30,7 @@ export default function ResponsesError({
           <Button variant="outline" onClick={reset}>
             Tentar novamente
           </Button>
-          <Link href="/dashboard">
+          <Link href="/billing">
             <Button className="bg-blue-600 hover:bg-blue-700">Voltar ao painel</Button>
           </Link>
         </div>

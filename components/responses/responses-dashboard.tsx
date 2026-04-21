@@ -493,7 +493,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
       {/* ── Header ── */}
       <div className="mb-8">
         <div className="flex items-center gap-4 mb-4">
-          <Link href="/dashboard">
+          <Link href="/billing">
             <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]">
               <ArrowLeft className="w-4 h-4 mr-2" />Voltar
             </Button>

@@ -35,7 +35,7 @@ export default async function BillingPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex items-center gap-4 mb-8">
-        <Link href="/dashboard">
+        <Link href="/billing">
           <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar

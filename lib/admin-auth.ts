@@ -52,7 +52,7 @@ export async function requireAdminUser(): Promise<User> {
   }
 
   if (!isAdminEmail(user.email)) {
-    redirect('/dashboard')
+    redirect('/billing')
   }
 
   return user

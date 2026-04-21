@@ -49,7 +49,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Define protected routes
-  const protectedRoutes = ['/dashboard', '/forms', '/admin']
+  const protectedRoutes = ['/billing', '/forms', '/admin']
   const isProtectedRoute = protectedRoutes.some(route => 
     request.nextUrl.pathname.startsWith(route)
   )
@@ -88,7 +88,7 @@ export async function updateSession(request: NextRequest) {
   // Redirect to dashboard if already logged in and accessing login page
   if (request.nextUrl.pathname === '/login' && user) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard/forms'
+    url.pathname = '/billing'
     return NextResponse.redirect(url)
   }
 

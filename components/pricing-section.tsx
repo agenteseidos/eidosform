@@ -204,7 +204,7 @@ export function PricingSection() {
                   href={
                     plan.id === 'free'
                       ? '/register'
-                      : `/register?next=/checkout/${plan.id}&cycle=${billing}`
+                      : `/register?next=/checkout/${plan.id}&cycle=${billing === 'annual' ? 'yearly' : billing}`
                   }
                   className="block mt-auto"
                 >

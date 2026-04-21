@@ -15,6 +15,7 @@ import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
+import { createClient } from '@/lib/supabase/client'
 
 interface FormPlayerProps {
   ownerPlan?: string
@@ -47,10 +48,62 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const [responseId, setResponseId] = useState<string | null>(null)
   const [navigationHistory, setNavigationHistory] = useState<number[]>([])
   const metaEvents = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
+  const partialResponsesEnabled = (ownerPlan === 'plus' || ownerPlan === 'professional')
+
+  // Check authentication on mount
+  useEffect(() => {
+    let cancelled = false
+    async function checkAuth() {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (cancelled) return
+        isAuthenticatedRef.current = !!session
+
+        if (session && partialResponsesEnabled) {
+          loadPartialProgress()
+        }
+      } catch {
+        // Not authenticated — keep in-memory only
+      }
+    }
+    checkAuth()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Load saved partial response
+  async function loadPartialProgress() {
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      const res = await fetch(`/api/forms/${form.id}/partial-response`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) return
+
+      const data = await res.json()
+      if (data.answers && typeof data.answers === 'object' && Object.keys(data.answers).length > 0) {
+        setAnswers(data.answers)
+        if (data.response_id) setResponseId(data.response_id)
+        // Restore position
+        if (data.last_question_answered) {
+          const idx = visibleQuestions.findIndex(q => q.id === data.last_question_answered)
+          if (idx !== -1) setCurrentIndex(idx)
+        }
+      }
+    } catch {
+      // Silent fail
+    }
+  }
 
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerPixelSubmitRef = useRef<(() => void) | null>(null)
   const skipNextValidationRef = useRef(false)
+  const partialSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isAuthenticatedRef = useRef(false)
 
   // Lista de perguntas visíveis com base nas respostas atuais
   const visibleQuestions = getVisibleQuestions(questions, answers) as QuestionConfig[]
@@ -126,7 +179,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
     // Salvar progresso parcial antes de avançar
     if (currentQuestion) {
-      savePartialResponse(updatedAnswers, currentQuestion.id).catch(console.warn)
+      savePartialResponseDebounced(updatedAnswers, currentQuestion.id)
       // Avaliar pixel events condicionais da pergunta atual com a resposta recém-selecionada
       if (currentQuestion.pixelEvents) {
         evaluatePixelEvents(currentQuestion.pixelEvents as PixelEventRule[], updatedAnswers[currentQuestion.id])
@@ -175,33 +228,37 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
   }, [form, navigationHistory])
 
-  // Salva resposta parcial a cada pergunta respondida (upsert por responseId)
-  async function savePartialResponse(currentAnswers: Record<string, Json>, lastQuestionId: string) {
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (responseId) headers['x-response-id'] = responseId
+  // Salva resposta parcial com debounce (2s) — só se autenticado e plano permitir
+  function savePartialResponseDebounced(currentAnswers: Record<string, Json>, lastQuestionId: string) {
+    if (!isAuthenticatedRef.current || !partialResponsesEnabled) return
 
-      const res = await fetch('/api/responses', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          form_id: form.id,
-          answers: currentAnswers,
-          completed: false,
-          last_question_answered: lastQuestionId,
-        }),
-      })
+    if (partialSaveTimerRef.current) clearTimeout(partialSaveTimerRef.current)
+    partialSaveTimerRef.current = setTimeout(async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) return
 
-      if (res.ok) {
-        const data = await res.json()
-        if (!responseId && data.response_id) {
-          setResponseId(data.response_id)
+        const res = await fetch(`/api/forms/${form.id}/partial-response`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            answers: currentAnswers,
+            last_question_answered: lastQuestionId,
+          }),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          if (data.response_id) setResponseId(data.response_id)
         }
+      } catch {
+        // Falha silenciosa — não impede o fluxo do player
       }
-    } catch (e) {
-      // Falha silenciosa — não impede o fluxo do player
-      console.warn('Partial save failed:', e)
-    }
+    }, 2000)
   }
 
   const handleSubmit = async (submissionAnswers?: Record<string, Json>) => {

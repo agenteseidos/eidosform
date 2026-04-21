@@ -1,6 +1,51 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 19:56 GMT-3
+### Última atualização: 2026-04-21 23:05 GMT-3
+
+---
+
+## Revalidação Zéfa — Checkout CPF/CNPJ E2E (60a40b7) — 2026-04-21 23:05 GMT-3
+
+**Veredito: REPROVADO ❌ (1 bug P1, 1 bug P2)**
+
+### O que foi testado (E2E produção)
+1. ✅ Login OK
+2. ✅ Navegação para /billing OK
+3. ✅ Clicar "Assinar Starter" → checkout com campo CPF/CNPJ aparece
+4. ✅ Campo com máscara visual (placeholder 000.000.000-00)
+5. ❌ **P1 — Validação client-side quebra com máscara:** Digitar CPF "52998224725" → erro "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos)". Digitar com máscara "529.982.247-25" → erro some mas volta ao submeter. A validação conta `value.length` (14 chars com pontuação) em vez de contar apenas dígitos (`\D` stripped = 11). **Usuário não consegue confirmar a assinatura.**
+6. ❌ **P1 — API 500 em /api/checkout/starter?cycle=monthly:** Mesmo quando a validação client-side passa, o backend retorna 500. Provavelmente o CPF com máscara está chegando sujo ao backend.
+7. **P2 — Stale closure em `startCheckout`** (da auditoria anterior, permanece)
+
+### Raiz provável
+- A máscara de input formata com `.` e `-` mas o `onChange`/`onSubmit` não faz `replace(/\D/g, '')` antes de validar/enviar.
+- A validação usa `value.length` em vez de `value.replace(/\D/g, '').length`.
+- O backend pode não estar limpando a máscara antes de enviar ao Asaas.
+
+### Fix recomendado
+- **Frontend:** No `onChange` ou antes do submit, sanitizar: `const digits = value.replace(/\D/g, '')`. Validar `digits.length === 11 || digits.length === 14`. Enviar `digits` (não o valor mascarado) para a API.
+- **Backend:** Sanitizar `cpfCnpj` no handler: `cpfCnpj = cpfCnpj?.replace(/\D/g, '')`.
+
+---
+
+## Auditoria Zéfa — CPF/CNPJ no Checkout (60a40b7) — 2026-04-21 20:05 GMT-3
+
+**Veredito: APROVADO ✅ (código OK, mas E2E reprovado)**
+
+### O que foi verificado
+- **Diff 60a40b7:** Campo CPF/CNPJ adicionado no checkout; validação de 11/14 dígitos; enviado sem máscara para API e Asaas.
+- **UI:** Campo obrigatório com label, placeholder, máscara visual, mensagem de erro, botão submit e botão voltar.
+- **API route:** Body parse com fallback vazio; `cpfCnpj` enviado como `cpfCnpj: cpfCnpj || undefined` para `createCustomer`.
+- **Segurança:** Dado não exposto em logs ou retornado desnecessariamente.
+- **TypeScript:** zero erros.
+
+### Bugs encontrados
+- **P2 — Stale closure em `startCheckout`:** `useCallback` com deps `[normalized, cycle]` não inclui `cpfCnpj`. Pode causar envio de valor antigo em edge cases. Recomendação: adicionar `cpfCnpj` ao array de dependências.
+
+### Pendências
+- Nenhuma bloqueante.
+
+---
 
 ---
 

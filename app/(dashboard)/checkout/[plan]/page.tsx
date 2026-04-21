@@ -66,7 +66,7 @@ export default function CheckoutPage() {
       setState('error')
       setData({ error: 'Falha de conexão. Tente novamente.' })
     }
-  }, [normalized, cycle])
+  }, [normalized, cycle, cpfCnpj])
 
   // CPF/CNPJ form — user submits manually
 

@@ -27,7 +27,7 @@ export default async function NewFormPage({
   // Enforce form limit before creating (Bug: was bypassing checkFormLimit)
   const formLimit = await checkFormLimit(user.id)
   if (!formLimit.allowed) {
-    redirect(`/dashboard?error=form_limit&usage=${formLimit.usage}&limit=${formLimit.limit}`)
+    redirect(`/forms?error=form_limit&usage=${formLimit.usage}&limit=${formLimit.limit}`)
   }
 
   const params = await searchParams
@@ -73,8 +73,8 @@ export default async function NewFormPage({
 
   // All retries exhausted or non-retryable error — redirect to dashboard with error
   if (lastError === 'slug_collision') {
-    redirect(`/dashboard?error=slug_collision&retry=${retryCount + 1}`)
+    redirect(`/forms?error=slug_collision&retry=${retryCount + 1}`)
   }
 
-  redirect(`/dashboard?error=create_failed`)
+  redirect(`/forms?error=create_failed`)
 }

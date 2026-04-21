@@ -1,6 +1,26 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 23:05 GMT-3
+### Última atualização: 2026-04-21 20:12 GMT-3
+
+---
+
+## Revalidação Zéfa — CPF/CNPJ Sanitização (c7aa051) — 2026-04-21 20:12 GMT-3
+
+**Veredito: APROVADO ✅**
+
+### O que foi verificado
+- **Diff c7aa051:** Sanitização `replace(/\D/g, '')` antes de validar e enviar CPF/CNPJ
+- **Validação:** Usa `raw.length` (dígitos puros), não `value.length` — resolve P1 anterior
+- **Stale closure:** `cpfCnpj` adicionado ao deps array do `useCallback` — resolve P2 anterior
+- **Backend:** Já tinha sanitização dupla `(body.cpfCnpj ?? '').replace(/\D/g, '')`
+- **Envio:** Body envia `raw` (dígitos limpos), não valor mascarado
+- **Edge cases:** vazio → erro de validação; máscara → removida; espaços → removidos
+- **TypeScript:** zero erros
+
+### Resumo
+Todos os bugs da auditoria anterior (P1 validação client-side, P2 stale closure) foram corrigidos. Sanitização robusta em frontend e backend.
+
+---
 
 ---
 
@@ -716,3 +736,45 @@ Corrigir todos os redirects listados acima para apontar para `/forms`. Recriar r
   - Teste manual no navegador para confirmar ausência de erro toast ao abrir Integrações.
 - Próximo passo:
   - Validar fluxo completo (abrir aba, editar campo, aguardar debounce, confirmar save normal).
+
+## Revalidação Zéfa — Checkout CPF/CNPJ E2E Final (c7aa051) — 2026-04-21 ~23:14 GMT-3
+
+**Veredito: REPROVADO ❌ (1 bug P0)**
+
+### O que foi testado
+1. Login OK (conta já logada)
+2. /billing → "Assinar Starter" → campo CPF/CNPJ aparece ✅
+3. Preenchido `529.982.247-25` (com máscara)
+4. Clicado "Confirmar assinatura"
+5. **Erro 500** da API Asaas: `invalid_object — Para criar esta cobrança é necessário preencher o CPF ou CNPJ do cliente.`
+
+### Bug encontrado: P0 — CPF não é enviado para customers existentes no Asaas
+
+**Arquivo:** `app/api/checkout/[plan]/route.ts`
+
+**Problema:** O backend só passa `cpfCnpj` na chamada `createCustomer()` quando o customer **não existe ainda** (bloco `if (!asaasCustomerId)`). Se o customer já existe no Asaas (criado previamente sem CPF), o CPF digitado no checkout é completamente ignorado. A assinatura é criada num customer sem CPF, e a Asaas rejeita.
+
+**Linha do problema (~L76):**
+```ts
+if (!asaasCustomerId) {
+  const customer = await createCustomer({
+    name: ...,
+    email: ...,
+    cpfCnpj: cpfCnpj || undefined,  // ← só chega aqui se customer novo
+  })
+}
+```
+
+**Fix necessário:**
+- Antes de `createSubscription`, verificar se `cpfCnpj` foi fornecido e o customer existe
+- Se sim, chamar uma função `updateCustomer(asaasCustomerId, { cpfCnpj })` para preencher o CPF no customer existente
+- Ou alternativamente, sempre incluir cpfCnpj na criação da subscription se a API Asaas aceitar
+
+### Commits verificados
+- c7aa051 — fix frontend (stale closure + sanitização) ✅ deployado localmente
+- O fix do commit c7aa051 **não resolve o problema server-side** de customers existentes
+
+### Status
+- Frontend: ✅ campo aparece, preenche, sanitiza, envia
+- Backend sanitização: ✅ `replace(/\D/g, '')` funciona
+- Backend envio ao Asaas: ❌ CPF ignorado quando customer já existe

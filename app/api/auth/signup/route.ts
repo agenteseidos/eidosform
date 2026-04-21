@@ -1,4 +1,5 @@
 import { createPublicClient } from '@/lib/supabase/public'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -39,10 +40,29 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const normalizedEmail = email.toLowerCase().trim()
+    const admin = createAdminClient()
+    const existingUsers = await admin.auth.admin.listUsers()
+    const existingUser = existingUsers.data.users.find(
+      (user) => user.email?.toLowerCase() === normalizedEmail
+    )
+
+    if (existingUser) {
+      return NextResponse.json(
+        {
+          error: existingUser.email_confirmed_at
+            ? 'Este e-mail já está cadastrado. Faça login.'
+            : 'Este e-mail já foi cadastrado, mas ainda não foi confirmado.',
+          code: existingUser.email_confirmed_at ? 'EMAIL_ALREADY_REGISTERED' : 'EMAIL_ALREADY_PENDING',
+        },
+        { status: 409 }
+      )
+    }
+
     // Create Supabase client and attempt signup
     const supabase = createPublicClient()
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: normalizedEmail,
       password,
       options: {
         data: { full_name: fullName },
@@ -57,7 +77,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Signup successful
     return NextResponse.json(
       {
         success: true,

@@ -81,24 +81,25 @@ function RegisterForm() {
     }
 
     setIsLoading(true)
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: `${window.location.origin}/auth/callback${callbackNext ? '?next=' + encodeURIComponent(callbackNext) : ''}`,
-      },
+    const res = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, fullName }),
     })
 
-    if (error) {
-      if (error.message.includes('already registered')) {
-        toast.error('Este e-mail já está cadastrado')
+    const json = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      if (json.code === 'EMAIL_ALREADY_REGISTERED') {
+        toast.error('Este e-mail já está cadastrado. Faça login.')
+      } else if (json.code === 'EMAIL_ALREADY_PENDING') {
+        toast.error('Este e-mail já foi cadastrado, mas ainda não confirmou o cadastro.')
       } else {
-        toast.error('Falha ao criar conta. Tente novamente.')
+        toast.error(json.error || 'Falha ao criar conta. Tente novamente.')
       }
       setIsLoading(false)
     } else {
-      router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+      router.push(`/verify-email?email=${encodeURIComponent(email)}${callbackNext ? `&next=${encodeURIComponent(callbackNext)}` : ''}`)
     }
   }
 

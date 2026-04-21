@@ -88,7 +88,7 @@ export async function updateSession(request: NextRequest) {
   // Redirect to dashboard if already logged in and accessing login page
   if (request.nextUrl.pathname === '/login' && user) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = '/dashboard/forms'
     return NextResponse.redirect(url)
   }
 

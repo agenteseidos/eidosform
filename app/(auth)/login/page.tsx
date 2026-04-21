@@ -63,7 +63,7 @@ function LoginForm() {
       }
       setIsLoading(false)
     } else {
-      router.push('/dashboard')
+      router.push('/dashboard/forms')
     }
   }
 

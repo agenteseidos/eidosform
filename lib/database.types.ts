@@ -366,6 +366,7 @@ export interface Database {
         Row: {
           id: string
           form_id: string
+          respondent_id: string | null
           answers: Record<string, Json>
           meta_events: string[]
           completed: boolean
@@ -382,6 +383,7 @@ export interface Database {
         Insert: {
           id?: string
           form_id: string
+          respondent_id?: string | null
           answers: Record<string, Json>
           meta_events?: string[]
           completed?: boolean
@@ -396,6 +398,7 @@ export interface Database {
           updated_at?: string
         }
         Update: {
+          respondent_id?: string | null
           answers?: Record<string, Json>
           meta_events?: string[]
           completed?: boolean

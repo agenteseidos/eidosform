@@ -1,4 +1,5 @@
 import { google } from 'googleapis'
+import { logError } from '@/lib/logger'
 
 const META_EVENTS_COLUMN = 'meta_events'
 const UTM_COLUMNS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
@@ -143,7 +144,7 @@ export async function connectSpreadsheet(
 
   return { title }
   } catch (error) {
-    console.error('[google-sheets] connectSpreadsheet error:', error)
+    logError('[google-sheets] connectSpreadsheet error', error)
     throw error
   }
 }
@@ -231,7 +232,7 @@ export async function appendSubmission(
     requestBody: { values: [row] },
   })
   } catch (error) {
-    console.error('[google-sheets] appendSubmission error:', error)
+    logError('[google-sheets] appendSubmission error', error)
   }
 }
 

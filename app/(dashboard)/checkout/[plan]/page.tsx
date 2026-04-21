@@ -32,12 +32,24 @@ export default function CheckoutPage() {
 
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error' | 'already'>('idle')
   const [data, setData] = useState<CheckoutResponse>({})
+  const [cpfCnpj, setCpfCnpj] = useState('')
+  const [validationError, setValidationError] = useState('')
 
   const startCheckout = useCallback(async () => {
+    const raw = cpfCnpj.replace(/\D/g, '')
+    if (raw.length !== 11 && raw.length !== 14) {
+      setValidationError('Informe um CPF (11 dígitos) ou CNPJ (14 dígitos).')
+      return
+    }
     setState('loading')
     setData({})
+    setValidationError('')
     try {
-      const res = await fetch(`/api/checkout/${normalized}?cycle=${cycle}`, { method: 'POST' })
+      const res = await fetch(`/api/checkout/${normalized}?cycle=${cycle}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpfCnpj: raw }),
+      })
       const json: CheckoutResponse = await res.json()
       setData(json)
 
@@ -56,9 +68,7 @@ export default function CheckoutPage() {
     }
   }, [normalized, cycle])
 
-  useEffect(() => {
-    if (isValid) startCheckout()
-  }, [isValid, startCheckout])
+  // CPF/CNPJ form — user submits manually
 
   if (!isValid) {
     router.replace('/billing')
@@ -70,6 +80,50 @@ export default function CheckoutPage() {
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center space-y-6 max-w-md px-6">
+        {state === 'idle' && (
+          <>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Finalizar assinatura — {normalized.charAt(0).toUpperCase() + normalized.slice(1)} {cycleLabel}
+            </h1>
+            <p className="text-slate-500">
+              Para criar sua assinatura, informe seu CPF ou CNPJ:
+            </p>
+            <div className="space-y-3 text-left">
+              <label className="block text-sm font-medium text-slate-700">
+                CPF ou CNPJ
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="000.000.000-00 ou 00.000.000/0001-00"
+                value={cpfCnpj}
+                onChange={(e) => {
+                  setCpfCnpj(e.target.value)
+                  setValidationError('')
+                }}
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm focus:border-[#F5B731] focus:outline-none focus:ring-1 focus:ring-[#F5B731]"
+                onKeyDown={(e) => { if (e.key === 'Enter') startCheckout() }}
+              />
+              {validationError && (
+                <p className="text-sm text-red-600">{validationError}</p>
+              )}
+            </div>
+            <Button
+              onClick={startCheckout}
+              className="bg-[#F5B731] hover:bg-[#e5a721] text-slate-900 font-semibold w-full"
+            >
+              Confirmar assinatura
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/billing')}
+              className="text-slate-500"
+            >
+              Voltar ao billing
+            </Button>
+          </>
+        )}
+
         {state === 'loading' && (
           <>
             <div className="flex justify-center">

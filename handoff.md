@@ -1,6 +1,27 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 19:41 GMT-3
+### Última atualização: 2026-04-21 19:56 GMT-3
+
+---
+
+## Revalidação Zéfa — Cycle Uppercase (ec834fa) — 2026-04-21 19:56 GMT-3
+
+**Veredito: APROVADO ✅**
+
+### O que foi verificado
+- **Diff ec834fa:** `VALID_CYCLES` atualizado para `['MONTHLY', 'YEARLY']`; query param agora passa por `.toUpperCase()` antes de uso.
+- **Grep por lowercase monthly/yearly:** Todos os hits são em contextos de preços/labels/UI — nenhum envia lowercase para a API Asaas.
+- **TypeScript:** zero erros.
+
+### E2E Checkout — 2026-04-21 19:58 GMT-3
+- Login OK, navegou até /billing, clicou "Assinar Starter" (mensal).
+- **Erro `invalid_cycle` NÃO ocorreu mais** ✅
+- Novo erro retornado: `Asaas API error 400: invalid_object — CPF ou CNPJ obrigatório do cliente.`
+- **Conclusão:** O fix do cycle está funcionando. O erro atual é separado — o cadastro do cliente no Asaas não tem CPF/CNPJ preenchido.
+- **Bug P1 `invalid_cycle`: RESOLVIDO.**
+- **Novo bug P2:** Checkout falha por falta de CPF/CNPJ no perfil do cliente Asaas. Requer que o usuário preencha CPF/CNPJ antes de assinar, ou que o backend o requisite no checkout.
+
+---
 
 ---
 

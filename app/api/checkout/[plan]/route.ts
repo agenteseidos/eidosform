@@ -18,6 +18,11 @@ export async function POST(
 ) {
   const { plan } = await params
   const cycle = ((req.nextUrl.searchParams.get('cycle') ?? 'monthly').toUpperCase()) as BillingCycle
+  let cpfCnpj = ''
+  try {
+    const body = await req.json()
+    cpfCnpj = (body.cpfCnpj ?? '').replace(/\D/g, '')
+  } catch { /* no body */ }
 
   if (!VALID_PLANS.has(plan)) {
     return NextResponse.json({ error: 'Plano inválido' }, { status: 400 })
@@ -62,7 +67,7 @@ export async function POST(
       const customer = await createCustomer({
         name: profile.full_name ?? profile.email.split('@')[0],
         email: profile.email,
-
+        cpfCnpj: cpfCnpj || undefined,
       })
       asaasCustomerId = customer.id
 

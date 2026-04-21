@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName } from '@/lib/plan-limits'
+import { PLAN_PRICES } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
 
 function getSupabase() {
@@ -16,21 +17,13 @@ function getSupabase() {
   )
 }
 
-const VALUE_TO_PLAN: Record<number, string> = {
-  49: 'starter',
-  127: 'plus',
-  257: 'professional',
-  470.4: 'starter',      // R$39,20/mês × 12
-  1219.2: 'plus',         // R$101,60/mês × 12
-  2467.2: 'professional', // R$205,60/mês × 12
-}
-
-// ATTENTION: Update VALUE_TO_PLAN when plan prices change!
+// Detecta plano a partir do valor pago, comparando dinamicamente com PLAN_PRICES
 function detectPlan(value: number, description?: string): string {
-  const mapped = VALUE_TO_PLAN[value]
-  if (mapped) return mapped
+  for (const [plan, prices] of Object.entries(PLAN_PRICES)) {
+    if (value === prices.monthly || value === prices.yearly) return plan
+  }
 
-  // Fallback: try to infer plan from payment description or external reference
+  // Fallback: inferir pela descrição do pagamento
   logWarn('[asaas-webhook] Unmapped payment value', { value, description })
   const desc = (description ?? '').toLowerCase()
   if (desc.includes('professional') || desc.includes('profissional')) return 'professional'

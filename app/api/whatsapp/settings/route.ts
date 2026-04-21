@@ -3,6 +3,7 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { createServerClient } from '@supabase/ssr'
 import { getWhatsAppSettings, createWhatsAppSettings } from '@/lib/whatsapp'
 import { PLAN_ORDER } from '@/lib/plans'
+import { logError } from '@/lib/logger'
 
 function isPlusPlan(plan: string | null | undefined): boolean {
   const normalized = (plan?.trim().toLowerCase() ?? 'free') as typeof PLAN_ORDER[number]
@@ -57,13 +58,13 @@ export async function GET(req: NextRequest) {
       .in('form_id', formIds)
 
     if (settingsError) {
-      console.error('[whatsapp/settings] GET list error:', settingsError)
+      logError('[whatsapp/settings] GET list error:', settingsError)
       return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
     }
 
     return NextResponse.json({ settings: settings ?? [] })
   } catch (error) {
-    console.error('[whatsapp/settings] GET error:', error)
+    logError('[whatsapp/settings] GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
@@ -140,7 +141,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(settings, { status: 201 })
   } catch (error) {
-    console.error('[whatsapp/settings] POST error:', error)
+    logError('[whatsapp/settings] POST error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

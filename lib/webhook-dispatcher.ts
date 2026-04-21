@@ -26,7 +26,7 @@ export interface WebhookPayload {
 
 /**
  * Dispara POST para webhook_url configurada pelo usuário.
- * Retry simples: 1 tentativa com timeout de 10s.
+ * Retry com backoff: 3 tentativas (1s, 2s, 4s).
  * Falhas são logadas mas não bloqueiam o fluxo.
  */
 export async function dispatchWebhook(params: {
@@ -58,39 +58,43 @@ export async function dispatchWebhook(params: {
     ...(fields && fields.length > 0 ? { fields } : {}),
   }
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10_000)
+  const delays = [0, 1000, 2000, 4000]
+  let lastError: string | undefined
 
-  try {
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-EidosForm-Event': 'form.response',
-        'X-EidosForm-Form-Id': formId,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-      redirect: 'manual', // Don't follow redirects to private IPs
-    })
-    clearTimeout(timeout)
-
-    if (!res.ok) {
-      logError(
-        `[webhook-dispatcher] FAILED`,
-        { formId, responseId, status: res.status }
-      )
-      return { success: false, statusCode: res.status, error: `HTTP ${res.status}` }
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) {
+      await new Promise(r => setTimeout(r, delays[attempt]))
     }
 
-    return { success: true, statusCode: res.status }
-  } catch (err) {
-    clearTimeout(timeout)
-    const msg = err instanceof Error ? err.message : String(err)
-    logError(
-      `[webhook-dispatcher] ERROR`,
-      { formId, responseId, error: msg }
-    )
-    return { success: false, error: msg }
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10_000)
+
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-EidosForm-Event': 'form.response',
+          'X-EidosForm-Form-Id': formId,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+        redirect: 'manual',
+      })
+      clearTimeout(timeout)
+
+      if (res.ok) return { success: true, statusCode: res.status }
+
+      lastError = `HTTP ${res.status}`
+    } catch (err) {
+      clearTimeout(timeout)
+      lastError = err instanceof Error ? err.message : String(err)
+    }
   }
+
+  logError(
+    `[webhook-dispatcher] FAILED after 4 attempts`,
+    { formId, responseId, error: lastError }
+  )
+  return { success: false, error: lastError }
 }

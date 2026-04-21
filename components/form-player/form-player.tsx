@@ -103,6 +103,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const triggerPixelSubmitRef = useRef<(() => void) | null>(null)
   const skipNextValidationRef = useRef(false)
   const partialSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isSubmittedRef = useRef(false)
   const isAuthenticatedRef = useRef(false)
 
   // Lista de perguntas visíveis com base nas respostas atuais
@@ -231,6 +232,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   // Salva resposta parcial com debounce (2s) — só se autenticado e plano permitir
   function savePartialResponseDebounced(currentAnswers: Record<string, Json>, lastQuestionId: string) {
     if (!isAuthenticatedRef.current || !partialResponsesEnabled) return
+    if (isSubmittedRef.current) return
 
     if (partialSaveTimerRef.current) clearTimeout(partialSaveTimerRef.current)
     partialSaveTimerRef.current = setTimeout(async () => {
@@ -262,6 +264,13 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   }
 
   const handleSubmit = async (submissionAnswers?: Record<string, Json>) => {
+    // Limpar timer de partial save para evitar race condition
+    if (partialSaveTimerRef.current) {
+      clearTimeout(partialSaveTimerRef.current)
+      partialSaveTimerRef.current = null
+    }
+    isSubmittedRef.current = true
+
     const finalAnswers = submissionAnswers ?? answers
 
     if (!validateCurrentQuestion(finalAnswers)) return

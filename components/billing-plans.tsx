@@ -231,7 +231,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                 disabled={isCurrentPlan || isLowerPlan}
                 onClick={() => {
                   if (!isCurrentPlan && !isLowerPlan && plan.checkoutUrl) {
-                    window.location.href = plan.checkoutUrl
+                    window.location.href = `${plan.checkoutUrl}?cycle=${billing}`
                   }
                 }}
               >

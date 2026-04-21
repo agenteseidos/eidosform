@@ -1,7 +1,7 @@
 'use client'
 
 export const dynamic = 'force-dynamic'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,7 @@ function getPasswordStrength(password: string): { score: number; label: string; 
   return { score, label: 'Forte', color: '#4BB678' }
 }
 
-export default function RegisterPage() {
+function RegisterForm() {
   const sp = useSearchParams()
   const nextParam = sp.get('next') || ''
   const cycleParam = sp.get('cycle') || 'annual'
@@ -303,5 +303,13 @@ export default function RegisterPage() {
         </p>
       </motion.div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
   )
 }

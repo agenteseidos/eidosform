@@ -1,3 +1,143 @@
+## Handoff — Toin (Verificação P1s Auth Redirects) — 2026-04-21 18:45 GMT-3
+
+### O que foi feito
+- Verificados os 2 P1s apontados pela Zéfa (login/page.tsx:66 + admin-auth.ts:55)
+- Ambos já estavam corrigidos para `/forms` no commit `aede160`
+- Push já estava em origin/main — nenhuma ação adicional necessária
+
+### Arquivos verificados
+- `app/(auth)/login/page.tsx:66` — `router.push("/forms")` ✅
+- `lib/admin-auth.ts:55` — `redirect("/forms")` ✅
+
+### Nota: outros `/billing` que poderiam ser `/forms`
+- `form-builder.tsx:563,1739,1750` — botões Voltar/Sair sem salvar apontam para `/billing` (não sinalizados como P1)
+- `checkout/[plan]/page.tsx:121,137,163` — corretamente em `/billing`
+
+### Pendências
+- Nenhuma
+
+---
+
+## Handoff — Toin (Fix Login + Admin Auth Redirects) — 2026-04-21 18:45 GMT-3
+
+### O que foi feito
+- Corrigidos os 2 redirects restantes de `/billing` → `/forms` identificados pela Zéfa
+- Commit `aede160` — `fix: login + admin-auth redirects /billing→/forms`
+- Push para origin/main
+
+### FIX 1 — Login page redirect pós-login
+- **Arquivo:** `app/(auth)/login/page.tsx`
+- L66: `router.push('/billing')` → `router.push('/forms')`
+
+### FIX 2 — Admin auth non-admin redirect
+- **Arquivo:** `lib/admin-auth.ts`
+- L55: `redirect('/billing')` → `redirect('/forms')`
+
+### Arquivos alterados
+- `app/(auth)/login/page.tsx` — 1 linha
+- `lib/admin-auth.ts` — 1 linha
+
+### Pendências
+- Nenhuma (todos os P1s de redirect corrigidos)
+
+---
+
+## Auditoria Zéfa (Revalidação Auth Redirects) — 2026-04-21 18:44 GMT-3
+
+**Veredito: REPROVADO**
+
+### Commits auditados
+- `ea28c21` — nav links /billing→/forms + cycle annual→yearly
+- `0bf0a19` — auth redirects: callback + middleware /billing→/forms
+
+### P1s corrigidos ✅
+1. `app/auth/callback/route.ts` — default redirect `/forms` ✅
+2. `lib/supabase/middleware.ts` — logged-in user at `/login` → `/forms` ✅
+
+### P1s encontrados ❌
+1. `app/(auth)/login/page.tsx:66` — `router.push('/billing')` → deveria ser `/forms`
+2. `lib/admin-auth.ts:55` — `redirect('/billing')` → deveria ser `/forms`
+
+### Próximo passo
+Corrigir os 2 redirects restantes.
+
+---
+
+## Auditoria Zéfa (Revalidação Auth Redirects) — 2026-04-21 18:44 GMT-3
+
+**Veredito: REPROVADO**
+
+### Commit auditado
+- `0bf0a19` — fix: auth redirects /billing→/forms (callback + middleware)
+
+### O que foi corrigido ✅
+- `app/auth/callback/route.ts` L5,L7 — default redirect pós-auth `/billing` → `/forms` ✅
+- `lib/supabase/middleware.ts` L91 — redirect `/login` (já logado) `/billing` → `/forms` ✅
+
+### Bugs remanescentes
+
+**P1 — 5 redirects incorretos ainda apontando para /billing**
+
+| # | Arquivo | Linha | Contexto |
+|---|---------|-------|----------|
+| 1 | `app/(auth)/login/page.tsx` | 66 | `router.push('/billing')` pós-login — deveria ser `/forms` |
+| 2 | `components/form-builder/form-builder.tsx` | 563 | Sair do builder sem salvar → `/billing` |
+| 3 | `components/form-builder/form-builder.tsx` | 1739 | Leave dialog "Sair sem salvar" → `/billing` |
+| 4 | `components/form-builder/form-builder.tsx` | 1750 | Leave dialog "Salvar e sair" → `/billing` |
+| 5 | `lib/admin-auth.ts` | 55 | Non-admin redirect → `/billing` |
+
+**P2 — /dashboard sem redirect (permanece da auditoria anterior)**
+- `app/(dashboard)/page.tsx` foi deletado no commit `eb6ace6`, `/dashboard` vai 404
+
+### O que está correto (não mexer)
+- Links de upgrade no form-builder (L622, L996, L1079, L1344, L1401) → `/billing` ✅
+- Checkout page redirects → `/billing` ✅
+- Protected routes list em middleware (L52) → inclui `/billing` ✅
+- `responses-dashboard.tsx`, `settings/page.tsx`, `error.tsx` — sem `/billing` incorreto ✅
+
+### TypeScript
+- `npx tsc --noEmit` ✅ zero erros
+
+### Próximo passo
+Corrigir os 5 redirects restantes listados acima. Recriar redirect `/dashboard` → `/forms`.
+
+---
+
+## Auditoria Zéfa (Fix Nav Links + Cycle) — 2026-04-21 18:41 GMT-3
+
+**Veredito: REPROVADO**
+
+### Commits auditados
+- `ea28c21` — nav links /billing→/forms + cycle annual→yearly
+- `eb6ace6` — remove all /dashboard references (batch anterior)
+
+### O que está correto ✅
+- Nav links (4 ocorrências) em `nav.tsx`: /billing→/forms ✅
+- Cycle mapeamento annual→yearly em `billing-plans.tsx` ✅
+- TSC compila sem erros ✅
+- Links de upgrade em emails apontam para /billing ✅
+
+### Bugs encontrados
+
+**P1 — 8+ redirects incorretos /billing→/forms**
+O commit eb6ace6 trocou TODOS /dashboard por /billing indiscriminadamente. Estes deveriam ser `/forms`:
+- `login/page.tsx:66` — pós-login → `/billing`
+- `auth/callback/route.ts:7,9` — default redirect pós-auth → `/billing`
+- `middleware.ts:91` — já logado no login → `/billing`
+- `form-builder.tsx:563,1739,1750` — Voltar → `/billing`
+- `responses-dashboard.tsx:493` — Voltar → `/billing`
+- `settings/page.tsx` — Voltar → `/billing`
+- `forms/[id]/responses/error.tsx` — Voltar ao painel → `/billing`
+- `admin-auth.ts:55` — non-admin redirect → `/billing`
+
+**P2 — /dashboard sem redirect**
+- `app/(dashboard)/page.tsx` foi deletado, /dashboard vai 404
+
+### Próximo passo
+Corrigir todos os redirects listados acima para apontar para `/forms`. Recriar redirect de `/dashboard` → `/forms`.
+
+---
+
 ## Handoff — Toin (Fix Auth Redirects) — 2026-04-21 18:43 GMT-3
 
 ### O que foi feito

@@ -1,3 +1,69 @@
+## Handoff — Toin (Fix Auth Redirects) — 2026-04-21 18:43 GMT-3
+
+### O que foi feito
+- Corrigidos 2 bugs de redirect apontando pra `/billing` → `/forms`
+- Commit `0bf0a19` — `fix: auth redirects /billing→/forms (callback + middleware)`
+- Push para origin/main
+
+### FIX 1 — Auth callback default redirect
+- **Arquivo:** `app/auth/callback/route.ts`
+- L5: `?? '/billing'` → `?? '/forms'`
+- L7: fallback `/billing` → `/forms`
+
+### FIX 2 — Middleware redirect pós-login
+- **Arquivo:** `lib/supabase/middleware.ts`
+- L91: `url.pathname = '/billing'` → `url.pathname = '/forms'` (bloco `/login` + user logado)
+
+### Arquivos alterados
+- `app/auth/callback/route.ts` — 2 linhas
+- `lib/supabase/middleware.ts` — 1 linha
+
+### Pendências
+- Nenhuma
+
+---
+
+## Auditoria Zéfa — commit ea28c21 — 2026-04-21 18:41 GMT-3
+
+### Resultado: ❌ REPROVADO (2 bugs P1)
+
+**✅ Itens auditados OK:**
+- Nav links: logo, desktop, dropdown, mobile → `/forms`. Upgrade/billing → `/billing`.
+- Cycle checkout: mapeamento `annual → yearly` correto. API aceita `monthly` e `yearly`.
+- Middleware: `/forms` protegido corretamente.
+
+**❌ Bugs P1 encontrados:**
+1. `app/auth/callback/route.ts` L5 — default redirect `/billing` → deveria ser `/forms`
+2. `lib/supabase/middleware.ts` — redirect de `/login` (já logado) pra `/billing` → deveria ser `/forms`
+
+---
+
+## Handoff — Toin (Fix Nav Links + Cycle Checkout) — 2026-04-21 18:40 GMT-3
+
+### O que foi feito
+- Corrigidos 2 bugs: nav links apontando pra /billing e cycle anual no checkout Asaas
+- Commit `ea28c21` — `fix: nav links /billing→/forms + cycle annual→yearly no checkout`
+- Push para origin/main
+
+### BUG 1 — Nav: logo e "Meus Formulários" apontando pra /billing
+- **Arquivo:** `components/dashboard/nav.tsx`
+- Logo href `/billing` → `/forms`
+- Link desktop "Meus Formulários" `/billing` → `/forms`
+- Dropdown "Meus Formulários" `/billing` → `/forms`
+- Link mobile "Meus Formulários" `/billing` → `/forms`
+- **NÃO alterado:** Upgrade, Planos & Cobrança, Fazer upgrade (corretamente em `/billing`)
+
+### BUG 2 — Checkout Asaas: cycle annual→yearly
+- **Arquivo:** `components/billing-plans.tsx`
+- `?cycle=${billing}` → `?cycle=${billing === 'annual' ? 'yearly' : billing}`
+- State interno continua usando 'annual', mapeamento só na URL
+
+### Arquivos alterados
+- `components/dashboard/nav.tsx` — 4 links corrigidos
+- `components/billing-plans.tsx` — 1 linha (mapeamento de ciclo)
+
+### Pendências
+- Nenhuma
 ## Handoff — Toin (Fix Responsividade ETAPA 6 Admin + Responses) — 2026-04-09 17:28 GMT-3
 
 ### O que foi feito

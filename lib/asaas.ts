@@ -59,6 +59,14 @@ async function asaasFetch(path: string, options: RequestInit = {}) {
   return data
 }
 
+/** Atualiza dados de um customer existente */
+export async function updateCustomer(customerId: string, payload: Partial<AsaasCustomerPayload>): Promise<{ id: string }> {
+  return asaasFetch(`/customers/${customerId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 /** Cria ou retorna customer existente pelo email */
 export async function createCustomer(payload: AsaasCustomerPayload): Promise<{ id: string; name: string; email: string }> {
   const existing = await asaasFetch(`/customers?email=${encodeURIComponent(payload.email)}`)

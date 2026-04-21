@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createCustomer, createSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCustomer, createSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 
@@ -75,6 +75,17 @@ export async function POST(
         .from('profiles')
         .update({ asaas_customer_id: asaasCustomerId })
         .eq('id', profile.id)
+    }
+
+    // Atualiza cpfCnpj no Asaas se fornecido (necessário para criar assinatura)
+    if (cpfCnpj && asaasCustomerId) {
+      try {
+        await updateCustomer(asaasCustomerId, { cpfCnpj })
+        log('[checkout] Customer atualizado com cpfCnpj', { asaasCustomerId })
+      } catch (err) {
+        logError('[checkout] Falha ao atualizar cpfCnpj do customer', err)
+        // Não bloqueia — continua tentando criar assinatura
+      }
     }
 
     // Cancela assinatura anterior se existir

@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +29,10 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 }
 
 export default function RegisterPage() {
+  const sp = useSearchParams()
+  const nextParam = sp.get('next') || ''
+  const cycleParam = sp.get('cycle') || 'annual'
+  const callbackNext = nextParam ? `${nextParam}?cycle=${cycleParam}` : ''
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -47,7 +51,7 @@ export default function RegisterPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback${callbackNext ? '?next=' + encodeURIComponent(callbackNext) : ''}`,
       },
     })
     if (error) {
@@ -82,7 +86,7 @@ export default function RegisterPage() {
       password,
       options: {
         data: { full_name: fullName },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${window.location.origin}/auth/callback${callbackNext ? '?next=' + encodeURIComponent(callbackNext) : ''}`,
       },
     })
 

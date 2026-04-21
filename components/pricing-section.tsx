@@ -200,7 +200,14 @@ export function PricingSection() {
                   ))}
                 </ul>
 
-                <Link href="/login" className="block mt-auto">
+                <Link
+                  href={
+                    plan.id === 'free'
+                      ? '/register'
+                      : `/register?next=/checkout/${plan.id}&cycle=${billing}`
+                  }
+                  className="block mt-auto"
+                >
                   <Button
                     className={`w-full font-semibold ${
                       plan.highlight

@@ -560,7 +560,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 if (hasUnsavedChanges) {
                   setShowLeaveDialog(true)
                 } else {
-                  router.push('/billing')
+                  router.push('/forms')
                 }
               }}
               className="shrink-0"
@@ -1736,7 +1736,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               variant="outline"
               onClick={() => {
                 setShowLeaveDialog(false)
-                router.push('/billing')
+                router.push('/forms')
               }}
               className="border-red-200 text-red-600 hover:bg-red-50"
             >
@@ -1747,7 +1747,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 const saved = await handleSave()
                 if (!saved) return
                 setShowLeaveDialog(false)
-                router.push('/billing')
+                router.push('/forms')
               }}
               className="bg-blue-600 hover:bg-blue-700"
             >

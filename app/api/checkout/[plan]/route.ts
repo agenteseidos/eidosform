@@ -10,14 +10,14 @@ import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 
 const VALID_PLANS = new Set<string>(PLAN_ORDER.filter((p) => p !== 'free'))
-const VALID_CYCLES = new Set<string>(['monthly', 'yearly'])
+const VALID_CYCLES = new Set<string>(['MONTHLY', 'YEARLY'])
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ plan: string }> }
 ) {
   const { plan } = await params
-  const cycle = (req.nextUrl.searchParams.get('cycle') ?? 'monthly') as BillingCycle
+  const cycle = ((req.nextUrl.searchParams.get('cycle') ?? 'monthly').toUpperCase()) as BillingCycle
 
   if (!VALID_PLANS.has(plan)) {
     return NextResponse.json({ error: 'Plano inválido' }, { status: 400 })

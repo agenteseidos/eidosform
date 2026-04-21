@@ -1,3 +1,156 @@
+## Handoff Ativo — EidosForm
+
+### Última atualização: 2026-04-21 19:41 GMT-3
+
+---
+
+## Auditoria Zéfa — Browser E2E Produção (Re-auditoria pós-commit c962dc4) — 2026-04-21 19:41 GMT-3
+
+**Veredito: REPROVADO ❌ (1 bug P1)**
+
+### Resumo executivo
+- **P0:** 0
+- **P1:** 1
+- **P2:** 0
+- Todas as correções de `/forms` 404 e redirects foram confirmadas OK.
+- Login, listagem, nav, builder, logout e admin estão funcionando.
+- **Único bug restante:** Checkout Asaas com erro `invalid_cycle` ao assinar plano pago.
+
+### Resultado por etapa
+
+1. **Login conta free** ✅ OK — Redireciona para `/forms` corretamente.
+2. **Listagem /forms** ✅ OK — Página "Meus Formulários" com 3 formulários listados.
+3. **Nav links** ✅ OK — Logo → `/forms`, Meus Formulários → `/forms`, Avatar menu → Planos & Cobrança → `/billing`.
+4. **Form builder** ✅ OK — Builder carrega, botão Voltar → `/forms` (não `/billing`).
+5. **Billing /billing** ✅/❌ — Página de planos carrega. **P1:** Clicar "Assinar Starter" → erro Asaas `invalid_cycle` (parâmetro cycle não enviado).
+6. **Logout** ✅ OK — Redireciona para `/` (landing page).
+7. **Login admin + /admin** ✅ OK — Admin panel carrega com métricas (13 users, 80 forms, 110 respostas).
+
+### Bug detalhado
+- **P1 — Checkout Asaas `invalid_cycle`**
+  - URL: `/checkout/starter` (ou plano correspondente)
+  - Erro: `Asaas API error 400: [{"code":"invalid_cycle","description":"O parâmetro cycle deve ser informado"}]`
+  - Causa provável: backend não envia `cycle` (mensal/anual) ao criar assinatura no Asaas.
+  - Impacto: Usuário não consegue assinar nenhum plano pago.
+
+### Auditoria anterior (pré-commit) — 2026-04-21 19:20 GMT-3
+
+**Veredito: REPROVADO ❌**
+
+### Resumo executivo (anterior)
+- **P0:** 5
+- **P1:** 3
+- **P2:** 0
+- Landing pública funciona.
+- Login free e admin autenticam, mas o redirect principal do produto cai em **`/forms` 404**.
+- Billing e Settings carregam, mas há fluxos quebrados e redirects incorretos.
+- Admin `/admin` e `/admin/users` carregam, mas `/admin/whatsapp` está **404**.
+
+### 1) Landing page
+- ✅ `https://eidosform.com.br/` carrega corretamente.
+- ✅ Links âncora de menu (`#recursos`, `#como-funciona`, `#precos`, `#faq`) estão presentes.
+- ✅ CTA principal leva para `/register`.
+- ✅ `Entrar` leva para `/login`.
+
+### 2) Login, conta free
+- ✅ Login com `sidney@institutoeidos.com.br` / `provisorio-77` autentica com sucesso (cookie de sessão criado).
+- ❌ **P0** `https://eidosform.com.br/forms` retorna **404** após login.
+  - **Esperado:** abrir listagem de formulários.
+  - **Real:** redirect para `/forms`, mas a rota responde 404 do servidor.
+  - **Screenshot:** capturada no browser (404 de `/forms`).
+
+### 3) Navegação após login
+- ❌ **P0** Logo `EidosForm` e `Meus Formulários` apontam para `/forms`, mas `/forms` está quebrada com 404.
+- ✅ Menu do avatar abre corretamente e exibe `Meus Formulários`, `Planos & Cobrança`, `Configurações`, `Sair`.
+- ✅ `Planos & Cobrança` no menu vai para `/billing`.
+- ✅ `Configurações` no menu vai para `/settings`.
+- ❌ **P0** `Criar Formulário` não conclui fluxo utilizável, porque o app redireciona para rota inexistente ao bloquear por limite.
+
+### 4) Listagem de formulários (`/forms`)
+- ❌ **P0** `https://eidosform.com.br/forms` não carrega, responde 404.
+  - **Esperado:** listagem de formulários.
+  - **Real:** página 404.
+  - **Screenshot:** capturada.
+
+### 5) Form builder
+- ❌ Não foi possível auditar builder de ponta a ponta pela conta free porque `Criar Formulário` redireciona para `https://eidosform.com.br/dashboard?error=form_limit&usage=3&limit=3`.
+- ❌ **P0** `/dashboard` também responde **404**.
+  - **Esperado:** tela/fluxo de bloqueio de limite ou dashboard funcional.
+  - **Real:** redirect para rota inexistente.
+  - **Classificação:** P0.
+  - **Screenshot:** capturada no browser (404 de `/dashboard` / rota de bloqueio).
+
+### 6) Billing (`/billing`)
+- ✅ `/billing` carrega corretamente na conta free.
+- ✅ Toggle mensal funciona e `Assinar Starter` levou para `https://eidosform.com.br/checkout/starter?cycle=monthly`.
+- ✅ Toggle anual funciona e `Assinar Starter` levou para `https://eidosform.com.br/checkout/starter?cycle=yearly`.
+- ✅ O erro de cycle `annual vs yearly` aparenta estar resolvido no browser real.
+
+### 7) Settings (`/settings`)
+- ✅ `/settings` carrega corretamente.
+- ❌ **P1** botão `Voltar` em `/settings` leva para `/billing`.
+  - **Esperado:** voltar para `/forms`.
+  - **Real:** vai para `/billing`.
+
+### 8) Login admin + admin area
+- ✅ Login com `medeiros.sco@gmail.com` / `provisorio@77` autentica.
+- ❌ **P0** pós-login do admin também cai em `/forms` 404.
+- ✅ `https://eidosform.com.br/admin` carrega corretamente.
+- ✅ `https://eidosform.com.br/admin/users` carrega corretamente.
+- ❌ **P1** clique no link `Usuários` dentro do menu superior do admin levou para `/` em vez de manter/admin/users durante o teste clicado.
+  - **Observação:** acesso direto por URL a `/admin/users` funciona.
+- ❌ **P0** `https://eidosform.com.br/admin/whatsapp` responde 404.
+  - **Esperado:** tela admin de WhatsApp.
+  - **Real:** página 404.
+  - **Screenshot:** capturada.
+
+### 9) Logout
+- ❌ **P1** rota de logout testada `https://eidosform.com.br/auth/logout` responde 404.
+  - **Esperado:** encerrar sessão e redirecionar para landing page.
+  - **Real:** página 404.
+  - **Screenshot:** capturada.
+- ℹ️ O item `Sair` existe no menu do avatar, mas a rota dedicada de logout está quebrada e o requisito de redirect confiável para landing não ficou validado por rota própria.
+
+### Bugs consolidados
+1. **P0** `/forms` 404 após login free.
+2. **P0** `/forms` 404 após login admin.
+3. **P0** `/forms` 404 na navegação principal (logo, Meus Formulários).
+4. **P0** redirect de limite para `/dashboard?...` cai em 404.
+5. **P0** `/admin/whatsapp` 404.
+6. **P1** botão `Voltar` em `/settings` vai para `/billing` em vez de `/forms`.
+7. **P1** clique em `Usuários` no nav do admin se comportou incorretamente e levou para `/` no teste clicado.
+8. **P1** `/auth/logout` 404.
+
+### Observações finais
+- O produto público está no ar, mas o fluxo principal autenticado ainda está comprometido por rotas críticas inexistentes.
+- O bug mais grave continua sendo a indisponibilidade de `/forms`, que quebra login, navegação principal e acesso à listagem.
+- Billing está bem mais saudável e o problema `annual/yearly` parece corrigido.
+
+---
+
+## Auditoria Zéfa — Revalidação Final — 2026-04-21 18:47 GMT-3
+
+**Veredito: APROVADO ✅**
+
+### Commits auditados
+- `ab979a6` — varredura completa /billing→/forms
+- `aede160` — fix login + admin-auth redirects
+- `0bf0a19` — fix auth redirects callback + middleware
+- `ea28c21` — fix nav links + cycle annual→yearly
+
+### Verificações
+- ✅ P1 billing em login: zero hits
+- ✅ P1 billing em admin-auth: zero hits
+- ✅ P1 billing em forms: zero redirects (1 link em error.tsx aponta para /billing existente — P3)
+- ✅ P1 router.push/redirect billing: zero hits
+- ✅ P2 /dashboard: redirect para /forms presente
+- ✅ TypeScript: zero erros
+
+### Nota P3
+- `app/(dashboard)/forms/[id]/responses/error.tsx:33` — `<Link href="/billing">` aponta para rota existente, não é bug
+
+---
+
 ## Handoff — Toin (Verificação P1s Auth Redirects) — 2026-04-21 18:45 GMT-3
 
 ### O que foi feito

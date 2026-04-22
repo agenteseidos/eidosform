@@ -99,20 +99,18 @@ export async function createSubscription(params: {
 
 /** Cria checkout hospedado — retorna URL para redirecionamento */
 export async function createCheckout(params: {
-  customerId: string
   plan: Exclude<PlanName, 'free'>
   cycle: BillingCycle
   successUrl: string
 }): Promise<{ id: string; url: string }> {
-  const { customerId, plan, cycle, successUrl } = params
+  const { plan, cycle, successUrl } = params
   const price = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
   const nextDueDate = new Date()
   nextDueDate.setDate(nextDueDate.getDate() + 1)
 
-  log('[asaas] createCheckout payload', { customer: customerId, plan, cycle, value: price })
+  log('[asaas] createCheckout payload', { plan, cycle, value: price, customerMode: 'checkout-entry' })
 
   const payload = {
-    customer: customerId,
     billingTypes: ['PIX', 'BOLETO', 'CREDIT_CARD'],
     chargeTypes: ['RECURRENT'],
     subscription: {
@@ -126,8 +124,11 @@ export async function createCheckout(params: {
       quantity: 1,
       unitPrice: price,
     }],
-    successUrl,
-    expiration: 120, // minutos
+    callback: {
+      successUrl,
+      autoRedirect: true,
+    },
+    minutesToExpire: 120,
   }
 
   const data = await asaasFetch('/checkouts', { method: 'POST', body: JSON.stringify(payload) })

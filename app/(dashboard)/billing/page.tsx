@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -6,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { BillingPlans } from '@/components/billing-plans'
+import { CheckoutSuccessOverlay } from '@/components/checkout-success-overlay'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +36,9 @@ export default async function BillingPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+      <Suspense fallback={null}>
+        <CheckoutSuccessOverlay />
+      </Suspense>
       <div className="flex items-center gap-4 mb-8">
         <Link href="/billing">
           <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]">

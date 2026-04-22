@@ -17,18 +17,32 @@ function getSupabase() {
   )
 }
 
-// Detecta plano a partir do valor pago, comparando dinamicamente com PLAN_PRICES
-function detectPlan(value: number, description?: string): string {
+// Detecta plano E ciclo a partir do valor pago
+function detectPlanAndCycle(value: number, description?: string): { plan: string; cycle: 'MONTHLY' | 'YEARLY' } {
   for (const [plan, prices] of Object.entries(PLAN_PRICES)) {
-    if (value === prices.monthly || value === prices.yearly) return plan
+    if (value === prices.yearly) return { plan, cycle: 'YEARLY' }
+    if (value === prices.monthly) return { plan, cycle: 'MONTHLY' }
   }
 
   // Fallback: inferir pela descrição do pagamento
   logWarn('[asaas-webhook] Unmapped payment value', { value, description })
   const desc = (description ?? '').toLowerCase()
-  if (desc.includes('professional') || desc.includes('profissional')) return 'professional'
-  if (desc.includes('plus')) return 'plus'
-  return 'starter'
+  let plan = 'starter'
+  if (desc.includes('professional') || desc.includes('profissional')) plan = 'professional'
+  else if (desc.includes('plus')) plan = 'plus'
+
+  // Assume mensal como fallback
+  return { plan, cycle: 'MONTHLY' }
+}
+
+function calculateExpiryDate(cycle: 'MONTHLY' | 'YEARLY'): string {
+  const now = new Date()
+  if (cycle === 'YEARLY') {
+    now.setFullYear(now.getFullYear() + 1)
+  } else {
+    now.setDate(now.getDate() + 30)
+  }
+  return now.toISOString()
 }
 
 async function getUserByCustomerId(asaasCustomerId: string) {
@@ -94,21 +108,30 @@ export async function POST(req: NextRequest) {
         if (!customerId) break
 
         const user = await getUserByCustomerId(customerId)
-        if (!user) break
+        if (!user) {
+          logWarn('[asaas-webhook] User not found for customer', { customerId })
+          break
+        }
 
-        const plan = detectPlan(payment.value, (body as unknown as Record<string, unknown>).description as string | undefined)
+        const { plan, cycle } = detectPlanAndCycle(
+          payment.value,
+          (body as unknown as Record<string, unknown>).description as string | undefined
+        )
         const planConfig = PLANS[plan as PlanName]
+        const planExpiresAt = calculateExpiryDate(cycle)
+
+        log('[asaas-webhook] Activating plan', { userId: user.id, plan, cycle, expiresAt: planExpiresAt })
 
         await supabase
           .from('profiles')
           .update({
             plan,
             plan_status: 'active',
-            plan_expires_at: null,
+            plan_expires_at: planExpiresAt,
             limit_alert_sent: false,
             responses_limit: planConfig?.maxResponses ?? 100,
             responses_used: 0,
-            asaas_subscription_id: payment.subscription ?? user.plan,
+            asaas_subscription_id: payment.subscription ?? null,
           })
           .eq('id', user.id)
 
@@ -120,10 +143,22 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
+        const user = await getUserByCustomerId(customerId)
+        if (!user) break
+
+        log('[asaas-webhook] Payment overdue — reverting to free', { userId: user.id, customerId })
+
+        // Reverter para free e resetar limits
         await supabase
           .from('profiles')
-          .update({ plan_status: 'overdue' })
-          .eq('asaas_customer_id', customerId)
+          .update({
+            plan: 'free',
+            plan_status: 'overdue',
+            limit_alert_sent: false,
+            responses_limit: PLANS.free.maxResponses,
+          })
+          .eq('id', user.id)
+
         break
       }
 
@@ -136,11 +171,14 @@ export async function POST(req: NextRequest) {
 
         const oldPlan = user.plan ?? 'starter'
 
+        log('[asaas-webhook] Subscription deleted — reverting to free', { userId: user.id, customerId })
+
         await supabase
           .from('profiles')
           .update({
             plan: 'free',
             plan_status: 'cancelled',
+            plan_expires_at: null,
             asaas_subscription_id: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,

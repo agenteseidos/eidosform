@@ -1,11 +1,11 @@
 /**
  * POST /api/checkout/[plan]?cycle=monthly|yearly
  * Inicia checkout hospedado do Asaas.
- * O cliente informa os próprios dados na página do Asaas.
+ * Cria/obtém customer e salva asaas_customer_id no profile.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createCheckout, cancelSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, cancelSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 
@@ -35,7 +35,7 @@ export async function POST(
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, email, asaas_subscription_id, plan')
+    .select('id, email, full_name, asaas_subscription_id, asaas_customer_id, plan')
     .eq('id', user.id)
     .single()
 
@@ -59,7 +59,6 @@ export async function POST(
     // Cancela assinatura anterior se existir
     if (profile.asaas_subscription_id && profile.plan !== plan) {
       try {
-        const { cancelSubscription } = await import('@/lib/asaas')
         await cancelSubscription(profile.asaas_subscription_id)
         log('[checkout] Assinatura anterior cancelada', { oldSubscriptionId: profile.asaas_subscription_id })
         await supabase
@@ -72,17 +71,37 @@ export async function POST(
       }
     }
 
-    // Cria checkout hospedado do Asaas
+    // Criar ou obter customer no Asaas
+    let customerId = profile.asaas_customer_id
+    if (!customerId) {
+      log('[checkout] Criando customer no Asaas', { email: profile.email })
+      const customer = await createCustomer({
+        name: profile.full_name || profile.email.split('@')[0],
+        email: profile.email,
+      })
+      customerId = customer.id
+
+      // Salvar asaas_customer_id no profile para o webhook encontrar o user
+      await supabase
+        .from('profiles')
+        .update({ asaas_customer_id: customerId })
+        .eq('id', profile.id)
+
+      log('[checkout] asaas_customer_id salvo no profile', { userId: profile.id, customerId })
+    }
+
+    // Cria checkout hospedado do Asaas (vinculado ao customer)
     const price = cycle === 'MONTHLY'
       ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
       : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
     const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
     const successUrl = `${origin}/billing?checkout=success`
-    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerMode: 'checkout-entry' })
+    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId })
     const checkout = await createCheckout({
       plan: plan as Exclude<PlanId, 'free'>,
       cycle,
       successUrl,
+      customerId,
     })
     log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: 'checkout', checkoutId: checkout.id })
 

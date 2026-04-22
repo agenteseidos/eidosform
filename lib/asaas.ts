@@ -102,17 +102,19 @@ export async function createCheckout(params: {
   plan: Exclude<PlanName, 'free'>
   cycle: BillingCycle
   successUrl: string
+  customerId: string
 }): Promise<{ id: string; url: string }> {
-  const { plan, cycle, successUrl } = params
+  const { plan, cycle, successUrl, customerId } = params
   const price = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
   const nextDueDate = new Date()
   nextDueDate.setDate(nextDueDate.getDate() + 1)
 
-  log('[asaas] createCheckout payload', { plan, cycle, value: price, customerMode: 'checkout-entry' })
+  log('[asaas] createCheckout payload', { plan, cycle, value: price, customerId })
 
   const itemName = `Plano ${plan}`.slice(0, 30)
   const itemDescription = `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`
   const payload = {
+    customer: customerId,
     billingTypes: ['CREDIT_CARD'],
     chargeTypes: ['RECURRENT'],
     subscription: {

@@ -1,6 +1,45 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 22:15 GMT-3
+### Última atualização: 2026-04-21 22:36 GMT-3
+
+---
+
+## Revalidação Checkout Hospedado após fix e5e8012 — Zéfa — 2026-04-21 22:36 GMT-3
+
+**Veredito: REPROVADO ❌**
+
+### O que foi verificado
+- Sessão autenticada com conta free em produção (`sidney@institutoeidos.com.br`)
+- Página `/billing` carregou normalmente
+- Revalidação executada para as 6 combinações de plano/ciclo
+- Conferência feita via sessão autenticada do app em produção, chamando `POST /api/checkout/[plan]?cycle=...`
+
+### Resultado por combinação
+- **Starter mensal** ❌ sem redirect, erro retornado pela API:
+  - `Asaas API error 400: [{"code":"parse_error","description":"O campo 'name' precisa ser informado."}]`
+- **Starter anual** ❌ sem redirect, erro retornado pela API:
+  - `Asaas API error 400: [{"code":"parse_error","description":"O campo 'name' precisa ser informado."}]`
+- **Plus mensal** ❌ sem redirect, erro retornado pela API:
+  - `Asaas API error 400: [{"code":"parse_error","description":"O campo 'name' precisa ser informado."}]`
+- **Plus anual** ❌ sem redirect, erro retornado pela API:
+  - `Asaas API error 400: [{"code":"parse_error","description":"O campo 'name' precisa ser informado."}]`
+- **Professional mensal** ❌ sem redirect, erro retornado pela API:
+  - `Asaas API error 400: [{"code":"parse_error","description":"O campo 'name' precisa ser informado."}]`
+- **Professional anual** ❌ sem redirect, erro retornado pela API:
+  - `Asaas API error 400: [{"code":"parse_error","description":"O campo 'name' precisa ser informado."}]`
+
+### Resumo
+- **P0:** 0
+- **P1:** 1
+- **P2:** 0
+
+### Leitura mais provável
+- O fix do commit `e5e8012` ainda **não está refletido em produção** ou a instância publicada continua enviando um payload incompatível ao Asaas.
+- O bug continua bloqueando **100% dos upgrades pagos**.
+
+### Próximo passo recomendado
+- Confirmar o deploy da Vercel do commit `e5e8012`
+- Após deploy concluído, repetir a bateria dos 6 testes com click-to-redirect até abrir o checkout hospedado do Asaas
 
 ---
 

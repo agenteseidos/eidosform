@@ -187,6 +187,7 @@ function QuestionReorderItem({
             size="sm"
             className="opacity-100 md:opacity-0 md:group-hover:opacity-100 h-7 w-7 p-0"
             title="Duplicar pergunta"
+            aria-label="Duplicar pergunta"
             data-testid="duplicate-question"
             onClick={(e) => {
               e.stopPropagation()
@@ -199,6 +200,7 @@ function QuestionReorderItem({
             variant="ghost"
             size="sm"
             className="opacity-100 md:opacity-0 md:group-hover:opacity-100 h-7 w-7 p-0"
+            aria-label="Excluir pergunta"
             onClick={(e) => {
               e.stopPropagation()
               onDelete()
@@ -390,33 +392,25 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     setSaveStatus('saving')
     setIsSaving(true)
     try {
-      // Always use the API route for autosave — ensures Google Sheets, integrations, and validation work
-      const payload = buildFormPayload()
-      const response = await fetch(`/api/forms/${form.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const data = await response.json().catch(() => null)
-      if (response.ok && data?.form) {
-        setForm(data.form)
+      const updatedForm = await updateFormViaApi(buildFormPayload())
+      if (updatedForm) {
+        setForm(updatedForm)
         setHasUnsavedChanges(false)
         setSaveStatus('saved')
         setTimeout(() => setSaveStatus('idle'), 2000)
       } else {
-        const errorMsg = data?.error || 'Falha ao salvar automaticamente'
-        toast.error(errorMsg, { description: 'Suas alterações podem não ter sido salvas.' })
+        toast.error('Falha ao salvar automaticamente', { description: 'Suas alterações podem não ter sido salvas.' })
         setSaveStatus('error')
         setTimeout(() => setSaveStatus('idle'), 5000)
       }
-    } catch {
-      toast.error('Erro de conexão ao salvar', { description: 'Verifique sua internet e tente salvar manualmente.' })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro de conexão ao salvar', { description: 'Verifique sua internet e tente salvar manualmente.' })
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 5000)
     } finally {
       setIsSaving(false)
     }
-  }, [form.id, buildFormPayload])
+  }, [buildFormPayload, updateFormViaApi])
 
   useEffect(() => {
     if (!hasUnsavedChanges) return
@@ -1494,11 +1488,13 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       }}
                       className={`flex-1 text-slate-900 placeholder:text-slate-400 ${slugError ? 'border-red-400 focus-visible:border-red-500' : ''}`}
                       placeholder="meu-formulario"
+                      aria-invalid={!!slugError}
+                      aria-describedby={slugError ? 'slug-error' : undefined}
                     />
-                    {slugError && (
-                      <p className="text-xs text-red-500 mt-1.5">{slugError}</p>
-                    )}
                   </div>
+                  {slugError && (
+                    <p id="slug-error" className="text-xs text-red-500" role="alert">{slugError}</p>
+                  )}
                 </div>
               </div>
             </TabsContent>

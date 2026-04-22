@@ -1,30 +1,27 @@
-## Handoff — Zéfa — 2026-04-22 18:24 GMT-3
+## Handoff — Zéfa — 2026-04-22 18:44 GMT-3
 
 ### Demanda
-Auditar as correções da Fase 1 do builder do EidosForm (commit `0e72446`).
+Auditar as correções da Fase 2 do builder do EidosForm (commit `58c4350`).
 
 ### O que foi feito
-Auditoria completa dos 7 pontos da Fase 1:
+Auditoria completa do diff `0e72446..58c4350` em `components/form-builder/form-builder.tsx`.
 
-1. **✅ Feedback de erro no autosave** — `toast.error` + indicador visual "Erro ao salvar" no header. Reseta após 5s.
-2. **✅ Unificação de payload** — Autosave e save manual ambos usam `buildFormPayload()` + API route `/api/forms/[id]`.
-3. **✅ Google Sheets no autosave** — `buildFormPayload()` inclui campos de sheets. Autosave passa pela API route correta.
-4. **✅ `is_published` removido** — Nenhuma referência no código. Publicação usa `status: 'published'`.
-5. **✅ Confirmação ao deletar pergunta** — Dialog com nome da pergunta, botões Cancelar/Excluir (destructive).
-6. **✅ Proteção contra remoção total de opções** — `updateQuestion` rejeita update que resultaria em `options: []` para dropdown/checkboxes.
-7. **Classificação de bugs remanescentes** — Nenhum P0/P1/P2. Um P3 menor (ver abaixo).
+### Resultado da auditoria — ✅ LIMPO
 
-### Resultado
-**Fase 1 está limpa.** Todas as correções estão corretas e completas.
+1. **Bloqueio de publicação sem título** — ✅ `handlePublish` verifica `form.title.trim()`, exibe toast e retorna. Correto.
+2. **Validação de slug em tempo real** — ✅ `validateSlug()` com 4 regras (vazio, min 3 chars, regex `[a-z0-9-]`, sem hífen nas pontas). Input aplica `setSlugError` no onChange, borda vermelha + mensagem de erro renderizadas condicionalmente. Também validado no `handlePublish`. Correto.
+3. **Botão Publicar no mobile** — ✅ `<span className="hidden sm:inline">` trocado por `<span>`. Texto "Publicar" agora visível em todas as breakpoints. Correto.
+4. **WhatsApp settings** — ✅ `notify_whatsapp_number` adicionado ao `buildFormPayload()` com fallback `|| null`. Antes era omitido, causando null no save. Correto.
+5. **TypeScript** — ✅ `tsc --noEmit` passou limpo (exit 0).
 
 ### Bugs remanescentes
-- **P3** — `handleAutosave` faz fetch direto em vez de usar `updateFormViaApi`. Funcionalmente idêntico, mas é duplicação de código. Sugestão: unificar.
+Nenhum bug encontrado. Nenhum P0/P1/P2/P3.
 
 ### Arquivos auditados
-- `components/form-builder/form-builder.tsx` (único arquivo alterado no commit)
+- `components/form-builder/form-builder.tsx` (diff da Fase 2)
 
 ### Pendências
-- Nenhuma para Fase 1
+- Nenhuma para Fase 2
 
 ### Próximo passo
-Fase 2 (UX que impacta vendas): P2-1 slug validação em tempo real, P2-2 botão Publicar mobile, P2-6 forçar título, P2-7 WhatsApp settings
+Fase 3 ou P3 do handoff anterior (unificar handleAutosave com updateFormViaApi)

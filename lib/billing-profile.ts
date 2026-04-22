@@ -1,0 +1,119 @@
+import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
+import type { AsaasCustomerPayload } from '@/lib/asaas'
+
+export type BillingProfile = {
+  profileId: string
+  email: string
+  fullName: string
+  phone: string | null
+  cpfCnpj: string | null
+  address: string | null
+  addressNumber: string | null
+  postalCode: string | null
+  province: string | null
+  city: string | null
+  asaasCustomerId: string | null
+  asaasSubscriptionId: string | null
+  plan: string
+}
+
+export type BillingFieldKey = keyof Pick<
+  BillingProfile,
+  'fullName' | 'email' | 'phone' | 'cpfCnpj' | 'address' | 'addressNumber' | 'postalCode' | 'province' | 'city'
+>
+
+export const REQUIRED_BILLING_FIELDS: BillingFieldKey[] = [
+  'fullName',
+  'email',
+  'phone',
+  'cpfCnpj',
+  'address',
+  'addressNumber',
+  'postalCode',
+  'province',
+  'city',
+]
+
+export const BILLING_FIELD_LABELS: Record<BillingFieldKey, string> = {
+  fullName: 'Nome completo',
+  email: 'E-mail',
+  phone: 'Telefone',
+  cpfCnpj: 'CPF ou CNPJ',
+  address: 'Endereço',
+  addressNumber: 'Número',
+  postalCode: 'CEP',
+  province: 'Bairro',
+  city: 'Cidade',
+}
+
+function cleanString(value: unknown) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function digitsOnly(value: string | null) {
+  return value ? value.replace(/\D/g, '') : null
+}
+
+export function mapProfileRowToBillingProfile(profile: Record<string, unknown>, userEmail?: string | null): BillingProfile {
+  const rawEmail = cleanString(profile.email) ?? cleanString(userEmail)
+  return {
+    profileId: String(profile.id),
+    email: rawEmail ?? '',
+    fullName: cleanString(profile.full_name) ?? (rawEmail ? rawEmail.split('@')[0] : ''),
+    phone: cleanString(profile.phone),
+    cpfCnpj: cleanString(profile.cpf_cnpj),
+    address: cleanString(profile.address),
+    addressNumber: cleanString(profile.address_number),
+    postalCode: cleanString(profile.postal_code),
+    province: cleanString(profile.province),
+    city: cleanString(profile.city),
+    asaasCustomerId: cleanString(profile.asaas_customer_id),
+    asaasSubscriptionId: cleanString(profile.asaas_subscription_id),
+    plan: cleanString(profile.plan) ?? 'free',
+  }
+}
+
+export function getMissingBillingFields(profile: BillingProfile): BillingFieldKey[] {
+  return REQUIRED_BILLING_FIELDS.filter((field) => {
+    const value = profile[field]
+    if (!value) return true
+    if (field === 'cpfCnpj') return digitsOnly(value)?.length !== 11 && digitsOnly(value)?.length !== 14
+    if (field === 'postalCode') return digitsOnly(value)?.length !== 8
+    if (field === 'phone') return (digitsOnly(value)?.length ?? 0) < 10
+    return false
+  })
+}
+
+export function toAsaasCustomerPayload(profile: BillingProfile): AsaasCustomerPayload {
+  return {
+    name: profile.fullName,
+    email: profile.email,
+    phone: digitsOnly(profile.phone),
+    mobilePhone: digitsOnly(profile.phone),
+    cpfCnpj: digitsOnly(profile.cpfCnpj),
+    address: profile.address ?? undefined,
+    addressNumber: profile.addressNumber ?? undefined,
+    postalCode: digitsOnly(profile.postalCode),
+    province: profile.province ?? undefined,
+    city: profile.city ?? undefined,
+  }
+}
+
+export async function getBillingProfileForUser(userId: string, fallbackEmail?: string | null) {
+  const supabase = await createClient()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, email, full_name, phone, cpf_cnpj, address, address_number, postal_code, province, city, asaas_customer_id, asaas_subscription_id, plan')
+    .eq('id', userId)
+    .single()
+
+  if (!profile) return null
+  return mapProfileRowToBillingProfile(profile as unknown as Record<string, unknown>, fallbackEmail)
+}
+
+export function createBillingServiceClient(serviceRoleKey: string) {
+  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey)
+}

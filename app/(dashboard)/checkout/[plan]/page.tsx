@@ -12,6 +12,9 @@ interface CheckoutResponse {
   checkoutUrl?: string
   alreadySubscribed?: boolean
   error?: string
+  code?: string
+  settingsUrl?: string
+  missingFieldLabels?: string[]
 }
 
 function CheckoutContent() {
@@ -23,10 +26,11 @@ function CheckoutContent() {
   const normalized = normalizePlan(plan)
   const isValid = normalized !== 'free' && PAID_PLANS.includes(normalized)
 
-  const [state, setState] = useState<'loading' | 'error' | 'already'>('loading')
+  const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing'>('loading')
   const [errorMsg, setErrorMsg] = useState('')
+  const [missingFields, setMissingFields] = useState<string[]>([])
+  const [settingsUrl, setSettingsUrl] = useState('/settings')
 
-  // Auto-start checkout on mount
   useEffect(() => {
     if (!isValid) return
 
@@ -45,6 +49,14 @@ function CheckoutContent() {
 
         if (json.alreadySubscribed) {
           setState('already')
+          return
+        }
+
+        if (json.code === 'MISSING_BILLING_FIELDS') {
+          setState('missing-billing')
+          setMissingFields(json.missingFieldLabels || [])
+          setSettingsUrl(json.settingsUrl || '/settings')
+          setErrorMsg(json.error || 'Complete seus dados de cobrança antes de continuar.')
           return
         }
 
@@ -107,7 +119,36 @@ function CheckoutContent() {
     )
   }
 
-  // state === 'error'
+  if (state === 'missing-billing') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-6 max-w-xl px-6">
+          <div className="text-5xl">🧾</div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Complete seus dados de cobrança
+          </h1>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 text-left">
+            <p className="font-medium mb-2">Faltam informações obrigatórias para abrir o checkout:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              {missingFields.map((field) => (
+                <li key={field}>{field}</li>
+              ))}
+            </ul>
+          </div>
+          <p className="text-slate-500">{errorMsg}</p>
+          <div className="flex gap-3 justify-center flex-wrap">
+            <Button onClick={() => router.push(settingsUrl)} className="bg-slate-900 hover:bg-slate-800 text-white">
+              Ir para configurações
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/billing')}>
+              Voltar ao billing
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center space-y-6 max-w-md px-6">

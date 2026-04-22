@@ -5,7 +5,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createCheckout, createCustomer, cancelSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, cancelSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 
@@ -33,11 +34,7 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, email, full_name, asaas_subscription_id, asaas_customer_id, plan')
-    .eq('id', user.id)
-    .single()
+  const profile = await getBillingProfileForUser(user.id, user.email)
 
   if (!profile) {
     return NextResponse.json({ error: 'Perfil não encontrado' }, { status: 404 })
@@ -47,8 +44,19 @@ export async function POST(
     return NextResponse.json({ error: 'Email obrigatório para o checkout' }, { status: 400 })
   }
 
+  const missingFields = getMissingBillingFields(profile)
+  if (missingFields.length > 0) {
+    return NextResponse.json({
+      error: 'Complete seus dados de cobrança antes de continuar.',
+      code: 'MISSING_BILLING_FIELDS',
+      missingFields,
+      missingFieldLabels: missingFields.map((field) => BILLING_FIELD_LABELS[field]),
+      settingsUrl: '/settings',
+    }, { status: 400 })
+  }
+
   // Se já tem assinatura ativa no plano escolhido, retorna info
-  if (profile.asaas_subscription_id && profile.plan === plan) {
+  if (profile.asaasSubscriptionId && profile.plan === plan) {
     return NextResponse.json({
       message: 'Você já possui este plano ativo',
       alreadySubscribed: true,
@@ -57,53 +65,63 @@ export async function POST(
 
   try {
     // Cancela assinatura anterior se existir
-    if (profile.asaas_subscription_id && profile.plan !== plan) {
+    if (profile.asaasSubscriptionId && profile.plan !== plan) {
       try {
-        await cancelSubscription(profile.asaas_subscription_id)
-        log('[checkout] Assinatura anterior cancelada', { oldSubscriptionId: profile.asaas_subscription_id })
+        await cancelSubscription(profile.asaasSubscriptionId)
+        log('[checkout] Assinatura anterior cancelada', { oldSubscriptionId: profile.asaasSubscriptionId })
         await supabase
           .from('profiles')
           .update({ asaas_subscription_id: null })
-          .eq('id', profile.id)
+          .eq('id', profile.profileId)
       } catch (err) {
         logError('[checkout] Falha ao cancelar assinatura anterior', err)
-        // Não bloqueia — continua criando a nova
+        // Não bloqueia, continua criando a nova
       }
     }
 
-    // Criar ou obter customer no Asaas
-    let customerId = profile.asaas_customer_id
+    // Criar ou obter customer no Asaas sempre alinhado ao perfil logado
+    let customerId = profile.asaasCustomerId
     if (!customerId) {
-      log('[checkout] Criando customer no Asaas', { email: profile.email })
-      const customer = await createCustomer({
-        name: profile.full_name || profile.email.split('@')[0],
-        email: profile.email,
-      })
+      log('[checkout] Criando customer no Asaas', { email: profile.email, profileId: profile.profileId })
+      const customer = await createCustomer(toAsaasCustomerPayload(profile))
       customerId = customer.id
 
-      // Salvar asaas_customer_id no profile para o webhook encontrar o user
       await supabase
         .from('profiles')
         .update({ asaas_customer_id: customerId })
-        .eq('id', profile.id)
+        .eq('id', profile.profileId)
 
-      log('[checkout] asaas_customer_id salvo no profile', { userId: profile.id, customerId })
+      log('[checkout] asaas_customer_id salvo no profile', { userId: profile.profileId, customerId })
+    } else {
+      await updateCustomer(customerId, toAsaasCustomerPayload(profile))
+      log('[checkout] Customer do Asaas atualizado a partir da conta logada', { userId: profile.profileId, customerId })
     }
 
-    // Cria checkout hospedado do Asaas (vinculado ao customer)
     const price = cycle === 'MONTHLY'
       ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
       : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
     const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
     const successUrl = `${origin}/billing?checkout=success`
-    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId })
+    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId, profileId: profile.profileId })
     const checkout = await createCheckout({
       plan: plan as Exclude<PlanId, 'free'>,
       cycle,
       successUrl,
       customerId,
     })
-    log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: 'checkout', checkoutId: checkout.id })
+    log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: 'checkout', checkoutId: checkout.id, profileId: profile.profileId })
+
+    await supabase
+      .from('billing_checkouts')
+      .upsert({
+        profile_id: profile.profileId,
+        checkout_id: checkout.id,
+        asaas_customer_id: customerId,
+        plan,
+        cycle,
+        status: 'pending',
+        last_event: 'CHECKOUT_CREATED',
+      }, { onConflict: 'checkout_id' })
 
     return NextResponse.json({
       checkoutId: checkout.id,

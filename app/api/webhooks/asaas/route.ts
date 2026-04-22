@@ -17,21 +17,18 @@ function getSupabase() {
   )
 }
 
-// Detecta plano E ciclo a partir do valor pago
 function detectPlanAndCycle(value: number, description?: string): { plan: string; cycle: 'MONTHLY' | 'YEARLY' } {
   for (const [plan, prices] of Object.entries(PLAN_PRICES)) {
     if (value === prices.yearly) return { plan, cycle: 'YEARLY' }
     if (value === prices.monthly) return { plan, cycle: 'MONTHLY' }
   }
 
-  // Fallback: inferir pela descrição do pagamento
   logWarn('[asaas-webhook] Unmapped payment value', { value, description })
   const desc = (description ?? '').toLowerCase()
   let plan = 'starter'
   if (desc.includes('professional') || desc.includes('profissional')) plan = 'professional'
   else if (desc.includes('plus')) plan = 'plus'
 
-  // Assume mensal como fallback
   return { plan, cycle: 'MONTHLY' }
 }
 
@@ -47,12 +44,75 @@ function calculateExpiryDate(cycle: 'MONTHLY' | 'YEARLY'): string {
 
 async function getUserByCustomerId(asaasCustomerId: string) {
   const supabase = getSupabase()
+
+  const { data: checkoutLink } = await supabase
+    .from('billing_checkouts')
+    .select('profile_id, plan, cycle, checkout_id')
+    .eq('asaas_customer_id', asaasCustomerId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (checkoutLink?.profile_id) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, plan')
+      .eq('id', checkoutLink.profile_id)
+      .single()
+
+    if (data) {
+      return {
+        user: data,
+        checkoutLink,
+      }
+    }
+  }
+
   const { data } = await supabase
     .from('profiles')
     .select('id, email, full_name, plan')
     .eq('asaas_customer_id', asaasCustomerId)
     .single()
-  return data
+
+  return {
+    user: data,
+    checkoutLink: null,
+  }
+}
+
+async function updateCheckoutLink(params: {
+  customerId?: string
+  subscriptionId?: string | null
+  event: string
+  status: string
+}) {
+  const supabase = getSupabase()
+  const { customerId, subscriptionId, event, status } = params
+
+  if (subscriptionId) {
+    const { error } = await supabase
+      .from('billing_checkouts')
+      .update({
+        asaas_subscription_id: subscriptionId,
+        status,
+        last_event: event,
+      })
+      .eq('asaas_subscription_id', subscriptionId)
+
+    if (!error) return
+  }
+
+  if (customerId) {
+    await supabase
+      .from('billing_checkouts')
+      .update({
+        asaas_subscription_id: subscriptionId ?? null,
+        status,
+        last_event: event,
+      })
+      .eq('asaas_customer_id', customerId)
+      .eq('status', 'pending')
+  }
 }
 
 interface AsaasPayment {
@@ -63,6 +123,7 @@ interface AsaasPayment {
 
 interface AsaasSubscription {
   customer?: string
+  id?: string
 }
 
 interface AsaasWebhookBody {
@@ -74,7 +135,7 @@ interface AsaasWebhookBody {
 export async function POST(req: NextRequest) {
   const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN
   if (!expectedToken) {
-    logError('[asaas-webhook] ASAAS_WEBHOOK_TOKEN not configured — rejecting all requests')
+    logError('[asaas-webhook] ASAAS_WEBHOOK_TOKEN not configured, rejecting all requests')
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
@@ -107,7 +168,7 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        const user = await getUserByCustomerId(customerId)
+        const { user } = await getUserByCustomerId(customerId)
         if (!user) {
           logWarn('[asaas-webhook] User not found for customer', { customerId })
           break
@@ -131,11 +192,18 @@ export async function POST(req: NextRequest) {
             limit_alert_sent: false,
             responses_limit: planConfig?.maxResponses ?? 100,
             responses_used: 0,
+            asaas_customer_id: customerId,
             asaas_subscription_id: payment.subscription ?? null,
           })
           .eq('id', user.id)
 
-        // Unpause all forms on upgrade
+        await updateCheckoutLink({
+          customerId,
+          subscriptionId: payment.subscription ?? null,
+          event,
+          status: 'paid',
+        })
+
         const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
 
@@ -147,23 +215,30 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        const user = await getUserByCustomerId(customerId)
+        const { user } = await getUserByCustomerId(customerId)
         if (!user) break
 
-        log('[asaas-webhook] Payment overdue — reverting to free', { userId: user.id, customerId })
+        log('[asaas-webhook] Payment overdue, reverting to free', { userId: user.id, customerId })
 
-        // Reverter para free e resetar limits
         await supabase
           .from('profiles')
           .update({
             plan: 'free',
             plan_status: 'overdue',
+            plan_expires_at: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
+            responses_used: 0,
           })
           .eq('id', user.id)
 
-        // Pause forms above free limit
+        await updateCheckoutLink({
+          customerId,
+          subscriptionId: payment?.subscription ?? null,
+          event,
+          status: 'overdue',
+        })
+
         const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         log('[asaas-webhook] Downgrade processed', { userId: user.id, pausedForms: downgrade.pausedCount })
 
@@ -174,12 +249,12 @@ export async function POST(req: NextRequest) {
         const customerId = subscription?.customer
         if (!customerId) break
 
-        const user = await getUserByCustomerId(customerId)
+        const { user } = await getUserByCustomerId(customerId)
         if (!user) break
 
         const oldPlan = user.plan ?? 'starter'
 
-        log('[asaas-webhook] Subscription deleted — reverting to free', { userId: user.id, customerId })
+        log('[asaas-webhook] Subscription deleted, reverting to free', { userId: user.id, customerId })
 
         await supabase
           .from('profiles')
@@ -194,7 +269,13 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', user.id)
 
-        // Pause forms above free limit
+        await updateCheckoutLink({
+          customerId,
+          subscriptionId: subscription?.id ?? null,
+          event,
+          status: 'cancelled',
+        })
+
         const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         log('[asaas-webhook] Downgrade processed', { userId: user.id, pausedForms: downgrade.pausedCount })
 

@@ -315,7 +315,7 @@ export async function handleDowngrade(
     .eq('user_id', userId)
     .eq('status', 'published')
 
-  if (!publishedForms || publishedForms.length <= freeLimit) {
+  if (!publishedForms || publishedForms.length === 0) {
     return { pausedCount: 0 }
   }
 
@@ -363,7 +363,7 @@ export async function handleDowngrade(
     while (j < eligible.length && eligible[j].responseCount === eligible[i].responseCount) {
       j++
     }
-    // Shuffle the group [i, j) using crypto-quality randomness (Fisher-Yates)
+    // Shuffle the group [i, j) using Fisher-Yates with crypto randomness
     if (j - i > 1) {
       for (let k = j - 1; k > i; k--) {
         const range = k - i + 1

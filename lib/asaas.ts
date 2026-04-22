@@ -25,11 +25,17 @@ import { log } from '@/lib/logger'
 export type PlanName = PlanId
 export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
-interface AsaasCustomerPayload {
+export interface AsaasCustomerPayload {
   name: string
   email: string
   cpfCnpj?: string
   phone?: string
+  mobilePhone?: string
+  address?: string
+  addressNumber?: string
+  postalCode?: string
+  province?: string
+  city?: string
 }
 
 interface AsaasSubscriptionPayload {

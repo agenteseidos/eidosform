@@ -150,6 +150,13 @@ export interface Database {
           plan_expires_at: string | null
           asaas_customer_id: string | null
           asaas_subscription_id: string | null
+          phone: string | null
+          cpf_cnpj: string | null
+          address: string | null
+          address_number: string | null
+          postal_code: string | null
+          province: string | null
+          city: string | null
           created_at: string
           updated_at: string
         }
@@ -169,6 +176,13 @@ export interface Database {
           plan_expires_at?: string | null
           asaas_customer_id?: string | null
           asaas_subscription_id?: string | null
+          phone?: string | null
+          cpf_cnpj?: string | null
+          address?: string | null
+          address_number?: string | null
+          postal_code?: string | null
+          province?: string | null
+          city?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -188,6 +202,55 @@ export interface Database {
           plan_expires_at?: string | null
           asaas_customer_id?: string | null
           asaas_subscription_id?: string | null
+          phone?: string | null
+          cpf_cnpj?: string | null
+          address?: string | null
+          address_number?: string | null
+          postal_code?: string | null
+          province?: string | null
+          city?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      billing_checkouts: {
+        Row: {
+          id: string
+          profile_id: string
+          checkout_id: string
+          asaas_customer_id: string | null
+          asaas_subscription_id: string | null
+          plan: string
+          cycle: string
+          status: string
+          last_event: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          profile_id: string
+          checkout_id: string
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
+          plan: string
+          cycle: string
+          status?: string
+          last_event?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          profile_id?: string
+          checkout_id?: string
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
+          plan?: string
+          cycle?: string
+          status?: string
+          last_event?: string | null
+          created_at?: string
           updated_at?: string
         }
         Relationships: []

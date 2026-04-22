@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, CreditCard } from 'lucide-react'
 import Link from 'next/link'
 import { ProfileSettings } from '@/components/settings/profile-settings'
+import { BillingProfileSettings } from '@/components/settings/billing-profile-settings'
 import { DomainSettings } from '@/components/settings/domain-settings'
 import { ApiKeySettings } from '@/components/settings/api-key-settings'
 import { PasswordSettings } from '@/components/settings/password-settings'
@@ -21,7 +22,7 @@ export default async function SettingsPage() {
   // Fetch real plan from profiles table
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, full_name, phone, cpf_cnpj, address, address_number, postal_code, province, city')
     .eq('id', user.id)
     .single()
 
@@ -34,7 +35,7 @@ export default async function SettingsPage() {
 
   const initials = user.email?.slice(0, 2).toUpperCase() || 'U'
   const avatarUrl = user.user_metadata?.avatar_url
-  const fullName = user.user_metadata?.full_name || ''
+  const fullName = profile?.full_name || user.user_metadata?.full_name || ''
   const planKey = (profile?.plan ?? 'free') as string
   const currentPlan = planKey.charAt(0).toUpperCase() + planKey.slice(1)
   const isProfessional = planKey === 'professional' || planKey === 'enterprise'
@@ -62,6 +63,21 @@ export default async function SettingsPage() {
         avatarUrl={avatarUrl}
         initials={initials}
         memberSince={new Date(user.created_at).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+      />
+
+      {/* Dados de cobrança */}
+      <BillingProfileSettings
+        initialData={{
+          fullName,
+          email: user.email || '',
+          phone: profile?.phone || '',
+          cpfCnpj: profile?.cpf_cnpj || '',
+          address: profile?.address || '',
+          addressNumber: profile?.address_number || '',
+          postalCode: profile?.postal_code || '',
+          province: profile?.province || '',
+          city: profile?.city || '',
+        }}
       />
 
       {/* Alterar Senha */}

@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createCustomer, createSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCustomer, createCheckout, updateCustomer, cancelSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 
@@ -104,32 +104,30 @@ export async function POST(
       }
     }
 
-    // Cria assinatura
+    // Cria checkout hospedado do Asaas
     const price = cycle === 'MONTHLY'
       ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
       : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
-    log('[checkout] Criando assinatura', { plan, cycle, value: price, customerId: asaasCustomerId })
-    const subscription = await createSubscription({
+    const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const successUrl = `${origin}/billing?checkout=success`
+    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId: asaasCustomerId })
+    const checkout = await createCheckout({
       customerId: asaasCustomerId,
+      customerName: profile.full_name ?? profile.email.split('@')[0],
+      customerEmail: profile.email,
+      customerCpfCnpj: cpfCnpj || undefined,
       plan: plan as Exclude<PlanId, 'free'>,
       cycle,
-      billingType: 'PIX',
+      successUrl,
     })
-
-    // Persiste subscription ID
-    await supabase
-      .from('profiles')
-      .update({ asaas_subscription_id: subscription.id })
-      .eq('id', profile.id)
+    log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: 'checkout', checkoutId: checkout.id })
 
     return NextResponse.json({
-      subscriptionId: subscription.id,
-      status: subscription.status,
-      value: price,
-      cycle,
+      checkoutId: checkout.id,
+      checkoutUrl: checkout.url,
       plan,
-      message: `Assinatura ${plan} criada! O webhook do Asaas ativará seu plano após a confirmação do pagamento PIX.`,
-      paymentHint: 'Acesse sua conta Asaas ou aguarde o PIX gerado pelo email.',
+      cycle,
+      value: price,
     })
   } catch (err) {
     logError('[checkout] Erro ao processar checkout', err)

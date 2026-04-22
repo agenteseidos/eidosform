@@ -96,6 +96,50 @@ export async function createSubscription(params: {
   return asaasFetch('/subscriptions', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+/** Cria checkout hospedado — retorna URL para redirecionamento */
+export async function createCheckout(params: {
+  customerId: string
+  customerName: string
+  customerEmail: string
+  customerCpfCnpj?: string
+  plan: Exclude<PlanName, 'free'>
+  cycle: BillingCycle
+  successUrl: string
+}): Promise<{ id: string; url: string }> {
+  const { customerId, customerName, customerEmail, customerCpfCnpj, plan, cycle, successUrl } = params
+  const price = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
+  const nextDueDate = new Date()
+  nextDueDate.setDate(nextDueDate.getDate() + 1)
+
+  const payload = {
+    customer: customerId,
+    customerName,
+    customerEmail,
+    ...(customerCpfCnpj ? { customerCpfCnpj } : {}),
+    billingTypes: ['PIX', 'BOLETO', 'CREDIT_CARD'],
+    chargeTypes: ['RECURRENT'],
+    subscription: {
+      value: price,
+      nextDueDate: nextDueDate.toISOString().split('T')[0],
+      cycle,
+      description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
+    },
+    items: [{
+      description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
+      quantity: 1,
+      unitPrice: price,
+    }],
+    successUrl,
+    expiration: 120, // minutos
+  }
+
+  const data = await asaasFetch('/checkouts', { method: 'POST', body: JSON.stringify(payload) })
+  const checkoutUrl = process.env.ASAAS_ENVIRONMENT === 'production'
+    ? `https://asaas.com/checkoutSession/show?id=${data.id}`
+    : `https://sandbox.asaas.com/checkoutSession/show?id=${data.id}`
+  return { id: data.id, url: checkoutUrl }
+}
+
 /** Cancela assinatura */
 export async function cancelSubscription(subscriptionId: string): Promise<{ deleted: boolean; id: string }> {
   return asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' })

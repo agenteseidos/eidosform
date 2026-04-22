@@ -1,6 +1,24 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 20:33 GMT-3
+### Última atualização: 2026-04-21 21:35 GMT-3
+
+---
+
+## Revalidação Zéfa — YEARLY + Valor Anual (b20e887) — 2026-04-21 21:35 GMT-3
+
+**Veredito: APROVADO ✅**
+
+### O que foi verificado
+- **Diff b20e887:** logging melhorado (valor incluído no log) + eliminação de cálculo duplicado de `price`
+- **Cycle YEARLY:** checkout envia `cycle` uppercase, `createSubscription` repassa ao Asaas como `cycle: "YEARLY"` ✅
+- **Valor anual:** `PLAN_PRICES[plan].yearly` contém valor total anual (ex: starter 470.4 = R$39,20×12). Enviado como `value` ao Asaas ✅
+- **Planos mensais:** lógica inalterada, `PLAN_PRICES[plan].monthly` usado normalmente ✅
+- **TypeScript:** zero erros ✅
+
+### Resumo
+- **P0:** 0
+- **P1:** 0
+- Commit é melhoria de observabilidade, sem mudança funcional no fluxo de cobrança.
 
 ---
 

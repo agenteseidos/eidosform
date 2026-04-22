@@ -11,11 +11,23 @@ export function CheckoutSuccessOverlay() {
   const router = useRouter()
   const [visible, setVisible] = useState(false)
   const [resolvedStatus, setResolvedStatus] = useState<string | null>(null)
+  const [isPolling, setIsPolling] = useState(false)
 
   const status = useMemo(() => searchParams.get('checkout'), [searchParams])
 
   useEffect(() => {
     let mounted = true
+    let pollTimer: ReturnType<typeof setInterval> | undefined
+
+    async function checkStatus(): Promise<string> {
+      try {
+        const res = await fetch('/api/checkout/status', { cache: 'no-store' })
+        const data = await res.json()
+        return data.status as string
+      } catch {
+        return 'error'
+      }
+    }
 
     async function resolveStatus() {
       if (status === 'cancelled' || status === 'expired') {
@@ -27,26 +39,62 @@ export function CheckoutSuccessOverlay() {
       }
 
       if (status === 'success') {
-        try {
-          const res = await fetch('/api/checkout/status', { cache: 'no-store' })
-          const data = await res.json()
-          if (!mounted) return
-          setResolvedStatus(data.status === 'success' ? 'success' : 'pending')
-          setVisible(true)
-          window.history.replaceState({}, '', '/billing')
-          return
-        } catch {
-          if (!mounted) return
-          setResolvedStatus('pending')
-          setVisible(true)
-          window.history.replaceState({}, '', '/billing')
+        // Show waiting state immediately
+        if (!mounted) return
+        setIsPolling(true)
+        setVisible(true)
+        window.history.replaceState({}, '', '/billing')
+
+        // Poll every 3s for up to 60s
+        const POLL_INTERVAL = 3000
+        const MAX_POLL_MS = 60_000
+        const start = Date.now()
+
+        // First check
+        const firstStatus = await checkStatus()
+        if (!mounted) return
+        if (firstStatus === 'success') {
+          setIsPolling(false)
+          setResolvedStatus('success')
           return
         }
+        if (firstStatus === 'cancelled' || firstStatus === 'expired') {
+          setIsPolling(false)
+          setResolvedStatus(firstStatus)
+          return
+        }
+
+        // Start polling
+        pollTimer = setInterval(async () => {
+          if (!mounted) return
+          if (Date.now() - start >= MAX_POLL_MS) {
+            clearInterval(pollTimer)
+            setIsPolling(false)
+            setResolvedStatus('pending')
+            return
+          }
+          const s = await checkStatus()
+          if (!mounted) return
+          if (s === 'success') {
+            clearInterval(pollTimer)
+            setIsPolling(false)
+            setResolvedStatus('success')
+            return
+          }
+          if (s === 'cancelled' || s === 'expired') {
+            clearInterval(pollTimer)
+            setIsPolling(false)
+            setResolvedStatus(s)
+          }
+        }, POLL_INTERVAL)
       }
     }
 
     resolveStatus()
-    return () => { mounted = false }
+    return () => {
+      mounted = false
+      if (pollTimer) clearInterval(pollTimer)
+    }
   }, [status])
 
   const content = useMemo(() => {
@@ -80,11 +128,22 @@ export function CheckoutSuccessOverlay() {
       }
     }
 
+    // Polling / waiting state
+    if (isPolling) {
+      return {
+        icon: <Clock3 className="w-12 h-12 text-[#F5B731] animate-pulse" />,
+        iconWrap: 'bg-[#F5B731]/15',
+        title: 'Aguardando confirmação do pagamento…',
+        description: 'Estamos processando seu pagamento. Isso pode levar alguns instantes.',
+        buttonLabel: 'Voltar ao EidosForm',
+      }
+    }
+
     return {
       icon: <Clock3 className="w-12 h-12 text-slate-300" />,
       iconWrap: 'bg-slate-500/15',
       title: 'Pagamento ainda não confirmado',
-      description: 'Seu checkout foi encerrado, mas não encontramos confirmação de pagamento. Seu plano atual continua o mesmo.',
+      description: 'Seu checkout foi encerrado, mas não encontramos confirmação de pagamento ainda. Seu plano atual continua o mesmo. Tente recarregar a página em instantes.',
       buttonLabel: 'Voltar ao EidosForm',
     }
   }, [resolvedStatus])

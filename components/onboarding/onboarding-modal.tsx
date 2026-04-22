@@ -37,7 +37,7 @@ const steps = [
 ]
 
 const colorMap = {
-  blue: { bg: 'bg-blue-50', icon: 'bg-blue-100 text-blue-600', dot: 'bg-blue-600', text: 'text-blue-700', button: 'bg-blue-600 hover:bg-blue-700' },
+  blue: { bg: 'bg-blue-50', icon: 'bg-blue-100 text-blue-600', dot: 'bg-blue-600', text: 'text-blue-700', button: 'bg-blue-600 hover:bg-blue-700 text-white' },
   violet: { bg: 'bg-violet-50', icon: 'bg-violet-100 text-violet-600', dot: 'bg-violet-600', text: 'text-violet-700', button: 'bg-violet-600 hover:bg-violet-700' },
   green: { bg: 'bg-green-50', icon: 'bg-green-100 text-green-600', dot: 'bg-green-600', text: 'text-green-700', button: 'bg-green-600 hover:bg-green-700' },
 }

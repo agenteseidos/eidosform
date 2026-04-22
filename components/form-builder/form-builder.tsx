@@ -1749,7 +1749,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 setShowLeaveDialog(false)
                 router.push('/forms')
               }}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               Salvar e sair
             </Button>
@@ -1784,8 +1784,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               onClick={handlePublish}
               disabled={isSaving}
               className={form.status === 'published' 
-                ? 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20' 
-                : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20'
+                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20' 
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
               }
             >
               {isSaving ? 'Salvando...' : 'Publicar'}

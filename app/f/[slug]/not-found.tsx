@@ -21,7 +21,7 @@ export default function FormNotFound() {
           Este formulário não existe ou não está mais disponível.
         </p>
         <Link href="/">
-          <Button className="bg-blue-600 hover:bg-blue-700">Ir para a página inicial</Button>
+          <Button className="bg-blue-600 hover:bg-blue-700 text-white">Ir para a página inicial</Button>
         </Link>
       </div>
     </div>

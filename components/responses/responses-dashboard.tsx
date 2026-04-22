@@ -354,10 +354,10 @@ function ResponseDetailDialog({
               <Button variant="outline" onClick={() => setFilePreview(null)}>Fechar</Button>
               {filePreview.url ? (
                 <a href={filePreview.url} target="_blank" rel="noopener noreferrer" download={filePreview.name}>
-                  <Button className="bg-blue-600 hover:bg-blue-700"><Download className="w-4 h-4 mr-2" />Baixar</Button>
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white"><Download className="w-4 h-4 mr-2" />Baixar</Button>
                 </a>
               ) : filePreview.data ? (
-                <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => {
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => {
                   const link = document.createElement('a')
                   link.href = filePreview.data!
                   link.download = filePreview.name
@@ -583,7 +583,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
               : 'Publique seu formulário para começar a receber respostas'}
           </p>
           {form.status === 'published' && (
-            <Button onClick={copyFormLink} className="mt-6 bg-blue-600 hover:bg-blue-700">
+            <Button onClick={copyFormLink} className="mt-6 bg-blue-600 hover:bg-blue-700 text-white">
               <Copy className="w-4 h-4 mr-2" />Copiar link
             </Button>
           )}

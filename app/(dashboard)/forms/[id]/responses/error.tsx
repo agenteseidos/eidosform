@@ -31,7 +31,7 @@ export default function ResponsesError({
             Tentar novamente
           </Button>
           <Link href="/billing">
-            <Button className="bg-blue-600 hover:bg-blue-700">Voltar ao painel</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white">Voltar ao painel</Button>
           </Link>
         </div>
       </div>

@@ -103,7 +103,7 @@ export function ProfileSettings({
           <p className="text-xs text-slate-500 mt-1">O e-mail não pode ser alterado</p>
         </div>
         <Button
-          className="bg-blue-600 hover:bg-blue-700"
+          className="bg-blue-600 hover:bg-blue-700 text-white"
           onClick={handleSave}
           disabled={isSaving}
         >

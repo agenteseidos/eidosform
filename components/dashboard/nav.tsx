@@ -59,7 +59,7 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
 
           <div className="flex items-center gap-3">
             <Link href="/forms/new">
-              <Button className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 transition-all hover:shadow-blue-600/30 hover:-translate-y-0.5">
                 <span className="hidden sm:inline">Criar Formulário</span>
                 <span className="sm:hidden">+</span>
               </Button>

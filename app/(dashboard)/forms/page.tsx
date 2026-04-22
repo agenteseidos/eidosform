@@ -91,7 +91,7 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-center gap-3 flex-wrap">
             <TemplatesGallery />
             <Link href="/forms/new">
-              <Button size="lg" className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/25 transition-all hover:shadow-blue-600/35 hover:-translate-y-0.5">
+              <Button size="lg" className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 transition-all hover:shadow-blue-600/35 hover:-translate-y-0.5">
                 <Plus className="w-5 h-5 mr-2" />
                 Criar do zero
               </Button>

@@ -110,19 +110,20 @@ export async function createCheckout(params: {
 
   log('[asaas] createCheckout payload', { plan, cycle, value: price, customerMode: 'checkout-entry' })
 
-  const planLabel = `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`
+  const itemName = `Plano ${plan}`.slice(0, 30)
+  const itemDescription = `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`
   const payload = {
-    billingTypes: ['PIX', 'BOLETO', 'CREDIT_CARD'],
+    billingTypes: ['CREDIT_CARD'],
     chargeTypes: ['RECURRENT'],
     subscription: {
       value: price,
       nextDueDate: nextDueDate.toISOString().split('T')[0],
       cycle,
-      description: planLabel,
+      description: itemDescription,
     },
     items: [{
-      name: planLabel,
-      description: planLabel,
+      name: itemName,
+      description: itemDescription,
       quantity: 1,
       value: price,
     }],

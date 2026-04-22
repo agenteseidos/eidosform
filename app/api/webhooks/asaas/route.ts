@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
           .eq('id', user.id)
 
         // Unpause all forms on upgrade
-        const upgrade = await handleUpgrade(user.id)
+        const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
 
         await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))

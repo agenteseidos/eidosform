@@ -13,6 +13,7 @@ export type BillingProfile = {
   postalCode: string | null
   province: string | null
   city: string | null
+  state: string | null
   asaasCustomerId: string | null
   asaasSubscriptionId: string | null
   plan: string
@@ -20,7 +21,7 @@ export type BillingProfile = {
 
 export type BillingFieldKey = keyof Pick<
   BillingProfile,
-  'fullName' | 'email' | 'phone' | 'cpfCnpj' | 'address' | 'addressNumber' | 'postalCode' | 'province' | 'city'
+  'fullName' | 'email' | 'phone' | 'cpfCnpj' | 'address' | 'addressNumber' | 'postalCode' | 'province' | 'city' | 'state'
 >
 
 export const REQUIRED_BILLING_FIELDS: BillingFieldKey[] = [
@@ -33,6 +34,7 @@ export const REQUIRED_BILLING_FIELDS: BillingFieldKey[] = [
   'postalCode',
   'province',
   'city',
+  'state',
 ]
 
 export const BILLING_FIELD_LABELS: Record<BillingFieldKey, string> = {
@@ -45,6 +47,7 @@ export const BILLING_FIELD_LABELS: Record<BillingFieldKey, string> = {
   postalCode: 'CEP',
   province: 'Bairro',
   city: 'Cidade',
+  state: 'Estado (UF)',
 }
 
 function cleanString(value: unknown) {
@@ -70,6 +73,7 @@ export function mapProfileRowToBillingProfile(profile: Record<string, unknown>, 
     postalCode: cleanString(profile.postal_code),
     province: cleanString(profile.province),
     city: cleanString(profile.city),
+    state: cleanString(profile.state),
     asaasCustomerId: cleanString(profile.asaas_customer_id),
     asaasSubscriptionId: cleanString(profile.asaas_subscription_id),
     plan: cleanString(profile.plan) ?? 'free',
@@ -103,6 +107,7 @@ export function toAsaasCustomerPayload(profile: BillingProfile): AsaasCustomerPa
     postalCode,
     province: profile.province ?? undefined,
     city: profile.city ?? undefined,
+    state: profile.state ?? undefined,
   }
 }
 
@@ -110,7 +115,7 @@ export async function getBillingProfileForUser(userId: string, fallbackEmail?: s
   const supabase = await createClient()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, email, full_name, phone, cpf_cnpj, address, address_number, postal_code, province, city, asaas_customer_id, asaas_subscription_id, plan')
+    .select('id, email, full_name, phone, cpf_cnpj, address, address_number, postal_code, province, city, state, asaas_customer_id, asaas_subscription_id, plan')
     .eq('id', userId)
     .single()
 

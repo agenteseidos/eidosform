@@ -36,6 +36,7 @@ export interface AsaasCustomerPayload {
   postalCode?: string
   province?: string
   city?: string
+  state?: string
 }
 
 interface AsaasSubscriptionPayload {

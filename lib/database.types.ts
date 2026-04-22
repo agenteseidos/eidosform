@@ -157,6 +157,7 @@ export interface Database {
           postal_code: string | null
           province: string | null
           city: string | null
+          state: string | null
           complement: string | null
           created_at: string
           updated_at: string
@@ -184,6 +185,7 @@ export interface Database {
           postal_code?: string | null
           province?: string | null
           city?: string | null
+          state?: string | null
           complement?: string | null
           created_at?: string
           updated_at?: string
@@ -211,6 +213,7 @@ export interface Database {
           postal_code?: string | null
           province?: string | null
           city?: string | null
+          state?: string | null
           complement?: string | null
           updated_at?: string
         }

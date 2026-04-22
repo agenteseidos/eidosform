@@ -22,7 +22,7 @@ export default async function SettingsPage() {
   // Fetch real plan from profiles table
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, full_name, phone, cpf_cnpj, address, address_number, complement, postal_code, province, city')
+    .select('plan, full_name, phone, cpf_cnpj, address, address_number, complement, postal_code, province, city, state')
     .eq('id', user.id)
     .single()
 
@@ -78,6 +78,7 @@ export default async function SettingsPage() {
           postalCode: profile?.postal_code || '',
           province: profile?.province || '',
           city: profile?.city || '',
+          state: profile?.state || '',
         }}
       />
 

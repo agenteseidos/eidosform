@@ -21,6 +21,7 @@ interface BillingProfileSettingsProps {
     postalCode: string
     province: string
     city: string
+    state: string
   }
 }
 
@@ -39,17 +40,18 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
     if (cep.length !== 8) return
     setLoadingCep(true)
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
+      const res = await fetch(`/api/cep/${cep}`)
       const data = await res.json()
-      if (data.erro) {
-        toast.error('CEP não encontrado')
+      if (data.error) {
+        toast.error(data.error === 'CEP not found' ? 'CEP não encontrado' : 'Erro ao buscar CEP')
         return
       }
       setForm((prev) => ({
         ...prev,
-        address: data.logradouro || prev.address,
-        province: data.bairro || prev.province,
-        city: data.localidade || prev.city,
+        address: data.street || prev.address,
+        province: data.neighborhood || prev.province,
+        city: data.city || prev.city,
+        state: data.state || prev.state,
         postalCode: rawCep,
       }))
     } catch {
@@ -83,8 +85,10 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
           address: form.address.trim() || null,
           address_number: form.addressNumber.trim() || null,
           postal_code: form.postalCode.trim() || null,
+          complement: form.complement?.trim() || null,
           province: form.province.trim() || null,
           city: form.city.trim() || null,
+          state: form.state.trim() || null,
         })
         .eq('id', userId)
 
@@ -164,6 +168,10 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
         <div>
           <Label htmlFor="billing-city">Cidade</Label>
           <Input id="billing-city" value={form.city} onChange={(e) => updateField('city', e.target.value)} className="mt-1.5" />
+        </div>
+        <div>
+          <Label htmlFor="billing-state">Estado (UF)</Label>
+          <Input id="billing-state" value={form.state} onChange={(e) => updateField('state', e.target.value)} className="mt-1.5" placeholder="SP" maxLength={2} />
         </div>
       </div>
 

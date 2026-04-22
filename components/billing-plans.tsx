@@ -34,7 +34,7 @@ const plans = [
     id: 'starter',
     name: 'Starter',
     icon: Zap,
-    price: { monthly: 49, annual: 39.2 },
+    price: { monthly: 49, annual: 29 },
     desc: 'Para freelancers',
     highlight: false,
     features: [
@@ -52,7 +52,7 @@ const plans = [
     id: 'plus',
     name: 'Plus',
     icon: Rocket,
-    price: { monthly: 127, annual: 101.6 },
+    price: { monthly: 127, annual: 97 },
     desc: 'Para equipes',
     highlight: true,
     features: [
@@ -78,7 +78,7 @@ const plans = [
     id: 'professional',
     name: 'Professional',
     icon: Crown,
-    price: { monthly: 257, annual: 205.6 },
+    price: { monthly: 257, annual: 197 },
     desc: 'Para empresas',
     highlight: false,
     features: [

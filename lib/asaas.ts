@@ -19,6 +19,7 @@ export const PLAN_PRICES = {
 } as const
 
 import { PlanId } from '@/lib/plans'
+import { log } from '@/lib/logger'
 
 /** @deprecated Use PlanId from lib/plans.ts */
 export type PlanName = PlanId
@@ -101,21 +102,21 @@ export async function createCheckout(params: {
   customerId: string
   customerName: string
   customerEmail: string
-  customerCpfCnpj?: string
   plan: Exclude<PlanName, 'free'>
   cycle: BillingCycle
   successUrl: string
 }): Promise<{ id: string; url: string }> {
-  const { customerId, customerName, customerEmail, customerCpfCnpj, plan, cycle, successUrl } = params
+  const { customerId, customerName, customerEmail, plan, cycle, successUrl } = params
   const price = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
   const nextDueDate = new Date()
   nextDueDate.setDate(nextDueDate.getDate() + 1)
 
+  log('[asaas] createCheckout payload', { name: customerName, email: customerEmail, plan, cycle, value: price })
+
   const payload = {
     customer: customerId,
-    customerName,
-    customerEmail,
-    ...(customerCpfCnpj ? { customerCpfCnpj } : {}),
+    name: customerName,
+    email: customerEmail,
     billingTypes: ['PIX', 'BOLETO', 'CREDIT_CARD'],
     chargeTypes: ['RECURRENT'],
     subscription: {

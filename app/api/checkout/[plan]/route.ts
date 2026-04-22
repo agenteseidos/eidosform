@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createCustomer, createCheckout, updateCustomer, cancelSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCustomer, createCheckout, cancelSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 
@@ -18,11 +18,7 @@ export async function POST(
 ) {
   const { plan } = await params
   const cycle = ((req.nextUrl.searchParams.get('cycle') ?? 'monthly').toUpperCase()) as BillingCycle
-  let cpfCnpj = ''
-  try {
-    const body = await req.json()
-    cpfCnpj = (body.cpfCnpj ?? '').replace(/\D/g, '')
-  } catch { /* no body */ }
+  try { await req.json() } catch { /* no body needed */ }
 
   if (!VALID_PLANS.has(plan)) {
     return NextResponse.json({ error: 'Plano inválido' }, { status: 400 })
@@ -67,7 +63,7 @@ export async function POST(
       const customer = await createCustomer({
         name: profile.full_name ?? profile.email.split('@')[0],
         email: profile.email,
-        cpfCnpj: cpfCnpj || undefined,
+        cpfCnpj: undefined,
       })
       asaasCustomerId = customer.id
 
@@ -77,16 +73,7 @@ export async function POST(
         .eq('id', profile.id)
     }
 
-    // Atualiza cpfCnpj no Asaas se fornecido (necessário para criar assinatura)
-    if (cpfCnpj && asaasCustomerId) {
-      try {
-        await updateCustomer(asaasCustomerId, { cpfCnpj })
-        log('[checkout] Customer atualizado com cpfCnpj', { asaasCustomerId })
-      } catch (err) {
-        logError('[checkout] Falha ao atualizar cpfCnpj do customer', err)
-        // Não bloqueia — continua tentando criar assinatura
-      }
-    }
+
 
     // Cancela assinatura anterior se existir
     if (profile.asaas_subscription_id && profile.plan !== plan) {
@@ -115,7 +102,7 @@ export async function POST(
       customerId: asaasCustomerId,
       customerName: profile.full_name ?? profile.email.split('@')[0],
       customerEmail: profile.email,
-      customerCpfCnpj: cpfCnpj || undefined,
+
       plan: plan as Exclude<PlanId, 'free'>,
       cycle,
       successUrl,

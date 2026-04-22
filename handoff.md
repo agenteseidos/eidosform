@@ -1,6 +1,81 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 21:36 GMT-3
+### Última atualização: 2026-04-21 22:06 GMT-3
+
+---
+
+## Badge Anual — Toin — 2026-04-21 22:06 GMT-3
+
+### O que foi feito
+- Substituído texto do badge anual de "Economize 20%" para "Economize até 40%"
+- Alterado em `components/billing-plans.tsx` (página de billing)
+- Páginas de vendas (`pricing-section.tsx`) já estavam com o texto correto — sem alteração necessária
+- TypeScript: zero erros
+- Commit: `e5a4a91` — `fix: atualizar badge anual para "Economize até 40%"`
+- Push para origin/main
+
+### Arquivos alterados
+- `components/billing-plans.tsx` — 1 linha
+
+### Pendências
+- Nenhuma
+
+---
+
+## Revalidação Zéfa — Pricing anual + checkout hospedado Asaas — 2026-04-21 22:00 GMT-3
+
+**Veredito: REPROVADO ❌**
+
+### O que foi verificado
+- Login com conta free OK
+- `/billing` carregou corretamente
+- Toggle anual ativado com sucesso
+- UI anual exibiu exatamente os valores esperados:
+  - Starter: **R$29/mês** ✅
+  - Plus: **R$97/mês** ✅
+  - Professional: **R$197/mês** ✅
+- Clique em `Assinar Starter` abriu o fluxo interno `/checkout/starter?cycle=yearly` ✅
+- Campo CPF/CNPJ foi exibido e aceitou preenchimento ✅
+- Ao confirmar a assinatura, **não houve redirect para o checkout hospedado do Asaas** ❌
+
+### Bug encontrado
+- **P1 — criação do checkout falha antes do redirect para o Asaas**
+- Tela exibida após confirmar:
+  - `Erro no checkout`
+  - `Asaas API error 400: [{"code":"parse_error","description":"O campo 'name' precisa ser informado."}]`
+- Impacto:
+  - o frontend não redireciona para o checkout hospedado
+  - não foi possível validar a tela hospedada do Asaas nem o valor anual final lá
+
+### Observações
+- Há um detalhe cosmético na UI anual: textos como `R$49/mêsno plano anual`, `R$127/mêsno plano anual`, `R$257/mêsno plano anual` aparecem sem espaço antes de `no plano anual`.
+- Isso é **P2 cosmético**, não bloqueante frente ao erro principal.
+
+### Resumo
+- **P0:** 0
+- **P1:** 1
+- **P2:** 1
+
+### Próximo passo recomendado
+- Corrigir o payload enviado para criação do checkout hospedado no Asaas, garantindo que o campo `name` seja enviado corretamente.
+- Depois revalidar o redirect e confirmar no Asaas o total anual do plano escolhido.
+
+---
+
+## Revalidação Zéfa — Exibição Anual Frontend (85c75f1) — 2026-04-21 21:57 GMT-3
+
+**Veredito: APROVADO ✅**
+
+### O que foi verificado
+- **Diff 85c75f1:** Preços anuais exibidos no frontend ajustados de valores calculados (39.2/101.6/205.6) para valores reais por mês (29/97/197)
+- **Consistência frontend/backend:** 348/12=29 ✅, 1164/12=97 ✅, 2364/12=197 ✅
+- **Mensais:** Não alterados — frontend 49/127/257 = backend 49/127/257 ✅
+- **Checkout hospedado:** Usa `PLAN_PRICES[plan].yearly` (valor total anual) para `value` no Asaas ✅
+- **TypeScript:** zero erros ✅
+
+### Resumo
+- **P0:** 0
+- **P1:** 0
 
 ---
 

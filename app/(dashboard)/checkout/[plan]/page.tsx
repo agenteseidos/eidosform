@@ -2,9 +2,8 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { PLAN_ORDER, normalizePlan } from '@/lib/plans'
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Loader2 } from 'lucide-react'
 
 const PAID_PLANS = PLAN_ORDER.filter((p) => p !== 'free')
@@ -24,155 +23,115 @@ export default function CheckoutPage() {
   const normalized = normalizePlan(plan)
   const isValid = normalized !== 'free' && PAID_PLANS.includes(normalized)
 
-  const [state, setState] = useState<'idle' | 'loading' | 'error' | 'already'>('idle')
-  const [data, setData] = useState<CheckoutResponse>({})
-  const [cpfCnpj, setCpfCnpj] = useState('')
-  const [validationError, setValidationError] = useState('')
+  const [state, setState] = useState<'loading' | 'error' | 'already'>('loading')
+  const [errorMsg, setErrorMsg] = useState('')
 
-  const startCheckout = useCallback(async () => {
-    const raw = cpfCnpj.replace(/\D/g, '')
-    if (raw.length !== 11 && raw.length !== 14) {
-      setValidationError('Informe um CPF (11 dígitos) ou CNPJ (14 dígitos).')
-      return
-    }
-    setState('loading')
-    setData({})
-    setValidationError('')
-    try {
-      const res = await fetch(`/api/checkout/${normalized}?cycle=${cycle}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpfCnpj: raw }),
-      })
-      const json: CheckoutResponse = await res.json()
-      setData(json)
+  // Auto-start checkout on mount
+  useEffect(() => {
+    if (!isValid) return
 
-      if (!res.ok || !json.checkoutUrl) {
+    let cancelled = false
+
+    async function startCheckout() {
+      try {
+        const res = await fetch(`/api/checkout/${normalized}?cycle=${cycle}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        })
+        const json: CheckoutResponse = await res.json()
+
+        if (cancelled) return
+
+        if (json.alreadySubscribed) {
+          setState('already')
+          return
+        }
+
+        if (!res.ok || !json.checkoutUrl) {
+          setState('error')
+          setErrorMsg(json.error || 'Erro ao criar checkout. Tente novamente.')
+          return
+        }
+
+        window.location.href = json.checkoutUrl
+      } catch {
+        if (cancelled) return
         setState('error')
-        return
+        setErrorMsg('Falha de conexão. Tente novamente.')
       }
-      if (json.alreadySubscribed) {
-        setState('already')
-        return
-      }
-      // Redirect to Asaas hosted checkout
-      window.location.href = json.checkoutUrl
-      return
-    } catch {
-      setState('error')
-      setData({ error: 'Falha de conexão. Tente novamente.' })
     }
-  }, [normalized, cycle, cpfCnpj])
 
-  // CPF/CNPJ form — user submits manually
+    startCheckout()
+    return () => { cancelled = true }
+  }, [isValid, normalized, cycle])
 
   if (!isValid) {
     router.replace('/billing')
     return null
   }
 
-  const cycleLabel = cycle === 'yearly' ? 'Anual' : 'Mensal'
+  if (state === 'loading') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-6 max-w-md px-6">
+          <div className="flex justify-center">
+            <Loader2 className="h-12 w-12 animate-spin text-[#F5B731]" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Processando checkout…
+          </h1>
+          <p className="text-slate-500">Redirecionando para o checkout. Aguarde.</p>
+        </div>
+      </div>
+    )
+  }
 
+  if (state === 'already') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-6 max-w-md px-6">
+          <div className="text-5xl">🟡</div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Você já tem este plano
+          </h1>
+          <p className="text-slate-500">Você já possui uma assinatura ativa neste plano.</p>
+          <Button
+            onClick={() => router.push('/billing')}
+            className="bg-slate-900 hover:bg-slate-800 text-white"
+          >
+            Voltar ao billing
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // state === 'error'
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center space-y-6 max-w-md px-6">
-        {state === 'idle' && (
-          <>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Finalizar assinatura — {normalized.charAt(0).toUpperCase() + normalized.slice(1)} {cycleLabel}
-            </h1>
-            <p className="text-slate-500">
-              Para criar sua assinatura, informe seu CPF ou CNPJ:
-            </p>
-            <div className="space-y-3 text-left">
-              <label className="block text-sm font-medium text-slate-700">
-                CPF ou CNPJ
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="000.000.000-00 ou 00.000.000/0001-00"
-                value={cpfCnpj}
-                onChange={(e) => {
-                  setCpfCnpj(e.target.value)
-                  setValidationError('')
-                }}
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm focus:border-[#F5B731] focus:outline-none focus:ring-1 focus:ring-[#F5B731]"
-                onKeyDown={(e) => { if (e.key === 'Enter') startCheckout() }}
-              />
-              {validationError && (
-                <p className="text-sm text-red-600">{validationError}</p>
-              )}
-            </div>
-            <Button
-              onClick={startCheckout}
-              className="bg-[#F5B731] hover:bg-[#e5a721] text-slate-900 font-semibold w-full"
-            >
-              Confirmar assinatura
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => router.push('/billing')}
-              className="text-slate-500"
-            >
-              Voltar ao billing
-            </Button>
-          </>
-        )}
-
-        {state === 'loading' && (
-          <>
-            <div className="flex justify-center">
-              <Loader2 className="h-12 w-12 animate-spin text-[#F5B731]" />
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Processando checkout…
-            </h1>
-            <p className="text-slate-500">Criando sua assinatura no Asaas. Aguarde.</p>
-          </>
-        )}
-
-        {state === 'already' && (
-          <>
-            <div className="text-5xl">🟡</div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Você já tem este plano
-            </h1>
-            <p className="text-slate-500">Você já possui uma assinatura ativa neste plano.</p>
-            <Button
-              onClick={() => router.push('/billing')}
-              className="bg-slate-900 hover:bg-slate-800 text-white"
-            >
-              Voltar ao billing
-            </Button>
-          </>
-        )}
-
-        {state === 'error' && (
-          <>
-            <div className="text-5xl">❌</div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Erro no checkout
-            </h1>
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-              {data.error}
-            </div>
-            <div className="flex gap-3 justify-center">
-              <Button
-                onClick={startCheckout}
-                className="bg-slate-900 hover:bg-slate-800 text-white"
-              >
-                Tentar novamente
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => router.push('/billing')}
-              >
-                Voltar ao billing
-              </Button>
-            </div>
-          </>
-        )}
+        <div className="text-5xl">❌</div>
+        <h1 className="text-2xl font-bold text-slate-900">
+          Erro no checkout
+        </h1>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+          {errorMsg}
+        </div>
+        <div className="flex gap-3 justify-center">
+          <Button
+            onClick={() => window.location.reload()}
+            className="bg-slate-900 hover:bg-slate-800 text-white"
+          >
+            Tentar novamente
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => router.push('/billing')}
+          >
+            Voltar ao billing
+          </Button>
+        </div>
       </div>
     </div>
   )

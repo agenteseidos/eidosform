@@ -10,18 +10,47 @@ export function CheckoutSuccessOverlay() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [visible, setVisible] = useState(false)
+  const [resolvedStatus, setResolvedStatus] = useState<string | null>(null)
 
   const status = useMemo(() => searchParams.get('checkout'), [searchParams])
 
   useEffect(() => {
-    if (status === 'success' || status === 'cancelled' || status === 'expired') {
-      setVisible(true)
-      window.history.replaceState({}, '', '/billing')
+    let mounted = true
+
+    async function resolveStatus() {
+      if (status === 'cancelled' || status === 'expired') {
+        if (!mounted) return
+        setResolvedStatus(status)
+        setVisible(true)
+        window.history.replaceState({}, '', '/billing')
+        return
+      }
+
+      if (status === 'success') {
+        try {
+          const res = await fetch('/api/checkout/status', { cache: 'no-store' })
+          const data = await res.json()
+          if (!mounted) return
+          setResolvedStatus(data.status === 'success' ? 'success' : 'pending')
+          setVisible(true)
+          window.history.replaceState({}, '', '/billing')
+          return
+        } catch {
+          if (!mounted) return
+          setResolvedStatus('pending')
+          setVisible(true)
+          window.history.replaceState({}, '', '/billing')
+          return
+        }
+      }
     }
+
+    resolveStatus()
+    return () => { mounted = false }
   }, [status])
 
   const content = useMemo(() => {
-    if (status === 'cancelled') {
+    if (resolvedStatus === 'cancelled') {
       return {
         icon: <AlertCircle className="w-12 h-12 text-amber-400" />,
         iconWrap: 'bg-amber-500/15',
@@ -31,7 +60,7 @@ export function CheckoutSuccessOverlay() {
       }
     }
 
-    if (status === 'expired') {
+    if (resolvedStatus === 'expired') {
       return {
         icon: <Clock3 className="w-12 h-12 text-amber-400" />,
         iconWrap: 'bg-amber-500/15',
@@ -41,14 +70,24 @@ export function CheckoutSuccessOverlay() {
       }
     }
 
+    if (resolvedStatus === 'success') {
+      return {
+        icon: <CheckCircle2 className="w-12 h-12 text-emerald-400" />,
+        iconWrap: 'bg-emerald-500/15',
+        title: 'Pagamento confirmado!',
+        description: 'Sua assinatura foi ativada com sucesso. Bem-vindo ao seu novo plano! 🎉',
+        buttonLabel: 'Voltar ao EidosForm',
+      }
+    }
+
     return {
-      icon: <CheckCircle2 className="w-12 h-12 text-emerald-400" />,
-      iconWrap: 'bg-emerald-500/15',
-      title: 'Pagamento confirmado!',
-      description: 'Sua assinatura foi ativada com sucesso. Bem-vindo ao seu novo plano! 🎉',
+      icon: <Clock3 className="w-12 h-12 text-slate-300" />,
+      iconWrap: 'bg-slate-500/15',
+      title: 'Pagamento ainda não confirmado',
+      description: 'Seu checkout foi encerrado, mas não encontramos confirmação de pagamento. Seu plano atual continua o mesmo.',
       buttonLabel: 'Voltar ao EidosForm',
     }
-  }, [status])
+  }, [resolvedStatus])
 
   const handleRedirect = () => {
     router.push('/')

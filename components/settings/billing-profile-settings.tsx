@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -27,10 +27,36 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
   const supabase = createClient()
   const [form, setForm] = useState(initialData)
   const [isSaving, setIsSaving] = useState(false)
+  const [loadingCep, setLoadingCep] = useState(false)
 
   function updateField(field: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
+
+  const lookupCep = useCallback(async (rawCep: string) => {
+    const cep = rawCep.replace(/\D/g, '')
+    if (cep.length !== 8) return
+    setLoadingCep(true)
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
+      const data = await res.json()
+      if (data.erro) {
+        toast.error('CEP não encontrado')
+        return
+      }
+      setForm((prev) => ({
+        ...prev,
+        address: data.logradouro || prev.address,
+        province: data.bairro || prev.province,
+        city: data.localidade || prev.city,
+        postalCode: rawCep,
+      }))
+    } catch {
+      toast.error('Erro ao buscar CEP')
+    } finally {
+      setLoadingCep(false)
+    }
+  }, [])
 
   async function handleSave() {
     if (!form.fullName.trim()) {
@@ -121,7 +147,10 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
         </div>
         <div>
           <Label htmlFor="billing-postal-code">CEP</Label>
-          <Input id="billing-postal-code" value={form.postalCode} onChange={(e) => updateField('postalCode', e.target.value)} className="mt-1.5" placeholder="00000-000" />
+          <div className="flex gap-2 mt-1.5">
+            <Input id="billing-postal-code" value={form.postalCode} onChange={(e) => { updateField('postalCode', e.target.value); lookupCep(e.target.value) }} className="flex-1" placeholder="00000-000" />
+            {loadingCep && <Loader2 className="w-5 h-5 animate-spin text-slate-400 self-center" />}
+          </div>
         </div>
         <div>
           <Label htmlFor="billing-province">Bairro</Label>

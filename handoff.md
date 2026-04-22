@@ -211,3 +211,62 @@ Auditoria rigorosa da implementação de downgrade no repo `/home/sidney/eidosfo
 ### Próximo passo sugerido
 - Zeca corrigir `app/api/webhooks/asaas/route.ts` com lookup prioritário por subscription e update determinístico do vínculo.
 - Depois rodar nova auditoria Zéfa com ambiente/browser já apontando para a aplicação real.
+
+## Handoff — Zéfa — 2026-04-22 03:48 GMT-3
+
+### O que foi feito
+- Revalidação estática do commit `4473ca2` em `/home/sidney/eidosform` com foco em `app/api/webhooks/asaas/route.ts`.
+- Revisão cruzada do fluxo de checkout (`app/api/checkout/[plan]/route.ts`), perfil de billing (`lib/billing-profile.ts`), migration `billing_checkouts` e blindagem anterior de `lib/plan-limits.ts`.
+
+### Decisões tomadas
+- Considerei como critério principal desta rodada: determinismo da resolução da conta no webhook e ausência de regressão no billing blindado previamente auditado.
+- Mantive a classificação estrita: P0 apenas para risco de plano cair na conta errada; P1 para inconsistência material de histórico/vínculo; P2 para melhorias menores.
+
+### Arquivos auditados
+- `app/api/webhooks/asaas/route.ts`
+- `app/api/checkout/[plan]/route.ts`
+- `lib/billing-profile.ts`
+- `lib/plan-limits.ts`
+- `supabase/migrations/20260422_billing_checkout_links.sql`
+
+### Bugs P0
+- Zero P0.
+
+### Bugs P1
+- Zero P1.
+
+### Bugs P2
+- **P2-1: fallback final por `profiles.asaas_customer_id` continua inerentemente menos determinístico que vínculo por checkout/subscription**
+  - Arquivo: `app/api/webhooks/asaas/route.ts`
+  - Detalhe: `resolveBillingContext()` agora prioriza `asaas_subscription_id` e depois tenta `billing_checkouts` por `asaas_customer_id`, o que corrige o risco principal. Só se nada disso resolver ele cai em `profiles.asaas_customer_id`.
+  - Impacto: não gera P0/P1 no desenho atual, porque o fluxo já ancora primeiro no checkout/subscription. Mas esse último fallback continua dependente de unicidade operacional do customer no profile.
+  - Observação: aceitável como fallback de resiliência, mas ainda é o trecho menos forte do fluxo.
+
+### Validação específica desta rodada
+- **Resolução de conta agora está determinística?**
+  - Sim, no caminho principal. O webhook tenta primeiro `billing_checkouts.asaas_subscription_id = subscriptionId`, depois `billing_checkouts.asaas_customer_id = customerId` restringindo o conjunto com `asaas_subscription_id.eq.<subscriptionId>,asaas_subscription_id.is.null`, ordena por `created_at desc` e pega só 1. Isso elimina a ambiguidade ampla apontada na auditoria anterior.
+- **Prioriza `asaas_subscription_id` quando disponível?**
+  - Sim. Esse é agora o primeiro lookup em `resolveBillingContext()`.
+- **Fallback para `billing_checkouts` e depois `asaas_customer_id` está seguro?**
+  - Sim para P0/P1 nesta revisão. O fluxo primeiro ancora em `billing_checkouts`, e só depois cai para `profiles.asaas_customer_id` se não houver checkout resolvido.
+- **`updateCheckoutLink()` deixou de ser amplo/ambíguo?**
+  - Sim. Agora ele resolve um único `checkoutLink` antes de atualizar e faz `update ... eq('id', checkoutLink.id)`, removendo o comportamento anterior de update amplo por customer pendente.
+
+### Regressão no billing blindado
+- `app/api/checkout/[plan]/route.ts` continua usando exclusivamente o usuário autenticado para montar billing profile, customer Asaas e gravação em `billing_checkouts`.
+- `lib/billing-profile.ts` continua exigindo e sanitizando os campos obrigatórios antes do checkout.
+- `lib/plan-limits.ts` não teve regressão nova de P0/P1 nesta rodada; o resíduo P2 antigo do early return dos forms `100+` com `<=3 published` permanece fora deste recorte e não foi agravado pelo commit `4473ca2`.
+
+### Estado atual
+- Webhook Asaas revalidado no commit `4473ca2`.
+- Correção principal confirmada: vínculo por assinatura agora é prioritário e update de checkout ficou determinístico.
+- Blindagem do billing continua íntegra neste escopo.
+- Veredito desta rodada: `zero bugs P0/P1`.
+
+### Pendências
+- Opcional: endurecer ainda mais o fallback final por `profiles.asaas_customer_id` se quiser eliminar dependência desse vínculo fora de `billing_checkouts`.
+- Continua pendente, como P2 anterior e fora deste recorte, o ajuste do `handleDowngrade()` para forms com `100+` respostas quando há `<=3` published.
+
+### Próximo passo sugerido
+- Pode seguir com confiança neste fix do webhook determinístico.
+- Se quiser hardening extra, a próxima melhoria é reduzir a dependência do fallback em `profiles.asaas_customer_id`.

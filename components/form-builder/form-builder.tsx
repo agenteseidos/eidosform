@@ -230,7 +230,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const [mobilePanel, setMobilePanel] = useState<'questions' | 'editor' | 'preview'>('questions')
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; questionId: string | null; label: string }>({ open: false, questionId: null, label: '' })
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [sidebarSection, setSidebarSection] = useState<'welcome' | 'questions' | 'thankyou' | null>(null)
   const [previewMode, setPreviewMode] = useState<"full" | "step">("full")
   const [sheetsUrl, setSheetsUrl] = useState('')
@@ -290,90 +291,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   }, [hasUnsavedChanges])
 
   // B06: Autosave com debounce de 1500ms
-  const handleAutosave = useCallback(async () => {
-    setSaveStatus('saving')
-    setIsSaving(true)
-    const updateData = {
-      title: form.title,
-      description: form.description,
-      slug: form.slug,
-      theme: form.theme,
-      questions: questions,
-      thank_you_message: form.thank_you_message,
-      thank_you_title: form.thank_you_title || null,
-      thank_you_description: form.thank_you_description || null,
-      thank_you_button_text: form.thank_you_button_text || null,
-      thank_you_button_url: form.thank_you_button_url || null,
-      pixels: pixels,
-      redirect_url: form.redirect_url || null,
-      webhook_url: form.webhook_url || null,
-      pixel_event_on_start: form.pixel_event_on_start || null,
-      pixel_event_on_complete: form.pixel_event_on_complete || null,
-      welcome_enabled: form.welcome_enabled || false,
-      welcome_title: form.welcome_title || null,
-      welcome_description: form.welcome_description || null,
-      welcome_button_text: form.welcome_button_text || null,
-      welcome_image_url: form.welcome_image_url || null,
-      is_closed: form.is_closed ?? false,
-      hide_branding: form.hide_branding ?? false,
-      notify_email_enabled: form.notify_email_enabled ?? false,
-      notify_email: form.notify_email || null,
-      notify_whatsapp_enabled: form.notify_whatsapp_enabled ?? false,
-      google_sheets_enabled: form.google_sheets_enabled ?? false,
-      google_sheets_id: form.google_sheets_id || null,
-      google_sheets_share_email: form.google_sheets_share_email || null,
-    }
-    try {
-      // Use API route when Google Sheets creation is needed (API handles spreadsheet creation)
-      const needsSheetsCreation = updateData.google_sheets_enabled && !updateData.google_sheets_id
-      if (needsSheetsCreation) {
-        const response = await fetch(`/api/forms/${form.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updateData),
-        })
-        const data = await response.json().catch(() => null)
-        if (response.ok && data?.form) {
-          setForm(data.form)
-          setHasUnsavedChanges(false)
-          setSaveStatus('saved')
-          setTimeout(() => setSaveStatus('idle'), 2000)
-        } else {
-          const errorMsg = data?.error || 'Falha ao salvar'
-          toast.error(errorMsg)
-          setSaveStatus('idle')
-        }
-      } else {
-        const { error } = await supabase
-          .from('forms')
-          .update(updateData)
-          .eq('id', form.id)
-        if (!error) {
-          setHasUnsavedChanges(false)
-          setSaveStatus('saved')
-          setTimeout(() => setSaveStatus('idle'), 2000)
-        } else {
-          setSaveStatus('idle')
-        }
-      }
-    } catch {
-      setSaveStatus('idle')
-    } finally {
-      setIsSaving(false)
-    }
-  }, [supabase, form, questions, pixels])
-
-  useEffect(() => {
-    if (!hasUnsavedChanges) return
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = setTimeout(() => {
-      handleAutosave()
-    }, 1500)
-    return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    }
-  }, [hasUnsavedChanges, handleAutosave])
-
   const handleWelcomeImageUpload = useCallback(async (file: File) => {
     if (!file) return
     const allowedTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/gif']
@@ -459,6 +376,49 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     return data?.form as Form | undefined
   }, [form.id])
 
+  const handleAutosave = useCallback(async () => {
+    setSaveStatus('saving')
+    setIsSaving(true)
+    try {
+      // Always use the API route for autosave — ensures Google Sheets, integrations, and validation work
+      const payload = buildFormPayload()
+      const response = await fetch(`/api/forms/${form.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json().catch(() => null)
+      if (response.ok && data?.form) {
+        setForm(data.form)
+        setHasUnsavedChanges(false)
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+      } else {
+        const errorMsg = data?.error || 'Falha ao salvar automaticamente'
+        toast.error(errorMsg, { description: 'Suas alterações podem não ter sido salvas.' })
+        setSaveStatus('error')
+        setTimeout(() => setSaveStatus('idle'), 5000)
+      }
+    } catch {
+      toast.error('Erro de conexão ao salvar', { description: 'Verifique sua internet e tente salvar manualmente.' })
+      setSaveStatus('error')
+      setTimeout(() => setSaveStatus('idle'), 5000)
+    } finally {
+      setIsSaving(false)
+    }
+  }, [form.id, buildFormPayload])
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      handleAutosave()
+    }, 1500)
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    }
+  }, [hasUnsavedChanges, handleAutosave])
+
   const handleSave = useCallback(async () => {
     setIsSaving(true)
 
@@ -484,7 +444,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
     setIsSaving(true)
     try {
-      const payload = { ...buildFormPayload(), status: 'published' as FormStatus, is_published: true }
+      const payload = { ...buildFormPayload(), status: 'published' as FormStatus }
       await updateFormViaApi(payload)
       setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
       toast.success(form.status === 'published' ? 'Alterações publicadas!' : 'Formulário publicado!')
@@ -506,18 +466,34 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   }
 
   const updateQuestion = (id: string, updates: Partial<QuestionConfig>) => {
-    setQuestions(questions.map(q => 
-      q.id === id ? { ...q, ...updates } : q
-    ))
+    setQuestions(questions.map(q => {
+      if (q.id !== id) return q
+      const updated = { ...q, ...updates }
+      // Prevent removing all options from choice-type questions
+      if ((updated.type === 'dropdown' || updated.type === 'checkboxes') &&
+          Array.isArray(updated.options) && updated.options.length === 0) {
+        return q // Reject the update
+      }
+      return updated
+    }))
     setHasUnsavedChanges(true)
   }
 
   const deleteQuestion = (id: string) => {
-    setQuestions(questions.filter(q => q.id !== id))
-    if (selectedQuestionId === id) {
+    const question = questions.find(q => q.id === id)
+    if (!question) return
+    const label = question.title || question.type
+    setDeleteDialog({ open: true, questionId: id, label })
+  }
+
+  const confirmDeleteQuestion = () => {
+    if (!deleteDialog.questionId) return
+    setQuestions(questions.filter(q => q.id !== deleteDialog.questionId))
+    if (selectedQuestionId === deleteDialog.questionId) {
       setSelectedQuestionId(null)
     }
     setHasUnsavedChanges(true)
+    setDeleteDialog({ open: false, questionId: null, label: '' })
   }
 
   const duplicateQuestion = (id: string) => {
@@ -633,6 +609,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               )}
               {saveStatus === 'saved' && (
                 <span className="text-emerald-500">Salvo ✓</span>
+              )}
+              {saveStatus === 'error' && (
+                <span className="text-red-500">Erro ao salvar</span>
               )}
             </span>
 
@@ -1789,6 +1768,26 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               }
             >
               {isSaving ? 'Salvando...' : 'Publicar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir pergunta?</DialogTitle>
+            <DialogDescription>
+              A pergunta <strong>"{deleteDialog.label}"</strong> será removida permanentemente. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog({ open: false, questionId: null, label: '' })}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteQuestion}>
+              <Trash2 className="w-4 h-4 mr-1" />
+              Excluir
             </Button>
           </DialogFooter>
         </DialogContent>

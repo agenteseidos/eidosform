@@ -1,59 +1,145 @@
-## Handoff — Zéfa — 2026-04-22 14:30 GMT-3
+## Handoff — Zéfa — 2026-04-22 18:15 GMT-3
+
+### Demanda
+Auditoria completa do builder do EidosForm: fluxo de criação/edição, UX, bugs, edge cases, impacto em vendas.
 
 ### O que foi feito
-- Auditoria completa da implementação de UF/CEP no billing profile feita pelo Toin (commit `a18c222`)
+Leitura completa de todo o código do builder (form-builder.tsx 1799 linhas, right-panel.tsx, question-editor.tsx, form-preview.tsx, jump-rules-editor.tsx, pixel-event-rules-editor.tsx, whatsapp-panel.tsx), páginas de rotas (new, edit, builder redirect), API de forms (GET/PATCH), formulário público (/f/[slug]). Não foi possível testar via browser pois não há sessão de browser ativa neste contexto.
 
-### Resultado da auditoria
+---
 
-**Bugs encontrados: 0 P0, 0 P1, 2 P2**
+## Relatório de Auditoria do Builder
 
-#### ✅ Itens validados (sem problemas)
+### Visão Geral
 
-1. **Campo UF no perfil de cobrança** — Presente no componente `billing-profile-settings.tsx`, tipo, labels, required fields, mapeamento Asaas. Tudo correto.
+O builder é funcional e bem estruturado. Tem autosave, preview inline, edição de propriedades, reordenação drag-and-drop, e fluxo de publicação. Arquitetura é sólida com componentes separados. Porém há problemas de UX, bugs funcionais e gaps que impactam a capacidade de vender.
 
-2. **CEP preenche endereço, bairro, cidade e UF** — `lookupCep` faz fetch em `/api/cep/${cep}` e preenche `address`, `province`, `city`, `state`. Campo `postalCode` também é atualizado com o valor raw. ✅
+---
 
-3. **Campo UF aparece na tela e é editável** — Input com `maxLength={2}`, placeholder "SP", onChange normal. ✅
+### 🐛 Bugs Encontrados
 
-4. **Complemento continua presente** — Campo "Complemento" está no form, com label, input e placeholder "Apto, sala, bloco...". ✅
+#### P0 — Crítico (bloqueia venda)
 
-5. **Fluxo Asaas usa UF corretamente** — `state` está em `AsaasCustomerPayload`, mapeado em `toAsaasCustomerPayload()`. O Asaas API recebe `state` no payload de customer. ✅
+**(nenhum encontrado)**
 
-6. **Proxy `/api/cep`** — Decisão correta. Proxy server-side com rate limiting (10 req/min/IP), timeout de 5s, validação de 8 dígitos, tratamento de erros ViaCEP. Elimina dependência de CSP no browser. ✅
+O builder não tem bugs críticos que impeçam criar, editar e publicar um formulário básico.
 
-7. **CSP** — `viacep.com.br` adicionado ao `connect-src` em ambos os headers (protected + embeddable). Como o proxy é server-side, essa entrada no CSP é redundante mas não causa regressão — é defense-in-depth correto. ✅
+#### P1 — Alto
 
-8. **Tipos TypeScript** — `database.types.ts` com `state: string | null` nos 3 tipos (Row/Insert/Update). `BillingProfile` e `BillingFieldKey` incluem `state`. ✅
+| ID | Descrição | Arquivo/Linha | Impacto |
+|---|---|---|---|
+| **P1-1** | **Autosave falha silenciosamente** — se o autosave via Supabase direto falhar, não há toast de erro, apenas muda `saveStatus` para `idle`. Usuário perde alterações sem saber. | `form-builder.tsx` ~332-340 | Usuário pode perder trabalho sem aviso. Parece salvo mas não está. |
+| **P1-2** | **Autosave não sincroniza com Google Sheets** — o autosave via Supabase direto (linha ~325) não chama a API `/api/forms/[id]`, então quando `google_sheets_enabled=true` e não tem `google_sheets_id`, o autosave ignora a criação da spreadsheet. Só funciona no save manual. | `form-builder.tsx` ~315-340 | Fluxo de Google Sheets pode quebrar se usuário depender do autosave. |
+| **P1-3** | **`is_published` enviado no payload de publish mas ignorado pela API** — `handlePublish` envia `is_published: true` mas o PATCH `/api/forms/[id]` não inclui `is_published` na query de update. O campo nunca é persistido. Funciona porque a API filtra por `status = 'published'`, mas é um campo morto no código. | `form-builder.tsx` ~487, `app/api/forms/[id]/route.ts` | Confusão técnica; pode causar bugs futuros se alguém confiar em `is_published`. |
 
-9. **Migration SQL** — `ALTER TABLE ... ADD COLUMN IF NOT EXISTS state text` — idempotente e seguro. ✅
+#### P2 — Médio
 
-10. **Settings page** — `select` inclui `state`, `initialData` inclui `state`, Supabase query inclui `state`. ✅
+| ID | Descrição | Arquivo/Linha | Impacto |
+|---|---|---|---|
+| **P2-1** | **Slug editável sem validação de unicidade em tempo real** — usuário pode mudar o slug na aba "Compartilhar" mas só descobre se está duplicado ao salvar/publicar. Não há feedback visual de conflito. | `form-builder.tsx` ~1420 | Slug duplicado causa erro ao salvar; UX ruim. |
+| **P2-2** | **Botão "Publicar" não mostra preview da URL no mobile** — o dialog de publish mostra o link, mas no mobile o botão de publicar só mostra ícone (texto `hidden sm:inline`). Sem contexto do que será publicado. | `form-builder.tsx` ~705 | UX mobile degradada. |
+| **P2-3** | **Deletar pergunta sem confirmação** — `deleteQuestion` remove imediatamente, sem dialog de confirmação. Se usuário clicar acidentalmente no ícone de lixeira, perde a pergunta. | `form-builder.tsx` ~468 | Perda acidental de dados; sem undo. |
+| **P2-4** | **Opções de dropdown/checkboxes — remoção da última opção** — no preview, o botão de remover opção é desabilitado quando há apenas 1 opção (`(question.options?.length || 0) > 1`), mas no editor lateral (QuestionEditor) não há essa proteção. Se todas as opções forem removidas, o formulário quebra ao renderizar. | `form-preview.tsx` vs `question-editor.tsx` | Pode criar formulário quebrado publicamente. |
+| **P2-5** | **`handleAutosave` duplicado com `buildFormPayload`** — o autosave constrói o payload manualmente (linhas ~310-348) enquanto `buildFormPayload` (linha ~370) faz a mesma coisa. Se um campo novo for adicionado em um e esquecido no outro, dados se perdem. | `form-builder.tsx` ~310 vs ~370 | Manutenção frágil; risco de inconsistência. |
+| **P2-6** | **Formulário "Sem título" como padrão sem forçar rename** — novo formulário é criado como "Formulário sem título" e pode ser publicado assim. Link `/f/[slug-aleatório]` com título genérico. | `forms/new/page.tsx` ~30 | Publicação sem título fica amador; impacta percepção do cliente. |
+| **P2-7** | **Conteúdo do panel de WhatsApp usa `settings={null}`** — o `WhatsAppPanel` é chamado com `settings={null}`, o que pode impedir carregamento de configurações existentes. | `form-builder.tsx` ~1315 | WhatsApp config pode não persistir/loaded corretamente. |
 
-#### ⚠️ P2 — Issues menores (não-bloqueantes)
+#### P3 — Baixo
 
-**P2-1: Proxy ViaCEP retorna `complement` mas o componente ignora**
-- O proxy `/api/cep/[cep]/route.ts` retorna `data.complemento` como `complement` no JSON, mas o `lookupCep` no componente não usa esse campo — ele não sobrescreve `form.complement`.
-- **Impacto:** O ViaCEP retorna complementos úteis (ex: "até 1000", "lado par"). O usuário pode preencher manualmente, mas perde o autocomplete.
-- **Correção sugerida:** Adicionar `complement: data.complement || prev.complement` no `setForm` do `lookupCep`. Mas cuidado: não sobrescrever se o usuário já preencheu manualmente — considere só preencher se estiver vazio.
+| ID | Descrição | Arquivo/Linha | Impacto |
+|---|---|---|---|
+| **P3-1** | **Ícones duplicados no import** — `FileText` e `Pencil` são importados e usados em múltiplos contextos, mas `TextCursorInput` aparece no mapeamento de tipos visuais mas não no import principal (está em outro bloco). | `form-builder.tsx` ~27-62 | Pouco impacto; código limpo. |
+| **P3-2** | **`eslint-disable-next-line` em `QuestionReorderItem`** — prop `children` marcada como unused. Remover o prop ou usar. | `form-builder.tsx` ~119 | Aviso de lint. |
+| **P3-3** | **Preview não mostra validação de campos obrigatórios** — o preview mostra asterisco `*` mas não simula erro de validação. Usuário não vê como fica a experiência de erro. | `form-preview.tsx` | UX de preview incompleta. |
+| **P3-4** | **Sem tooltip/accessibilidade nos botões de ação rápida** — duplicar/deletar no hover não têm aria-label. | `form-builder.tsx` ~142 | Acessibilidade. |
+| **P3-5** | **Rota `/forms/[id]/builder` é redirect para `/forms/[id]/edit`** — compatibilidade, mas pode confundir se houver links antigos para `/builder`. | `forms/[id]/builder/page.tsx` | Sem impacto funcional. |
 
-**P2-2: `complement` na interface do componente usa `as keyof typeof form` com cast**
-- Na linha do onChange do complemento: `updateField('complement' as keyof typeof form, e.target.value)` — o cast `as keyof` sugere que `complement` pode não estar no tipo inferido. Na prática funciona porque o tipo `form` é inferido do `initialData` que inclui `complement`, mas é um code smell.
-- **Impacto:** Zero em runtime. TypeScript poderia reclamar se o tipo fosse alterado.
-- **Correção sugerida:** Garantir que `complement` está explicitamente no tipo do `initialData` (já está, então o cast é desnecessário — pode remover).
+---
 
-#### Nota sobre o build
-- O erro de build (`supabaseUrl is required` em `/api/form/[id]/whatsapp/settings`) é pre-existente e não causado por esta mudança. Confirmado.
+### 📊 Análise de UX
 
-### Arquivos analisados
-- `components/settings/billing-profile-settings.tsx`
-- `lib/billing-profile.ts`
-- `lib/asaas.ts`
-- `lib/database.types.ts`
-- `app/(dashboard)/settings/page.tsx`
-- `next.config.ts`
-- `app/api/cep/[cep]/route.ts`
-- `supabase/migrations/20260422_add_state_to_profiles.sql`
+#### Pontos Fortes
+1. **Autosave com debounce (1.5s)** — bom padrão
+2. **Preview inline com edição ao vivo** — título, descrição, placeholder editáveis no preview
+3. **Reordenação drag-and-drop** — framer-motion Reorder bem implementado
+4. **Editor de conteúdo rich (Tiptap)** — para content blocks
+5. **Agrupamento de campos por categoria** no dialog de adicionar
+6. **Feedback visual de save status** (Salvando... / Salvo ✓)
+7. **Dialog de confirmação ao sair com mudanças não salvas**
+8. **Mobile bottom navigation** com 3 painéis
+9. **Badge de status (Rascunho / Publicado)** no header
+10. **CTA de publish com animação pulsante quando há mudanças**
 
-### Pendências
-- Executar migration SQL no Supabase (pre-existente do handoff do Toin)
-- P2-1 e P2-2 são melhorias opcionais, não bloqueantes
+#### Pontos Fracos
+1. **Mobile: botão Publicar só mostra ícone** — sem texto, sem contexto
+2. **Sem undo/redo** — deletar pergunta é irreversível
+3. **Sem busca/filtro de perguntas** — com muitos campos, fica difícil navegar
+4. **Sem template de formulário** — novo form começa vazio, sem sugestões
+5. **Sem atalhos de teclado** — Ctrl+S para salvar, Delete para remover, etc.
+6. **Tema só tem seleção de preset** — sem customização de cores/fontes individual
+7. **Slug aleatório por padrão** — novo form recebe slug random como `a3x7k2m1`
+
+---
+
+### 🔍 Pontos Técnicos
+
+| Área | Status | Observações |
+|---|---|---|
+| Autosave | ⚠️ Funciona mas frágil | Payload duplicado; sem toast de erro no autosave direto |
+| Publicação | ✅ Funciona | `status` muda para `published`; formulário fica acessível |
+| Preview | ✅ Bom | Modos "Completo" e "Passo a passo"; edição inline |
+| Drag & Drop | ✅ Funciona | framer-motion Reorder |
+| Edição inline | ✅ Bom | Tiptap para content blocks, InlineEditableText para títulos |
+| Integrações | ✅ Estruturado | Meta Pixel, Google Ads, TikTok, GTM, Sheets, Webhook, WhatsApp, Email |
+| Validação de slug | ✅ | Regex no servidor; sem validação client-side de unicidade |
+| Google Sheets | ⚠️ | Conexão funciona mas autosave não cria spreadsheet |
+| Limites de plano | ✅ | `checkFormLimit` enforced na criação; features gated por plano |
+
+---
+
+### 📋 Ordem Sugerida de Ataque
+
+**Fase 1 — Estabilidade (P1 + P2 críticos)**
+1. **P1-1**: Toast de erro no autosave — simples, alto impacto
+2. **P1-2**: Unificar autosave para usar sempre a API (ou remover Google Sheets do autosave path)
+3. **P2-5**: Eliminar payload duplicado — usar só `buildFormPayload` no autosave
+4. **P2-3**: Confirmação antes de deletar pergunta
+5. **P2-4**: Proteger contra remoção de todas as opções no editor lateral
+
+**Fase 2 — UX que impacta vendas (P2)**
+6. **P2-6**: Forçar título antes de publicar (ou pelo menos warning)
+7. **P2-1**: Validação de slug em tempo real (debounced)
+8. **P2-2**: Melhorar botão Publicar no mobile
+9. **P2-7**: Investigar se WhatsApp settings carrega corretamente
+
+**Fase 3 — Polimento (P3)**
+10. P3-3: Preview com simulação de validação
+11. P3-4: Acessibilidade nos botões
+12. P3-1/P3-2: Limpeza de código
+
+---
+
+### Limitações desta Auditoria
+- **Não testei via browser** — não há sessão de browser ativa neste contexto. Validação de fluxo real (criar → editar → publicar → responder) requer browser.
+- **Não testei Google Sheets E2E** — requer credenciais/service account.
+- **Não testei WhatsApp E2E** — requer conexão ativa do WhatsApp.
+- **Não testei fluxo mobile real** — análise baseada em código.
+
+---
+
+### Arquivos Auditados
+- `components/form-builder/form-builder.tsx` — builder principal (1799 linhas)
+- `components/form-builder/right-panel.tsx` — painel de propriedades
+- `components/form-builder/question-editor.tsx` — editor de questão
+- `components/form-builder/form-preview.tsx` — preview do formulário
+- `components/form-builder/jump-rules-editor.tsx` — regras de salto
+- `components/form-builder/pixel-event-rules-editor.tsx` — eventos de pixel
+- `components/form-builder/whatsapp-panel.tsx` — painel WhatsApp
+- `app/(dashboard)/forms/[id]/builder/page.tsx` — redirect para /edit
+- `app/(dashboard)/forms/[id]/edit/page.tsx` — página do editor
+- `app/(dashboard)/forms/new/page.tsx` — criação de formulário
+- `app/api/forms/[id]/route.ts` — API GET/PATCH de formulário
+- `app/f/[slug]/page.tsx` — formulário público
+
+### Veredito
+**Builder é funcional e bem construído.** Não há P0. 3 P1s relacionados a autosave (risco de perda de dados silenciosa). 7 P2s, maioria de UX. Arquitetura é boa mas tem duplicação de payload que é um risco de manutenção. Para vender com confiança: corrigir P1s (especialmente P1-1 autosave silencioso), adicionar confirmação de delete (P2-3), e forçar título antes de publicar (P2-6). O resto é polimento.

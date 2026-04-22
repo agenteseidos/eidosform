@@ -1,27 +1,30 @@
-## Handoff — Zéfa — 2026-04-22 18:44 GMT-3
+## Handoff — Toin — 2026-04-22 18:50 GMT-3
 
 ### Demanda
-Auditar as correções da Fase 2 do builder do EidosForm (commit `58c4350`).
+Fase 3 do builder do EidosForm: polimento final e limpeza dos P3 baixos remanescentes da auditoria da Zéfa.
 
 ### O que foi feito
-Auditoria completa do diff `0e72446..58c4350` em `components/form-builder/form-builder.tsx`.
+Correções concretas de baixo risco, sem regressão:
 
-### Resultado da auditoria — ✅ LIMPO
+1. **Unificação handleAutosave com updateFormViaApi** — `handleAutosave` duplicava a lógica de fetch/parse/response. Agora reutiliza `updateFormViaApi`, eliminando ~15 linhas duplicadas e centralizando o erro handling.
 
-1. **Bloqueio de publicação sem título** — ✅ `handlePublish` verifica `form.title.trim()`, exibe toast e retorna. Correto.
-2. **Validação de slug em tempo real** — ✅ `validateSlug()` com 4 regras (vazio, min 3 chars, regex `[a-z0-9-]`, sem hífen nas pontas). Input aplica `setSlugError` no onChange, borda vermelha + mensagem de erro renderizadas condicionalmente. Também validado no `handlePublish`. Correto.
-3. **Botão Publicar no mobile** — ✅ `<span className="hidden sm:inline">` trocado por `<span>`. Texto "Publicar" agora visível em todas as breakpoints. Correto.
-4. **WhatsApp settings** — ✅ `notify_whatsapp_number` adicionado ao `buildFormPayload()` com fallback `|| null`. Antes era omitido, causando null no save. Correto.
-5. **TypeScript** — ✅ `tsc --noEmit` passou limpo (exit 0).
+2. **Slug error fora do flex** — A mensagem de erro do slug estava renderizando como item `flex` ao lado do input (quebrando layout). Movida para fora do container flex, agora aparece corretamente abaixo do input.
 
-### Bugs remanescentes
-Nenhum bug encontrado. Nenhum P0/P1/P2/P3.
+3. **Acessibilidade (aria)** — Adicionados `aria-label` nos botões ícone-only (duplicar/excluir pergunta na sidebar), `aria-invalid` e `aria-describedby` no input de slug, `role="alert"` na mensagem de erro.
 
-### Arquivos auditados
-- `components/form-builder/form-builder.tsx` (diff da Fase 2)
+### Validação
+- `tsc --noEmit` → exit 0 (limpo)
+- Commit `d4dbc2d` → push para main
+
+### Arquivos alterados
+- `components/form-builder/form-builder.tsx` (+27 -34)
+
+### P3 avaliados e não corrigidos agora (justificativa)
+- **Duplicação de UI condicional no question-editor.tsx** — O bloco de Exibição Condicional aparece tanto no modo `onlyLogic` quanto no modo normal. Refatorar exigiria extrair componente shared e testar ambas renderizações. Risco não justifica o ganho estético. Deixar para refactoring futuro se necessário.
+- **Preview sem validação visual de required** — O preview é read-only/builder. Validação de required só faz sentido no player real. Não é gap real.
 
 ### Pendências
-- Nenhuma para Fase 2
+- Nenhuma bloqueante para o builder
 
 ### Próximo passo
-Fase 3 ou P3 do handoff anterior (unificar handleAutosave com updateFormViaApi)
+Builder está pronto para entrega. Próximo foco pode ser player, dashboard, ou features novas.

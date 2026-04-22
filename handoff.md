@@ -1,6 +1,32 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 22:06 GMT-3
+### Última atualização: 2026-04-21 22:13 GMT-3
+
+---
+
+## Checkout Hospedado — Zeca (Fix name + sem CPF local) — 2026-04-21 22:13 GMT-3
+
+### O que foi feito
+- Corrigido payload do checkout hospedado: `customerName` → `name`, `customerEmail` → `email` (nomes corretos da API do Asaas)
+- Removido `customerCpfCnpj` do payload — Asaas coleta dados do cliente no checkout hospedado
+- Removida dependência de CPF no backend: rota não requer mais `cpfCnpj` do frontend
+- Removida chamada `updateCustomer` para cpfCnpj (não mais necessária)
+- Adicionado logging do payload enviado (name, email, plan, cycle, value)
+- Import de `log` adicionado em `lib/asaas.ts`
+
+### Arquivos alterados
+- `lib/asaas.ts` — `createCheckout()`: `customerName`→`name`, `customerEmail`→`email`, removido `customerCpfCnpj`, adicionado log
+- `app/api/checkout/[plan]/route.ts` — removido parse de `cpfCnpj`, removido `updateCustomer` de cpfCnpj, removido `customerCpfCnpj` da chamada
+
+### Validação
+- `npx tsc --noEmit` ✅ zero erros
+- Commit `fbad7fe` — `fix: checkout hospedado Asaas sem CPF local + payload name obrigatório`
+- Push para origin/main
+
+### Pendências
+- Teste E2E em produção: confirmar redirect para checkout hospedado do Asaas
+- Confirmar que o Asaas coleta dados do cliente corretamente no checkout
+- Verificar valores e ciclo exibidos no checkout do Asaas
 
 ---
 

@@ -101,7 +101,7 @@ interface BillingPlansProps {
 }
 
 export function BillingPlans({ currentPlan }: BillingPlansProps) {
-  const [billing, setBilling] = useState<'annual' | 'monthly'>('monthly')
+  const [billing, setBilling] = useState<'annual' | 'monthly'>('annual')
   const normalizedCurrentPlan = useMemo(() => normalizePlan(currentPlan), [currentPlan])
   const currentPlanIndex = PLAN_ORDER.indexOf(normalizedCurrentPlan)
 

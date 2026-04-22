@@ -105,7 +105,10 @@ export async function POST(
     }
 
     // Cria assinatura
-    log('[checkout] Criando assinatura', { plan, cycle, customerId: asaasCustomerId })
+    const price = cycle === 'MONTHLY'
+      ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
+      : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
+    log('[checkout] Criando assinatura', { plan, cycle, value: price, customerId: asaasCustomerId })
     const subscription = await createSubscription({
       customerId: asaasCustomerId,
       plan: plan as Exclude<PlanId, 'free'>,
@@ -118,10 +121,6 @@ export async function POST(
       .from('profiles')
       .update({ asaas_subscription_id: subscription.id })
       .eq('id', profile.id)
-
-    const price = cycle === 'MONTHLY'
-      ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
-      : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
 
     return NextResponse.json({
       subscriptionId: subscription.id,

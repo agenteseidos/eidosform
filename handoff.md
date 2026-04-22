@@ -1,6 +1,143 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 20:12 GMT-3
+### Última atualização: 2026-04-21 20:33 GMT-3
+
+---
+
+## Auditoria Final Completa — Zéfa — 2026-04-21 20:33 GMT-3
+
+**Veredito: APROVADO FINAL ✅**
+
+### Resultado por item
+1. **Login free** ✅ OK
+   - URL: `/login` → redireciona para `/forms`
+   - Comportamento real: login com `sidney@institutoeidos.com.br` caiu em `/forms` com 3 formulários listados.
+
+2. **/forms** ✅ OK
+   - URL: `/forms`
+   - Comportamento real: listagem carregou corretamente, cabeçalho “Meus Formulários”, contador de 3 formulários.
+
+3. **Nav** ✅ OK
+   - URL: `/forms` e `/billing`
+   - Comportamento real: logo e link “Meus Formulários” levam para `/forms`; cobrança carregou corretamente a partir da navegação do painel (top nav/billing).
+
+4. **Builder** ✅ OK
+   - URL: `/forms/2a2d90d4-9942-47de-9666-88977119b627/edit`
+   - Comportamento real: builder abriu normalmente; botão `Voltar` retornou para `/forms`.
+
+5. **/settings** ✅ OK
+   - URL: `/settings`
+   - Comportamento real: tela carregou com dados da conta free; botão `Voltar` aponta e retorna para `/forms` (não `/billing`).
+
+6. **/billing + assinatura Starter mensal** ✅ OK
+   - URL: `/billing` → `/checkout/starter?cycle=monthly`
+   - Comportamento real: planos carregaram; Starter mensal abriu checkout; campo CPF/CNPJ apareceu; CPF `52998224725` foi aceito; confirmação criou assinatura com sucesso.
+   - Resultado real: tela `Assinatura criada!`, plano `starter`, ciclo `Mensal`, sem erro `invalid_cycle` e sem erro `invalid_object`.
+
+7. **Logout** ✅ OK
+   - URL: `/`
+   - Comportamento real: sessão limpa e landing page carregada com links públicos (`Entrar`, `Criar conta grátis`).
+
+8. **Login admin** ✅ OK
+   - URL: `/login` → `/forms`
+   - Comportamento real: conta admin carregou em `/forms` com 27 formulários.
+
+9. **/admin** ✅ OK
+   - URL: `/admin`
+   - Comportamento real: painel admin carregou com métricas (13 usuários, 80 forms, 110 respostas).
+
+10. **/admin/users** ✅ OK
+   - URL: `/admin/users`
+   - Comportamento real: tabela de usuários carregou com 13 usuários e ações visíveis.
+
+11. **/admin/whatsapp** ✅ OK
+   - URL: `/admin/whatsapp`
+   - Comportamento real: painel WhatsApp carregou com status e histórico de envios.
+
+### Resumo
+- **P0:** 0
+- **P1:** 0
+- **P2:** 0
+
+**APROVADO FINAL. Ciclo encerrado.**
+
+---
+
+## Auditoria Final Consolidada — Zéfa — 2026-04-21 20:24 GMT-3
+
+**Veredito: APROVADO FINAL ✅**
+
+### Resultado por item
+1. **Checkout CPF/CNPJ (conta free)** ✅ OK
+   - Login com `sidney@institutoeidos.com.br`
+   - `/billing` → Starter mensal → checkout carregou com campo CPF/CNPJ
+   - CPF `529.982.247-25` preenchido
+   - `Confirmar assinatura` processou sem erro
+   - Resultado: assinatura criada com sucesso (`sub_0g7olu35xapha621`), confirmando que o customer existente foi atualizado antes da criação da assinatura
+
+2. **Settings "Voltar"** ✅ OK
+   - `/settings` exibe botão `Voltar` apontando para `/forms`
+   - Confirmado no código e no browser
+
+3. **Criar formulário com limite atingido / redirects** ✅ OK
+   - Confirmado no código que os redirects de erro em `forms/new` apontam para `/forms` e não mais para `/dashboard`
+   - Nenhum redirect residual relevante para `/dashboard` encontrado nesse fluxo
+
+4. **Admin `/admin/users`** ✅ OK
+   - Login admin com `medeiros.sco@gmail.com`
+   - `/admin/users` carregou corretamente
+   - Lista de usuários exibida (13 usuários), busca e ações visíveis
+
+### Arquivos/trechos verificados
+- `app/(dashboard)/settings/page.tsx`
+- `app/api/checkout/[plan]/route.ts`
+- fluxo browser em produção `https://eidosform.com.br`
+
+### Pendências
+- Nenhuma bloqueante desta auditoria
+
+### Próximo passo
+- Pode seguir com encerramento deste ciclo de QA
+
+---
+
+## Revalidação Zéfa — Toin (redirects) + Zeca (cpfCnpj update) — 2026-04-21 20:18 GMT-3
+
+**Veredito: APROVADO ✅**
+
+### Toin (3e059f4) — Redirects + Voltar
+- `forms/new` redirects de erro → `/forms` (3 ocorrências: form_limit, slug_collision, create_failed) ✅
+- Botão "Voltar" em `/settings` → `/forms` ✅
+
+### Zeca (cf94902) — CPF/CNPJ para customers existentes
+- `updateCustomer()` implementado (PUT `/customers/{id}`) ✅
+- Quando customer já existe + cpfCnpj fornecido → atualiza antes de criar subscription ✅
+- Quando customer não existe → criado com cpfCnpj (bloco já existente) ✅
+- Erro no update não bloqueia checkout (try/catch com logError) ✅
+- cpfCnpj vazio → protegido por `if (cpfCnpj && asaasCustomerId)` ✅
+
+### TypeScript
+- Zero erros ✅
+
+---
+
+---
+
+## Handoff — Zeca (Fix cpfCnpj Update Customers Asaas) — 2026-04-21 20:16 GMT-3
+
+### O que foi feito
+- Verificado que o fix P0 (atualizar cpfCnpj em customers existentes no Asaas) já estava aplicado no commit `3e059f4`
+- Código correto: após criar/reutilizar customer, o checkout chama `updateCustomer(asaasCustomerId, { cpfCnpj })` quando cpfCnpj é fornecido
+- `updateCustomer` já estava exportado de `lib/asaas.ts` e importado no checkout route
+- `npx tsc --noEmit` ✅ zero erros
+- **Nenhum commit adicional necessário** — fix já em `origin/main`
+
+### Arquivos verificados (sem alteração necessária)
+- `app/api/checkout/[plan]/route.ts` — L83: chamada `updateCustomer` presente
+- `lib/asaas.ts` — L63: função `updateCustomer` exportada
+
+### Pendências
+- Teste E2E em produção para confirmar que o checkout funciona com customers existentes
 
 ---
 

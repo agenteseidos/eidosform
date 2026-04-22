@@ -1,42 +1,32 @@
-## Handoff — Zéfa — 2026-04-22 19:32 GMT-3
+## Handoff — Toin — 2026-04-22 19:54 GMT-3
 
 ### Demanda
-Auditar a Fase 1 do player do EidosForm (commit `8bf1c66` do Toin).
+Corrigir Fase 2 do player do EidosForm — itens P2/P3 remanescentes da auditoria.
 
 ### O que foi feito
-Auditoria completa dos 8 itens de correção + verificação de bugs remanescentes.
+Todos os 10 itens corrigidos em um commit (`04fc5e2`).
 
-### Resultado da Auditoria
-
-**✅ LIMPO em P0/P1.** Nenhum bug crítico ou alto encontrado.
-
-| # | Item | Veredicto | Notas |
-|---|------|-----------|-------|
-| 1 | `respondent_id` persistência | ✅ OK | Enviado no submit final; partial save usa Bearer token para identificação no backend. |
-| 2 | Footer respeitando tema | ✅ OK | `backgroundColor + 'CC'` com backdrop-blur. Removeu classes hardcoded. |
-| 3 | Progresso sem saltos | ✅ OK | Baseado em `questions` (total original) em vez de `visibleQuestions`. |
-| 4 | "Pergunta X de Y" | ✅ OK | Mostra visível + "(N total)" quando há diferença. |
-| 5 | Erro inline checkboxes | ✅ OK | Renderizado dentro do bloco de checkboxes no QuestionRenderer. |
-| 6 | Auto-avanço Calendly | ✅ OK | `setTimeout(() => onSubmit(true, eventUri), 800)` após `calendly.event_scheduled`. |
-| 7 | Feedback partial save | ✅ OK | Toast de sucesso + toast de erro em caso de falha. |
-| 8 | ArrowUp/Down sem quebrar scroll | ✅ OK | Verifica `scrollTop` do container scrollable antes de interceptar. Padrão ▲▼ + OK mantido. |
-
-### Bugs Remanescentes (nenhum P0/P1)
-
-| Severidade | ID | Descrição |
-|------------|----|-----------|
-| P2 | — | Footer pode cobrir conteúdo em formulários longos no mobile (já listado pelo Toin) |
-| P2 | — | PixelInjector renderizado 2x (welcome + main) — duplicação de eventos |
-| P2 | — | Content block vazio mostra "(Conteúdo não preenchido)" em produção |
-| P2 | — | Acessibilidade (aria-labels, role="progressbar", focus management) |
-| P3 | — | Honeypot field `_hp_` não implementado |
-| P3 | ZF-01 | Progresso mostra avanço na welcome screen (`currentIndex=-1` → positionProgress = 1/N). Levemente enganoso mas sem impacto funcional. |
-| P3 | ZF-02 | `answeredCount` não detecta arrays vazios `[]` (checkboxes desmarcadas) na contagem de respondidas. |
+| # | Item | Status | Detalhes |
+|---|------|--------|----------|
+| 1 | Footer cobrindo conteúdo no mobile | ✅ | `pb-28 sm:pb-24` + `pb-[max(1rem,env(safe-area-inset-bottom))]` |
+| 2 | PixelInjector duplicado | ✅ | Removido da welcome screen; mantido apenas no render principal |
+| 3 | Content block vazio vaza texto | ✅ | Removeu fallback "(Conteúdo não preenchido)" — renderiza `null` |
+| 4 | Acessibilidade (aria/roles) | ✅ | `role=progressbar`, `role=navigation`, `role=form`, `aria-label` nos botões |
+| 5 | Honeypot não ativado | ✅ | Campo `_hp_` hidden + validação no submit (rejeita se preenchido) |
+| 6 | Progresso na welcome screen | ✅ | Barra e label ocultos quando `currentIndex === -1` |
+| 7 | Array vazio no answeredCount | ✅ | Exclui arrays vazios `[]` da contagem de respondidas |
+| 8 | Imagem welcome sem max-width | ✅ | Adicionado `max-w-full` |
+| 9 | Dropdown país cortado em mobile | ✅ | Abre para cima (`bottom-full`), `max-h-50vh`, posicionamento corrigido |
+| 10 | Redirect delay fixo 2.8s | ✅ | Configurável via `form.redirect_delay` (ms), default 2800 |
 
 ### Validação
 - `tsc --noEmit` → limpo (exit code 0)
-- Commit verificado: `8bf1c66`
-- Nenhuma alteração na navegação ▲▼ + botão OK
+- Push para `main` → OK
+
+### Arquivos alterados
+- `components/form-player/form-player.tsx`
+- `components/form-player/question-renderer.tsx`
+- `lib/database.types.ts` (adicionado `redirect_delay` ao tipo Form)
 
 ### Próximo passo
-Seguir para Fase 2 com os itens P2 listados (incluindo os do handoff anterior).
+Nenhum pendente da auditoria. Player limpo em P0/P1/P2/P3.

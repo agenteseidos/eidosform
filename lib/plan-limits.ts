@@ -363,10 +363,13 @@ export async function handleDowngrade(
     while (j < eligible.length && eligible[j].responseCount === eligible[i].responseCount) {
       j++
     }
-    // Shuffle the group [i, j) using crypto-quality randomness
+    // Shuffle the group [i, j) using crypto-quality randomness (Fisher-Yates)
     if (j - i > 1) {
       for (let k = j - 1; k > i; k--) {
-        const swapIdx = i + Math.floor(Math.random() * (k - i + 1))
+        const range = k - i + 1
+        const buf = new Uint32Array(1)
+        crypto.getRandomValues(buf)
+        const swapIdx = i + (buf[0] % range)
         ;[eligible[k], eligible[swapIdx]] = [eligible[swapIdx], eligible[k]]
       }
     }

@@ -1,6 +1,42 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 21:35 GMT-3
+### Última atualização: 2026-04-21 21:36 GMT-3
+
+---
+
+## Checkout Hospedado do Asaas — Zeca — 2026-04-21 21:36 GMT-3
+
+### O que foi feito
+- Implementado checkout hospedado do Asaas no backend (`POST /v3/checkouts`)
+- Nova função `createCheckout()` em `lib/asaas.ts` que cria checkout com `chargeTypes: ["RECURRENT"]` e `subscription` details
+- Rota `app/api/checkout/[plan]/route.ts` alterada para retornar `checkoutUrl` em vez de criar assinatura diretamente
+- Checkout aceita PIX, Boleto e Cartão de Crédito
+- `successUrl` redireciona para `/billing?checkout=success`
+- Logging: plan, cycle, value, flow type (`checkout`), checkoutId
+- Compatível com webhook existente (checkout Asaas dispara eventos na mesma URL de webhook)
+
+### Arquivos alterados
+- `lib/asaas.ts` — adicionada função `createCheckout()`
+- `app/api/checkout/[plan]/route.ts` — fluxo alterado de `createSubscription` → `createCheckout`, retorna `checkoutUrl`
+
+### Como funciona agora
+1. Frontend envia POST `/api/checkout/{plan}?cycle=monthly|yearly` com `{ cpfCnpj }`
+2. Backend cria/atualiza customer no Asaas (com cpfCnpj)
+3. Backend cria checkout hospedado via `POST /v3/checkouts` com subscription recorrente
+4. Backend retorna `{ checkoutUrl }` — URL hospedada do Asaas
+5. Frontend redireciona usuário para `checkoutUrl`
+6. Usuário escolhe forma de pagamento e conclui no Asaas
+7. Webhook do Asaas notifica o backend (mesmo endpoint existente)
+
+### Validação
+- `npx tsc --noEmit` ✅ zero erros
+- Commit `f4b31c7` — `feat: usar checkout hospedado do Asaas no fluxo de assinatura`
+- Push para `origin/main`
+
+### Pendências
+- **Frontend precisa atualizar:** ao receber `{ checkoutUrl }`, redirecionar o usuário para essa URL em vez de mostrar tela "Assinatura criada!"
+- Teste E2E em produção
+- Verificar se o webhook de checkout usa o mesmo formato de subscription ou precisa adaptação
 
 ---
 

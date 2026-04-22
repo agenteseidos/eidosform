@@ -113,11 +113,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const isContentStep = currentQuestion?.type === 'content_block'
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
   const isFirstQuestion = form.welcome_enabled ? currentIndex === -1 : currentIndex === 0
-  // Com jump logic, progresso baseado em perguntas respondidas + posição atual
-  const answeredCount = visibleQuestions.filter(q => answers[q.id] !== undefined && answers[q.id] !== '').length
-  const progressFull = visibleQuestions.length > 0
-    ? Math.max(((currentIndex + 1) / visibleQuestions.length) * 100, (answeredCount / visibleQuestions.length) * 100)
-    : 0
+  // Progresso baseado em total original de perguntas (não visíveis) para evitar saltos com conditional logic
+  const answeredCount = questions.filter(q => q.type !== 'content_block' && answers[q.id] !== undefined && answers[q.id] !== '').length
+  const questionCount = questions.filter(q => q.type !== 'content_block').length
+  const positionProgress = questionCount > 0 ? ((answeredCount + 1) / questionCount) * 100 : 0
+  const answeredProgress = questionCount > 0 ? (answeredCount / questionCount) * 100 : 0
+  const progressFull = Math.max(positionProgress, answeredProgress)
 
   // Animate progress on question change
   useEffect(() => {
@@ -256,9 +257,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         if (res.ok) {
           const data = await res.json()
           if (data.response_id) setResponseId(data.response_id)
+          toast.success('Progresso salvo', { duration: 2000, description: 'Seu preenchimento foi salvo automaticamente.' })
         }
       } catch {
-        // Falha silenciosa — não impede o fluxo do player
+        toast.error('Falha ao salvar progresso', { duration: 3000, description: 'Verifique sua conexão.' })
       }
     }, 2000)
   }
@@ -282,6 +284,16 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
       const utms = getUtms()
 
+      // Get respondent_id if authenticated
+      let respondentId: string | null = null
+      if (isAuthenticatedRef.current) {
+        try {
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          respondentId = session?.user?.id ?? null
+        } catch { /* ignore */ }
+      }
+
       const res = await fetch('/api/responses', {
         method: 'POST',
         headers,
@@ -290,6 +302,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           answers: finalAnswers,
           completed: true,
           last_question_answered: currentQuestion?.id ?? null,
+          respondent_id: respondentId,
           ...utms,
           meta_events: metaEvents,
         }),
@@ -360,8 +373,13 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       }
 
       if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
-        e.preventDefault()
-        goToPrevious()
+        // Only intercept if not scrolling an overflow container
+        const target = e.target as HTMLElement
+        const scrollable = target.closest('[class*=overflow-y],[class*=overflow-auto],[style*=overflow]')
+        if (!scrollable || scrollable.scrollTop <= 0) {
+          e.preventDefault()
+          goToPrevious()
+        }
       }
 
       if (e.key === 'ArrowDown') {
@@ -369,8 +387,13 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           e.preventDefault()
           return
         }
-        e.preventDefault()
-        goToNext()
+        // Only intercept if not scrolling an overflow container
+        const target = e.target as HTMLElement
+        const scrollable = target.closest('[class*=overflow-y],[class*=overflow-auto],[style*=overflow]')
+        if (!scrollable || scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1) {
+          e.preventDefault()
+          goToNext()
+        }
       }
     }
 
@@ -734,6 +757,11 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                     <span className="text-sm font-bold tabular-nums" style={{ color: theme.primaryColor }}>
                       Pergunta {currentIndex + 1} de {visibleQuestions.length}
                     </span>
+                    {visibleQuestions.length !== questionCount && (
+                      <span className="text-xs opacity-50" style={{ color: theme.textColor }}>
+                        ({questionCount} total)
+                      </span>
+                    )}
                   </motion.div>
 
                   {/* Title */}
@@ -846,7 +874,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       </main>
 
       {/* ── Nav footer ── */}
-      <footer className="fixed bottom-0 left-0 right-0 p-4 flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
+      <footer className="fixed bottom-0 left-0 right-0 p-4 flex items-center justify-between backdrop-blur-sm" style={{ backgroundColor: `${theme.backgroundColor}CC` }}>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"

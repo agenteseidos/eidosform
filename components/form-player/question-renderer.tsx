@@ -463,6 +463,8 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
       if (e.data?.event === 'calendly.event_scheduled') {
         const eventUri = e.data?.payload?.event?.uri || 'scheduled'
         onChange(eventUri)
+        // Auto-advance after scheduling
+        setTimeout(() => onSubmit(true, eventUri), 800)
       }
     }
     window.addEventListener('message', handleMessage)
@@ -706,7 +708,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
         </div>
       )
 
-    case 'checkboxes':
+    case 'checkboxes': {
       const selectedValues = Array.isArray(value) ? value : []
       return (
         <div className="space-y-3">
@@ -760,8 +762,15 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
           <p className="text-sm opacity-50 mt-2" style={{ color: theme.textColor }}>
             Selecione todas que se aplicam
           </p>
+          {/* Inline error for checkboxes */}
+          {error && (
+            <p className="text-sm font-medium mt-1" style={{ color: '#EF4444' }}>
+              {error}
+            </p>
+          )}
         </div>
       )
+    }
 
     case 'yes_no':
       return (

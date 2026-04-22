@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Dados inválidos' }, { status: 400, headers: CORS_HEADERS })
   }
 
-  const { form_id, last_question_answered } = body
+  const { form_id, last_question_answered, respondent_id } = body
   const metaEvents = Array.isArray(body.meta_events)
     ? body.meta_events.filter((e): e is string => typeof e === 'string')
     : []
@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
-      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: last_question_answered as string ?? null, ...utmData } as ResponseInsert)
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: last_question_answered as string ?? null, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData } as ResponseInsert)
       .select('id, meta_events')
       .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string } | null }
 

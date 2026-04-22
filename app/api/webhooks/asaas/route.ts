@@ -42,41 +42,89 @@ function calculateExpiryDate(cycle: 'MONTHLY' | 'YEARLY'): string {
   return now.toISOString()
 }
 
-async function getUserByCustomerId(asaasCustomerId: string) {
+type ResolvedCheckoutLink = {
+  id: string
+  profile_id: string
+  plan: string
+  cycle: string
+  checkout_id: string
+  asaas_customer_id: string | null
+  asaas_subscription_id: string | null
+  status: string
+  created_at: string
+}
+
+type ResolvedUser = {
+  id: string
+  email: string
+  full_name: string | null
+  plan: string | null
+}
+
+async function getProfileById(profileId: string) {
   const supabase = getSupabase()
-
-  const { data: checkoutLink } = await supabase
-    .from('billing_checkouts')
-    .select('profile_id, plan, cycle, checkout_id')
-    .eq('asaas_customer_id', asaasCustomerId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (checkoutLink?.profile_id) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, email, full_name, plan')
-      .eq('id', checkoutLink.profile_id)
-      .single()
-
-    if (data) {
-      return {
-        user: data,
-        checkoutLink,
-      }
-    }
-  }
-
   const { data } = await supabase
     .from('profiles')
     .select('id, email, full_name, plan')
-    .eq('asaas_customer_id', asaasCustomerId)
+    .eq('id', profileId)
     .single()
 
+  return data as ResolvedUser | null
+}
+
+async function resolveBillingContext(params: {
+  customerId?: string
+  subscriptionId?: string | null
+}) {
+  const supabase = getSupabase()
+  const { customerId, subscriptionId } = params
+
+  let checkoutLink: ResolvedCheckoutLink | null = null
+
+  if (subscriptionId) {
+    const { data } = await supabase
+      .from('billing_checkouts')
+      .select('id, profile_id, plan, cycle, checkout_id, asaas_customer_id, asaas_subscription_id, status, created_at')
+      .eq('asaas_subscription_id', subscriptionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (data) checkoutLink = data as ResolvedCheckoutLink
+  }
+
+  if (!checkoutLink && customerId) {
+    const { data } = await supabase
+      .from('billing_checkouts')
+      .select('id, profile_id, plan, cycle, checkout_id, asaas_customer_id, asaas_subscription_id, status, created_at')
+      .eq('asaas_customer_id', customerId)
+      .or(subscriptionId ? `asaas_subscription_id.eq.${subscriptionId},asaas_subscription_id.is.null` : 'asaas_subscription_id.is.null')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (data) checkoutLink = data as ResolvedCheckoutLink
+  }
+
+  let user: ResolvedUser | null = null
+
+  if (checkoutLink?.profile_id) {
+    user = await getProfileById(checkoutLink.profile_id)
+  }
+
+  if (!user && customerId) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, plan')
+      .eq('asaas_customer_id', customerId)
+      .single()
+
+    user = (data as ResolvedUser | null) ?? null
+  }
+
   return {
-    user: data,
-    checkoutLink: null,
+    user,
+    checkoutLink,
   }
 }
 
@@ -88,31 +136,22 @@ async function updateCheckoutLink(params: {
 }) {
   const supabase = getSupabase()
   const { customerId, subscriptionId, event, status } = params
+  const { checkoutLink } = await resolveBillingContext({ customerId, subscriptionId })
 
-  if (subscriptionId) {
-    const { error } = await supabase
-      .from('billing_checkouts')
-      .update({
-        asaas_subscription_id: subscriptionId,
-        status,
-        last_event: event,
-      })
-      .eq('asaas_subscription_id', subscriptionId)
-
-    if (!error) return
+  if (!checkoutLink) {
+    logWarn('[asaas-webhook] Checkout link not found for update', { customerId, subscriptionId, event, status })
+    return
   }
 
-  if (customerId) {
-    await supabase
-      .from('billing_checkouts')
-      .update({
-        asaas_subscription_id: subscriptionId ?? null,
-        status,
-        last_event: event,
-      })
-      .eq('asaas_customer_id', customerId)
-      .eq('status', 'pending')
-  }
+  await supabase
+    .from('billing_checkouts')
+    .update({
+      asaas_customer_id: customerId ?? checkoutLink.asaas_customer_id,
+      asaas_subscription_id: subscriptionId ?? checkoutLink.asaas_subscription_id,
+      status,
+      last_event: event,
+    })
+    .eq('id', checkoutLink.id)
 }
 
 interface AsaasPayment {
@@ -168,9 +207,15 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        const { user } = await getUserByCustomerId(customerId)
+        const { user } = await resolveBillingContext({
+          customerId,
+          subscriptionId: payment?.subscription ?? null,
+        })
         if (!user) {
-          logWarn('[asaas-webhook] User not found for customer', { customerId })
+          logWarn('[asaas-webhook] User not found for payment context', {
+            customerId,
+            subscriptionId: payment?.subscription ?? null,
+          })
           break
         }
 
@@ -215,8 +260,17 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        const { user } = await getUserByCustomerId(customerId)
-        if (!user) break
+        const { user } = await resolveBillingContext({
+          customerId,
+          subscriptionId: payment?.subscription ?? null,
+        })
+        if (!user) {
+          logWarn('[asaas-webhook] User not found for overdue payment context', {
+            customerId,
+            subscriptionId: payment?.subscription ?? null,
+          })
+          break
+        }
 
         log('[asaas-webhook] Payment overdue, reverting to free', { userId: user.id, customerId })
 
@@ -249,8 +303,17 @@ export async function POST(req: NextRequest) {
         const customerId = subscription?.customer
         if (!customerId) break
 
-        const { user } = await getUserByCustomerId(customerId)
-        if (!user) break
+        const { user } = await resolveBillingContext({
+          customerId,
+          subscriptionId: subscription?.id ?? null,
+        })
+        if (!user) {
+          logWarn('[asaas-webhook] User not found for deleted subscription context', {
+            customerId,
+            subscriptionId: subscription?.id ?? null,
+          })
+          break
+        }
 
         const oldPlan = user.plan ?? 'starter'
 

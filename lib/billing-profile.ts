@@ -88,15 +88,19 @@ export function getMissingBillingFields(profile: BillingProfile): BillingFieldKe
 }
 
 export function toAsaasCustomerPayload(profile: BillingProfile): AsaasCustomerPayload {
+  const phone = digitsOnly(profile.phone) ?? undefined
+  const cpfCnpj = digitsOnly(profile.cpfCnpj) ?? undefined
+  const postalCode = digitsOnly(profile.postalCode) ?? undefined
+
   return {
     name: profile.fullName,
     email: profile.email,
-    phone: digitsOnly(profile.phone),
-    mobilePhone: digitsOnly(profile.phone),
-    cpfCnpj: digitsOnly(profile.cpfCnpj),
+    phone,
+    mobilePhone: phone,
+    cpfCnpj,
     address: profile.address ?? undefined,
     addressNumber: profile.addressNumber ?? undefined,
-    postalCode: digitsOnly(profile.postalCode),
+    postalCode,
     province: profile.province ?? undefined,
     city: profile.city ?? undefined,
   }

@@ -143,3 +143,71 @@ Auditoria rigorosa da implementação de downgrade no repo `/home/sidney/eidosfo
 
 ### Próximo passo sugerido
 - Corrigir o early return do downgrade para que forms com 100+ respostas sejam pausados mesmo quando o total de published forms é menor ou igual ao limite free.
+
+## Handoff — Zéfa — 2026-04-22 03:37 GMT-3
+
+### O que foi feito
+- Auditoria ponta a ponta do billing blindado no commit `8d4b0a3`.
+- Revisão estática de checkout, billing profile, webhook Asaas, UX de settings/checkout, migration `billing_checkouts`, downgrade rigoroso e premium gating.
+- Validação do browser em produção para `/settings`, `/billing` e `/billing?checkout=success`.
+
+### Decisões tomadas
+- Classifiquei apenas P0/P1 relacionados ao escopo novo de billing blindado.
+- Mantive como observação separada o fato de produção estar servindo uma página externa “under construction”, porque isso bloqueia validação real do fluxo no browser e pode indicar incidente/deploy incorreto.
+
+### Arquivos auditados
+- `app/api/checkout/[plan]/route.ts`
+- `lib/billing-profile.ts`
+- `app/api/webhooks/asaas/route.ts`
+- `components/settings/billing-profile-settings.tsx`
+- `app/(dashboard)/checkout/[plan]/page.tsx`
+- `app/(dashboard)/billing/page.tsx`
+- `components/checkout-success-overlay.tsx`
+- `app/(dashboard)/settings/page.tsx`
+- `supabase/migrations/20260422_billing_checkout_links.sql`
+- `lib/plan-limits.ts`
+- `app/api/v1/forms/[id]/route.ts`
+- `app/api/responses/route.ts`
+- `app/api/forms/[id]/route.ts`
+- `app/f/[slug]/page.tsx`
+- `components/form-player/form-player.tsx`
+
+### Bugs P0
+- **P0-1: webhook do Asaas não resolve assinatura por `asaas_subscription_id`, só por `asaas_customer_id`**
+  - Arquivo: `app/api/webhooks/asaas/route.ts`
+  - Detalhe: `getUserByCustomerId()` ignora `payment.subscription` / `subscription.id` e tenta localizar conta apenas por `billing_checkouts.asaas_customer_id` ou `profiles.asaas_customer_id`. Se o customer tiver múltiplos checkouts históricos, recheckout, troca de plano ou customer reutilizado, o webhook pode cair na conta errada ou numa conta antiga, quebrando upgrade/downgrade e vínculo de assinatura.
+  - Impacto: quebra ativação/cancelamento correto, risco direto de aplicar plano na conta errada.
+  - Fix sugerido: resolver primeiro por `asaas_subscription_id` quando o webhook trouxer subscription, depois por vínculo de checkout recente e só então por `asaas_customer_id` como fallback final.
+
+### Bugs P1
+- **P1-1: `updateCheckoutLink()` falha em marcar checkout pago/cancelado quando o `asaas_subscription_id` ainda não estava salvo**
+  - Arquivo: `app/api/webhooks/asaas/route.ts`
+  - Detalhe: o primeiro update tenta `eq('asaas_subscription_id', subscriptionId)`. Para checkouts novos, essa coluna normalmente está `NULL`, então não encontra linha. Em seguida o fallback por customer exige `.eq('status', 'pending')`, mas atualiza todas as linhas pendentes daquele customer, não necessariamente o checkout/subscription correto.
+  - Impacto: histórico de billing_checkouts pode ficar inconsistente ou sobrescrever vínculo errado em cenários com múltiplos checkouts pendentes do mesmo customer.
+  - Fix sugerido: identificar a linha alvo por `checkout_id`/`subscription_id` de forma determinística e, se cair no fallback por customer, limitar à linha mais recente esperada antes de atualizar.
+
+### Bugs P2
+- **P2-1: produção em `https://eidosform.com` está servindo página externa “under construction”**
+  - Evidência: browser abriu `/settings`, `/billing` e `/billing?checkout=success`, mas recebeu apenas heading `eidosform.com` + texto “We're under construction. Please check back for an update soon.”
+  - Impacto: não consegui validar UX real no browser porque o domínio em produção não está entregando a aplicação Next auditada.
+  - Fix sugerido: revisar DNS/proxy/deploy do domínio principal antes da próxima validação E2E.
+- **P2-2: `components/settings/billing-profile-settings.tsx` valida no cliente só `fullName`**
+  - O bloqueio forte está no backend, então não é quebra crítica, mas a UX poderia prevenir mais cedo telefone/CPF/CEP vazios ou inválidos.
+- **P2-3: `app/(dashboard)/billing/page.tsx` mantém texto hardcoded `Ciclo reinicia em 1 de abril`**
+  - Já conhecido, mas segue inconsistente com billing real.
+
+### Estado atual
+- `app/api/checkout/[plan]/route.ts`: bloqueio de campos obrigatórios, uso da conta logada e gravação em `billing_checkouts` estão corretos.
+- `lib/billing-profile.ts`: validação e payload para Asaas ficaram corretos no estado atual; diff local em `lib/billing-profile.ts` apenas evita enviar `null` e não introduz bug visível.
+- `lib/plan-limits.ts`: downgrade rigoroso segue com zero P0/P1 neste recorte; o P2 anterior sobre forms `100+` com `<=3 published` permanece do handoff anterior.
+- Premium gating: código está coerente, com webhooks e pixels bloqueados no free/starter.
+- Browser: validação funcional bloqueada porque o domínio auditado não está servindo a app.
+
+### Pendências
+- Corrigir resolução de conta no webhook priorizando `asaas_subscription_id`.
+- Tornar update de `billing_checkouts` determinístico para evitar atualizar checkout errado do mesmo customer.
+- Revisar incidente/deploy do domínio `eidosform.com` para reabrir validação E2E real no browser.
+
+### Próximo passo sugerido
+- Zeca corrigir `app/api/webhooks/asaas/route.ts` com lookup prioritário por subscription e update determinístico do vínculo.
+- Depois rodar nova auditoria Zéfa com ambiente/browser já apontando para a aplicação real.

@@ -237,6 +237,15 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const [sheetsUrl, setSheetsUrl] = useState('')
   const [sheetsTitle, setSheetsTitle] = useState('')
   const [stepPreviewIndex, setStepPreviewIndex] = useState(0)
+  const [slugError, setSlugError] = useState<string | null>(null)
+
+  const validateSlug = useCallback((slug: string): string | null => {
+    if (!slug.trim()) return 'O slug não pode ficar vazio'
+    if (slug.length < 3) return 'Mínimo de 3 caracteres'
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug)) return 'Use apenas letras minúsculas, números e hífens'
+    if (slug.startsWith('-') || slug.endsWith('-')) return 'Não comece ou termine com hífen'
+    return null
+  }, [])
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
@@ -352,6 +361,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     notify_email_enabled: form.notify_email_enabled ?? false,
     notify_email: form.notify_email || null,
     notify_whatsapp_enabled: form.notify_whatsapp_enabled ?? false,
+    notify_whatsapp_number: form.notify_whatsapp_number || null,
     google_sheets_enabled: form.google_sheets_enabled ?? false,
     google_sheets_id: form.google_sheets_id || null,
     google_sheets_share_email: form.google_sheets_share_email || null,
@@ -437,6 +447,19 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   }, [buildFormPayload, updateFormViaApi])
 
   const handlePublish = async () => {
+    if (!form.title.trim()) {
+      toast.error('Dê um título ao formulário antes de publicar')
+      return
+    }
+    if (!form.slug.trim() || form.slug.length < 3) {
+      toast.error('O slug precisa ter pelo menos 3 caracteres')
+      return
+    }
+    const slugErr = validateSlug(form.slug)
+    if (slugErr) {
+      toast.error(slugErr)
+      return
+    }
     if (questions.length === 0) {
       toast.error('Adicione ao menos uma pergunta antes de publicar')
       return
@@ -646,7 +669,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               ) : (
                 <Globe className="w-4 h-4 mr-1.5" />
               )}
-              <span className="hidden sm:inline">Publicar</span>
+              <span>Publicar</span>
             </Button>
 
             {/* B20: Avatar do usuário no header */}
@@ -1466,11 +1489,15 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       onChange={(e) => {
                         const slug = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
                         setForm({ ...form, slug })
+                        setSlugError(validateSlug(slug))
                         setHasUnsavedChanges(true)
                       }}
-                      className="flex-1 text-slate-900 placeholder:text-slate-400"
+                      className={`flex-1 text-slate-900 placeholder:text-slate-400 ${slugError ? 'border-red-400 focus-visible:border-red-500' : ''}`}
                       placeholder="meu-formulario"
                     />
+                    {slugError && (
+                      <p className="text-xs text-red-500 mt-1.5">{slugError}</p>
+                    )}
                   </div>
                 </div>
               </div>

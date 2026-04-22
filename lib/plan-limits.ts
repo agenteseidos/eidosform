@@ -282,9 +282,12 @@ export async function checkFormLimit(userId: string): Promise<{ allowed: boolean
  *
  * When a user's plan expires or is cancelled:
  * 1. Unpause ALL forms first (clean slate)
- * 2. Get published forms ordered by created_at desc
- * 3. Pause forms beyond the free tier limit (3)
+ * 2. Get published forms with their response counts
+ * 3. Keep the 3 forms with FEWEST responses active
+ * 4. Forms with 100+ responses are NEVER kept active → always paused
+ * 5. Pause all remaining forms
  *
+ * Tie-breaking: random among forms with equal response counts.
  * Uses service role client to bypass RLS during webhook processing.
  */
 export async function handleDowngrade(
@@ -297,6 +300,7 @@ export async function handleDowngrade(
   )
 
   const freeLimit = PLANS.free.maxForms // 3
+  const responseThreshold = 100 // Forms with 100+ responses are always paused
 
   // Step 1: Unpause all forms for this user
   await supabase
@@ -304,21 +308,90 @@ export async function handleDowngrade(
     .update({ paused: false })
     .eq('user_id', userId)
 
-  // Step 2: Get published forms ordered by most recent first
+  // Step 2: Get all published forms for this user
   const { data: publishedForms } = await supabase
     .from('forms')
     .select('id')
     .eq('user_id', userId)
     .eq('status', 'published')
-    .order('created_at', { ascending: false })
 
   if (!publishedForms || publishedForms.length <= freeLimit) {
     return { pausedCount: 0 }
   }
 
-  // Step 3: Pause forms beyond the free limit (keep the N most recent active)
-  const formsToPause = publishedForms.slice(freeLimit)
-  const idsToPause = formsToPause.map((f: { id: string }) => f.id)
+  // Step 3: Count responses per form via RPC or direct query
+  const formIds = publishedForms.map((f: { id: string }) => f.id)
+  const { data: responseCounts } = await supabase
+    .from('responses')
+    .select('form_id')
+    .in('form_id', formIds)
+
+  // Build response count map
+  const countMap = new Map<string, number>()
+  for (const f of formIds) {
+    countMap.set(f, 0)
+  }
+  if (responseCounts) {
+    for (const r of responseCounts) {
+      const fid = (r as { form_id: string }).form_id
+      countMap.set(fid, (countMap.get(fid) ?? 0) + 1)
+    }
+  }
+
+  // Step 4: Separate eligible (< 100 responses) from always-paused (100+ responses)
+  type FormWithCount = { id: string; responseCount: number }
+  const eligible: FormWithCount[] = []
+  const alwaysPaused: string[] = []
+
+  for (const [id, count] of countMap.entries()) {
+    if (count >= responseThreshold) {
+      alwaysPaused.push(id)
+    } else {
+      eligible.push({ id, responseCount: count })
+    }
+  }
+
+  // Step 5: Sort eligible by response count ascending (fewest first)
+  // Randomize among ties using Fisher-Yates on groups with same count
+  eligible.sort((a, b) => a.responseCount - b.responseCount)
+
+  // Apply stable random tie-breaking within groups of equal response count
+  // Shuffle groups of equal counts to randomize which forms survive when ties exist
+  let i = 0
+  while (i < eligible.length) {
+    let j = i + 1
+    while (j < eligible.length && eligible[j].responseCount === eligible[i].responseCount) {
+      j++
+    }
+    // Shuffle the group [i, j) using crypto-quality randomness
+    if (j - i > 1) {
+      for (let k = j - 1; k > i; k--) {
+        const swapIdx = i + Math.floor(Math.random() * (k - i + 1))
+        ;[eligible[k], eligible[swapIdx]] = [eligible[swapIdx], eligible[k]]
+      }
+    }
+    i = j
+  }
+
+  // Step 6: Keep the first `freeLimit` eligible forms active, pause the rest
+  const toKeepActive = eligible.slice(0, freeLimit).map((f) => f.id)
+  const toPauseFromEligible = eligible.slice(freeLimit).map((f) => f.id)
+
+  // Combine: always-paused (100+ responses) + eligible beyond limit
+  const idsToPause = [...alwaysPaused, ...toPauseFromEligible]
+
+  // Safety: also pause any that ended up not in toKeepActive
+  // (ensures forms active ≤ freeLimit)
+  const activeSet = new Set(toKeepActive)
+  for (const f of publishedForms) {
+    if (!activeSet.has((f as { id: string }).id) && !idsToPause.includes((f as { id: string }).id)) {
+      idsToPause.push((f as { id: string }).id)
+    }
+  }
+
+  if (idsToPause.length === 0) {
+    return { pausedCount: 0 }
+  }
 
   const { error } = await supabase
     .from('forms')

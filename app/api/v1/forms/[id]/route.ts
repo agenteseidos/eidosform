@@ -2,7 +2,7 @@ import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/dat
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { authenticateApiKey } from '@/lib/api-key-auth'
-import { checkResponseLimit, incrementResponseCount } from '@/lib/plan-limits'
+import { checkResponseLimit, incrementResponseCount, PLANS, PlanName } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
 import { validateAllAnswers } from '@/lib/field-validators'
@@ -311,13 +311,24 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     await supabase.from('answer_items').insert(answerItems as AnswerItemInsert[])
   }
 
+  // Webhook dispatch — feature gated by plan (only Plus+ has webhooks)
   if (completed && form.webhook_url) {
-    dispatchWebhook({
-      webhookUrl: form.webhook_url,
-      formId: id,
-      responseId,
-      responseData: answers,
-    }).catch((err) => logError('Failed to dispatch webhook', err))
+    const { data: ownerProfile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', form.user_id)
+      .single()
+    const ownerPlan = (ownerProfile?.plan ?? 'free') as PlanName
+    const planConfig = PLANS[ownerPlan]
+
+    if (planConfig?.webhooks) {
+      dispatchWebhook({
+        webhookUrl: form.webhook_url,
+        formId: id,
+        responseId,
+        responseData: answers,
+      }).catch((err) => logError('Failed to dispatch webhook', err))
+    }
   }
 
   return NextResponse.json(

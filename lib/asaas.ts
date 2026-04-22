@@ -109,9 +109,11 @@ export async function createCheckout(params: {
   plan: Exclude<PlanName, 'free'>
   cycle: BillingCycle
   successUrl: string
+  cancelUrl: string
+  expiredUrl: string
   customerId: string
 }): Promise<{ id: string; url: string }> {
-  const { plan, cycle, successUrl, customerId } = params
+  const { plan, cycle, successUrl, cancelUrl, expiredUrl, customerId } = params
   const price = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
   const nextDueDate = new Date()
   nextDueDate.setDate(nextDueDate.getDate() + 1)
@@ -138,8 +140,8 @@ export async function createCheckout(params: {
     }],
     callback: {
       successUrl,
-      cancelUrl: successUrl,
-      expiredUrl: successUrl,
+      cancelUrl,
+      expiredUrl,
     },
     minutesToExpire: 120,
   }

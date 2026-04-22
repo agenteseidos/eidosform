@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { CheckCircle2, ArrowRight } from 'lucide-react'
+import { CheckCircle2, ArrowRight, AlertCircle, Clock3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -11,13 +11,44 @@ export function CheckoutSuccessOverlay() {
   const router = useRouter()
   const [visible, setVisible] = useState(false)
 
+  const status = useMemo(() => searchParams.get('checkout'), [searchParams])
+
   useEffect(() => {
-    if (searchParams.get('checkout') === 'success') {
+    if (status === 'success' || status === 'cancelled' || status === 'expired') {
       setVisible(true)
-      // Clean the URL so refresh won't show the modal again
       window.history.replaceState({}, '', '/billing')
     }
-  }, [searchParams])
+  }, [status])
+
+  const content = useMemo(() => {
+    if (status === 'cancelled') {
+      return {
+        icon: <AlertCircle className="w-12 h-12 text-amber-400" />,
+        iconWrap: 'bg-amber-500/15',
+        title: 'Checkout cancelado',
+        description: 'Seu pagamento não foi concluído. Seu plano atual continua o mesmo.',
+        buttonLabel: 'Voltar ao EidosForm',
+      }
+    }
+
+    if (status === 'expired') {
+      return {
+        icon: <Clock3 className="w-12 h-12 text-amber-400" />,
+        iconWrap: 'bg-amber-500/15',
+        title: 'Checkout expirado',
+        description: 'O tempo para concluir este pagamento terminou. Você pode iniciar um novo checkout quando quiser.',
+        buttonLabel: 'Voltar ao EidosForm',
+      }
+    }
+
+    return {
+      icon: <CheckCircle2 className="w-12 h-12 text-emerald-400" />,
+      iconWrap: 'bg-emerald-500/15',
+      title: 'Pagamento confirmado!',
+      description: 'Sua assinatura foi ativada com sucesso. Bem-vindo ao seu novo plano! 🎉',
+      buttonLabel: 'Voltar ao EidosForm',
+    }
+  }, [status])
 
   const handleRedirect = () => {
     router.push('/')
@@ -46,25 +77,24 @@ export function CheckoutSuccessOverlay() {
             className="mx-4 w-full max-w-md rounded-2xl bg-[#0F1629] border border-[#F5B731]/30 shadow-2xl shadow-[#F5B731]/10 p-8 text-center"
           >
             <div className="flex justify-center mb-5">
-              <div className="rounded-full bg-emerald-500/15 p-4">
-                <CheckCircle2 className="w-12 h-12 text-emerald-400" />
+              <div className={`rounded-full p-4 ${content.iconWrap}`}>
+                {content.icon}
               </div>
             </div>
 
             <h2 className="text-2xl font-bold text-white mb-2">
-              Pagamento confirmado!
+              {content.title}
             </h2>
 
             <p className="text-slate-400 mb-8 leading-relaxed">
-              Sua assinatura foi ativada com sucesso.<br />
-              Bem-vindo ao seu novo plano! 🎉
+              {content.description}
             </p>
 
             <Button
               onClick={handleRedirect}
               className="w-full bg-[#F5B731] hover:bg-[#F5B731]/90 text-black font-semibold h-12 rounded-xl text-base"
             >
-              Voltar ao EidosForm
+              {content.buttonLabel}
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </motion.div>

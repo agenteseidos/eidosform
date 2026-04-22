@@ -102,11 +102,15 @@ export async function POST(
       : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
     const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
     const successUrl = `${origin}/billing?checkout=success`
+    const cancelUrl = `${origin}/billing?checkout=cancelled`
+    const expiredUrl = `${origin}/billing?checkout=expired`
     log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId, profileId: profile.profileId })
     const checkout = await createCheckout({
       plan: plan as Exclude<PlanId, 'free'>,
       cycle,
       successUrl,
+      cancelUrl,
+      expiredUrl,
       customerId,
     })
     log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: 'checkout', checkoutId: checkout.id, profileId: profile.profileId })

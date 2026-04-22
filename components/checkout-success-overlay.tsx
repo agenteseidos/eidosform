@@ -90,7 +90,7 @@ export function CheckoutSuccessOverlay() {
   }, [resolvedStatus])
 
   const handleRedirect = () => {
-    router.push('/')
+    router.push('/forms')
   }
 
   return (

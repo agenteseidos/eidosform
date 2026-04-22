@@ -100,9 +100,6 @@ export async function POST(
     log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId: asaasCustomerId })
     const checkout = await createCheckout({
       customerId: asaasCustomerId,
-      customerName: profile.full_name ?? profile.email.split('@')[0],
-      customerEmail: profile.email,
-
       plan: plan as Exclude<PlanId, 'free'>,
       cycle,
       successUrl,

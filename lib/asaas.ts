@@ -100,23 +100,19 @@ export async function createSubscription(params: {
 /** Cria checkout hospedado — retorna URL para redirecionamento */
 export async function createCheckout(params: {
   customerId: string
-  customerName: string
-  customerEmail: string
   plan: Exclude<PlanName, 'free'>
   cycle: BillingCycle
   successUrl: string
 }): Promise<{ id: string; url: string }> {
-  const { customerId, customerName, customerEmail, plan, cycle, successUrl } = params
+  const { customerId, plan, cycle, successUrl } = params
   const price = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
   const nextDueDate = new Date()
   nextDueDate.setDate(nextDueDate.getDate() + 1)
 
-  log('[asaas] createCheckout payload', { name: customerName, email: customerEmail, plan, cycle, value: price })
+  log('[asaas] createCheckout payload', { customer: customerId, plan, cycle, value: price })
 
   const payload = {
     customer: customerId,
-    name: customerName,
-    email: customerEmail,
     billingTypes: ['PIX', 'BOLETO', 'CREDIT_CARD'],
     chargeTypes: ['RECURRENT'],
     subscription: {

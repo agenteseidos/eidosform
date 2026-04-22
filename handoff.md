@@ -1,6 +1,31 @@
 ## Handoff Ativo — EidosForm
 
-### Última atualização: 2026-04-21 22:13 GMT-3
+### Última atualização: 2026-04-21 22:15 GMT-3
+
+---
+
+## Checkout Direto ao Asaas — Toin — 2026-04-21 22:15 GMT-3
+
+### O que foi feito
+- Removido campo CPF/CNPJ da página de checkout interno
+- Página agora chama automaticamente `/api/checkout/[plan]?cycle=...` ao carregar (sem interação do usuário)
+- Ao receber `{ checkoutUrl }`, redireciona imediatamente para o checkout hospedado do Asaas
+- Se a API falhar, mostra tela de erro com botão "Tentar novamente"
+- Se já estiver inscrito, mostra tela "Você já tem este plano"
+- UX: loading spinner enquanto aguarda redirect
+- TypeScript: zero erros
+- Commit: `6e86a63` — `feat: remover CPF local e redirecionar direto ao checkout Asaas`
+- Push para origin/main
+
+### Arquivos alterados
+- `app/(dashboard)/checkout/[plan]/page.tsx` — reescrito: removido formulário CPF, adicionado auto-redirect
+
+### Pendências
+- Teste E2E: confirmar que o Asaas pede os dados do cliente no checkout hospedado
+
+---
+
+## Checkout Hospedado — Zeca (Fix name + sem CPF local) — 2026-04-21 22:13 GMT-3
 
 ---
 
@@ -1070,3 +1095,29 @@ if (!asaasCustomerId) {
 - Frontend: ✅ campo aparece, preenche, sanitiza, envia
 - Backend sanitização: ✅ `replace(/\D/g, '')` funciona
 - Backend envio ao Asaas: ❌ CPF ignorado quando customer já existe
+
+---
+
+## Auditoria Final Checkout — Zéfa — 2026-04-21 22:20 GMT-3
+
+### Status: ❌ REPROVADO — 1 bug P0
+
+### Bug P0: parse_error no Asaas checkout
+
+**Todos os 6 planos afetados** (Starter/Plus/Professional × Mensal/Anual).
+
+**Erro:** `Asaas API error 400: [{"code":"parse_error","description":"O campo 'name' precisa ser informado."}]`
+
+**Causa raiz:** `lib/asaas.ts` → `createCheckout()` envia `name` e `email` como campos top-level no payload POST `/checkouts`. A API v3 de checkout do Asaas não aceita esses campos nesse nível — gera parse_error.
+
+**Correção necessária:** Remover `name` e `email` do payload do checkout (o customer já é referenciado por `customerId`). Verificar docs v3 do Asaas para o formato correto.
+
+**Arquivo:** `/home/sidney/eidosform/lib/asaas.ts` → função `createCheckout()`, linhas ~107-115
+
+**Testes executados:**
+- ❌ Teste 1: Starter mensal — parse_error
+- ❌ Teste 2: Starter anual — não testado (mesmo bug)
+- ❌ Teste 3: Plus mensal — parse_error (confirmado)
+- ❌ Teste 4-6: Não testados (mesmo bug de payload)
+
+**Nota:** O `createCustomer()` funciona corretamente (envia `name`/`email` no formato certo). O erro é exclusivo no endpoint de checkout.

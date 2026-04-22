@@ -149,6 +149,10 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
             {loadingCep && <Loader2 className="w-5 h-5 animate-spin text-slate-400 self-center" />}
           </div>
         </div>
+        <div>
+          <Label htmlFor="billing-state">Estado (UF)</Label>
+          <Input id="billing-state" value={form.state} onChange={(e) => updateField('state', e.target.value.toUpperCase())} className="mt-1.5" placeholder="SP" maxLength={2} />
+        </div>
         <div className="md:col-span-2">
           <Label htmlFor="billing-address">Endereço</Label>
           <Input id="billing-address" value={form.address} onChange={(e) => updateField('address', e.target.value)} className="mt-1.5" placeholder="Rua, avenida, etc." />
@@ -168,10 +172,6 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
         <div>
           <Label htmlFor="billing-city">Cidade</Label>
           <Input id="billing-city" value={form.city} onChange={(e) => updateField('city', e.target.value)} className="mt-1.5" />
-        </div>
-        <div>
-          <Label htmlFor="billing-state">Estado (UF)</Label>
-          <Input id="billing-state" value={form.state} onChange={(e) => updateField('state', e.target.value)} className="mt-1.5" placeholder="SP" maxLength={2} />
         </div>
       </div>
 

@@ -5,18 +5,12 @@ import { PLAN_ORDER, normalizePlan } from '@/lib/plans'
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Check, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 const PAID_PLANS = PLAN_ORDER.filter((p) => p !== 'free')
 
 interface CheckoutResponse {
-  subscriptionId?: string
-  status?: string
-  value?: number
-  cycle?: string
-  plan?: string
-  message?: string
-  paymentHint?: string
+  checkoutUrl?: string
   alreadySubscribed?: boolean
   error?: string
 }
@@ -30,7 +24,7 @@ export default function CheckoutPage() {
   const normalized = normalizePlan(plan)
   const isValid = normalized !== 'free' && PAID_PLANS.includes(normalized)
 
-  const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error' | 'already'>('idle')
+  const [state, setState] = useState<'idle' | 'loading' | 'error' | 'already'>('idle')
   const [data, setData] = useState<CheckoutResponse>({})
   const [cpfCnpj, setCpfCnpj] = useState('')
   const [validationError, setValidationError] = useState('')
@@ -53,7 +47,7 @@ export default function CheckoutPage() {
       const json: CheckoutResponse = await res.json()
       setData(json)
 
-      if (!res.ok) {
+      if (!res.ok || !json.checkoutUrl) {
         setState('error')
         return
       }
@@ -61,7 +55,9 @@ export default function CheckoutPage() {
         setState('already')
         return
       }
-      setState('success')
+      // Redirect to Asaas hosted checkout
+      window.location.href = json.checkoutUrl
+      return
     } catch {
       setState('error')
       setData({ error: 'Falha de conexão. Tente novamente.' })
@@ -136,57 +132,13 @@ export default function CheckoutPage() {
           </>
         )}
 
-        {state === 'success' && (
-          <>
-            <div className="text-5xl">✅</div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Assinatura criada!
-            </h1>
-            <Badge className="bg-[#4BB678] text-white border-0 mx-auto">
-              <Check className="w-3 h-3 mr-1" />
-              {data.status?.toUpperCase()}
-            </Badge>
-            <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 text-left text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Plano</span>
-                <span className="font-semibold capitalize">{data.plan}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Ciclo</span>
-                <span className="font-semibold">{cycleLabel}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Valor</span>
-                <span className="font-semibold">
-                  R$ {data.value?.toFixed(2).replace('.', ',')}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">ID Assinatura</span>
-                <span className="font-mono text-xs text-slate-400">{data.subscriptionId}</span>
-              </div>
-              <hr className="border-slate-100" />
-              <p className="text-slate-600 leading-relaxed">{data.message}</p>
-              {data.paymentHint && (
-                <p className="text-slate-500 text-xs italic">{data.paymentHint}</p>
-              )}
-            </div>
-            <Button
-              onClick={() => router.push('/billing')}
-              className="bg-slate-900 hover:bg-slate-800 text-white"
-            >
-              Voltar ao billing
-            </Button>
-          </>
-        )}
-
         {state === 'already' && (
           <>
             <div className="text-5xl">🟡</div>
             <h1 className="text-2xl font-bold text-slate-900">
               Você já tem este plano
             </h1>
-            <p className="text-slate-500">{data.message}</p>
+            <p className="text-slate-500">Você já possui uma assinatura ativa neste plano.</p>
             <Button
               onClick={() => router.push('/billing')}
               className="bg-slate-900 hover:bg-slate-800 text-white"

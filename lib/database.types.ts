@@ -272,6 +272,7 @@ export interface Database {
           welcome_button_text: string | null
           welcome_image_url: string | null
           is_closed: boolean
+          paused: boolean
           hide_branding: boolean
           notify_email_enabled: boolean
           notify_email: string | null
@@ -313,6 +314,7 @@ export interface Database {
           welcome_button_text?: string | null
           welcome_image_url?: string | null
           is_closed?: boolean
+          paused?: boolean
           hide_branding?: boolean
           notify_email_enabled?: boolean
           notify_email?: string | null
@@ -351,6 +353,7 @@ export interface Database {
           welcome_button_text?: string | null
           welcome_image_url?: string | null
           is_closed?: boolean
+          paused?: boolean
           hide_branding?: boolean
           notify_email_enabled?: boolean
           notify_email?: string | null

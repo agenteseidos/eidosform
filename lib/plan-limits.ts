@@ -5,6 +5,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createPublicClient } from '@/lib/supabase/public'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { sendLimitAlert } from '@/lib/resend'
 import { PlanId } from '@/lib/plans'
 import { logError } from '@/lib/logger'
@@ -274,4 +275,107 @@ export async function checkFormLimit(userId: string): Promise<{ allowed: boolean
 
   const usage = count ?? 0
   return { allowed: usage < limits.maxForms, usage, limit: limits.maxForms }
+}
+
+/**
+ * Handle plan downgrade — pause forms above free tier limit
+ *
+ * When a user's plan expires or is cancelled:
+ * 1. Unpause ALL forms first (clean slate)
+ * 2. Get published forms ordered by created_at desc
+ * 3. Pause forms beyond the free tier limit (3)
+ *
+ * Uses service role client to bypass RLS during webhook processing.
+ */
+export async function handleDowngrade(
+  userId: string,
+  serviceRoleKey: string
+): Promise<{ pausedCount: number }> {
+  const supabase = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serviceRoleKey
+  )
+
+  const freeLimit = PLANS.free.maxForms // 3
+
+  // Step 1: Unpause all forms for this user
+  await supabase
+    .from('forms')
+    .update({ paused: false })
+    .eq('user_id', userId)
+
+  // Step 2: Get published forms ordered by most recent first
+  const { data: publishedForms } = await supabase
+    .from('forms')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+
+  if (!publishedForms || publishedForms.length <= freeLimit) {
+    return { pausedCount: 0 }
+  }
+
+  // Step 3: Pause forms beyond the free limit (keep the N most recent active)
+  const formsToPause = publishedForms.slice(freeLimit)
+  const idsToPause = formsToPause.map((f: { id: string }) => f.id)
+
+  const { error } = await supabase
+    .from('forms')
+    .update({ paused: true })
+    .in('id', idsToPause)
+
+  if (error) {
+    logError('[handleDowngrade] Failed to pause forms', error)
+  }
+
+  return { pausedCount: idsToPause.length }
+}
+
+/**
+ * Handle plan upgrade — unpause all forms
+ *
+ * When a user upgrades/reactivates their plan, unpause all forms.
+ */
+export async function handleUpgrade(
+  userId: string,
+  serviceRoleKey: string
+): Promise<{ unpausedCount: number }> {
+  const supabase = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serviceRoleKey
+  )
+
+  const { data: pausedForms } = await supabase
+    .from('forms')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('paused', true)
+
+  if (!pausedForms || pausedForms.length === 0) {
+    return { unpausedCount: 0 }
+  }
+
+  await supabase
+    .from('forms')
+    .update({ paused: false })
+    .eq('user_id', userId)
+    .eq('paused', true)
+
+  return { unpausedCount: pausedForms.length }
+}
+
+/**
+ * Count paused forms for a user
+ */
+export async function countPausedForms(userId: string): Promise<number> {
+  const supabase = createPublicClient()
+
+  const { count } = await supabase
+    .from('forms')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('paused', true)
+
+  return count ?? 0
 }

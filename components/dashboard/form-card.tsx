@@ -22,6 +22,7 @@ import {
   Copy,
   Folder,
   FolderOpen,
+  Pause,
 } from 'lucide-react'
 import { Form, Folder as FolderType, FormStatus } from '@/lib/database.types'
 import { DeleteFormButton } from './delete-form-button'
@@ -167,6 +168,12 @@ export function FormCard({
 
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
+          {(form as { paused?: boolean }).paused && (
+            <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
+              <Pause className="mr-1 h-3 w-3" />
+              Pausado
+            </Badge>
+          )}
           {getStatusBadge(form.status)}
           <Badge variant="outline" className="border-slate-200 text-slate-500 max-w-[140px] truncate">
             <Folder className="mr-1 h-3 w-3" />

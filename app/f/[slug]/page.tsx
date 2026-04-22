@@ -17,7 +17,7 @@ async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient
   // Try by slug first
   const { data: bySlug } = await supabase
     .from('forms')
-    .select('id, title, description, slug, questions, status, theme, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, pixel_event_on_start, pixel_event_on_complete')
+    .select('id, title, description, slug, questions, status, theme, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, pixel_event_on_start, pixel_event_on_complete')
     .eq('slug', slugOrId)
     .eq('status', 'published')
     .single()
@@ -28,7 +28,7 @@ async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient
   if (UUID_RE.test(slugOrId)) {
     const { data: byId } = await supabase
       .from('forms')
-      .select('id, title, description, slug, questions, status, theme, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, pixel_event_on_start, pixel_event_on_complete')
+      .select('id, title, description, slug, questions, status, theme, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, pixel_event_on_start, pixel_event_on_complete')
       .eq('id', slugOrId)
       .eq('status', 'published')
       .single()
@@ -110,6 +110,27 @@ export default async function FormPage({ params }: FormPageProps) {
   // Gate pixel data: strip from payload if plan doesn't allow pixels
   if (!canShowPixels && form.pixels) {
     form.pixels = null as unknown as typeof form.pixels
+  }
+
+  // Paused form (downgrade) — show paused message instead of form
+  if ((form as { paused?: boolean }).paused) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-b from-slate-50 to-white">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-100 flex items-center justify-center">
+            <svg className="w-10 h-10 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-3">
+            Formulário pausado
+          </h1>
+          <p className="text-slate-600">
+            Este formulário está temporariamente indisponível. O criador do formulário precisa atualizar seu plano para reativá-lo.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (

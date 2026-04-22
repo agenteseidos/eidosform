@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { PLAN_ORDER, normalizePlan } from '@/lib/plans'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 
@@ -14,7 +14,7 @@ interface CheckoutResponse {
   error?: string
 }
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const { plan } = useParams<{ plan: string }>()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -134,5 +134,24 @@ export default function CheckoutPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-6 max-w-md px-6">
+            <div className="flex justify-center">
+              <Loader2 className="h-12 w-12 animate-spin text-[#F5B731]" />
+            </div>
+            <p className="text-slate-500">Carregando checkout…</p>
+          </div>
+        </div>
+      }
+    >
+      <CheckoutContent />
+    </Suspense>
   )
 }

@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
-import { PLANS, PlanName } from '@/lib/plan-limits'
+import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
 
@@ -135,6 +135,10 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', user.id)
 
+        // Unpause all forms on upgrade
+        const upgrade = await handleUpgrade(user.id)
+        log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
+
         await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
         break
       }
@@ -158,6 +162,10 @@ export async function POST(req: NextRequest) {
             responses_limit: PLANS.free.maxResponses,
           })
           .eq('id', user.id)
+
+        // Pause forms above free limit
+        const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+        log('[asaas-webhook] Downgrade processed', { userId: user.id, pausedForms: downgrade.pausedCount })
 
         break
       }
@@ -185,6 +193,10 @@ export async function POST(req: NextRequest) {
             responses_used: 0,
           })
           .eq('id', user.id)
+
+        // Pause forms above free limit
+        const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+        log('[asaas-webhook] Downgrade processed', { userId: user.id, pausedForms: downgrade.pausedCount })
 
         await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan }).catch((err) => logError('Failed to send plan cancellation email', err))
         break

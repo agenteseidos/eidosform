@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { PLANS, PlanName } from '@/lib/plan-limits'
+import { PLANS, PlanName, handleDowngrade } from '@/lib/plan-limits'
 import { log, logError } from '@/lib/logger'
 
 /**
@@ -37,12 +37,12 @@ export async function GET() {
         expiredAt: profile.plan_expires_at,
       })
 
-      // Usar service role client para atualizar o profile
       try {
         const serviceClient = createServiceClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
           process.env.SUPABASE_SERVICE_ROLE_KEY!
         )
+
         await serviceClient
           .from('profiles')
           .update({
@@ -53,6 +53,12 @@ export async function GET() {
             responses_limit: PLANS.free.maxResponses,
           })
           .eq('id', user.id)
+
+        const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+        log('[plan-features] Downgrade on expiry processed', {
+          userId: user.id,
+          pausedForms: downgrade.pausedCount,
+        })
       } catch (err) {
         logError('[plan-features] Erro ao reverter plano expirado', err)
       }

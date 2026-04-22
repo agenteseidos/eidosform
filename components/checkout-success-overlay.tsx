@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { CheckCircle2, ArrowRight, AlertCircle, Clock3 } from 'lucide-react'
+import { CheckCircle2, ArrowRight, AlertCircle, Clock3, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -12,6 +12,7 @@ export function CheckoutSuccessOverlay() {
   const [visible, setVisible] = useState(false)
   const [resolvedStatus, setResolvedStatus] = useState<string | null>(null)
   const [isPolling, setIsPolling] = useState(false)
+  const consecutiveErrorsRef = useRef(0)
 
   const status = useMemo(() => searchParams.get('checkout'), [searchParams])
 
@@ -23,8 +24,10 @@ export function CheckoutSuccessOverlay() {
       try {
         const res = await fetch('/api/checkout/status', { cache: 'no-store' })
         const data = await res.json()
+        consecutiveErrorsRef.current = 0
         return data.status as string
       } catch {
+        consecutiveErrorsRef.current += 1
         return 'error'
       }
     }
@@ -39,15 +42,14 @@ export function CheckoutSuccessOverlay() {
       }
 
       if (status === 'success') {
-        // Show waiting state immediately
         if (!mounted) return
         setIsPolling(true)
         setVisible(true)
         window.history.replaceState({}, '', '/billing')
 
-        // Poll every 3s for up to 60s
         const POLL_INTERVAL = 3000
         const MAX_POLL_MS = 60_000
+        const MAX_CONSECUTIVE_ERRORS = 3
         const start = Date.now()
 
         // First check
@@ -85,6 +87,14 @@ export function CheckoutSuccessOverlay() {
             clearInterval(pollTimer)
             setIsPolling(false)
             setResolvedStatus(s)
+            return
+          }
+          // Too many consecutive fetch errors → stop polling, show degraded state
+          if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+            clearInterval(pollTimer)
+            setIsPolling(false)
+            setResolvedStatus('network_error')
+            return
           }
         }, POLL_INTERVAL)
       }
@@ -128,6 +138,17 @@ export function CheckoutSuccessOverlay() {
       }
     }
 
+    if (resolvedStatus === 'network_error') {
+      return {
+        icon: <WifiOff className="w-12 h-12 text-red-400" />,
+        iconWrap: 'bg-red-500/15',
+        title: 'Erro de conexão',
+        description: 'Não conseguimos verificar seu pagamento devido a um problema de conexão. Tente recarregar a página em instantes.',
+        buttonLabel: 'Recarregar',
+        buttonAction: 'reload' as const,
+      }
+    }
+
     // Polling / waiting state
     if (isPolling) {
       return {
@@ -149,6 +170,10 @@ export function CheckoutSuccessOverlay() {
   }, [resolvedStatus])
 
   const handleRedirect = () => {
+    if (content.buttonAction === 'reload') {
+      router.refresh()
+      return
+    }
     router.push('/forms')
   }
 

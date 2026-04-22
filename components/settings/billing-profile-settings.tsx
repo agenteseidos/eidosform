@@ -17,6 +17,7 @@ interface BillingProfileSettingsProps {
     cpfCnpj: string
     address: string
     addressNumber: string
+    complement: string
     postalCode: string
     province: string
     city: string
@@ -122,8 +123,8 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="md:col-span-2">
-          <Label htmlFor="billing-full-name">Nome completo</Label>
-          <Input id="billing-full-name" value={form.fullName} onChange={(e) => updateField('fullName', e.target.value)} className="mt-1.5" />
+          <Label htmlFor="billing-full-name">Nome completo ou nome da empresa</Label>
+          <Input id="billing-full-name" value={form.fullName} onChange={(e) => updateField('fullName', e.target.value)} className="mt-1.5" placeholder="Seu nome ou o nome da sua empresa" />
         </div>
         <div className="md:col-span-2">
           <Label htmlFor="billing-email">E-mail</Label>
@@ -137,6 +138,13 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
           <Label htmlFor="billing-cpfcnpj">CPF ou CNPJ</Label>
           <Input id="billing-cpfcnpj" value={form.cpfCnpj} onChange={(e) => updateField('cpfCnpj', e.target.value)} className="mt-1.5" placeholder="000.000.000-00" />
         </div>
+        <div>
+          <Label htmlFor="billing-postal-code">CEP</Label>
+          <div className="flex gap-2 mt-1.5">
+            <Input id="billing-postal-code" value={form.postalCode} onChange={(e) => { updateField('postalCode', e.target.value); lookupCep(e.target.value) }} className="flex-1" placeholder="00000-000" />
+            {loadingCep && <Loader2 className="w-5 h-5 animate-spin text-slate-400 self-center" />}
+          </div>
+        </div>
         <div className="md:col-span-2">
           <Label htmlFor="billing-address">Endereço</Label>
           <Input id="billing-address" value={form.address} onChange={(e) => updateField('address', e.target.value)} className="mt-1.5" placeholder="Rua, avenida, etc." />
@@ -146,11 +154,8 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
           <Input id="billing-address-number" value={form.addressNumber} onChange={(e) => updateField('addressNumber', e.target.value)} className="mt-1.5" />
         </div>
         <div>
-          <Label htmlFor="billing-postal-code">CEP</Label>
-          <div className="flex gap-2 mt-1.5">
-            <Input id="billing-postal-code" value={form.postalCode} onChange={(e) => { updateField('postalCode', e.target.value); lookupCep(e.target.value) }} className="flex-1" placeholder="00000-000" />
-            {loadingCep && <Loader2 className="w-5 h-5 animate-spin text-slate-400 self-center" />}
-          </div>
+          <Label htmlFor="billing-complement">Complemento</Label>
+          <Input id="billing-complement" value={form.complement ?? ''} onChange={(e) => updateField('complement' as keyof typeof form, e.target.value)} className="mt-1.5" placeholder="Apto, sala, bloco..." />
         </div>
         <div>
           <Label htmlFor="billing-province">Bairro</Label>
@@ -162,7 +167,7 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
         </div>
       </div>
 
-      <Button className="mt-6 bg-blue-600 hover:bg-blue-700" onClick={handleSave} disabled={isSaving}>
+      <Button className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-medium" onClick={handleSave} disabled={isSaving}>
         {isSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : 'Salvar dados de cobrança'}
       </Button>
     </Card>

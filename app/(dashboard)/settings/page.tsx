@@ -74,6 +74,7 @@ export default async function SettingsPage() {
           cpfCnpj: profile?.cpf_cnpj || '',
           address: profile?.address || '',
           addressNumber: profile?.address_number || '',
+          complement: profile?.complement || '',
           postalCode: profile?.postal_code || '',
           province: profile?.province || '',
           city: profile?.city || '',

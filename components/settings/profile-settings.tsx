@@ -46,6 +46,18 @@ export function ProfileSettings({
         toast.error('Falha ao salvar. Tente novamente.')
         console.error('Profile update error:', error)
       } else {
+        // Sync name to profiles table
+        const { data: userData } = await supabase.auth.getUser()
+        const userId = userData.user?.id
+        if (userId) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .update({ full_name: trimmed })
+            .eq('id', userId)
+          if (profileError) {
+            console.error('Profile sync error:', profileError)
+          }
+        }
         toast.success('Perfil atualizado com sucesso!')
       }
     } catch (err) {

@@ -97,6 +97,9 @@ export function FormCard({
           <p className="text-sm text-slate-500 mt-1">
             Atualizado em {formatDate(form.updated_at)}
           </p>
+          <p className="text-xs text-slate-400 mt-0.5 truncate font-mono">
+            /f/{form.slug}
+          </p>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

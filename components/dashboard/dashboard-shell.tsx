@@ -50,6 +50,7 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
   const [assignments, setAssignments] = useState<FolderAssignments>(() => buildAssignments(forms))
   const [selectedFilter, setSelectedFilter] = useState<FolderFilter>('all')
   const [isFolderDialogOpen, setIsFolderDialogOpen] = useState(false)
+  const [isMobileFoldersOpen, setIsMobileFoldersOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
 
   const formsWithFolders = useMemo(() => {
@@ -255,6 +256,16 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
               variant="outline"
               size="icon"
               className="lg:hidden h-11 w-11 shrink-0"
+              onClick={() => setIsMobileFoldersOpen(true)}
+              aria-label="Ver pastas"
+              title="Ver pastas"
+            >
+              <FolderIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="lg:hidden h-11 w-11 shrink-0"
               onClick={() => setIsFolderDialogOpen(true)}
               disabled={isPending}
               aria-label="Nova pasta"
@@ -320,6 +331,47 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
               Criar pasta
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mobile folders drawer */}
+      <Dialog open={isMobileFoldersOpen} onOpenChange={setIsMobileFoldersOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Organização</DialogTitle>
+            <DialogDescription>Navegue pelas suas pastas</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <button
+              onClick={() => { setSelectedFilter('all'); setIsMobileFoldersOpen(false) }}
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${selectedFilter === 'all' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+              <span className="flex items-center gap-2"><Files className="h-4 w-4" /> 📋 Todos</span>
+              <Badge variant="secondary" className="bg-white text-slate-500">{forms.length}</Badge>
+            </button>
+            <button
+              onClick={() => { setSelectedFilter('unassigned'); setIsMobileFoldersOpen(false) }}
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${selectedFilter === 'unassigned' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+              <span className="flex items-center gap-2"><FolderOpen className="h-4 w-4" /> 📁 Sem pasta</span>
+              <Badge variant="secondary" className="bg-white text-slate-500">{formsWithFolders.filter((f) => !f.folder_id).length}</Badge>
+            </button>
+            {folders.map((folder) => (
+              <button
+                key={folder.id}
+                onClick={() => { setSelectedFilter(folder.id); setIsMobileFoldersOpen(false) }}
+                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${selectedFilter === folder.id ? 'bg-amber-50 text-amber-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <span className="flex min-w-0 items-center gap-2"><FolderIcon className="h-4 w-4 shrink-0" /><span className="truncate">{folder.name}</span></span>
+                <Badge variant="secondary" className="bg-white text-slate-500">{formsWithFolders.filter((f) => f.folder_id === folder.id).length}</Badge>
+              </button>
+            ))}
+          </div>
+          <div className="border-t border-slate-100 pt-3">
+            <Button variant="outline" className="w-full justify-start" onClick={() => { setIsMobileFoldersOpen(false); setIsFolderDialogOpen(true) }} disabled={isPending}>
+              <Plus className="mr-2 h-4 w-4" />Nova pasta
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

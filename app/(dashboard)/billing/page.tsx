@@ -40,7 +40,7 @@ export default async function BillingPage() {
         <CheckoutSuccessOverlay />
       </Suspense>
       <div className="flex items-center gap-4 mb-8">
-        <Link href="/billing">
+        <Link href="/forms">
           <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
@@ -57,7 +57,7 @@ export default async function BillingPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-semibold">Uso atual — Plano {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Ciclo reinicia em 1 de abril</p>
+            <p className="text-sm text-slate-500 mt-0.5">Ciclo reinicia em {new Date(Date.now() + 32 * 86400000).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}</p>
           </div>
           <Badge className="bg-[#F5B731]/15 text-[#F5B731] font-semibold border border-[#F5B731]/30">
             {PLAN_LABELS[currentPlan] || currentPlan}

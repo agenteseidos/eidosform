@@ -388,6 +388,8 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
   const [responseToDelete, setResponseToDelete] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [selectedResponse, setSelectedResponse] = useState<Response | null>(null)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 20
 
   // ── Metrics ──
   const metrics = useMemo(() => {
@@ -434,6 +436,13 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
   }, [responses, statusFilter, dateFilter, searchQuery])
 
   const hasActiveFilters = statusFilter !== 'all' || dateFilter !== 'all' || searchQuery.trim() !== ''
+
+  // Reset page on filter change
+  const totalPages = Math.ceil(filteredResponses.length / PAGE_SIZE)
+  const paginatedResponses = filteredResponses.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // Reset page when filters change
+  useMemo(() => { setPage(1) }, [statusFilter, dateFilter, searchQuery])
 
   const handleDelete = async () => {
     if (!responseToDelete) return
@@ -493,7 +502,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
       {/* ── Header ── */}
       <div className="mb-8">
         <div className="flex items-center gap-4 mb-4">
-          <Link href="/billing">
+          <Link href="/forms">
             <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]">
               <ArrowLeft className="w-4 h-4 mr-2" />Voltar
             </Button>
@@ -661,7 +670,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredResponses.map(response => {
+                  {paginatedResponses.map(response => {
                     const ans = response.answers as Record<string, Json>
                     return (
                       <TableRow
@@ -752,6 +761,36 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
           </Card>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-slate-500">
+                Mostrando {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredResponses.length)} de {filteredResponses.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="min-h-[44px]"
+                >
+                  Anterior
+                </Button>
+                <span className="text-sm text-slate-600 px-2">{page} / {totalPages}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="min-h-[44px]"
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
 
           {filteredResponses.length === 0 && (
             <div className="text-center py-12">

@@ -69,7 +69,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
   starter: {
     name: 'Starter',
     monthlyPrice: 49,
-    yearlyPrice: 39.2,
+    yearlyPrice: 29,
     maxResponses: 1000,
     maxForms: 100,
     maxUsers: 1,
@@ -97,7 +97,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     name: 'Plus',
     popular: true,
     monthlyPrice: 127,
-    yearlyPrice: 101.6,
+    yearlyPrice: 97,
     maxResponses: 5000,
     maxForms: -1,
     maxUsers: 1,
@@ -133,7 +133,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
   professional: {
     name: 'Professional',
     monthlyPrice: 257,
-    yearlyPrice: 205.6,
+    yearlyPrice: 197,
     maxResponses: 15000,
     maxForms: -1,
     maxUsers: 10,

@@ -332,6 +332,7 @@ export interface Database {
           pixels: PixelConfig | null
           plan: PlanType
           redirect_url: string | null
+          redirect_delay: number | null
           webhook_url: string | null
           pixel_event_on_start: string | null
           pixel_event_on_complete: string | null
@@ -373,6 +374,7 @@ export interface Database {
           pixels?: PixelConfig | null
           plan?: PlanType
           redirect_url?: string | null
+          redirect_delay?: number | null
           webhook_url?: string | null
           created_at?: string
           pixel_event_on_start?: string | null
@@ -412,6 +414,7 @@ export interface Database {
           pixels?: PixelConfig | null
           plan?: PlanType
           redirect_url?: string | null
+          redirect_delay?: number | null
           webhook_url?: string | null
           updated_at?: string
           pixel_event_on_start?: string | null

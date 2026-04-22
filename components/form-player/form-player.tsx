@@ -114,7 +114,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
   const isFirstQuestion = form.welcome_enabled ? currentIndex === -1 : currentIndex === 0
   // Progresso baseado em total original de perguntas (não visíveis) para evitar saltos com conditional logic
-  const answeredCount = questions.filter(q => q.type !== 'content_block' && answers[q.id] !== undefined && answers[q.id] !== '').length
+  const answeredCount = questions.filter(q => q.type !== 'content_block' && answers[q.id] !== undefined && answers[q.id] !== '' && !(Array.isArray(answers[q.id]) && (answers[q.id] as unknown[]).length === 0)).length
   const questionCount = questions.filter(q => q.type !== 'content_block').length
   const positionProgress = questionCount > 0 ? ((answeredCount + 1) / questionCount) * 100 : 0
   const answeredProgress = questionCount > 0 ? (answeredCount / questionCount) * 100 : 0
@@ -273,7 +273,14 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
     isSubmittedRef.current = true
 
-    const finalAnswers = submissionAnswers ?? answers
+      // Honeypot check
+      const honeypot = (document.querySelector('input[name="_hp_"]') as HTMLInputElement)?.value
+      if (honeypot) {
+        setIsSubmitting(false)
+        return
+      }
+
+      const finalAnswers = submissionAnswers ?? answers
 
     if (!validateCurrentQuestion(finalAnswers)) return
     setIsSubmitting(true)
@@ -321,7 +328,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       if (completeEvent) fireNamedPixelEvent(completeEvent)
       setIsSubmitted(true)
       if (form.redirect_url) {
-        setTimeout(() => { window.location.href = ensureHttps(form.redirect_url!) }, 2800)
+        const redirectDelay = form.redirect_delay != null ? Number(form.redirect_delay) : 2800
+        setTimeout(() => { window.location.href = ensureHttps(form.redirect_url!) }, redirectDelay)
       }
     } catch (e) {
       toast.error('Falha ao enviar resposta')
@@ -574,27 +582,6 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         className="min-h-screen flex items-center justify-center p-6"
         style={{ ...themeStyles, backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
       >
-        {form.pixels && (ownerPlan === 'plus' || ownerPlan === 'professional') && (() => {
-          const px = form.pixels as Record<string, string>
-          const metaId = px.metaPixelId || px.facebook || px.pixel_meta || null
-          const googleAdsId = px.googleAdsId || px.google_ads_id || null
-          const googleAdsLabel = px.googleAdsLabel || px.google_ads_label || null
-          const tiktokId = px.tiktokPixelId || px.tiktok_pixel_id || null
-          const gtmId = px.gtmId || px.gtm_id || null
-          if (!metaId && !googleAdsId && !tiktokId && !gtmId) return null
-          return (
-            <PixelInjector
-              config={{
-                meta_pixel_id: metaId,
-                google_ads_id: googleAdsId,
-                google_ads_label: googleAdsLabel,
-                tiktok_pixel_id: tiktokId,
-                gtm_id: gtmId,
-              }}
-              onReady={(trigger) => { triggerPixelSubmitRef.current = trigger }}
-            />
-          )
-        })()}
         <motion.div
           initial={{ opacity: 0, scale: 0.92, y: 24 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -609,7 +596,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
             style={{ color: theme.textColor }}
           >
             {form.welcome_image_url && (
-              <Image src={form.welcome_image_url} width={200} height={80} className="max-h-20 object-contain mx-auto mb-4" alt="Welcome" />
+              <Image src={form.welcome_image_url} width={200} height={80} className="max-h-20 max-w-full object-contain mx-auto mb-4" alt="Logo do formulário" />
             )}
             {form.welcome_title || form.title}
           </motion.h1>
@@ -689,31 +676,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       style={{ ...themeStyles, backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
     >
 
-      {/* Pixel tracking — suporta camelCase (metaPixelId) e snake_case (pixel_meta) */}
-      {form.pixels && (ownerPlan === 'plus' || ownerPlan === 'professional') && (() => {
-        const px = form.pixels as Record<string, string>
-        const metaId = px.metaPixelId || px.facebook || px.pixel_meta || null
-        const googleAdsId = px.googleAdsId || px.google_ads_id || null
-        const googleAdsLabel = px.googleAdsLabel || px.google_ads_label || null
-        const tiktokId = px.tiktokPixelId || px.tiktok_pixel_id || null
-        const gtmId = px.gtmId || px.gtm_id || null
-        if (!metaId && !googleAdsId && !tiktokId && !gtmId) return null
-        return (
-          <PixelInjector
-            config={{
-              meta_pixel_id: metaId,
-              google_ads_id: googleAdsId,
-              google_ads_label: googleAdsLabel,
-              tiktok_pixel_id: tiktokId,
-              gtm_id: gtmId,
-            }}
-            onReady={(trigger) => { triggerPixelSubmitRef.current = trigger }}
-          />
-        )
-      })()}
-
-      {/* ── Progress bar ── */}
-      <div className="fixed top-0 left-0 right-0 z-50 h-[4px]" style={{ backgroundColor: `${theme.primaryColor}20` }}>
+      {/* ── Progress bar (hidden on welcome screen) ── */}
+      {currentIndex >= 0 && (<>
+      <div className="fixed top-0 left-0 right-0 z-50 h-[4px]" style={{ backgroundColor: `${theme.primaryColor}20` }} role="progressbar" aria-valuenow={Math.round(progressAnim)} aria-valuemin={0} aria-valuemax={100} aria-label="Progresso do formulário">
         <motion.div
           className="h-full rounded-r-full"
           style={{ backgroundColor: theme.primaryColor }}
@@ -731,10 +696,13 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       >
         {Math.round(progressAnim)}%
       </motion.div>
+      </>)}
 
       {/* ── Main content ── */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 pt-8 sm:pt-14 pb-24">
-        <div className="w-full max-w-2xl">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 pt-8 sm:pt-14 pb-28 sm:pb-24">
+        <div className="w-full max-w-2xl" role="form" aria-label={form.title || 'Formulário'}>
+          {/* Honeypot anti-spam */}
+          <input type="text" name="_hp_" autoComplete="off" tabIndex={-1} aria-hidden="true" style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0, width: 0 }} />
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={currentQuestion?.id ?? currentIndex}
@@ -748,6 +716,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
               {!isContentStep && (
                 <>
                   {/* Question number */}
+                  <div role="heading" aria-level={1} className="sr-only">Formulário: {form.title}</div>
                   <motion.div
                     initial={{ opacity: 0, x: -12 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -846,6 +815,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                     disabled={isSubmitting}
                     className="h-12 px-7 text-base font-semibold rounded-xl transition-transform active:scale-95 w-full sm:w-auto"
                     style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
+                    aria-label={isLastQuestion ? 'Enviar resposta' : 'Confirmar e avançar'}
                   >
                     {isSubmitting ? (
                       <span className="flex items-center gap-2">
@@ -874,7 +844,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       </main>
 
       {/* ── Nav footer ── */}
-      <footer className="fixed bottom-0 left-0 right-0 p-4 flex items-center justify-between backdrop-blur-sm" style={{ backgroundColor: `${theme.backgroundColor}CC` }}>
+      <footer className="fixed bottom-0 left-0 right-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center justify-between backdrop-blur-sm" style={{ backgroundColor: `${theme.backgroundColor}CC` }} role="navigation" aria-label="Navegação do formulário">
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"

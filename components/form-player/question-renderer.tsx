@@ -401,7 +401,7 @@ const PhoneQuestion = React.memo(function PhoneQuestion({ question, value, onCha
         </button>
         {isOpen && (
           <div
-            className="absolute top-full right-0 sm:right-auto sm:left-0 mt-1 z-50 min-w-[220px] max-w-[calc(100vw-2rem)] max-h-[280px] overflow-y-auto rounded-xl border shadow-lg"
+            className="absolute bottom-full left-0 sm:left-0 mb-1 z-50 min-w-[220px] max-w-[calc(100vw-2rem)] max-h-[50vh] overflow-y-auto rounded-xl border shadow-lg"
             style={{ backgroundColor: theme.backgroundColor, borderColor: `${theme.textColor}20` }}
           >
             {countries.map((country) => (
@@ -992,12 +992,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
               dangerouslySetInnerHTML={{ __html: contentHtml }}
             />
           ) : (
-            <p
-              className="text-base md:text-lg italic opacity-40"
-              style={{ color: theme.textColor }}
-            >
-              (Conteúdo não preenchido)
-            </p>
+            null
           )}
           {question.contentButtonText ? (
             question.contentButtonUrl ? (

@@ -216,6 +216,10 @@ export async function POST(req: NextRequest) {
       hasHeader: !!accessTokenHeader,
       hasQueryToken: !!accessTokenQuery,
       tokenPrefix: webhookToken.slice(0, 8),
+      headerLen: accessTokenHeader?.length,
+      envLen: webhookToken.length,
+      headerChars: accessTokenHeader ? JSON.stringify(accessTokenHeader).slice(0, 60) : null,
+      envChars: JSON.stringify(webhookToken).slice(0, 60),
     })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

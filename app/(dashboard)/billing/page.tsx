@@ -26,11 +26,12 @@ export default async function BillingPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, responses_used, responses_limit')
+    .select('plan, plan_cycle, responses_used, responses_limit')
     .eq('id', user.id)
     .single()
 
   const currentPlan = (profile?.plan as string) || 'free'
+  const currentCycle = (profile?.plan_cycle as string) || null
   const usedResponses = profile?.responses_used ?? 0
   const planLimit = profile?.responses_limit ?? 100
 
@@ -78,7 +79,7 @@ export default async function BillingPage() {
         </div>
       </Card>
 
-      <BillingPlans currentPlan={currentPlan} />
+      <BillingPlans currentPlan={currentPlan} currentCycle={currentCycle} />
 
       <p className="text-center text-sm text-slate-500 mt-8">
         Todos os planos incluem SSL, backups diários e suporte por e-mail.{' '}

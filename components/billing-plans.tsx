@@ -98,9 +98,10 @@ const plans = [
 
 interface BillingPlansProps {
   currentPlan: string
+  currentCycle: string | null
 }
 
-export function BillingPlans({ currentPlan }: BillingPlansProps) {
+export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('annual')
   const normalizedCurrentPlan = useMemo(() => normalizePlan(currentPlan), [currentPlan])
   const currentPlanIndex = PLAN_ORDER.indexOf(normalizedCurrentPlan)
@@ -147,8 +148,9 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
           const thisPlanIndex = PLAN_ORDER.indexOf(plan.id)
           const isLowerPlan = thisPlanIndex < currentPlanIndex
           const isHigherPlan = thisPlanIndex > currentPlanIndex
-          const isExactPlan = isCurrentPlan // mesmo plano, sem considerar ciclo
-          const disabled = isLowerPlan
+          const currentBillingCycle = billing === 'annual' ? 'YEARLY' : 'MONTHLY'
+          const isSamePlanAndCycle = isCurrentPlan && currentCycle === currentBillingCycle
+          const disabled = isLowerPlan || isSamePlanAndCycle
           // Badge "Mais Popular" só aparece no Plus para usuários no plano Free (social proof para conversão).
           // Quando o usuário já é pagante, o badge é ocultado intencionalmente.
           const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
@@ -224,7 +226,9 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
 
               <Button
                 className={`w-full font-semibold transition-all mt-auto ${
-                  isCurrentPlan
+                  isSamePlanAndCycle
+                    ? 'bg-white/5 text-slate-400 border border-white/[0.06] cursor-not-allowed'
+                    : isCurrentPlan
                     ? 'bg-[#F5B731] hover:bg-[#e5a820] text-black font-bold shadow-lg shadow-[#F5B731]/25 cursor-pointer'
                     : isLowerPlan
                     ? 'bg-white/5 text-slate-400 border border-white/[0.06] cursor-not-allowed'
@@ -237,7 +241,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                   }
                 }}
               >
-                {isLowerPlan ? 'Já incluso no seu plano' : isCurrentPlan ? (billing === 'annual' ? 'Mudar para anual' : 'Mudar para mensal') : plan.cta}
+                {isLowerPlan ? 'Já incluso no seu plano' : isSamePlanAndCycle ? 'Plano atual' : isCurrentPlan ? (billing === 'annual' ? 'Mudar para anual' : 'Mudar para mensal') : plan.cta}
               </Button>
               {plan.id !== 'free' && !isLowerPlan && (
                 <p className="text-xs text-slate-500 text-center mt-2.5">

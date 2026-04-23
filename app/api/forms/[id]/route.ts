@@ -111,7 +111,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const planConfig = PLANS[userPlan]
 
   // Validar plano para pixel events condicionais
-  if (pixel_event_on_start !== undefined || pixel_event_on_complete !== undefined || hasPixelEventRules(questions)) {
+  // Only block when user is trying to SET pixel features to non-null values
+  if ((pixel_event_on_start !== undefined && pixel_event_on_start !== null) ||
+      (pixel_event_on_complete !== undefined && pixel_event_on_complete !== null) ||
+      hasPixelEventRules(questions)) {
     if (!planConfig?.pixels) {
       return NextResponse.json(
         { error: 'Eventos de pixel condicionais disponíveis a partir do plano Plus' },

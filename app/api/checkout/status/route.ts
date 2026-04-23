@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
+import { getSubscription, getCustomerSubscriptions, PLAN_PRICES } from '@/lib/asaas'
+import { PLANS, handleUpgrade } from '@/lib/plan-limits'
+import { type PlanId } from '@/lib/plans'
 import { log } from '@/lib/logger'
 
 /**
@@ -29,7 +31,7 @@ export async function GET() {
       .single(),
     supabase
       .from('billing_checkouts')
-      .select('status, last_event, updated_at, asaas_subscription_id, asaas_customer_id')
+      .select('id, status, last_event, updated_at, asaas_subscription_id, asaas_customer_id, plan, cycle')
       .eq('profile_id', user.id)
       .order('updated_at', { ascending: false })
       .limit(1)
@@ -60,6 +62,80 @@ export async function GET() {
   // ── Slow path: still pending → ask Asaas directly ──
   const asaasSubId = checkout?.asaas_subscription_id
   const asaasCustomerId = checkout?.asaas_customer_id ?? profile?.asaas_customer_id
+  const checkoutPlan = checkout?.plan ?? null
+  const checkoutCycle = checkout?.cycle ?? null
+  const checkoutId = checkout?.id ?? null
+
+  // Helper: persist plan locally when Asaas confirms ACTIVE.
+  // Uses billing_checkouts.plan (saved at checkout creation) and cycle from
+  // the Asaas subscription value. Idempotent — safe if webhook already ran.
+  async function persistPlanFromAsaas(subscriptionId: string, subValue?: number) {
+    if (!checkoutPlan) return
+
+    // Skip if profile already has the correct plan active (webhook or previous poll)
+    if (profile?.plan === checkoutPlan && profile?.plan_status === 'active') {
+      log('[checkout/status] Plan already active locally, skipping persist')
+      return
+    }
+
+    // Detect cycle from subscription value if available
+    let cycle: 'MONTHLY' | 'YEARLY' = (checkoutCycle ?? 'MONTHLY') as 'MONTHLY' | 'YEARLY'
+    if (subValue != null) {
+      const prices = PLAN_PRICES[checkoutPlan as keyof typeof PLAN_PRICES]
+      if (prices) {
+        if (subValue === prices.yearly) cycle = 'YEARLY'
+        else if (subValue === prices.monthly) cycle = 'MONTHLY'
+      }
+    }
+
+    const now = new Date()
+    if (cycle === 'YEARLY') now.setFullYear(now.getFullYear() + 1)
+    else now.setDate(now.getDate() + 30)
+
+    const planConfig = PLANS[checkoutPlan as PlanId]
+
+    log('[checkout/status] Persisting plan from Asaas polling', {
+      userId: user!.id,
+      plan: checkoutPlan,
+      cycle,
+      subscriptionId,
+    })
+
+    await supabase
+      .from('profiles')
+      .update({
+        plan: checkoutPlan as PlanId,
+        plan_status: 'active',
+        plan_expires_at: now.toISOString(),
+        limit_alert_sent: false,
+        responses_limit: planConfig?.maxResponses ?? 100,
+        responses_used: 0,
+        asaas_customer_id: asaasCustomerId ?? profile?.asaas_customer_id,
+        asaas_subscription_id: subscriptionId,
+      })
+      .eq('id', user!.id)
+
+    if (checkoutId) {
+      await supabase
+        .from('billing_checkouts')
+        .update({
+          asaas_subscription_id: subscriptionId,
+          status: 'paid',
+          last_event: 'POLLING_CONFIRMED',
+        })
+        .eq('id', checkoutId)
+    }
+
+    try {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+      if (serviceKey) {
+        const upgrade = await handleUpgrade(user!.id, serviceKey)
+        log('[checkout/status] Upgrade processed via polling', { userId: user!.id, unpausedForms: upgrade.unpausedCount })
+      }
+    } catch (err) {
+      log('[checkout/status] handleUpgrade failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
+    }
+  }
 
   // 1. Try by subscription ID if available
   if (asaasSubId) {
@@ -69,6 +145,7 @@ export async function GET() {
 
       if (asaasStatus === 'ACTIVE') {
         log('[checkout/status] Asaas fallback: subscription ACTIVE', { subId: asaasSubId })
+        await persistPlanFromAsaas(asaasSubId, sub.value)
         return NextResponse.json({ status: 'success' })
       }
 
@@ -99,18 +176,7 @@ export async function GET() {
           customerId: asaasCustomerId,
           subId: active.id,
         })
-        // Backfill subscription ID locally for future fast lookups
-        if (!asaasSubId) {
-          await supabase
-            .from('billing_checkouts')
-            .update({ asaas_subscription_id: active.id })
-            .eq('profile_id', user.id)
-            .is('asaas_subscription_id', null)
-          await supabase
-            .from('profiles')
-            .update({ asaas_subscription_id: active.id })
-            .eq('id', user.id)
-        }
+        await persistPlanFromAsaas(active.id, active.value)
         return NextResponse.json({ status: 'success' })
       }
       log('[checkout/status] Asaas customer fallback: no active subscription', { customerId: asaasCustomerId })

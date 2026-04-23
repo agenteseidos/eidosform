@@ -184,20 +184,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to read body' }, { status: 400 })
   }
 
-  // TEMP: Log all headers and query params for debugging auth
-  const allHeaders: Record<string, string> = {}
-  req.headers.forEach((v, k) => { allHeaders[k] = v })
-  const accessTokenQuery = req.nextUrl.searchParams.get('accessToken')
-  log('[asaas-webhook] Incoming auth context', {
-    headers: allHeaders,
-    hasQueryToken: !!accessTokenQuery,
-    queryTokenPrefix: accessTokenQuery ? accessTokenQuery.slice(0, 8) : null,
-  })
-
   // Auth: accept token via asaas-access-token header, access_token header,
-  // or legacy accessToken query param used by the current Asaas webhook config.
+  // or accessToken query param.
   const webhookToken = (process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN)?.trim()
   const accessTokenHeader = req.headers.get('asaas-access-token') ?? req.headers.get('access_token')
+  const accessTokenQuery = req.nextUrl.searchParams.get('accessToken')
   const hmacHeader = req.headers.get('asaas-signature')
 
   if (!webhookToken) {
@@ -212,14 +203,9 @@ export async function POST(req: NextRequest) {
 
   if (!tokenMatch && !hmacMatch) {
     logWarn('[asaas-webhook] Auth failed', {
-      hasToken: true,
       hasHeader: !!accessTokenHeader,
       hasQueryToken: !!accessTokenQuery,
       tokenPrefix: webhookToken.slice(0, 8),
-      headerLen: accessTokenHeader?.length,
-      envLen: webhookToken.length,
-      headerChars: accessTokenHeader ? JSON.stringify(accessTokenHeader).slice(0, 60) : null,
-      envChars: JSON.stringify(webhookToken).slice(0, 60),
     })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

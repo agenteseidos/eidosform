@@ -1,3 +1,38 @@
+## Handoff — Zeca → Sidney — 2026-04-23 13:15 GMT-3
+
+### Demanda
+Correção estrutural do checkout Asaas — PIX não funciona com cobrança RECURRENT.
+
+### Problema
+A API do Asaas tem duas restrições confirmadas:
+1. CREDIT_CARD é o único método permitido para RECURRENT
+2. RECURRENT não pode ser combinado com outros chargeTypes no mesmo checkout
+
+O commit anterior (`36f217e`) tentou adicionar DETACHED ao lado de RECURRENT, mas isso também falha — a API rejeita a combinação.
+
+### Solução aplicada
+**Regra de negócio: assinaturas recorrentes aceitam APENAS cartão de crédito.**
+
+- `lib/asaas.ts`: `billingTypes: ['CREDIT_CARD']`, `chargeTypes: ['RECURRENT']`
+- `components/billing-plans.tsx`: texto de pagamento atualizado de "💳 Cartão · ⚡ PIX" para "💳 Cartão de crédito"
+
+### Validação
+- `npm run build`: ✅
+- Commit: `3047315`
+
+### Arquivos alterados
+- `lib/asaas.ts` — billingTypes e chargeTypes corrigidos
+- `components/billing-plans.tsx` — UI reflete apenas cartão
+
+### Pendências
+- Se no futuro quiser aceitar Pix, seria necessário um fluxo separado (checkout DETACHED sem recorrência) ou upgrade de plano Asaas
+
+### Próximo passo
+- Testar checkout cartão no sandbox
+- Deploy quando quiser
+
+---
+
 ## Handoff — Toin → Sidney — 2026-04-23 02:28 GMT-3
 
 ### Demanda

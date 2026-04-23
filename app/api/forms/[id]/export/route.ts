@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
+import { buildExcelExport } from '@/lib/export-excel'
 
 interface QuestionRow {
   id: string
@@ -29,8 +30,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const { searchParams } = new URL(req.url)
   const format = searchParams.get('format') || 'csv'
 
-  if (format !== 'csv') {
-    return NextResponse.json({ error: 'Formato não suportado. Use ?format=csv' }, { status: 400 })
+  if (format !== 'csv' && format !== 'xlsx') {
+    return NextResponse.json({ error: 'Formato não suportado. Use ?format=csv ou ?format=xlsx' }, { status: 400 })
   }
 
   const supabase = await createClient()
@@ -104,6 +105,17 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       ...UTM_KEYS.map(k => response[k] ?? ''),
     ]
     rows.push(row.map(escapeCSV).join(','))
+  }
+
+  if (format === 'xlsx') {
+    const buffer = await buildExcelExport(form.title, questions, responses || [])
+    return new NextResponse(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="respostas-${id}.xlsx"`,
+      },
+    })
   }
 
   const csv = '\uFEFF' + rows.join('\r\n')

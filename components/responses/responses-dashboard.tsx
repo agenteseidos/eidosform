@@ -29,6 +29,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -60,6 +61,8 @@ import {
   Users,
   X,
   Lock,
+  FileSpreadsheet,
+  ChevronDown,
 } from 'lucide-react'
 
 interface ResponsesDashboardProps {
@@ -491,6 +494,14 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
     link.click()
   }
 
+  const exportXLSXFromAPI = () => {
+    const url = `/api/forms/${form.id}/export?format=xlsx`
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${form.title || 'form'}-respostas.xlsx`
+    link.click()
+  }
+
   const copyFormLink = () => {
     navigator.clipboard.writeText(`${window.location.origin}/f/${form.slug}`)
     toast.success('Link copiado!')
@@ -537,14 +548,28 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
             {userPlan === 'free' ? (
               <Link href="/billing">
                 <Button size="sm" variant="outline" className="text-slate-500 border-slate-300">
-                  <Lock className="w-4 h-4 mr-2" />Exportar CSV
+                  <Lock className="w-4 h-4 mr-2" />Exportar
                   <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">Starter+</Badge>
                 </Button>
               </Link>
             ) : (
-              <Button onClick={exportCSVFromAPI} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                <Download className="w-4 h-4 mr-2" />Exportar CSV
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                    <Download className="w-4 h-4 mr-2" />Exportar
+                    <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportCSVFromAPI}>
+                    <FileText className="w-4 h-4 mr-2" />CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={exportXLSXFromAPI}>
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />Excel (.xlsx)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>

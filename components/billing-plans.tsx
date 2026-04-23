@@ -251,7 +251,7 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
                   : isSamePlanAndCycle
                   ? 'Plano atual'
                   : isAnnualToMonthlySamePlan || isUnknownCyclePaidPlan
-                  ? 'Disponível ao renovar'
+                  ? 'Indisponível no anual'
                   : isMonthlyToAnnualSamePlan
                   ? 'Mudar para anual'
                   : isCurrentPlan

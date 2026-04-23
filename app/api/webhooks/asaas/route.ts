@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { PLAN_PRICES } from '@/lib/asaas'
+import { PLAN_PRICES, cancelSubscription } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -285,6 +285,24 @@ export async function POST(req: NextRequest) {
           status: 'paid',
           billingType,
         })
+
+        // Cancel old subscription if user had a different one (upgrade scenario)
+        // The new subscription is already confirmed, so it's safe to cancel the old one.
+        try {
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('asaas_subscription_id, plan')
+            .eq('id', user.id)
+            .single()
+
+          const oldSubId = existingProfile?.asaas_subscription_id
+          if (oldSubId && oldSubId !== payment.subscription && existingProfile?.plan !== 'free') {
+            await cancelSubscription(oldSubId)
+            log('[asaas-webhook] Old subscription cancelled after upgrade confirmation', { oldSubscriptionId: oldSubId, newSubscriptionId: payment.subscription })
+          }
+        } catch (err) {
+          logError('[asaas-webhook] Failed to cancel old subscription (non-blocking)', err)
+        }
 
         const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })

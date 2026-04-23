@@ -112,15 +112,78 @@ export async function POST(
         finalPrice: proration.finalPrice,
       })
 
-      // Se crédito cobre o novo plano, não precisa cobrar
+      // Se crédito cobre o novo plano, ativar diretamente no backend
       if (proration.finalPrice <= 0) {
         log('[checkout] Crédito cobre o novo plano, ativando diretamente', {
           userId: profile.profileId,
           credit: proration.credit,
           newPlan: plan,
         })
+
+        // Calcular nova expiração baseada no ciclo do novo plano
+        const now = new Date()
+        if (cycle === 'YEARLY') now.setFullYear(now.getFullYear() + 1)
+        else now.setDate(now.getDate() + 30)
+
+        const planConfig = (await import('@/lib/plan-definitions')).PLANS[plan as PlanId]
+
+        // Atualizar profile com o novo plano
+        await supabase
+          .from('profiles')
+          .update({
+            plan: plan as PlanId,
+            plan_status: 'active',
+            plan_expires_at: now.toISOString(),
+            responses_limit: planConfig?.maxResponses ?? 100,
+            responses_used: 0,
+            limit_alert_sent: false,
+          })
+          .eq('id', profile.profileId)
+
+        // Cancelar assinatura antiga no Asaas (seguro: upgrade garantido pelo crédito)
+        if (profile.asaasSubscriptionId) {
+          try {
+            await cancelSubscription(profile.asaasSubscriptionId)
+            log('[checkout] Assinatura anterior cancelada (proration credit)', { oldSubscriptionId: profile.asaasSubscriptionId })
+            await supabase
+              .from('profiles')
+              .update({ asaas_subscription_id: null })
+              .eq('id', profile.profileId)
+          } catch (err) {
+            logError('[checkout] Falha ao cancelar assinatura antiga (proration)', err)
+          }
+        }
+
+        // Processar upgrade (unpause forms, etc.)
+        try {
+          const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+          if (serviceKey) {
+            const upgrade = await (await import('@/lib/plan-limits')).handleUpgrade(profile.profileId, serviceKey)
+            log('[checkout] Upgrade processado via proration credit', { userId: profile.profileId, unpausedForms: upgrade.unpausedCount })
+          }
+        } catch (err) {
+          logError('[checkout] handleUpgrade falhou (proration credit)', err)
+        }
+
+        // Registrar checkout como pago
+        await supabase
+          .from('billing_checkouts')
+          .upsert({
+            profile_id: profile.profileId,
+            checkout_id: `proration-${Date.now()}`,
+            asaas_customer_id: profile.asaasCustomerId ?? null,
+            plan,
+            cycle,
+            status: 'paid',
+            last_event: 'PRORATION_CREDIT_COVERED',
+            payment_method: 'proration_credit',
+            original_price: proration.originalPrice,
+            proration_credit: proration.credit,
+            final_price: 0,
+          }, { onConflict: 'checkout_id' })
+
         return NextResponse.json({
-          message: 'Seu crédito cobre o novo plano. Ele será ativado automaticamente.',
+          status: 'success',
           coveredByCredit: true,
           proration,
         })
@@ -131,20 +194,10 @@ export async function POST(
   }
 
   try {
-    // Cancela assinatura anterior se existir
-    if (profile.asaasSubscriptionId && profile.plan !== plan) {
-      try {
-        await cancelSubscription(profile.asaasSubscriptionId)
-        log('[checkout] Assinatura anterior cancelada', { oldSubscriptionId: profile.asaasSubscriptionId })
-        await supabase
-          .from('profiles')
-          .update({ asaas_subscription_id: null })
-          .eq('id', profile.profileId)
-      } catch (err) {
-        logError('[checkout] Falha ao cancelar assinatura anterior', err)
-        // Não bloqueia, continua criando a nova
-      }
-    }
+    // NÃO cancelar assinatura anterior aqui.
+    // O cancelamento é feito no webhook (PAYMENT_CONFIRMED/PAYMENT_RECEIVED)
+    // para evitar que o usuário perca o plano se abandonar o checkout.
+    // Ver P0 #1 — handoff de auditoria Zéfa.
 
     // Criar ou obter customer no Asaas sempre alinhado ao perfil logado
     let customerId = profile.asaasCustomerId

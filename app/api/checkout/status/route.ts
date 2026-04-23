@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getSubscription, getCustomerSubscriptions, PLAN_PRICES } from '@/lib/asaas'
+import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
 import { PLANS, handleUpgrade } from '@/lib/plan-limits'
 import { type PlanId } from '@/lib/plans'
 import { log } from '@/lib/logger'
@@ -69,7 +69,7 @@ export async function GET() {
   // Helper: persist plan locally when Asaas confirms ACTIVE.
   // Uses billing_checkouts.plan (saved at checkout creation) and cycle from
   // the Asaas subscription value. Idempotent — safe if webhook already ran.
-  async function persistPlanFromAsaas(subscriptionId: string, subValue?: number) {
+  async function persistPlanFromAsaas(subscriptionId: string) {
     if (!checkoutPlan) return
 
     // Skip if profile already has the correct plan active (webhook or previous poll)
@@ -78,15 +78,10 @@ export async function GET() {
       return
     }
 
-    // Detect cycle from subscription value if available
-    let cycle: 'MONTHLY' | 'YEARLY' = (checkoutCycle ?? 'MONTHLY') as 'MONTHLY' | 'YEARLY'
-    if (subValue != null) {
-      const prices = PLAN_PRICES[checkoutPlan as keyof typeof PLAN_PRICES]
-      if (prices) {
-        if (subValue === prices.yearly) cycle = 'YEARLY'
-        else if (subValue === prices.monthly) cycle = 'MONTHLY'
-      }
-    }
+    // checkoutCycle (from billing_checkouts, saved at checkout creation) is the
+    // single source of truth for the billing cycle. Do NOT infer from subValue
+    // because prorated values never match exact plan prices.
+    const cycle: 'MONTHLY' | 'YEARLY' = (checkoutCycle ?? 'MONTHLY') as 'MONTHLY' | 'YEARLY'
 
     const now = new Date()
     if (cycle === 'YEARLY') now.setFullYear(now.getFullYear() + 1)
@@ -145,7 +140,7 @@ export async function GET() {
 
       if (asaasStatus === 'ACTIVE') {
         log('[checkout/status] Asaas fallback: subscription ACTIVE', { subId: asaasSubId })
-        await persistPlanFromAsaas(asaasSubId, sub.value)
+        await persistPlanFromAsaas(asaasSubId)
         return NextResponse.json({ status: 'success' })
       }
 
@@ -176,7 +171,7 @@ export async function GET() {
           customerId: asaasCustomerId,
           subId: active.id,
         })
-        await persistPlanFromAsaas(active.id, active.value)
+        await persistPlanFromAsaas(active.id)
         return NextResponse.json({ status: 'success' })
       }
       log('[checkout/status] Asaas customer fallback: no active subscription', { customerId: asaasCustomerId })

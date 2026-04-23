@@ -11,6 +11,7 @@ import { validateAllAnswers } from '@/lib/field-validators'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { appendSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
+import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 
 // Maximum payload size (50KB — generous for form data, blocks abuse)
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -339,6 +340,24 @@ export async function POST(req: NextRequest) {
         questionIdToLabel,
         utmData,
       ).catch((e) => logError('Google Sheets sync failed:', e))
+    }
+
+    // Meta Conversions API (CAPI) — server-side Lead event (Plus+ only)
+    if (ownerPlanConfig?.pixels && metaEvents.length > 0) {
+      const pii = extractPIIFromAnswers(
+        answers as Record<string, unknown>,
+        form.questions as Array<{ id: string; type?: string; title?: string; fields?: Array<{ id: string; ref?: string }> }>
+      )
+      const userAgent = req.headers.get('user-agent') ?? undefined
+      for (const eventId of metaEvents) {
+        sendMetaCAPIEvent({
+          ...pii,
+          ip,
+          userAgent,
+          eventId,
+          formTitle: form.title ?? undefined,
+        }).catch((err) => logError('Failed to send Meta CAPI event', err))
+      }
     }
 
     // Webhook externo configurado pelo usuário — feature gated

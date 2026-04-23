@@ -112,6 +112,11 @@ export default async function FormPage({ params }: FormPageProps) {
     form.pixels = null as unknown as typeof form.pixels
   }
 
+  // Detect if form is loaded inside an iframe
+  // Note: We can't reliably detect iframe server-side in all cases,
+  // so we pass the info to the client component for enforcement
+  const canEmbed = ownerPlan === 'plus' || ownerPlan === 'professional'
+
   // Paused form (downgrade) — show paused message instead of form
   if ((form as { paused?: boolean }).paused) {
     return (
@@ -145,7 +150,7 @@ export default async function FormPage({ params }: FormPageProps) {
           }}
         />
       )}
-      <FormPlayer form={form} ownerPlan={ownerPlan} />
+      <FormPlayer form={form} ownerPlan={ownerPlan} allowEmbed={canEmbed} />
     </>
   )
 }

@@ -7,7 +7,7 @@ import { PixelEventRule } from '@/types/pixel-events'
 import { getTheme, getThemeCSSVariables } from '@/lib/themes'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
-import { ChevronUp, ChevronDown, Check, ArrowRight, Lock } from 'lucide-react'
+import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
 import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
@@ -19,6 +19,7 @@ import { createClient } from '@/lib/supabase/client'
 interface FormPlayerProps {
   ownerPlan?: string
   form: Form
+  allowEmbed?: boolean
 }
 
 interface PendingAnswerOverride {
@@ -32,7 +33,7 @@ function ensureHttps(url: string): string {
   return 'https://' + url
 }
 
-export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'free' }: FormPlayerProps) {
+export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'free', allowEmbed = false }: FormPlayerProps) {
   const questions = (form.questions as QuestionConfig[]) || []
   const theme = getTheme(form.theme)
   const themeStyles = getThemeCSSVariables(theme)
@@ -48,6 +49,46 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const [navigationHistory, setNavigationHistory] = useState<number[]>([])
   const metaEvents = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
   const partialResponsesEnabled = (ownerPlan === 'plus' || ownerPlan === 'professional')
+  const [isEmbedded, setIsEmbedded] = useState(false)
+
+  // Detect iframe embedding
+  useEffect(() => {
+    try {
+      if (window.self !== window.top) {
+        setIsEmbedded(true)
+      }
+    } catch {
+ setIsEmbedded(true)
+    }
+  }, [])
+
+  // Block unauthorized embeds
+  if (isEmbedded && !allowEmbed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-b from-slate-50 to-white">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-violet-100 flex items-center justify-center">
+            <Lock className="w-10 h-10 text-violet-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-3">
+            Embed não disponível
+          </h1>
+          <p className="text-slate-600 mb-4">
+            A incorporação de formulários requer o plano <span className="font-semibold">Plus</span> ou superior.
+          </p>
+          <a
+            href={`${window.location.origin}/f/${(form as { slug?: string }).slug || ''}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors text-sm font-medium"
+          >
+            Abrir formulário
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   // Check authentication on mount
   useEffect(() => {

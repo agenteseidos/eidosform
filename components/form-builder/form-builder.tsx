@@ -31,6 +31,7 @@ import {
   Trash2,
   GripVertical,
   Eye,
+  Code,
 
   Globe,
   RefreshCw,
@@ -228,6 +229,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const [showPublishDialog, setShowPublishDialog] = useState(false)
   const [showAddQuestion, setShowAddQuestion] = useState(false)
   const [activeTab, setActiveTab] = useState('questions')
+  const [embedWidth, setEmbedWidth] = useState('100%')
+  const [embedHeight, setEmbedHeight] = useState('600')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<'questions' | 'editor' | 'preview'>('questions')
   const [isUploadingImage, setIsUploadingImage] = useState(false)
@@ -530,9 +533,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     setHasUnsavedChanges(true)
   }
 
+  const formUrl = typeof window !== 'undefined' ? `${window.location.origin}/f/${form.slug}` : `/f/${form.slug}`
+  const embedCode = `<iframe src="${formUrl}" width="${embedWidth}" height="${embedHeight}px" frameborder="0" style="border:none;max-width:100%;" loading="lazy" title="${form.title || 'Formulário'}"></iframe>`
+
   const copyFormLink = () => {
-    const link = `${window.location.origin}/f/${form.slug}`
-    navigator.clipboard.writeText(link)
+    navigator.clipboard.writeText(formUrl)
     toast.success('Link copiado!')
   }
 
@@ -1471,6 +1476,70 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       </a>
                     </Button>
                   </div>
+                </div>
+
+                {/* Embed Section — gated by plan */}
+                <div>
+                  {userPlan === 'plus' || userPlan === 'professional' ? (
+                    <>
+                      <Label className="text-sm font-medium text-slate-700">Embed (iframe)</Label>
+                      <p className="text-xs text-slate-500 mt-0.5">Cole este código no site do seu cliente para incorporar o formulário</p>
+                      <div className="mt-3 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <Label className="text-xs text-slate-500">Largura</Label>
+                            <Input
+                              type="number"
+                              value={embedWidth}
+                              onChange={(e) => setEmbedWidth(e.target.value)}
+                              placeholder="100%"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <Label className="text-xs text-slate-500">Altura (px)</Label>
+                            <Input
+                              type="number"
+                              value={embedHeight}
+                              onChange={(e) => setEmbedHeight(e.target.value)}
+                              placeholder="600"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="p-3 bg-slate-900 rounded-lg border border-slate-700 overflow-auto max-h-40">
+                          <code className="text-xs text-green-400 whitespace-pre-wrap break-all">{embedCode}</code>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(embedCode)
+                            toast.success('Código de embed copiado!')
+                          }}
+                          className="w-full"
+                        >
+                          <Code className="w-4 h-4 mr-1.5" />
+                          Copiar código de embed
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-slate-200 bg-amber-50 p-4">
+                      <div className="flex items-start gap-3">
+                        <Lock className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium text-amber-800">Embed disponível a partir do plano Plus</p>
+                          <p className="text-xs text-amber-600 mt-1">
+                            Incorpore formulários diretamente no site dos seus clientes.
+                          </p>
+                          <Link href="/billing" className="inline-flex items-center text-xs text-amber-700 underline mt-2 hover:text-amber-900">
+                            Fazer upgrade
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>

@@ -239,7 +239,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               </Button>
               {plan.id !== 'free' && !isCurrentPlan && !isLowerPlan && (
                 <p className="text-xs text-slate-500 text-center mt-2.5">
-                  💳 Cartão · ⚡ PIX · 📄 Boleto
+                  💳 Cartão · ⚡ PIX
                 </p>
               )}
             </div>

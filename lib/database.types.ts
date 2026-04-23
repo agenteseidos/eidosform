@@ -150,6 +150,7 @@ export interface Database {
           plan_expires_at: string | null
           asaas_customer_id: string | null
           asaas_subscription_id: string | null
+          plan_cycle: string | null
           phone: string | null
           cpf_cnpj: string | null
           address: string | null
@@ -178,6 +179,7 @@ export interface Database {
           plan_expires_at?: string | null
           asaas_customer_id?: string | null
           asaas_subscription_id?: string | null
+          plan_cycle?: string | null
           phone?: string | null
           cpf_cnpj?: string | null
           address?: string | null
@@ -206,6 +208,7 @@ export interface Database {
           plan_expires_at?: string | null
           asaas_customer_id?: string | null
           asaas_subscription_id?: string | null
+          plan_cycle?: string | null
           phone?: string | null
           cpf_cnpj?: string | null
           address?: string | null

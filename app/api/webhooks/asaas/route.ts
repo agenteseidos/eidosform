@@ -184,18 +184,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to read body' }, { status: 400 })
   }
 
-  const hmacSecret = process.env.ASAAS_WEBHOOK_SECRET
+  const webhookToken = process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN
 
-  if (!hmacSecret) {
-    logError('[asaas-webhook] ASAAS_WEBHOOK_SECRET not configured')
+  if (!webhookToken) {
+    logError('[asaas-webhook] ASAAS_WEBHOOK_SECRET or ASAAS_WEBHOOK_TOKEN not configured')
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  // P1-4: Always use HMAC verification — legacy token fallback removed
-  const signatureHeader = req.headers.get('asaas-signature')
-  if (!verifyAsaasSignature(rawBody, signatureHeader, hmacSecret)) {
-    logWarn('[asaas-webhook] HMAC signature verification failed')
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Primary auth: token comparison (Asaas sends token in "access_token" header)
+  const accessTokenHeader = req.headers.get('access_token')
+  if (accessTokenHeader && accessTokenHeader === webhookToken) {
+    log('[asaas-webhook] Authenticated via access_token header')
+  } else {
+    // Secondary: HMAC verification if asaas-signature header is present
+    const signatureHeader = req.headers.get('asaas-signature')
+    if (signatureHeader) {
+      if (!verifyAsaasSignature(rawBody, signatureHeader, webhookToken)) {
+        logWarn('[asaas-webhook] HMAC signature verification failed')
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      log('[asaas-webhook] Authenticated via HMAC signature')
+    } else {
+      logWarn('[asaas-webhook] No valid access_token or asaas-signature header')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
   }
 
   let body: AsaasWebhookBody

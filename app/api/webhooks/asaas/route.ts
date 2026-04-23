@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
 
   // Auth: accept token via asaas-access-token header, access_token header,
   // or legacy accessToken query param used by the current Asaas webhook config.
-  const webhookToken = process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN
+  const webhookToken = (process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN)?.trim()
   const accessTokenHeader = req.headers.get('asaas-access-token') ?? req.headers.get('access_token')
   const hmacHeader = req.headers.get('asaas-signature')
 

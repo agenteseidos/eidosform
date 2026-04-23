@@ -1,3 +1,55 @@
+## Handoff — Zeca → Sidney — 2026-04-23 13:50 GMT-3
+
+### Demanda
+Bug urgente pós-checkout Asaas: pagamento confirmado no Asaas mas UI mostrava "Pagamento ainda não confirmado".
+
+### Causa Raiz
+O checkout hospedado do Asaas **não retorna subscription ID na criação** — esse ID só é populado quando o webhook `PAYMENT_CONFIRMED` chega e o handler atualiza o `billing_checkouts`. O `/api/checkout/status` só fazia fallback ao Asaas se tivesse `asaas_subscription_id` local. Se o usuário voltava rápido (antes do webhook), o endpoint não conseguia verificar o pagamento no Asaas e retornava "pending".
+
+Além disso, `billing_checkouts.status === 'paid'` não era reconhecido como sucesso.
+
+### O que foi feito
+
+**`app/api/checkout/status/route.ts`:**
+- Adicionado fast path: se `billing_checkouts.status === 'paid'` → retorna `success`
+- Quando `asaas_subscription_id` não existe mas `asaas_customer_id` sim → consulta assinaturas do customer no Asaas como segundo fallback
+- Se encontra subscription ACTIVE no Asaas → backfill do `asaas_subscription_id` no `billing_checkouts` e `profiles` para futuras consultas rápidas
+- Passa a buscar `asaas_customer_id` tanto do checkout quanto do profile
+
+**`lib/asaas.ts`:**
+- Nova função `getCustomerSubscriptions(customerId)` — lista assinaturas de um customer via API do Asaas
+
+### Validação
+- `npm run build`: ✅
+- Commit: `6e52e1c`
+
+### Arquivos alterados
+- `app/api/checkout/status/route.ts`
+- `lib/asaas.ts`
+
+### Regra final do fluxo pós-checkout
+1. Usuário paga no checkout Asaas
+2. Asaas redireciona para `/billing?checkout=success`
+3. Overlay polling `/api/checkout/status` a cada 3s (até 120s)
+4. Resolução de status (em ordem):
+   - `profiles.plan` + `plan_status === 'active'` → **success** (webhook já processou)
+   - `billing_checkouts.status === 'paid'` → **success** (webhook atualizou checkout)
+   - `billing_checkouts.status === 'cancelled'`/`'overdue'` → cancel/expire
+   - Se tem `asaas_subscription_id` → consulta Asaas diretamente
+   - Se tem `asaas_customer_id` (sempre disponível) → lista subscriptions do customer no Asaas
+   - Se Asaas diz ACTIVE → backfill IDs local + **success**
+   - Senão → **pending** (continua polling)
+5. Webhook `PAYMENT_CONFIRMED` eventualmente chega e atualiza tudo
+
+### Pendências
+- Nenhuma
+
+### Próximo passo
+- Testar checkout completo no sandbox
+- Deploy quando quiser
+
+---
+
 ## Handoff — Zeca → Sidney — 2026-04-23 13:15 GMT-3
 
 ### Demanda

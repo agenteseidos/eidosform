@@ -1,3 +1,34 @@
+## Handoff — Zeca → Sidney — 2026-04-23 14:39 GMT-3
+
+### Demanda
+Fix crítico: webhook do Asaas nunca funcionava porque a autenticação verificava HMAC (header `asaas-signature`), mas o Asaas sandbox envia o token no header `access_token`. Resultado: todo webhook recebido retornava 401.
+
+### Causa Raiz
+- O Asaas sandbox usa "Token de autenticação" que envia no header `access_token`
+- O código verificava HMAC via `asaas-signature` — nunca batia
+- `.env.example` tinha `ASAAS_WEBHOOK_TOKEN` mas o código lia `ASAAS_WEBHOOK_SECRET`
+
+### O que foi feito
+
+**`app/api/webhooks/asaas/route.ts`:**
+- Auth primária: compara header `access_token` com `ASAAS_WEBHOOK_SECRET` (ou `ASAAS_WEBHOOK_TOKEN` como fallback)
+- Auth secundária: HMAC via `asaas-signature` (mantido como fallback)
+- Se nenhum header presente → 401
+- Se nenhuma env var configurada → 500
+- Polling `/api/checkout/status` já funciona independente do webhook (verificado, sem alteração necessária)
+
+### Arquivos alterados
+- `app/api/webhooks/asaas/route.ts`
+
+### Pendências
+- Sidney precisa ativar a fila de sincronização de webhooks no painel do Asaas
+- Confirmar que a env var `ASAAS_WEBHOOK_SECRET` (ou `ASAAS_WEBHOOK_TOKEN`) está setada no Vercel com o token configurado no Asaas
+
+### Commit
+- `0c2170d` — push para main concluído
+
+---
+
 ## Handoff — Zeca → Sidney — 2026-04-23 14:10 GMT-3
 
 ### Demanda

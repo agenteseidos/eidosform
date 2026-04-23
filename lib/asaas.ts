@@ -124,8 +124,8 @@ export async function createCheckout(params: {
   const itemDescription = `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`
   const payload = {
     customer: customerId,
-    billingTypes: ['CREDIT_CARD', 'PIX'],
-    chargeTypes: ['RECURRENT', 'DETACHED'],
+    billingTypes: ['CREDIT_CARD'],
+    chargeTypes: ['RECURRENT'],
     subscription: {
       value: price,
       nextDueDate: nextDueDate.toISOString().split('T')[0],

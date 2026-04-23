@@ -43,7 +43,7 @@ export async function generateMetadata({ params }: FormPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
 
-  const form = await fetchPublishedForm(supabase, slug) as { title: string; description: string | null; slug: string } | null
+  const form = await fetchPublishedForm(supabase, slug) as { id: string; title: string; description: string | null; slug: string } | null
 
   if (!form) {
     return { title: 'Formulário Não Encontrado' }
@@ -53,6 +53,20 @@ export async function generateMetadata({ params }: FormPageProps) {
   const description = form.description || 'Preencha este formulário'
   const url = `https://eidosform.com.br/f/${form.slug}`
 
+  // Fetch owner plan for white-label OG tags
+  let ownerPlan = 'free'
+  try {
+    const planRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'}/api/forms/${form.id}/plan`, {
+      next: { revalidate: 3600 },
+    })
+    if (planRes.ok) {
+      const { plan } = await planRes.json()
+      ownerPlan = plan
+    }
+  } catch { /* ignore */ }
+
+  const isWhiteLabel = ownerPlan === 'professional'
+
   return {
     title,
     description,
@@ -60,7 +74,7 @@ export async function generateMetadata({ params }: FormPageProps) {
       title,
       description,
       url,
-      siteName: 'EidosForm',
+      siteName: isWhiteLabel ? title : 'EidosForm',
       type: 'website',
       images: [
         {
@@ -106,6 +120,11 @@ export default async function FormPage({ params }: FormPageProps) {
   const rawPixelId = px.metaPixelId || px.facebook || px.meta_pixel_id || px.pixel_meta || null
   const metaPixelId = rawPixelId && /^\d{10,20}$/.test(rawPixelId.trim()) ? rawPixelId.trim() : null
   const canShowPixels = ownerPlan === 'plus' || ownerPlan === 'professional'
+
+  // White-label: force hide_branding for Plus and Professional plans
+  if ((ownerPlan === 'plus' || ownerPlan === 'professional') && !form.hide_branding) {
+    form.hide_branding = true as unknown as typeof form.hide_branding
+  }
 
   // Gate pixel data: strip from payload if plan doesn't allow pixels
   if (!canShowPixels && form.pixels) {

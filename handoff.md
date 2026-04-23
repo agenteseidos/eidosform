@@ -1,28 +1,36 @@
-## Handoff — Toin → Sidney — 2026-04-22 21:55 GMT-3
+## Handoff — Toin → Sidney — 2026-04-22 22:14 GMT-3
 
 ### Demanda
-Adicionar PIX e Boleto como métodos de pagamento no checkout do EidosForm.
+Implementar exportação PDF no EidosForm.
 
 ### O que foi feito
-1. **`lib/asaas.ts`** — `billingTypes` alterado de `['CREDIT_CARD']` para `['CREDIT_CARD', 'PIX', 'BOLETO']`
-2. **Migration** — `supabase/migrations/20260422_payment_method_column.sql` cria coluna `payment_method TEXT` na tabela `billing_checkouts` (ainda precisa ser aplicada manualmente no Supabase — não há DB access neste ambiente)
-3. **`app/api/checkout/[plan]/route.ts`** — Upsert salva `payment_method: null` na criação do checkout
-4. **`app/api/webhooks/asaas/route.ts`** — `updateCheckoutLink` agora aceita `billingType` e salva na coluna `payment_method` quando recebido do webhook
-5. **`components/billing-plans.tsx`** — Cards de planos pagantes exibem "💳 Cartão · ⚡ PIX · 📄 Boleto" abaixo do botão CTA
-6. **Webhooks** — Confirmado que `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED` já tratam PIX e Boleto igual cartão (sem mudança necessária)
-7. **TypeScript** — Build passa sem erros
-8. **Commit & push** — `69b5bcb` em `main`
+1. **`lib/export-pdf.ts`** — Novo módulo que gera PDF com jsPDF + jspdf-autotable:
+   - Título do formulário no topo com data de exportação
+   - Tabela com todas as respostas (landscape A4, fonte compacta)
+   - Header com cor emerald-500, linhas alternadas
+   - Paginação automática com rodapé (número de página + branding EidosForm)
+2. **`app/api/forms/[id]/export/route.ts`** — Endpoint estendido com `?format=pdf`:
+   - Gate por plano: PDF só disponível para Plus e Professional
+   - Content-Type: `application/pdf`
+3. **`lib/plan-limits.ts`** — Adicionado campo `pdfExport: boolean` em `PlanConfig`:
+   - free/starter: `false`
+   - plus/professional: `true`
+4. **`components/responses/responses-dashboard.tsx`** — Dropdown de exportação agora tem 3 opções:
+   - CSV / Excel (.xlsx) / PDF
+5. **Dependências instaladas:** `jspdf` + `jspdf-autotable`
+6. **TypeScript** — Build passa sem erros
+7. **Commit & push** — `03e1f93` em `main`
 
 ### Arquivos alterados
-- `lib/asaas.ts` (1 linha)
-- `app/api/checkout/[plan]/route.ts` (1 campo no upsert)
-- `app/api/webhooks/asaas/route.ts` (billingType no updateCheckoutLink)
-- `components/billing-plans.tsx` (indicadores de pagamento nos cards)
-- `supabase/migrations/20260422_payment_method_column.sql` (novo)
+- `lib/export-pdf.ts` (novo)
+- `lib/plan-limits.ts` (campo pdfExport)
+- `app/api/forms/[id]/export/route.ts` (suporte PDF + gate por plano)
+- `components/responses/responses-dashboard.tsx` (opção PDF no dropdown)
+- `package.json` + `package-lock.json` (jspdf, jspdf-autotable)
 
 ### Pendências
-- ⚠️ **Migration precisa ser aplicada manualmente** no Supabase: `ALTER TABLE billing_checkouts ADD COLUMN IF NOT EXISTS payment_method TEXT;`
-- Testar PIX e Boleto em sandbox do Asaas
+- Nenhuma
 
 ### Próximo passo
-- Sidney aplica a migration no Supabase e testa o checkout
+- Sidney testa a exportação PDF no dashboard
+- Considerar adicionar "Exportação PDF" nos features dos planos Plus/Professional no pricing/billing

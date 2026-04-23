@@ -150,14 +150,12 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
           const isHigherPlan = thisPlanIndex > currentPlanIndex
           const currentBillingCycle = billing === 'annual' ? 'YEARLY' : 'MONTHLY'
           const isSamePlanAndCycle = isCurrentPlan && currentCycle === currentBillingCycle
-          // Se está no anual, desativa mensal do mesmo plano (não há estorno)
-          // Se está no mensal, permite trocar pra anual
-          // Free nunca mostra troca de ciclo
-          const isDowngradeCycle = isCurrentPlan && plan.id !== 'free' && currentCycle === 'YEARLY' && currentBillingCycle === 'MONTHLY'
-          // Se plano pago sem ciclo conhecido, desativa troca de ciclo (não sabemos se é anual)
-          const isUnknownCyclePaidPlan = isCurrentPlan && plan.id !== 'free' && !currentCycle
+          const isPaidPlan = plan.id !== 'free'
+          const isAnnualToMonthlySamePlan = isCurrentPlan && isPaidPlan && currentCycle === 'YEARLY' && currentBillingCycle === 'MONTHLY'
+          const isMonthlyToAnnualSamePlan = isCurrentPlan && isPaidPlan && currentCycle === 'MONTHLY' && currentBillingCycle === 'YEARLY'
+          const isUnknownCyclePaidPlan = isCurrentPlan && isPaidPlan && !currentCycle
           const isFreeCurrentPlan = isCurrentPlan && plan.id === 'free'
-          const disabled = isLowerPlan || isSamePlanAndCycle || isDowngradeCycle || isFreeCurrentPlan || isUnknownCyclePaidPlan
+          const disabled = isLowerPlan || isSamePlanAndCycle || isAnnualToMonthlySamePlan || isFreeCurrentPlan || isUnknownCyclePaidPlan
           // Badge "Mais Popular" só aparece no Plus para usuários no plano Free (social proof para conversão).
           // Quando o usuário já é pagante, o badge é ocultado intencionalmente.
           const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
@@ -233,12 +231,10 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
 
               <Button
                 className={`w-full font-semibold transition-all mt-auto ${
-                  isSamePlanAndCycle
+                  disabled
                     ? 'bg-white/5 text-slate-400 border border-white/[0.06] cursor-not-allowed'
-                    : isCurrentPlan
+                    : isCurrentPlan && isMonthlyToAnnualSamePlan
                     ? 'bg-[#F5B731] hover:bg-[#e5a820] text-black font-bold shadow-lg shadow-[#F5B731]/25 cursor-pointer'
-                    : isLowerPlan
-                    ? 'bg-white/5 text-slate-400 border border-white/[0.06] cursor-not-allowed'
                     : 'bg-[#F5B731] hover:bg-[#e5a820] text-black font-bold shadow-lg shadow-[#F5B731]/25'
                 }`}
                 disabled={disabled}
@@ -248,7 +244,19 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
                   }
                 }}
               >
-                {isLowerPlan ? 'Já incluso no seu plano' : isFreeCurrentPlan ? 'Plano atual' : isSamePlanAndCycle ? 'Plano atual' : isDowngradeCycle || isUnknownCyclePaidPlan ? 'Disponível ao renovar' : isCurrentPlan ? (billing === 'annual' ? 'Mudar para anual' : 'Mudar para mensal') : plan.cta}
+                {isLowerPlan
+                  ? 'Já incluso no seu plano'
+                  : isFreeCurrentPlan
+                  ? 'Plano atual'
+                  : isSamePlanAndCycle
+                  ? 'Plano atual'
+                  : isAnnualToMonthlySamePlan || isUnknownCyclePaidPlan
+                  ? 'Disponível ao renovar'
+                  : isMonthlyToAnnualSamePlan
+                  ? 'Mudar para anual'
+                  : isCurrentPlan
+                  ? 'Plano atual'
+                  : plan.cta}
               </Button>
               {plan.id !== 'free' && !isLowerPlan && (
                 <p className="text-xs text-slate-500 text-center mt-2.5">

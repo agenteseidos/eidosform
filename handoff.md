@@ -1,27 +1,42 @@
-## Handoff — Zéfa (auditoria venda/conversão) — 2026-04-22 20:43 GMT-3
+## Handoff — Toin (embed de formulários) — 2026-04-22 21:01 GMT-3
 
 ### Demanda
-Auditoria focada em features de venda e conversão do EidosForm.
+Implementar feature de embed de formulários via iframe, com gating por plano.
 
 ### O que foi feito
-Mapeamento completo de 6 áreas: pixels/tracking, webhooks/integrações, billing/checkout, distribuição/white-label, exportação, e features gerais. Identificados gaps entre oferta e produto real, bugs com impacto comercial, e classificação por impacto em venda.
+1. **Aba Compartilhar (builder)** — adicionada seção de embed com:
+   - Campos de largura e altura configuráveis
+   - Código iframe gerado dinamicamente para copiar
+   - Gating: só aparece se plano for Plus ou Professional
+   - Upsell com link para /billing para Free/Starter
+
+2. **Player público (/f/[slug])** — detecção de iframe:
+   - Detecta `window.self !== window.top` para identificar embed
+   - Se plano do dono NÃO for Plus/Professional → mostra mensagem de bloqueio com link para abrir em nova aba
+   - Se plano for Plus/Professional → renderiza normalmente (sem branding via hide_branding já existente)
+
+3. **Headers CSP** — já existiam `frame-ancestors *` para `/f/:slug`, sem mudança necessária
+
+### Regras implementadas
+- Free/Starter: sem embed (bloqueado no player + upsell no builder)
+- Plus: embed permitido, sem marca
+- Professional: embed permitido, sem marca + white-label
+
+### Arquivos alterados
+- `components/form-builder/form-builder.tsx` — seção embed na aba Compartilhar + state embedWidth/embedHeight + embedCode
+- `components/form-player/form-player.tsx` — prop allowEmbed + detecção iframe + tela de bloqueio
+- `app/f/[slug]/page.tsx` — pass allowEmbed=true se plano for Plus/Professional
 
 ### Resultado
-Relatório completo em `docs/audit-venda-conversao.md`.
-
-**Destaques:**
-- 🔴 **3 gaps críticos:** Embed/iframe (inexistente), Multi-user Pro (vendido, não implementado), White-label parcial (só remove watermark)
-- 🟠 **5 gaps altos:** Exportação PDF/Excel, branding de conta, PIX/Boleto, Meta CAPI, Webhook HMAC+logs
-- 🐛 **7 bugs com impacto comercial:** emails duplicados (P1), feature gating client-side, data do ciclo hardcoded, UTM storage bug, TikTok duplicado, código morto
-- Roadmap sugerido em 4 sprints priorizados
-
-### Arquivos criados/alterados
-- `docs/audit-venda-conversao.md` (novo — relatório completo)
+- TypeScript compila sem erros
+- Commit: `cf63994` — pushado na main
+- Build falha por erro pré-existente (supabaseUrl missing), não relacionado
 
 ### Pendências
-- Nenhuma bloqueante. Recomenda-se seguir roadmap do relatório.
+- Nenhuma bloqueante
+- Não foi necessária migration SQL (feature usa apenas plano já existente)
 
 ### Próximo passo
-- Sidney revisar relatório e decidir priorização do Sprint 1
-- Embed snippet é o quick-win de maior impacto
-- Decisão sobre multi-user Pro: implementar ou remover da oferta
+- Sidney revisar
+- Testar manualmente: embed de um form Plus em site externo
+- Testar: embed de form Free deve ser bloqueado

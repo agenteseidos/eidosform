@@ -125,6 +125,7 @@ export async function POST(
         cycle,
         status: 'pending',
         last_event: 'CHECKOUT_CREATED',
+        payment_method: null,
       }, { onConflict: 'checkout_id' })
 
     return NextResponse.json({

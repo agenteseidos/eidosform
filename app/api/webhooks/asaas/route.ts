@@ -135,9 +135,10 @@ async function updateCheckoutLink(params: {
   subscriptionId?: string | null
   event: string
   status: string
+  billingType?: string
 }) {
   const supabase = getSupabase()
-  const { customerId, subscriptionId, event, status } = params
+  const { customerId, subscriptionId, event, status, billingType } = params
   const { checkoutLink } = await resolveBillingContext({ customerId, subscriptionId })
 
   if (!checkoutLink) {
@@ -152,6 +153,7 @@ async function updateCheckoutLink(params: {
       asaas_subscription_id: subscriptionId ?? checkoutLink.asaas_subscription_id,
       status,
       last_event: event,
+      ...(billingType ? { payment_method: billingType } : {}),
     })
     .eq('id', checkoutLink.id)
 }
@@ -265,11 +267,14 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', user.id)
 
+        const billingType = (body as unknown as Record<string, unknown>).billingType as string | undefined
+
         await updateCheckoutLink({
           customerId,
           subscriptionId: payment.subscription ?? null,
           event,
           status: 'paid',
+          billingType,
         })
 
         const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)

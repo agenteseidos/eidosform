@@ -237,6 +237,11 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               >
                 {isCurrentPlan ? 'Plano atual' : isLowerPlan ? 'Já incluso no seu plano' : plan.cta}
               </Button>
+              {plan.id !== 'free' && !isCurrentPlan && !isLowerPlan && (
+                <p className="text-xs text-slate-500 text-center mt-2.5">
+                  💳 Cartão · ⚡ PIX · 📄 Boleto
+                </p>
+              )}
             </div>
           )
         })}

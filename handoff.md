@@ -1,81 +1,152 @@
-## Handoff — Toin → Sidney — 2026-04-22 22:30 GMT-3
+## Handoff — Zéfa → Sidney — 2026-04-22 21:52 GMT-3
 
 ### Demanda
-Implementar 3 features: HMAC webhook, logs de webhook, exportação Excel.
+Mapear o que precisa ser feito para adicionar PIX e Boleto como métodos de pagamento no checkout do EidosForm.
 
 ### O que foi feito
+Mapeamento completo de código, API Asaas, webhooks e fluxo de ativação.
 
 ---
 
-## 1. HMAC no Webhook do Asaas ✅ (commit `0e75b3f`)
+## 1. Como o checkout hospedado do Asaas funciona com múltiplos métodos de pagamento
 
-**Arquivos criados/alterados:**
-- `lib/webhook-hmac.ts` — NOVO: função `verifyAsaasSignature(payload, signatureHeader, secret)`
-  - Parse do header `asaas-signature` (formato `timestamp=X&hash=H`)
-  - HMAC-SHA256 via crypto nativo do Node
-  - Anti-replay: rejeita timestamps > 5min
-  - `timingSafeEqual` para comparação constante
-- `app/api/webhooks/asaas/route.ts` — ALTERADO: lê body como texto, verifica HMAC antes de parsear JSON
-  - Se `ASAAS_WEBHOOK_SECRET` configurado → HMAC obrigatório
-  - Se não configurado → fallback para token legado (`asaas-access-token`)
-  - Ambos coexistem: HMAC + token legado (backward compat)
+O checkout hospedado (endpoint `POST /v3/checkouts`) aceita um array `billingTypes` que define quais métodos o usuário pode escolher na tela de pagamento.
 
-**Variável de ambiente necessária:**
-- `ASAAS_WEBHOOK_SECRET` — obtido no painel do Asaas (configuração do webhook). **Adicionar ao .env e ao Supabase secrets.**
+**Estado atual** (`lib/asaas.ts`, linha do `createCheckout`):
+```js
+billingTypes: ['CREDIT_CARD'],
+```
 
----
+**Para adicionar PIX e Boleto**, basta alterar para:
+```js
+billingTypes: ['CREDIT_CARD', 'PIX', 'BOLETO'],
+```
 
-## 2. Logs de Webhook ✅ (commit `25fdd98`)
-
-**Arquivos criados/alterados:**
-- `supabase/migrations/20260422_webhook_logs.sql` — NOVO: tabela `webhook_logs`
-  - Campos: `id, event, status, payload (jsonb), error, profile_id, created_at`
-  - RLS habilitado, policy service_role full access
-  - **EXECUTAR ESTA MIGRATION NO SUPABASE**
-- `lib/webhook-logger.ts` — NOVO: `logWebhookEvent(supabase, { event, status, payload, error, profileId })`
-  - Insere de forma assíncrona (fire-and-forget)
-  - Silencia falhas de logging (não quebra o webhook principal)
-- `app/api/webhooks/asaas/route.ts` — ALTERADO: integra logging em 3 pontos
-  - `received` → quando evento chega
-  - `processed` → após processamento OK
-  - `error` → quando falha
-- `lib/logger.ts` — ALTERADO: removido gate `NODE_ENV === 'development'`, agora loga sempre
-
-**Pendente:**
-- Executar migration `20260422_webhook_logs.sql` no Supabase Dashboard
+Isso é tudo no lado do Asaas — a tela de checkout hospedado já renderiza os botões de seleção de método automaticamente. O Asaas cuida da geração do QR Code PIX, do código de barras do boleto, etc.
 
 ---
 
-## 3. Exportação Excel ✅ (commit `be2ea8d`)
+## 2. O que precisa mudar no código
 
-**Arquivos criados/alterados:**
-- `package.json` — DEPENDÊNCIA: `exceljs` adicionado
-- `lib/export-excel.ts` — NOVO: gera `.xlsx` com exceljs
-  - Headers em negrito com fundo cinza
-  - Auto-width nas colunas
-  - Mesmas colunas do CSV (ID, Submetido em, Completo, perguntas, meta_events, UTM)
-- `app/api/forms/[id]/export/route.ts` — ALTERADO: aceita `?format=xlsx`
-  - Retorna `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-  - Gate por plano: usa `csvExport` (mesma lógica do CSV)
-  - CSV continua funcionando normalmente
-- `components/responses/responses-dashboard.tsx` — ALTERADO
-  - Botão "Exportar CSV" virou **DropdownMenu** com 2 opções: CSV e Excel (.xlsx)
-  - Ícone Download como trigger
-  - Usa Radix DropdownMenu (já era dependência)
+### 2.1. `lib/asaas.ts` — `createCheckout()` ⭐ (única mudança obrigatória)
+- **Linha:** `billingTypes: ['CREDIT_CARD']`
+- **Mudar para:** `billingTypes: ['CREDIT_CARD', 'PIX', 'BOLETO']`
+- **Impacto:** Baixíssimo — 1 linha
+
+### 2.2. `components/billing-plans.tsx` — UX (recomendado)
+- Atualmente os planos mostram apenas preço e botão "Assinar"
+- **Opcional:** adicionar ícones/badges indicando que PIX e Boleto estão disponíveis (ajuda conversão)
+- **Impacto:** Baixo — HTML/CSS apenas
+
+### 2.3. `app/(dashboard)/checkout/[plan]/page.tsx` — Nenhuma mudança necessária
+- A página apenas redireciona para a URL do checkout hospedado
+- A escolha do método acontece na tela do Asaas
+
+### 2.4. `app/api/checkout/[plan]/route.ts` — Nenhuma mudança necessária
+- A API cria o checkout e retorna a URL
+- Não há seleção de método no backend (é feito no frontend do Asaas)
+
+### 2.5. `components/checkout-success-overlay.tsx` — Nenhuma mudança necessária
+- Exibe mensagem genérica de sucesso
 
 ---
 
-### Validação
-- ✅ TypeScript build limpo (`tsc --noEmit`)
-- ✅ 3 commits separados na main
-- ✅ Push na main feito
+## 3. Webhook: já cobre PIX e Boleto?
+
+**Sim, parcialmente.** O webhook (`app/api/webhooks/asaas/route.ts`) já trata:
+
+| Evento | Cobre PIX? | Cobre Boleto? |
+|--------|-----------|---------------|
+| `PAYMENT_CONFIRMED` | ✅ | ✅ |
+| `PAYMENT_RECEIVED` | ✅ | ✅ |
+| `PAYMENT_OVERDUE` | ✅ | ✅ |
+| `SUBSCRIPTION_DELETED` | ✅ | ✅ |
+
+**Importante:** O Asaas dispara `PAYMENT_RECEIVED` quando PIX é confirmado (instantâneo, geralmente < 5 min) e quando boleto é compensado (até 3 dias úteis). O webhook já trata ambos os eventos de forma idêntica — ativa o plano.
+
+**⚠️ Evento extra recomendado:** `PAYMENT_PENDING` — o Asaas dispara quando um boleto é gerado mas ainda não foi pago. Pode ser útil para:
+- Mostrar status "Aguardando pagamento do boleto" na UI
+- Não é obrigatório para MVP
+
+---
+
+## 4. Fluxo de ativação de plano: PIX vs Boleto
+
+### PIX (instantâneo)
+- Usuário paga → Asaas confirma → webhook `PAYMENT_RECEIVED` → plano ativado
+- **Latência típica:** segundos a poucos minutos
+- **Sem mudança necessária** no fluxo atual
+
+### Boleto (até 3 dias úteis)
+- Usuário recebe código de barras → paga no banco/app → compensação → webhook `PAYMENT_RECEIVED` → plano ativado
+- **Janela:** até 3 dias úteis (boleto vence geralmente em 1-3 dias)
+- **Risco:** se o boleto expirar sem pagamento, Asaas dispara `PAYMENT_OVERDUE`
+
+### Mudanças recomendadas no fluxo:
+
+1. **`app/api/checkout/status/route.ts`** — Atualmente trata `pending` como "aguardando". Funciona para PIX e Boleto. **Nenhuma mudança obrigatória**, mas seria ideal diferenciar visualmente na UI:
+   - "PIX gerado — aguardando pagamento" vs "Boleto gerado — pague até DD/MM"
+
+2. **`app/(dashboard)/billing/page.tsx`** — Verificar como o status de "pending" é exibido. Pode melhorar a UX mostrando instruções específicas por método de pagamento.
+
+3. **`billing_checkouts` table** — Adicionar coluna `payment_method` (nullable) para saber qual método o usuário escolheu. O Asaas envia essa info nos webhooks de pagamento, mas hoje não é salva.
+
+### Fluxo de downgrade (boleto expirado)
+- Já funciona: `PAYMENT_OVERDUE` → downgrade para free
+- **Sem mudança necessária**
+
+---
+
+## 5. Complexidade e dependências
+
+### Complexidade: **BAIXA** ⭐
+
+Isso é surpreendentemente simples porque:
+- O Asaas checkout hospedado já suporta múltiplos métodos nativamente
+- A mudança principal é 1 linha de código
+- Os webhooks já tratam PIX e Boleto
+
+### Mudanças obrigatórias (MVP):
+1. `lib/asaas.ts`: mudar `billingTypes` — **1 linha**
+
+### Mudanças recomendadas (UX/polimento):
+2. `components/billing-plans.tsx`: indicar PIX/Boleto disponíveis — **HTML/CSS**
+3. `app/(dashboard)/billing/page.tsx`: melhorar UX de status pending — **frontend**
+4. `billing_checkouts` table: adicionar coluna `payment_method` — **migration + webhook update**
+
+### Dependências externas:
+- **Nenhuma.** O Asaas já suporta PIX e Boleto na API de checkout hospedado.
+- **Nenhuma configuração extra** no painel do Asaas necessária.
+
+### Riscos:
+- **Baixo.** Mudança não-invasiva — adiciona opções, não remove nenhuma.
+- Cartão de crédito continua funcionando exatamente como antes.
+
+---
+
+## Resumo executivo
+
+| Item | Status |
+|------|--------|
+| Checkout Asaas (multi-método) | ✅ Suportado nativamente |
+| Mudança no código (MVP) | 1 linha em `lib/asaas.ts` |
+| Webhooks PIX/Boleto | ✅ Já cobertos |
+| Fluxo de ativação | ✅ Funciona sem mudança |
+| UX/Polimento | Recomendado, não obrigatório |
+| Complexidade | Baixa |
+| Dependências externas | Nenhuma |
+
+### Arquivos mapeados
+- `lib/asaas.ts` (criação do checkout — mudança principal)
+- `app/api/checkout/[plan]/route.ts` (API route — sem mudança)
+- `app/api/webhooks/asaas/route.ts` (webhook — já cobre PIX/Boleto)
+- `app/api/checkout/status/route.ts` (status polling — funciona como está)
+- `app/(dashboard)/checkout/[plan]/page.tsx` (página checkout — sem mudança)
+- `components/billing-plans.tsx` (cards de planos — polimento UX)
 
 ### Pendências
-1. **Executar migration** `20260422_webhook_logs.sql` no Supabase Dashboard
-2. **Configurar** `ASAAS_WEBHOOK_SECRET` no `.env` e nos secrets do Supabase/Vercel
-3. **PDF export** — não implementado (prioridade menor, sprint futuro)
+- Implementar a mudança (1 linha + UX opcional)
+- Testar PIX e Boleto em sandbox do Asaas
 
 ### Próximo passo
-- Sidney validar e fazer deploy
-- Testar webhook HMAC no staging
-- Executar migration no Supabase
+- Sidney decide se faz só a 1 linha (MVP) ou inclui polimento UX

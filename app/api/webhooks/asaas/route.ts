@@ -10,6 +10,7 @@ import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limi
 import { PLAN_PRICES } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature } from '@/lib/webhook-hmac'
+import { logWebhookEvent } from '@/lib/webhook-logger'
 
 function getSupabase() {
   return createClient(
@@ -220,6 +221,7 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabase()
 
   log('[asaas-webhook] Event received', { event })
+  await logWebhookEvent({ event, status: 'received', payload: body })
 
   try {
     switch (event) {
@@ -372,8 +374,15 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     logError('[asaas-webhook] Erro ao processar evento:', err)
+    await logWebhookEvent({
+      event,
+      status: 'error',
+      payload: body,
+      error: err instanceof Error ? err.message : String(err),
+    })
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 
+  await logWebhookEvent({ event, status: 'processed', payload: body })
   return NextResponse.json({ received: true })
 }

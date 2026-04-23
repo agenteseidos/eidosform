@@ -125,7 +125,7 @@ export async function createCheckout(params: {
   const payload = {
     customer: customerId,
     billingTypes: ['CREDIT_CARD', 'PIX'],
-    chargeTypes: ['RECURRENT'],
+    chargeTypes: ['RECURRENT', 'DETACHED'],
     subscription: {
       value: price,
       nextDueDate: nextDueDate.toISOString().split('T')[0],

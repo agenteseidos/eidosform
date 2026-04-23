@@ -57,9 +57,9 @@ export async function POST(
   }
 
   // Se já tem assinatura ativa no plano escolhido, retorna info
-  if (profile.asaasSubscriptionId && profile.plan === plan) {
+  if (profile.asaasSubscriptionId && profile.plan === plan && profile.plan_cycle === cycle) {
     return NextResponse.json({
-      message: 'Você já possui este plano ativo',
+      message: 'Você já possui este plano ativo neste ciclo',
       alreadySubscribed: true,
     })
   }

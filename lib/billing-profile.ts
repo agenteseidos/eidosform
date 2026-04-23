@@ -17,6 +17,7 @@ export type BillingProfile = {
   asaasCustomerId: string | null
   asaasSubscriptionId: string | null
   plan: string
+  plan_cycle: string | null
 }
 
 export type BillingFieldKey = keyof Pick<
@@ -77,6 +78,7 @@ export function mapProfileRowToBillingProfile(profile: Record<string, unknown>, 
     asaasCustomerId: cleanString(profile.asaas_customer_id),
     asaasSubscriptionId: cleanString(profile.asaas_subscription_id),
     plan: cleanString(profile.plan) ?? 'free',
+    plan_cycle: cleanString(profile.plan_cycle),
   }
 }
 

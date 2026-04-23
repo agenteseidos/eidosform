@@ -266,6 +266,7 @@ export async function POST(req: NextRequest) {
           .from('profiles')
           .update({
             plan,
+            plan_cycle: cycle,
             plan_status: 'active',
             plan_expires_at: planExpiresAt,
             limit_alert_sent: false,

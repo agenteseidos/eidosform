@@ -9,6 +9,7 @@ import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
+import { verifyAsaasSignature } from '@/lib/webhook-hmac'
 
 function getSupabase() {
   return createClient(
@@ -172,25 +173,45 @@ interface AsaasWebhookBody {
 }
 
 export async function POST(req: NextRequest) {
-  const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN
-  if (!expectedToken) {
-    logError('[asaas-webhook] ASAAS_WEBHOOK_TOKEN not configured, rejecting all requests')
-    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
+  // Read raw body text first (needed for HMAC verification)
+  let rawBody: string
+  try {
+    rawBody = await req.text()
+  } catch {
+    return NextResponse.json({ error: 'Failed to read body' }, { status: 400 })
   }
 
-  const headerToken = req.headers.get('asaas-access-token')
-  const url = new URL(req.url)
-  const queryToken = url.searchParams.get('accessToken')
-  const token = headerToken || queryToken
+  const hmacSecret = process.env.ASAAS_WEBHOOK_SECRET
 
-  if (!token || token !== expectedToken) {
-    logWarn('[asaas-webhook] Token mismatch')
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (hmacSecret) {
+    // HMAC verification mode
+    const signatureHeader = req.headers.get('asaas-signature')
+    if (!verifyAsaasSignature(rawBody, signatureHeader, hmacSecret)) {
+      logWarn('[asaas-webhook] HMAC signature verification failed')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  } else {
+    // Fallback: legacy token verification
+    const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN
+    if (!expectedToken) {
+      logError('[asaas-webhook] Neither ASAAS_WEBHOOK_SECRET nor ASAAS_WEBHOOK_TOKEN configured')
+      return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
+    }
+
+    const headerToken = req.headers.get('asaas-access-token')
+    const url = new URL(req.url)
+    const queryToken = url.searchParams.get('accessToken')
+    const token = headerToken || queryToken
+
+    if (!token || token !== expectedToken) {
+      logWarn('[asaas-webhook] Token mismatch')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
   }
 
   let body: AsaasWebhookBody
   try {
-    body = await req.json() as AsaasWebhookBody
+    body = JSON.parse(rawBody) as AsaasWebhookBody
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }

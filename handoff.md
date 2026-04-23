@@ -49,6 +49,55 @@ Corrigir bugs encontrados nos testes de browser (auditoria-browser.md).
 
 ---
 
+## Handoff — Zeca → Sidney — 2026-04-23 12:10 GMT-3
+
+### Demanda
+BUG URGENTE no checkout Pix/Asaas, reproduzido em teste manual.
+
+### Erros exibidos
+- "O método de pagamento CREDIT_CARD é o único método de pagamento permitido para operações RECURRENT"
+- "O tipo de cobrança DETACHED é obrigatório para o método de pagamento PIX"
+
+### Causa Raiz
+Em `lib/asaas.ts`, função `createCheckout`:
+
+```typescript
+billingTypes: ['CREDIT_CARD', 'PIX'],
+chargeTypes: ['RECURRENT'],  // ← PROBLEMA AQUI
+```
+
+**Como o Asaas funciona:**
+- CREDIT_CARD suporta RECURRENT para assinaturas
+- **PIX só suporta DETACHED**, não RECURRENT
+- Ao forçar apenas `['RECURRENT']`, o PIX falha
+
+### O que foi feito
+
+**Correção aplicada:**
+- Alterado `chargeTypes: ['RECURRENT']` → `chargeTypes: ['RECURRENT', 'DETACHED']`
+- Isso permite:
+  - CREDIT_CARD usar RECURRENT (fluxo de assinatura)
+  - PIX usar DETACHED (pagamento avulso que cria assinatura)
+- Cartão continua funcionando sem regressão
+
+**Validação:**
+- `npm run build`: ✅ passa limpo
+- Teste manual: pendente validação no sandbox Asaas
+
+### Arquivos alterados
+- `lib/asaas.ts` — linha 97: `chargeTypes: ['RECURRENT', 'DETACHED']`
+
+### Commit
+- `36f217e` — fix: allow PIX in checkout by adding DETACHED charge type
+
+### Pendências
+- Testar checkout PIX no sandbox Asaas para confirmar funcionamento
+
+### Próximo passo
+- Testar PIX no sandbox antes de deploy para produção
+
+---
+
 ## Handoff — Toin → Sidney — 2026-04-23 11:30 GMT-3
 
 ### Demanda

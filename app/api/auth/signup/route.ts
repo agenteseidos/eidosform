@@ -67,11 +67,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // If Supabase returns a session, email autoconfirm is ON — user is already authenticated
+    const autoConfirmed = !!data.session
     return NextResponse.json(
       {
         success: true,
         user: data.user,
-        message: 'Signup successful. Please verify your email.',
+        autoConfirmed,
+        message: autoConfirmed
+          ? 'Signup successful. Welcome!'
+          : 'Signup successful. Please verify your email.',
       },
       { status: 201 }
     )

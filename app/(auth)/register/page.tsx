@@ -99,7 +99,11 @@ function RegisterForm() {
       }
       setIsLoading(false)
     } else {
-      router.push(`/verify-email?email=${encodeURIComponent(email)}${callbackNext ? `&next=${encodeURIComponent(callbackNext)}` : ''}`)
+      if (json.autoConfirmed) {
+        router.push(callbackNext || '/dashboard')
+      } else {
+        router.push(`/verify-email?email=${encodeURIComponent(email)}${callbackNext ? `&next=${encodeURIComponent(callbackNext)}` : ''}`)
+      }
     }
   }
 

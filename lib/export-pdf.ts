@@ -32,7 +32,8 @@ function cellValue(value: unknown): string {
 export function buildPdfExport(
   formTitle: string,
   questions: QuestionRow[],
-  responses: ResponseRow[]
+  responses: ResponseRow[],
+  hideBranding = false
 ): Uint8Array {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
@@ -106,12 +107,14 @@ export function buildPdfExport(
         doc.internal.pageSize.getHeight() - 8,
         { align: 'center' }
       )
-      // Branding
-      doc.text(
-        'EidosForm',
-        14,
-        doc.internal.pageSize.getHeight() - 8
-      )
+      // Branding (hide for white-label plans)
+      if (!hideBranding) {
+        doc.text(
+          'EidosForm',
+          14,
+          doc.internal.pageSize.getHeight() - 8
+        )
+      }
     },
   })
 

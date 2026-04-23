@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Form, Response, QuestionConfig, Json } from '@/lib/database.types'
+import { PLANS, PlanName } from '@/lib/plan-limits'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -577,9 +578,11 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                     <FileSpreadsheet className="w-4 h-4 mr-2" />Excel (.xlsx)
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={exportPDFFromAPI}>
-                    <File className="w-4 h-4 mr-2" />PDF
-                  </DropdownMenuItem>
+                  {PLANS[userPlan as PlanName]?.pdfExport && (
+                    <DropdownMenuItem onClick={exportPDFFromAPI}>
+                      <File className="w-4 h-4 mr-2" />PDF
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}

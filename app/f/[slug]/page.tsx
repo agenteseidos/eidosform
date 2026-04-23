@@ -13,6 +13,21 @@ interface FormPageProps {
 // UUID v4 regex
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+async function fetchOwnerPlan(supabase: ReturnType<typeof createPublicClient>, formId: string): Promise<string> {
+  const { data: form } = await supabase
+    .from('forms')
+    .select('user_id')
+    .eq('id', formId)
+    .single()
+  if (!form?.user_id) return 'free'
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', form.user_id)
+    .single()
+  return (profile?.plan as string) || 'free'
+}
+
 async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient>, slugOrId: string) {
   // Try by slug first
   const { data: bySlug } = await supabase
@@ -54,16 +69,7 @@ export async function generateMetadata({ params }: FormPageProps) {
   const url = `https://eidosform.com.br/f/${form.slug}`
 
   // Fetch owner plan for white-label OG tags
-  let ownerPlan = 'free'
-  try {
-    const planRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'}/api/forms/${form.id}/plan`, {
-      next: { revalidate: 3600 },
-    })
-    if (planRes.ok) {
-      const { plan } = await planRes.json()
-      ownerPlan = plan
-    }
-  } catch { /* ignore */ }
+  const ownerPlan = await fetchOwnerPlan(supabase, form.id)
 
   const isWhiteLabel = ownerPlan === 'professional'
 
@@ -100,19 +106,7 @@ export default async function FormPage({ params }: FormPageProps) {
   }
 
   // Fetch owner's plan to gate pixel rendering
-  let ownerPlan = 'free'
-  try {
-    const planResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'}/api/forms/${form.id}/plan`, {
-      next: { revalidate: 3600 }, // Cache for 1 hour
-    })
-    if (planResponse.ok) {
-      const { plan } = await planResponse.json()
-      ownerPlan = plan
-    }
-  } catch {
-    // Fallback to free if plan fetch fails
-    ownerPlan = 'free'
-  }
+  const ownerPlan = await fetchOwnerPlan(supabase, form.id)
 
   // Extract Meta Pixel ID from form pixels config (suporte a camelCase e snake_case)
   const px = (form.pixels as Record<string, string> | null) ?? {}
@@ -123,12 +117,12 @@ export default async function FormPage({ params }: FormPageProps) {
 
   // White-label: force hide_branding for Plus and Professional plans
   if ((ownerPlan === 'plus' || ownerPlan === 'professional') && !form.hide_branding) {
-    form.hide_branding = true as unknown as typeof form.hide_branding
+    form.hide_branding = true
   }
 
   // Gate pixel data: strip from payload if plan doesn't allow pixels
   if (!canShowPixels && form.pixels) {
-    form.pixels = null as unknown as typeof form.pixels
+    form.pixels = null
   }
 
   // Detect if form is loaded inside an iframe

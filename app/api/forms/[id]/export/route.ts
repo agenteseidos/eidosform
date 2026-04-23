@@ -127,7 +127,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   if (format === 'pdf') {
-    const pdf = buildPdfExport(form.title, questions, responses || [])
+    const hideBranding = !!PLANS[userPlan]?.pdfExport
+    const pdf = buildPdfExport(form.title, questions, responses || [], hideBranding)
     return new NextResponse(pdf as unknown as BodyInit, {
       status: 200,
       headers: {

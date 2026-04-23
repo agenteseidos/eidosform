@@ -88,15 +88,7 @@ export async function POST(
       .single()
 
     if (planData?.plan_expires_at) {
-      const { data: lastCheckout } = await supabase
-        .from('billing_checkouts')
-        .select('cycle')
-        .eq('profile_id', profile.profileId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      const currentCycle = (lastCheckout?.cycle ?? 'MONTHLY') as BillingCycle
+      const currentCycle = (profile.plan_cycle ?? 'MONTHLY') as BillingCycle
 
       proration = calculateUpgradePrice({
         currentPlan: profile.plan as PlanId,

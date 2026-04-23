@@ -153,6 +153,12 @@ export async function createCheckout(params: {
   return { id: data.id, url: checkoutUrl }
 }
 
+/** Lista assinaturas de um customer */
+export async function getCustomerSubscriptions(customerId: string) {
+  const data = await asaasFetch(`/subscriptions?customer=${customerId}&limit=10`)
+  return data.data ?? []
+}
+
 /** Cancela assinatura */
 export async function cancelSubscription(subscriptionId: string): Promise<{ deleted: boolean; id: string }> {
   return asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' })

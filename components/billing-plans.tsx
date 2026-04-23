@@ -151,8 +151,11 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
           const currentBillingCycle = billing === 'annual' ? 'YEARLY' : 'MONTHLY'
           const isSamePlanAndCycle = isCurrentPlan && currentCycle === currentBillingCycle
           // Se está no anual, desativa mensal do mesmo plano (não há estorno)
-          const isDowngradeCycle = isCurrentPlan && currentCycle === 'YEARLY' && currentBillingCycle === 'MONTHLY'
-          const disabled = isLowerPlan || isSamePlanAndCycle || isDowngradeCycle
+          // Se está no mensal, permite trocar pra anual
+          // Free nunca mostra troca de ciclo
+          const isDowngradeCycle = isCurrentPlan && plan.id !== 'free' && currentCycle === 'YEARLY' && currentBillingCycle === 'MONTHLY'
+          const isFreeCurrentPlan = isCurrentPlan && plan.id === 'free'
+          const disabled = isLowerPlan || isSamePlanAndCycle || isDowngradeCycle || isFreeCurrentPlan
           // Badge "Mais Popular" só aparece no Plus para usuários no plano Free (social proof para conversão).
           // Quando o usuário já é pagante, o badge é ocultado intencionalmente.
           const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
@@ -243,7 +246,7 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
                   }
                 }}
               >
-                {isLowerPlan ? 'Já incluso no seu plano' : isSamePlanAndCycle ? 'Plano atual' : isDowngradeCycle ? 'Disponível ao renovar' : isCurrentPlan ? (billing === 'annual' ? 'Mudar para anual' : 'Mudar para mensal') : plan.cta}
+                {isLowerPlan ? 'Já incluso no seu plano' : isFreeCurrentPlan ? 'Plano atual' : isSamePlanAndCycle ? 'Plano atual' : isDowngradeCycle ? 'Disponível ao renovar' : isCurrentPlan ? (billing === 'annual' ? 'Mudar para anual' : 'Mudar para mensal') : plan.cta}
               </Button>
               {plan.id !== 'free' && !isLowerPlan && (
                 <p className="text-xs text-slate-500 text-center mt-2.5">

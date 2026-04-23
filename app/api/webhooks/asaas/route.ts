@@ -184,35 +184,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to read body' }, { status: 400 })
   }
 
+  // TEMP: Log all headers for debugging auth
+  const allHeaders: Record<string, string> = {}
+  req.headers.forEach((v, k) => { allHeaders[k] = v })
+  log('[asaas-webhook] Incoming headers', allHeaders)
+
+  // Auth: accept token via asaas-access-token header, access_token header,
+  // or legacy accessToken query param used by the current Asaas webhook config.
   const webhookToken = process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN
+  const accessTokenHeader = req.headers.get('asaas-access-token') ?? req.headers.get('access_token')
+  const accessTokenQuery = req.nextUrl.searchParams.get('accessToken')
+  const hmacHeader = req.headers.get('asaas-signature')
 
   if (!webhookToken) {
     logError('[asaas-webhook] ASAAS_WEBHOOK_SECRET or ASAAS_WEBHOOK_TOKEN not configured')
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  // Debug: log all incoming headers to diagnose auth issue
-  const allHeaders: Record<string, string> = {}
-  req.headers.forEach((v, k) => { allHeaders[k] = v })
-  log('[asaas-webhook] Incoming headers', { headers: allHeaders, expectedToken: webhookToken ? `${webhookToken.slice(0, 8)}...` : 'NOT_SET' })
+  const tokenMatch =
+    accessTokenHeader === webhookToken ||
+    accessTokenQuery === webhookToken
+  const hmacMatch = !!(hmacHeader && verifyAsaasSignature(rawBody, hmacHeader, webhookToken))
 
-  // Primary auth: token comparison (Asaas sends token in "asaas-access-token" header)
-  const accessTokenHeader = req.headers.get('asaas-access-token') ?? req.headers.get('access_token')
-  if (accessTokenHeader && accessTokenHeader === webhookToken) {
-    log('[asaas-webhook] Authenticated via token header')
-  } else {
-    // Secondary: HMAC verification if asaas-signature header is present
-    const signatureHeader = req.headers.get('asaas-signature')
-    if (signatureHeader) {
-      if (!verifyAsaasSignature(rawBody, signatureHeader, webhookToken)) {
-        logWarn('[asaas-webhook] HMAC signature verification failed')
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-      log('[asaas-webhook] Authenticated via HMAC signature')
-    } else {
-      logWarn('[asaas-webhook] No valid access_token or asaas-signature header')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!tokenMatch && !hmacMatch) {
+    logWarn('[asaas-webhook] Auth failed', {
+      hasToken: true,
+      hasHeader: !!accessTokenHeader,
+      hasQueryToken: !!accessTokenQuery,
+      tokenPrefix: webhookToken.slice(0, 8),
+    })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: AsaasWebhookBody

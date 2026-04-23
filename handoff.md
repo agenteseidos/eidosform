@@ -1,3 +1,58 @@
+## Handoff — Zeca → Sidney — 2026-04-23 14:10 GMT-3
+
+### Demanda
+Fix crítico no billing Asaas: polling pós-checkout encontrava assinatura ACTIVE no Asaas, mas não promovia o plano localmente.
+
+### Causa Raiz
+O `/api/checkout/status` já conseguia descobrir que a assinatura estava `ACTIVE` no Asaas, mas apenas retornava `success` para a UI. A persistência do estado local continuava dependente exclusivamente do webhook `PAYMENT_CONFIRMED`. Com isso, existia uma race condition: se o usuário voltasse do checkout antes do webhook gravar `profiles.plan`, `plan_status`, `asaas_subscription_id` e o status do `billing_checkouts`, ele seguia preso no plano free mesmo com o Asaas já confirmando a assinatura.
+
+### O que foi feito
+
+**`app/api/checkout/status/route.ts`:**
+- Adicionado helper `persistPlanFromAsaas()` para promover o plano localmente quando o polling encontra assinatura `ACTIVE`
+- O polling agora persiste em `profiles`:
+  - `plan`
+  - `plan_status = 'active'`
+  - `plan_expires_at`
+  - `limit_alert_sent = false`
+  - `responses_limit`
+  - `responses_used = 0`
+  - `asaas_customer_id`
+  - `asaas_subscription_id`
+- O polling agora persiste em `billing_checkouts`:
+  - `asaas_subscription_id`
+  - `status = 'paid'`
+  - `last_event = 'POLLING_CONFIRMED'`
+- Reaproveitado `billing_checkouts.plan` e `billing_checkouts.cycle` como fonte de verdade do plano iniciado no checkout
+- Detecta o ciclo usando `PLAN_PRICES` e o `value` retornado pela subscription do Asaas
+- Executa `handleUpgrade()` também no polling para despausar formulários sem depender do webhook
+- Idempotência garantida: se `profiles.plan` já estiver no plano correto com `plan_status = 'active'`, o polling não reaplica a promoção
+
+### Convivência polling + webhook
+- O webhook continua compatível e segue sendo válido como caminho principal/assíncrono de confirmação
+- O polling deixa de depender exclusivamente dele e agora consegue promover o plano assim que o Asaas responder `ACTIVE`
+- Se polling e webhook tentarem aplicar a mesma promoção, o fluxo permanece seguro:
+  - o polling pula a promoção quando o profile já está ativo no plano correto
+  - updates repetidos de `asaas_subscription_id` e `status = 'paid'` são idempotentes na prática
+
+### Validação
+- `npm run build`: ✅
+- Commit do fix: `aa1db18`
+- Push: ⚠️ bloqueado por autenticação GitHub no ambiente (`fatal: could not read Username for 'https://github.com': No such device or address`)
+
+### Arquivos alterados
+- `app/api/checkout/status/route.ts`
+
+### Pendências
+- Fazer `git push` em ambiente com credenciais GitHub válidas
+- Testar checkout completo no sandbox Asaas
+
+### Próximo passo
+- Push do commit `aa1db18`
+- Deploy e teste fim a fim do retorno do checkout
+
+---
+
 ## Handoff — Zeca → Sidney — 2026-04-23 13:50 GMT-3
 
 ### Demanda

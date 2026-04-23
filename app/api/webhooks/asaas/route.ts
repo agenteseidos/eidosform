@@ -191,10 +191,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  // Primary auth: token comparison (Asaas sends token in "access_token" header)
-  const accessTokenHeader = req.headers.get('access_token')
+  // Primary auth: token comparison (Asaas sends token in "asaas-access-token" header)
+  const accessTokenHeader = req.headers.get('asaas-access-token')
   if (accessTokenHeader && accessTokenHeader === webhookToken) {
-    log('[asaas-webhook] Authenticated via access_token header')
+    log('[asaas-webhook] Authenticated via asaas-access-token header')
   } else {
     // Secondary: HMAC verification if asaas-signature header is present
     const signatureHeader = req.headers.get('asaas-signature')

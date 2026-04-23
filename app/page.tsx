@@ -316,7 +316,6 @@ export default function LandingPage() {
               <ul className="space-y-1 text-sm text-slate-500">
                 <li><a href="#faq" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">FAQ</a></li>
                 <li><a href="mailto:suporte@eidosform.com" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
-                <li><span className="text-slate-600 cursor-not-allowed inline-flex items-center min-h-[44px] py-2">Documentação API</span></li>
               </ul>
             </div>
             <div>

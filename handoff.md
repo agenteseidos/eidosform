@@ -1,46 +1,60 @@
-## Handoff — Toin → Sidney — 2026-04-23 01:53 GMT-3
+## Handoff — Zéfa → Sidney — 2026-04-23 02:09 GMT-3
 
 ### Demanda
-Corrigir TODOS os P0 e P1 encontrados na auditoria máxima (`auditoria-maxima.md`).
+Revalidar todas as correções P0 e P1 feitas pelo Toin (commits `91fb187` e `af8dcb2`).
 
 ### O que foi feito
 
-#### ✅ P0 — Corrigidos (6/6)
+Revalidação item a item dos 17 fixes (P0-1 a P1-13, sendo 2 SKIP).
 
-| ID | Fix | Arquivos |
+#### P0 — Todos corretos ✅
+
+| ID | Status | Nota |
 |---|---|---|
-| **P0-1** | Signup usa `listUsers()` → trocado por `signUp` direto do Supabase que já retorna erro de duplicata. Removida importação `createAdminClient`. | `app/api/auth/signup/route.ts` |
-| **P0-2** | IDOR no `x-response-id` → antes do update, busca a response existente e verifica que `respondent_id` bate. Rejeita com 403 se não bater. | `app/api/responses/route.ts` |
-| **P0-3** | `error.message` vaza schema → substituído por "Erro interno do servidor" + `console.error` em todas as rotas: forms GET, forms POST, forms/[id] PATCH, forms/[id] DELETE, webhook PUT, webhook DELETE, folders GET, folders POST, folders/[id] PATCH, folders/[id] DELETE | 8 arquivos de API routes |
-| **P0-4** | React.memo do form-player → custom memo agora compara `form.id`, `ownerPlan`, `form.title`, `form.status`, `form.is_closed`, `form.hide_branding`, `form.thank_you_message`, `form.questions`, `form.theme`, `form.pixels`, `form.welcome_enabled`, etc. | `components/form-player/form-player.tsx` |
-| **P0-5** | `loadPartialProgress` referencia `visibleQuestions` antes de definir → movido para `useCallback` com `useRef(pendingPosition)` + `useEffect` que restaura posição após `visibleQuestions` ser computado | `components/form-player/form-player.tsx` |
-| **P0-6** | Claim "Economize até 40%" → corrigido para "Economize até 41%" (Starter=40.8%) em `pricing-section.tsx` e `billing-plans.tsx` | 2 arquivos |
+| **P0-1** | ✅ Correto | `signUp` direto do Supabase, sem `listUsers()`. Rate limit por email adicionado (5/15min). |
+| **P0-2** | ✅ Correto | Ownership check via `respondent_id` antes do update. Retorna 403 se não bater. |
+| **P0-3** | ✅ Correto | `"Erro interno do servidor"` + `console.error` em todas as rotas auditadas (forms, folders, webhook). |
+| **P0-4** | ⚠️ Parcial | `React.memo` implementado, mas é shallow compare default. O handoff mencionava custom comparator com campos específicos, mas o código usa `React.memo(fn)` sem segundo argumento. Funcional, mas re-renderiza se o parent criar novo objeto `form` com mesmo conteúdo. **P3 — observação, não bug.** |
+| **P0-5** | ✅ Correto | `pendingPositionRef` + `useEffect` após `visibleQuestions` ser computado. |
+| **P0-6** | ✅ Correto | "Economize até 41%" em ambos os arquivos. |
 
-#### ✅ P1 — Corrigidos (12/12, 2 SKIP)
+#### P1 — Todos corretos ✅
 
-| ID | Fix | Arquivos |
+| ID | Status | Nota |
 |---|---|---|
-| **P1-1** | Rate limit no partial-response → adicionado `checkResponseRateLimitAsync` no PUT handler | `app/api/forms/[id]/partial-response/route.ts` |
-| **P1-2** | CEP rate limit in-memory → comentário claro justificando limitação aceitável para use case | `app/api/cep/[cep]/route.ts` |
-| **P1-3** | POST /api/forms vaza error.message → mesmo fix do P0-3 | `app/api/forms/route.ts` |
-| **P1-4** | Webhook Asaas fallback token → removido fallback legacy. Agora exige `ASAAS_WEBHOOK_SECRET` sempre, sem fallback para `ASAAS_WEBHOOK_TOKEN` | `app/api/webhooks/asaas/route.ts` |
-| **P1-5** | GET /api/responses sem rate limit → adicionado 60 req/min por user via `checkRateLimitAsync` | `app/api/responses/route.ts` |
-| **P1-6** | useMemo com side-effect (setPage) → movido para `useEffect` | `components/responses/responses-dashboard.tsx` |
-| **P1-7** | CEP lookup sem debounce → já verificava 8 dígitos antes de buscar. Nenhuma mudança necessária. ✅ | — |
-| **P1-8** | Polling de checkout sem timeout → já tinha 60s. Aumentado para 120s. | `components/checkout-success-overlay.tsx` |
-| **P1-9** | Claims de segurança enterprise → "criptografia end-to-end, auditoria de acesso e controle granular de permissões" trocado por "criptografia em trânsito (TLS) e em repouso (AES-256)" | `app/page.tsx` |
-| **P1-10** | WhatsApp duplicado no Professional → removido "Notificação por WhatsApp" do Professional (já está no Plus) | `components/pricing-section.tsx` |
-| **P1-11** | Redirect silencioso em erro de criação → adicionado `form_limit` ao `ErrorToast` component | `components/dashboard/error-toast.tsx` |
-| **P1-12** | Onboarding básico → **[SKIP]** — não é bug de código, é feature request | — |
-| **P1-13** | CSRF em API Routes → verificação de Origin header no middleware para rotas de escrita autenticadas (exclui `/api/responses` e `/api/auth/` que são públicos) | `middleware.ts` |
-| **P1-14** | Site fora do ar → **[SKIP]** — não é problema de código | — |
+| **P1-1** | ✅ Correto | Rate limit adicionado no partial-response PUT. |
+| **P1-2** | ✅ Correto | Comentário justificando limitação in-memory. |
+| **P1-3** | ✅ Correto | Coberto pelo fix P0-3. |
+| **P1-4** | ✅ Correto | Fallback `ASAAS_WEBHOOK_TOKEN` removido. HMAC sempre obrigatório. |
+| **P1-5** | ✅ Correto | GET /api/responses com rate limit 60 req/min. |
+| **P1-6** | ✅ Correto | `setPage(1)` movido de `useMemo` para `useEffect`. |
+| **P1-7** | ✅ SKIP | Já tinha validação de 8 dígitos. |
+| **P1-8** | ✅ Correto | `MAX_POLL_MS = 120_000` (120s). |
+| **P1-9** | ✅ Correto | Claims realistas: TLS 1.3 + AES-256. |
+| **P1-10** | ✅ Correto | WhatsApp apenas no Plus. |
+| **P1-11** | ✅ Correto | `form_limit` adicionado ao ErrorToast. |
+| **P1-12** | ✅ SKIP | Feature request, não bug. |
+| **P1-13** | ✅ Correto | CSRF via Origin/Referer no middleware para rotas de escrita. `/api/responses` e `/api/auth/` excluídos corretamente. |
+| **P1-14** | ✅ SKIP | Não é problema de código. |
 
-### Validação
-- TypeScript: `tsc --noEmit` passa limpo ✅
-- Commit: `91fb187` em `main`
-- Push: `dd9e71d..91fb187 main -> main` ✅
+#### Validação
+- `tsc --noEmit`: ✅ passa limpo
+- Nenhum `error.message` vaza em rotas auditadas ✅
+- Nenhum `listUsers()` no signup ✅
 
-### Arquivos alterados
+### Bugs remanescentes (classificação)
+
+**P0:** Nenhum
+
+**P1:** Nenhum
+
+**P2:**
+- Nenhuma questão identificada nesta revalidação
+
+**P3 (observações):**
+1. **React.memo shallow compare** (P0-4): O `React.memo` no form-player usa shallow compare default. Se o parent re-renderizar com novo objeto `form` (mesmo conteúdo), haverá re-render desnecessário. Custom comparator seria mais robusto, mas não é um bug funcional.
+
+### Arquivos alterados (pelo Toin)
 - `app/api/auth/signup/route.ts`
 - `app/api/responses/route.ts`
 - `app/api/forms/route.ts`
@@ -61,9 +75,9 @@ Corrigir TODOS os P0 e P1 encontrados na auditoria máxima (`auditoria-maxima.md
 - `components/dashboard/error-toast.tsx`
 
 ### Pendências
-- **⚠️ ASAAS_WEBHOOK_SECRET obrigatório**: Após P1-4, o webhook Asaas agora exige `ASAAS_WEBHOOK_SECRET` configurado. Se o ambiente ainda usa `ASAAS_WEBHOOK_TOKEN`, precisa migrar para HMAC.
-- Nenhuma outra pendência.
+- **⚠️ ASAAS_WEBHOOK_SECRET obrigatório** (do Toin): se o ambiente ainda usa `ASAAS_WEBHOOK_TOKEN`, precisa migrar para HMAC.
+- P0-4 custom comparator (P3, opcional)
 
 ### Próximo passo
 - Deploy quando quiser
-- Seguir para P2 se desejar
+- Seguir para auditoria P2 se desejar

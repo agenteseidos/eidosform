@@ -41,6 +41,8 @@ function RegisterForm() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
   const supabase = createClient()
   const router = useRouter()
 
@@ -63,22 +65,20 @@ function RegisterForm() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!fullName || !email || !password || !confirmPassword) {
-      toast.error('Preencha todos os campos')
-      return
-    }
-    if (password.length < 8) {
-      toast.error('A senha deve ter no mínimo 8 caracteres')
-      return
-    }
-    if (password !== confirmPassword) {
-      toast.error('As senhas não coincidem')
-      return
-    }
-    if (!acceptTerms) {
-      toast.error('Você precisa aceitar os termos de uso')
-      return
-    }
+    const newErrors: Record<string, string> = {}
+    if (!fullName.trim()) newErrors.fullName = 'Nome completo é obrigatório'
+    if (!email.trim()) newErrors.email = 'E-mail é obrigatório'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'E-mail inválido'
+    if (!password) newErrors.password = 'Senha é obrigatória'
+    else if (password.length < 8) newErrors.password = 'Mínimo 8 caracteres'
+    if (!confirmPassword) newErrors.confirmPassword = 'Confirme sua senha'
+    else if (password !== confirmPassword) newErrors.confirmPassword = 'As senhas não coincidem'
+    if (!acceptTerms) newErrors.terms = 'Você precisa aceitar os termos de uso'
+
+    setErrors(newErrors)
+    setTouched({ fullName: true, email: true, password: true, confirmPassword: true, terms: true })
+
+    if (Object.keys(newErrors).length > 0) return
 
     setIsLoading(true)
     const res = await fetch('/api/auth/signup', {
@@ -133,11 +133,14 @@ function RegisterForm() {
                 id="fullName"
                 type="text"
                 placeholder="Seu nome"
+                required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
+                onBlur={() => setTouched(p => ({ ...p, fullName: true }))}
                 disabled={isLoading}
-                className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
+                className={`h-12 text-base bg-[#1a1a1a] text-white placeholder:text-slate-400 focus:ring-[#F5B731]/20 ${touched.fullName && errors.fullName ? 'border-red-500 focus:border-red-500' : 'border-slate-500 focus:border-[#F5B731]'}`}
               />
+              {touched.fullName && errors.fullName && <p className="text-xs text-red-400 mt-1">{errors.fullName}</p>}
             </div>
 
             <div className="space-y-2">
@@ -146,11 +149,14 @@ function RegisterForm() {
                 id="email"
                 type="email"
                 placeholder="voce@exemplo.com"
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onBlur={() => setTouched(p => ({ ...p, email: true }))}
                 disabled={isLoading}
-                className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20"
+                className={`h-12 text-base bg-[#1a1a1a] text-white placeholder:text-slate-400 focus:ring-[#F5B731]/20 ${touched.email && errors.email ? 'border-red-500 focus:border-red-500' : 'border-slate-500 focus:border-[#F5B731]'}`}
               />
+              {touched.email && errors.email && <p className="text-xs text-red-400 mt-1">{errors.email}</p>}
             </div>
 
             <div className="space-y-2">
@@ -160,11 +166,14 @@ function RegisterForm() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Mínimo 8 caracteres"
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onBlur={() => setTouched(p => ({ ...p, password: true }))}
                   disabled={isLoading}
-                  className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20 pr-12"
+                  className={`h-12 text-base bg-[#1a1a1a] text-white placeholder:text-slate-400 focus:ring-[#F5B731]/20 pr-12 ${touched.password && errors.password ? 'border-red-500 focus:border-red-500' : 'border-slate-500 focus:border-[#F5B731]'}`}
                 />
+                {touched.password && errors.password && <p className="text-xs text-red-400 mt-1">{errors.password}</p>}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -204,11 +213,14 @@ function RegisterForm() {
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   placeholder="Repita a senha"
+                  required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
+                  onBlur={() => setTouched(p => ({ ...p, confirmPassword: true }))}
                   disabled={isLoading}
-                  className="h-12 text-base bg-[#1a1a1a] border-slate-500 text-white placeholder:text-slate-400 focus:border-[#F5B731] focus:ring-[#F5B731]/20 pr-12"
+                  className={`h-12 text-base bg-[#1a1a1a] text-white placeholder:text-slate-400 focus:ring-[#F5B731]/20 pr-12 ${touched.confirmPassword && errors.confirmPassword ? 'border-red-500 focus:border-red-500' : 'border-slate-500 focus:border-[#F5B731]'}`}
                 />
+                {touched.confirmPassword && errors.confirmPassword && <p className="text-xs text-red-400 mt-1">{errors.confirmPassword}</p>}
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
@@ -238,17 +250,20 @@ function RegisterForm() {
               <input
                 id="terms"
                 type="checkbox"
+                required
                 checked={acceptTerms}
                 onChange={(e) => setAcceptTerms(e.target.checked)}
                 className="mt-1 h-5 w-5 rounded border-white/20 bg-[#1a1a1a] text-[#F5B731] focus:ring-[#F5B731]/20 accent-[#F5B731]"
               />
-              <label htmlFor="terms" className="text-sm text-slate-400">
-                Aceito os{' '}
-                <Link href="/terms" className="text-[#F5B731] hover:text-[#E8923A] transition-colors py-2 inline-block">
+              <label htmlFor="terms" className={`text-sm ${touched.terms && errors.terms ? 'text-red-400' : 'text-slate-400'}`}>
+                Aceito os
+                {touched.terms && errors.terms && <span className="ml-1">({errors.terms})</span>}
+{' '}
+                <Link href="/termos" className="text-[#F5B731] hover:text-[#E8923A] transition-colors py-2 inline-block">
                   termos de uso
                 </Link>{' '}
                 e a{' '}
-                <Link href="/privacy" className="text-[#F5B731] hover:text-[#E8923A] transition-colors py-2 inline-block">
+                <Link href="/privacidade" className="text-[#F5B731] hover:text-[#E8923A] transition-colors py-2 inline-block">
                   política de privacidade
                 </Link>
               </label>

@@ -46,3 +46,43 @@ Corrigir bugs encontrados nos testes de browser (auditoria-browser.md).
 ### Próximo passo
 - Deploy quando quiser
 - Revalidação se desejar
+
+---
+
+## Handoff — Toin → Sidney — 2026-04-23 11:30 GMT-3
+
+### Demanda
+Corrigir bugs P2 (fluxo de ativação) e P3 (copy inconsistente) do EidosForm.
+
+### O que foi feito
+
+**P2 — Inconsistência de fluxo de ativação (Supabase autoconfirm):**
+- Verificado que o Supabase pode ter `autoconfirm` habilitado no projeto
+- Se `autoconfirm` está ON, o signup retorna `session` não-nulo (usuário já autenticado)
+- Modificado `/api/auth/signup` para retornar flag `autoConfirmed` baseada na presença de `session`
+- Modificado `/register` para:
+  - Se `autoConfirmed === true` → redireciona direto para `dashboard` (ou `next` param)
+  - Se `autoConfirmed === false` → mantém fluxo original para `/verify-email`
+- Isso elimina a tela enganosa de verificação quando a conta já está ativa
+
+**P3 — Copy inconsistente do plano Starter:**
+- Verificado `lib/plan-definitions.ts` → `maxForms: 100` para Starter
+- Verificado `components/pricing-section.tsx` → mostra "100 formulários"
+- Verificado `components/billing-plans.tsx` → mostra "100 formulários"
+- **Resultado:** O código já estava consistente em 100 formulários em todos os lugares
+- A auditoria referenciava um estado antigo onde o código tinha 10 mas a landing mostrava 100
+- Nenhuma alteração necessária — bug inexistente no código atual
+
+### Validação
+- `npm run build`: ✅ passa
+- Commit: `bb2f275`
+
+### Arquivos alterados
+- `app/api/auth/signup/route.ts` — adiciona flag `autoConfirmed` na resposta
+- `app/(auth)/register/page.tsx` — lógica de redirect condicional
+
+### Pendências
+- Nenhuma
+
+### Próximo passo
+- Deploy quando quiser

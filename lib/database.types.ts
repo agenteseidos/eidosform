@@ -311,6 +311,45 @@ export interface Database {
         }
         Relationships: []
       }
+      form_whatsapp_settings: {
+        Row: {
+          id: string
+          form_id: string
+          enabled: boolean
+          owner_phone: string
+          message_template: string
+          instance_name: string
+          rate_limit_per_hour: number
+          created_at: string
+          updated_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          form_id: string
+          enabled?: boolean
+          owner_phone: string
+          message_template?: string
+          instance_name?: string
+          rate_limit_per_hour?: number
+          created_at?: string
+          updated_at?: string
+          created_by: string
+        }
+        Update: {
+          id?: string
+          form_id?: string
+          enabled?: boolean
+          owner_phone?: string
+          message_template?: string
+          instance_name?: string
+          rate_limit_per_hour?: number
+          created_at?: string
+          updated_at?: string
+          created_by?: string
+        }
+        Relationships: []
+      }
       forms: {
         Row: {
           id: string

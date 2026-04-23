@@ -1,21 +1,19 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'
+import { Database } from '@/lib/database.types'
 import {
   FormWhatsAppSettings,
   CreateFormWhatsAppSettingsInput,
   UpdateFormWhatsAppSettingsInput,
-} from './types/whatsapp';
+} from './types/whatsapp'
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
-
-// Service role client for server-side operations
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-);
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error('Missing Supabase env vars')
+  return createClient<Database>(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
 
 /**
  * Get WhatsApp settings for a form
@@ -26,11 +24,11 @@ export async function getWhatsAppSettings(
   formId: string
 ): Promise<FormWhatsAppSettings | null> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
       .from('form_whatsapp_settings')
       .select('*')
       .eq('form_id', formId)
-      .single();
+      .single()
 
     if (error) {
       if (error.code === 'PGRST116') {
@@ -58,7 +56,7 @@ export async function createWhatsAppSettings(
   userId: string
 ): Promise<FormWhatsAppSettings> {
   try {
-    const { data: settings, error } = await supabaseAdmin
+    const { data: settings, error } = await getSupabaseAdmin()
       .from('form_whatsapp_settings')
       .insert({
         form_id: data.form_id,
@@ -71,7 +69,7 @@ export async function createWhatsAppSettings(
         created_by: userId,
       })
       .select()
-      .single();
+      .single()
 
     if (error) {
       throw error;
@@ -115,12 +113,12 @@ export async function updateWhatsAppSettings(
       updateData.rate_limit_per_hour = data.rate_limit_per_hour;
     }
 
-    const { data: settings, error } = await supabaseAdmin
+    const { data: settings, error } = await getSupabaseAdmin()
       .from('form_whatsapp_settings')
       .update(updateData)
       .eq('form_id', formId)
       .select()
-      .single();
+      .single()
 
     if (error) {
       throw error;
@@ -139,10 +137,10 @@ export async function updateWhatsAppSettings(
  */
 export async function deleteWhatsAppSettings(formId: string): Promise<void> {
   try {
-    const { error } = await supabaseAdmin
+    const { error } = await getSupabaseAdmin()
       .from('form_whatsapp_settings')
       .delete()
-      .eq('form_id', formId);
+      .eq('form_id', formId)
 
     if (error) {
       throw error;

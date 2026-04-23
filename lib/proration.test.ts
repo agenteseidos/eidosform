@@ -74,5 +74,19 @@ assert(approx(upgrade.originalPrice, 127), `Upgrade originalPrice = R$127 (got $
 assert(approx(upgrade.finalPrice, 102.5), `Upgrade finalPrice ≈ R$102.50 (got ${upgrade.finalPrice})`)
 assert(approx(upgrade.newPrice, 127), `Upgrade newPrice = R$127`)
 
+// --- Troca de ciclo do mesmo plano ---
+// Starter mensal (15 dias restantes) → Starter anual
+const cycleChange = calculateUpgradePrice({
+  currentPlan: 'starter',
+  currentCycle: 'MONTHLY',
+  planExpiresAt: expires15d.toISOString(),
+  newPlan: 'starter',
+  newCycle: 'YEARLY',
+})
+assert(approx(cycleChange.credit, 24.5), `Cycle change credit ≈ R$24.50 (got ${cycleChange.credit})`)
+assert(approx(cycleChange.originalPrice, 348), `Cycle change originalPrice = R$348 (got ${cycleChange.originalPrice})`)
+assert(cycleChange.finalPrice < 348, `Cycle change finalPrice < R$348 (got ${cycleChange.finalPrice})`)
+assert(approx(cycleChange.finalPrice, 323.5), `Cycle change finalPrice ≈ R$323.50 (got ${cycleChange.finalPrice})`)
+
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed > 0 ? 1 : 0)

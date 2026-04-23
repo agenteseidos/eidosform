@@ -64,21 +64,23 @@ export async function POST(
     })
   }
 
+  const isCycleChange = profile.plan === plan && profile.plan_cycle !== cycle
+  const isPlanUpgrade = profile.plan !== plan && isUpgrade(profile.plan as PlanId, plan as PlanId)
+  const shouldApplyProration = isCycleChange || isPlanUpgrade
+
   // Downgrade: não aplica proration, cancela ao final do período
-  if (profile.asaasSubscriptionId && profile.plan !== plan) {
-    if (!isUpgrade(profile.plan as PlanId, plan as PlanId)) {
-      return NextResponse.json({
-        message: 'Downgrades são processados ao final do período atual.',
-        isDowngrade: true,
-      })
-    }
+  if (profile.asaasSubscriptionId && profile.plan !== plan && !isPlanUpgrade) {
+    return NextResponse.json({
+      message: 'Downgrades são processados ao final do período atual.',
+      isDowngrade: true,
+    })
   }
 
-  // Calcular proration para upgrade
+  // Calcular proration para upgrade ou troca de ciclo do mesmo plano
   let proration: { credit: number; newPrice: number; originalPrice: number; finalPrice: number } | null = null
   let checkoutValue: number | undefined
 
-  if (profile.asaasSubscriptionId && profile.plan !== plan && isUpgrade(profile.plan as PlanId, plan as PlanId)) {
+  if (profile.asaasSubscriptionId && shouldApplyProration) {
     const { data: planData } = await supabase
       .from('profiles')
       .select('plan_expires_at')

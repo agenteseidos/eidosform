@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { QuestionConfig } from '@/lib/database.types'
 import { ThemeConfig } from '@/lib/database.types'
 import { motion, AnimatePresence } from 'framer-motion'
+import DOMPurify from 'dompurify'
 import { Star, CalendarClock, Plus, X } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 import { renderContentBlockHtml } from '@/lib/content-block'
@@ -292,7 +293,9 @@ export function FormPreview({
                     className="text-base leading-relaxed [&>p]:mb-4 [&>p:last-child]:mb-0 [&>ul]:mb-4 [&>ul:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&_strong]:font-semibold [&_em]:italic"
                     style={{ color: theme.textColor }}
                     dangerouslySetInnerHTML={{
-                      __html: renderTiptapHtml(question.contentBody || 'Digite aqui o conteúdo desta etapa.', renderContentBlockHtml),
+                      __html: DOMPurify.sanitize(
+                        renderTiptapHtml(question.contentBody || 'Digite aqui o conteúdo desta etapa.', renderContentBlockHtml)
+                      ),
                     }}
                   />
                 )}

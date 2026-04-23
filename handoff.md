@@ -86,3 +86,29 @@ Corrigir bugs P2 (fluxo de ativação) e P3 (copy inconsistente) do EidosForm.
 
 ### Próximo passo
 - Deploy quando quiser
+
+---
+
+## Handoff — Toin → Sidney — 2026-04-23 12:01 GMT-3
+
+### Demanda
+Corrigir bug P3 de XSS em `components/form-builder/form-preview.tsx`, sanitizando HTML de usuário antes do render no preview do formulário.
+
+### O que foi feito
+- Localizado o render de HTML do usuário via `dangerouslySetInnerHTML` em `components/form-builder/form-preview.tsx`
+- Adicionado import de `DOMPurify` no componente
+- Aplicado `DOMPurify.sanitize(...)` no HTML gerado por `renderTiptapHtml(...)` antes do render
+- Verificado `package.json`: `dompurify` já existia em `dependencies`, sem necessidade de instalar nada
+
+### Validação
+- `npm run build`: ✅ passa
+- Observação: o build ainda mostra warning do Next sobre `middleware` deprecated em favor de `proxy`, mas não bloqueia a compilação
+
+### Arquivos alterados
+- `components/form-builder/form-preview.tsx` — sanitização do HTML antes de `dangerouslySetInnerHTML`
+
+### Pendências
+- Nenhuma relacionada a este fix
+
+### Próximo passo
+- Commitar, pushar e seguir para deploy quando quiser

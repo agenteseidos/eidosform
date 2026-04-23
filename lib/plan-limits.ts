@@ -27,6 +27,7 @@ export interface PlanConfig {
   apiAccess: boolean
   partialResponses: boolean
   csvExport: boolean
+  pdfExport: boolean
   webhooks: boolean
   redirect: boolean
   emailNotifications: boolean
@@ -49,6 +50,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     apiAccess: false,
     partialResponses: false,
     csvExport: false,
+    pdfExport: false,
     webhooks: false,
     redirect: false,
     emailNotifications: false,
@@ -80,6 +82,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     apiAccess: false,
     partialResponses: false,
     csvExport: true,
+    pdfExport: false,
     webhooks: false,
     redirect: true,
     emailNotifications: false,
@@ -108,6 +111,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     apiAccess: false,
     partialResponses: true,
     csvExport: true,
+    pdfExport: true,
     webhooks: true,
     redirect: true,
     emailNotifications: true,
@@ -144,6 +148,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     apiAccess: true,
     partialResponses: true,
     csvExport: true,
+    pdfExport: true,
     webhooks: true,
     redirect: true,
     emailNotifications: true,

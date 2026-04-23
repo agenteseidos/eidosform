@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { buildExcelExport } from '@/lib/export-excel'
+import { buildPdfExport } from '@/lib/export-pdf'
 
 interface QuestionRow {
   id: string
@@ -30,8 +31,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const { searchParams } = new URL(req.url)
   const format = searchParams.get('format') || 'csv'
 
-  if (format !== 'csv' && format !== 'xlsx') {
-    return NextResponse.json({ error: 'Formato não suportado. Use ?format=csv ou ?format=xlsx' }, { status: 400 })
+  if (format !== 'csv' && format !== 'xlsx' && format !== 'pdf') {
+    return NextResponse.json({ error: 'Formato não suportado. Use ?format=csv, ?format=xlsx ou ?format=pdf' }, { status: 400 })
   }
 
   const supabase = await createClient()
@@ -53,6 +54,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   if (!PLANS[userPlan]?.csvExport) {
     return NextResponse.json(
       { error: 'Exportação CSV disponível a partir do plano Starter' },
+      { status: 403 }
+    )
+  }
+
+  if (format === 'pdf' && !PLANS[userPlan]?.pdfExport) {
+    return NextResponse.json(
+      { error: 'Exportação PDF disponível a partir do plano Plus' },
       { status: 403 }
     )
   }
@@ -114,6 +122,17 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="respostas-${id}.xlsx"`,
+      },
+    })
+  }
+
+  if (format === 'pdf') {
+    const pdf = buildPdfExport(form.title, questions, responses || [])
+    return new NextResponse(pdf as unknown as BodyInit, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="respostas-${id}.pdf"`,
       },
     })
   }

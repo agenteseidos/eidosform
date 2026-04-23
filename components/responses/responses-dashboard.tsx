@@ -502,6 +502,14 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
     link.click()
   }
 
+  const exportPDFFromAPI = () => {
+    const url = `/api/forms/${form.id}/export?format=pdf`
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${form.title || 'form'}-respostas.pdf`
+    link.click()
+  }
+
   const copyFormLink = () => {
     navigator.clipboard.writeText(`${window.location.origin}/f/${form.slug}`)
     toast.success('Link copiado!')
@@ -567,6 +575,10 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={exportXLSXFromAPI}>
                     <FileSpreadsheet className="w-4 h-4 mr-2" />Excel (.xlsx)
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={exportPDFFromAPI}>
+                    <File className="w-4 h-4 mr-2" />PDF
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

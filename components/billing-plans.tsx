@@ -147,6 +147,8 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
           const thisPlanIndex = PLAN_ORDER.indexOf(plan.id)
           const isLowerPlan = thisPlanIndex < currentPlanIndex
           const isHigherPlan = thisPlanIndex > currentPlanIndex
+          const isExactPlan = isCurrentPlan // mesmo plano, sem considerar ciclo
+          const disabled = isLowerPlan
           // Badge "Mais Popular" só aparece no Plus para usuários no plano Free (social proof para conversão).
           // Quando o usuário já é pagante, o badge é ocultado intencionalmente.
           const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
@@ -223,21 +225,21 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
               <Button
                 className={`w-full font-semibold transition-all mt-auto ${
                   isCurrentPlan
-                    ? 'bg-white/5 text-slate-500 border border-white/10 cursor-not-allowed'
+                    ? 'bg-[#F5B731] hover:bg-[#e5a820] text-black font-bold shadow-lg shadow-[#F5B731]/25 cursor-pointer'
                     : isLowerPlan
                     ? 'bg-white/5 text-slate-400 border border-white/[0.06] cursor-not-allowed'
                     : 'bg-[#F5B731] hover:bg-[#e5a820] text-black font-bold shadow-lg shadow-[#F5B731]/25'
                 }`}
-                disabled={isCurrentPlan || isLowerPlan}
+                disabled={disabled}
                 onClick={() => {
-                  if (!isCurrentPlan && !isLowerPlan && plan.checkoutUrl) {
+                  if (!disabled && plan.checkoutUrl) {
                     window.location.href = `${plan.checkoutUrl}?cycle=${billing === 'annual' ? 'yearly' : billing}`
                   }
                 }}
               >
-                {isCurrentPlan ? 'Plano atual' : isLowerPlan ? 'Já incluso no seu plano' : plan.cta}
+                {isLowerPlan ? 'Já incluso no seu plano' : isCurrentPlan ? (billing === 'annual' ? 'Mudar para anual' : 'Mudar para mensal') : plan.cta}
               </Button>
-              {plan.id !== 'free' && !isCurrentPlan && !isLowerPlan && (
+              {plan.id !== 'free' && !isLowerPlan && (
                 <p className="text-xs text-slate-500 text-center mt-2.5">
                   💳 Cartão de crédito
                 </p>

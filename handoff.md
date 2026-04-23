@@ -1,5 +1,15 @@
 # Handoff — Correção P0: Prorateamento de Upgrade de Planos
 
+## REVALIDAÇÃO ✅ APROVADA — LIBERA DEPLOY
+
+**Data revalidação:** 2026-04-23 17:13
+**Revalidador:** Zéfa
+**Veredito:** ✅ LIBERA DEPLOY — zero P0/P1 remanescentes
+
+---
+
+# Handoff Original — Correção P0: Prorateamento de Upgrade de Planos
+
 **Data:** 2026-04-23  
 **Responsável:** Zeca  
 **Tipo:** Correção de bugs P0  

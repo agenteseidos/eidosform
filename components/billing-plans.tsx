@@ -133,7 +133,7 @@ export function BillingPlans({ currentPlan }: BillingPlansProps) {
                 ? 'bg-black/20 text-black'
                 : 'bg-[#F5B731]/20 text-[#F5B731]'
             }`}>
-              Economize até 40%
+              Economize até 41%
             </span>
           </button>
         </div>

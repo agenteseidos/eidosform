@@ -136,7 +136,7 @@ export default function LandingPage() {
                 color: 'from-slate-400 to-slate-600',
                 glow: 'shadow-slate-500/20',
                 title: 'Segurança enterprise',
-                desc: 'LGPD compliance, criptografia end-to-end, auditoria de acesso e controle granular de permissões.'
+                desc: 'LGPD compliance, criptografia em trânsito (TLS) e em repouso (AES-256).',
               },
             ].map(({ icon: Icon, color, glow, title, desc }) => (
               <div key={title} className="group p-6 rounded-2xl bg-white/[0.04] border border-white/5 hover:bg-white/[0.07] hover:border-white/10 transition-all duration-300 hover:-translate-y-0.5">

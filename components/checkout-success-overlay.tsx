@@ -48,7 +48,7 @@ export function CheckoutSuccessOverlay() {
         window.history.replaceState({}, '', '/billing')
 
         const POLL_INTERVAL = 3000
-        const MAX_POLL_MS = 60_000
+        const MAX_POLL_MS = 120_000
         const MAX_CONSECUTIVE_ERRORS = 3
         const start = Date.now()
 

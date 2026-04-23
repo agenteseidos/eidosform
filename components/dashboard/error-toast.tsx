@@ -9,6 +9,8 @@ const errorMessages: Record<string, string> = {
     'Não foi possível gerar um link único para o formulário. Tente novamente.',
   create_failed:
     'Erro ao criar formulário. Tente novamente mais tarde.',
+  form_limit:
+    'Limite de formulários atingido para o plano atual. Faça upgrade para criar mais.',
 }
 
 export function ErrorToast() {

@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
   const { data, error, count } = await query
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Failed to list forms:', error)
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
   return NextResponse.json({
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest) {
     if (error.code === '23505') {
       return NextResponse.json({ error: 'Slug already in use' }, { status: 409 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
   return NextResponse.json({ form: data }, { status: 201 })

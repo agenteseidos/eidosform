@@ -87,7 +87,6 @@ const plans = [
       'Acesso à API v1',
       'Chave de API dedicada',
       'Exportação CSV avançada',
-      'Notificação por WhatsApp',
       'Suporte prioritário com SLA',
     ],
     cta: 'Assinar Professional',
@@ -134,12 +133,12 @@ export function PricingSection() {
                   ? 'bg-black/20 text-black'
                   : 'bg-[#F5B731]/20 text-[#F5B731]'
               }`}>
-                Economize até 40%
+                Economize até 41%
               </span>
             </button>
           </div>
           {billing === 'annual' && (
-            <p className="mt-3 text-sm text-[#4BB678]">✓ Economize até 40% com o plano anual</p>
+            <p className="mt-3 text-sm text-[#4BB678]">✓ Economize até 41% com o plano anual</p>
           )}
         </div>
 

@@ -47,7 +47,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Failed to update folder:', error)
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
   return NextResponse.json({ folder: data })
@@ -81,8 +82,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     .eq('user_id', user.id)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Failed to delete folder:', error)
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
-
-  return NextResponse.json({ success: true })
 }

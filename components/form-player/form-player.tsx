@@ -120,7 +120,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   }, [])
 
   // Load saved partial response
-  async function loadPartialProgress() {
+  const loadPartialProgress = useCallback(async () => {
     try {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
@@ -135,16 +135,17 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       if (data.answers && typeof data.answers === 'object' && Object.keys(data.answers).length > 0) {
         setAnswers(data.answers)
         if (data.response_id) setResponseId(data.response_id)
-        // Restore position
+        // Restore position will be handled by useEffect below after visibleQuestions is computed
         if (data.last_question_answered) {
-          const idx = visibleQuestions.findIndex(q => q.id === data.last_question_answered)
-          if (idx !== -1) setCurrentIndex(idx)
+          pendingPositionRef.current = data.last_question_answered
         }
       }
     } catch {
       // Silent fail
     }
-  }
+  }, [form.id])
+
+  const pendingPositionRef = useRef<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerPixelSubmitRef = useRef<(() => void) | null>(null)
@@ -155,6 +156,15 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
   // Lista de perguntas visíveis com base nas respostas atuais
   const visibleQuestions = getVisibleQuestions(questions, answers) as QuestionConfig[]
+
+  // P0-5: Restore saved position after visibleQuestions is computed
+  useEffect(() => {
+    if (pendingPositionRef.current && visibleQuestions.length > 0) {
+      const idx = visibleQuestions.findIndex(q => q.id === pendingPositionRef.current)
+      if (idx !== -1) setCurrentIndex(idx)
+      pendingPositionRef.current = null
+    }
+  }, [visibleQuestions])
 
   const currentQuestion = visibleQuestions[currentIndex]
   const isContentStep = currentQuestion?.type === 'content_block'
@@ -934,7 +944,23 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     </div>
   )
 }, (prevProps, nextProps) => {
-  // Memoização customizada: apenas re-render se form.id ou ownerPlan mudar
-  return prevProps.form.id === nextProps.form.id && 
-         prevProps.ownerPlan === nextProps.ownerPlan
+  // Memoização: re-render se qualquer prop relevante do form mudar
+  if (prevProps.ownerPlan !== nextProps.ownerPlan) return false
+  if (prevProps.form.id !== nextProps.form.id) return false
+  // Compare fields that affect rendering
+  const prev = prevProps.form
+  const next = nextProps.form
+  if (prev.title !== next.title) return false
+  if (prev.status !== next.status) return false
+  if (prev.is_closed !== next.is_closed) return false
+  if (prev.hide_branding !== next.hide_branding) return false
+  if (prev.thank_you_message !== next.thank_you_message) return false
+  if (prev.thank_you_title !== next.thank_you_title) return false
+  if (prev.thank_you_description !== next.thank_you_description) return false
+  if (prev.redirect_url !== next.redirect_url) return false
+  if (prev.theme !== next.theme) return false
+  if (prev.welcome_enabled !== next.welcome_enabled) return false
+  if (prev.questions !== next.questions) return false
+  if (prev.pixels !== next.pixels) return false
+  return true
 })

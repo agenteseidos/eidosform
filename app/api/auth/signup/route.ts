@@ -1,5 +1,4 @@
 import { createPublicClient } from '@/lib/supabase/public'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -41,25 +40,8 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedEmail = email.toLowerCase().trim()
-    const admin = createAdminClient()
-    const existingUsers = await admin.auth.admin.listUsers()
-    const existingUser = existingUsers.data.users.find(
-      (user) => user.email?.toLowerCase() === normalizedEmail
-    )
-
-    if (existingUser) {
-      return NextResponse.json(
-        {
-          error: existingUser.email_confirmed_at
-            ? 'Este e-mail já está cadastrado. Faça login.'
-            : 'Este e-mail já foi cadastrado, mas ainda não foi confirmado.',
-          code: existingUser.email_confirmed_at ? 'EMAIL_ALREADY_REGISTERED' : 'EMAIL_ALREADY_PENDING',
-        },
-        { status: 409 }
-      )
-    }
-
-    // Create Supabase client and attempt signup
+    // P0-1: Use signUp directly — it already returns a clear error for duplicate emails.
+    // Previously used admin.listUsers() which was O(n), leaked all user metadata, and could OOM.
     const supabase = createPublicClient()
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
@@ -71,8 +53,16 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) {
+      // P0-1: Map common Supabase auth errors to user-friendly messages
+      const msg = error.message ?? 'Signup failed'
+      let userMessage = 'Erro ao criar conta. Tente novamente.'
+      if (msg.includes('already registered') || msg.includes('already been registered')) {
+        userMessage = 'Este e-mail já está cadastrado. Faça login.'
+      } else if (msg.includes('Email not confirmed')) {
+        userMessage = 'Este e-mail já foi cadastrado, mas ainda não foi confirmado.'
+      }
       return NextResponse.json(
-        { error: error.message || 'Signup failed' },
+        { error: userMessage, code: msg.includes('already') ? 'EMAIL_ALREADY_REGISTERED' : 'SIGNUP_ERROR' },
         { status: 400 }
       )
     }

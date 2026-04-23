@@ -249,7 +249,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (error.code === '23505') {
       return NextResponse.json({ error: 'Slug already in use' }, { status: 409 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
   return NextResponse.json({
@@ -289,7 +289,8 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     .eq('id', id)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Failed to delete form:', error)
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
   return NextResponse.json({ success: true }, { status: 200 })

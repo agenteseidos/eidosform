@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 // Rate limit: 10 requests por IP por minuto
+// NOTE: In-memory Map is per-isolate. On serverless (Vercel), cold starts reset this.
+// This is acceptable for CEP lookups (low-risk, read-only, rate-limited at 10/min).
+// Migration to Supabase RPC is not justified for this use case.
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT = 10
 const WINDOW_MS = 60_000

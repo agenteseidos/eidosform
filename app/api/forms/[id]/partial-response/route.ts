@@ -4,6 +4,7 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { sanitizeValue } from '@/lib/form-response-security'
 import { log, logError } from '@/lib/logger'
+import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -106,6 +107,16 @@ export async function PUT(
   const user = await getRequestUser(req)
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
+  }
+
+  // P1-1: Rate limit partial response saves (30 req/min per IP)
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown'
+  const rateCheck = await checkResponseRateLimitAsync(ip)
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      { error: 'Muitas requisições. Tente novamente mais tarde.' },
+      { status: 429, headers: CORS_HEADERS }
+    )
   }
 
   const supabase = createPublicClient()

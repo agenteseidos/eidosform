@@ -1,51 +1,39 @@
-## Handoff — Zéfa → Sidney — 2026-04-22 22:21 GMT-3
+## Handoff — Zéfa → Sidney — 2026-04-22 22:27 GMT-3
 
 ### Demanda
-Auditar 2 features implementadas pelo Toin: exportação PDF e white-label real.
+Revalidar os 4 fixes do commit `0abfb2a` (PDF export + white-label).
 
 ### O que foi feito
-Auditoria completa dos commits `03e1f93` (PDF export) e `888131d` (white-label).
+Revalidação completa dos 4 fixes. Todos limpos, zero P0/P1/P2.
 
-### Bugs encontrados
+#### ✅ P1 — PDF footer sem branding para Plus/Professional
+- `lib/export-pdf.ts` — `hideBranding` param omite "EidosForm" do footer quando true
+- `app/api/forms/[id]/export/route.ts` — passa `hideBranding = !!PLANS[userPlan]?.pdfExport`
 
-#### P1 — PDF footer branding vaza em white-label
-- **Arquivo:** `lib/export-pdf.ts`, linha `didDrawPage`
-- **Problema:** Footer do PDF sempre imprime "EidosForm", mesmo para usuários Plus/Professional que pagam por white-label. Contradiz a feature de white-label.
-- **Fix:** Receber um parâmetro `hideBranding` no `buildPdfExport()` e condicionar o texto do footer.
+#### ✅ P2 — PDF dropdown escondido para planos sem pdfExport
+- `components/responses/responses-dashboard.tsx` — PDF DropdownMenuItem condicionado a `PLANS[userPlan as PlanName]?.pdfExport`
 
-#### P2 — PDF aparece no dropdown para usuários Starter
-- **Arquivo:** `components/responses/responses-dashboard.tsx`, linhas ~579-582
-- **Problema:** O item "PDF" aparece para todos os planos acima de Free (inclusive Starter), mas o endpoint retorna 403. Usuário clica e recebe erro.
-- **Fix:** Condicionar a `<DropdownMenuItem>` do PDF com `{PLANS[userPlan as PlanName]?.pdfExport && (...)}`
+#### ✅ P2 — generateMetadata usa Supabase direto (sem self-fetch)
+- `app/f/[slug]/page.tsx` — `fetchOwnerPlan()` helper consulta Supabase diretamente, zero self-fetch restante
 
-#### P2 — generateMetadata faz fetch interno para pegar plano do dono
-- **Arquivo:** `app/f/[slug]/page.tsx`, `generateMetadata`
-- **Problema:** Usa `fetch()` para `/api/forms/${form.id}/plan` dentro do metadata generator. Em produção isso gera uma chamada HTTP interna (self-request) a cada renderização de OG tag. Funciona, mas é ineficiente e frágil — se o APP_URL não bater, falha silenciosamente.
-- **Impacto:** Baixo (fallback para EidosForm branding), mas pode ser otimizado chamando o Supabase diretamente como `fetchPublishedForm` já faz.
+#### ✅ P3 — Type casts limpos
+- `app/f/[slug]/page.tsx` — zero ocorrências de `as unknown as`
 
-#### P3 — Type cast feio em hide_branding
-- **Arquivo:** `app/f/[slug]/page.tsx`, linha `form.hide_branding = true as unknown as typeof form.hide_branding`
-- **Problema:** Cast feio, mas funcional. O tipo provavelmente precisa ser ajustado no schema.
+### Validação
+- TypeScript: `tsc --noEmit` passa limpo ✅
+- Verificação grep: todos os 4 fixes presentes no código atual ✅
 
-### Sem bugs
-- Endpoint de exportação com gating correto por plano
-- `lib/export-pdf.ts` — lógica sólida, trata arrays/booleans/objects, layout limpo
-- `lib/plan-limits.ts` — pdfExport configurado corretamente (Plus e Professional)
-- White-label no `FormPage` (force hide_branding) — implementação correta
-- OG tags — lógica de siteName condicional funciona
+### Veredito
+**Zero P0/P1/P2.** Todos os fixes estão corretos e intactos.
 
-### Arquivos auditados
-- `lib/export-pdf.ts` (novo)
-- `lib/plan-limits.ts` (alterado)
-- `app/api/forms/[id]/export/route.ts` (alterado)
-- `components/responses/responses-dashboard.tsx` (alterado)
-- `app/f/[slug]/page.tsx` (alterado)
-- `app/api/forms/[id]/plan/route.ts` (existente, consultado)
+### Arquivos verificados
+- `lib/export-pdf.ts`
+- `app/api/forms/[id]/export/route.ts`
+- `components/responses/responses-dashboard.tsx`
+- `app/f/[slug]/page.tsx`
 
 ### Pendências
-- Corrigir P1 (PDF branding leak)
-- Corrigir P2 (PDF dropdown para Starter)
-- Opcional: otimizar P2 do metadata fetch
+- Nenhuma
 
 ### Próximo passo
-- Sidney decide prioridade dos fixes
+- Deploy quando quiser

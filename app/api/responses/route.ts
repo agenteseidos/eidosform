@@ -12,6 +12,7 @@ import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { appendSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 // Maximum payload size (50KB — generous for form data, blocks abuse)
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -236,6 +237,25 @@ export async function POST(req: NextRequest) {
   let responseMetaEvents: string[] = []
 
   if (existingResponseId) {
+    // P0-2: Verify ownership — respondent_id from cookie must match the response's respondent_id
+    // Fetch the existing response to check ownership
+    const { data: existingResponse } = await supabase
+      .from('responses')
+      .select('id, respondent_id')
+      .eq('id', existingResponseId)
+      .eq('form_id', form_id as string)
+      .single() as { data: { id: string; respondent_id: string | null } | null; error: unknown }
+
+    if (!existingResponse) {
+      return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
+    }
+
+    // Verify ownership: respondent_id from body must match, or if null, reject (anonymous can't update)
+    const bodyRespondentId = typeof respondent_id === 'string' ? respondent_id : null
+    if (existingResponse.respondent_id && existingResponse.respondent_id !== bodyRespondentId) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 403, headers: CORS_HEADERS })
+    }
+
     const { data: updated, error: updateError } = await supabase
       .from('responses')
       .update({ answers, meta_events: metaEvents, completed, last_question_answered: last_question_answered ?? null, ...utmData } as ResponseUpdate)
@@ -398,6 +418,13 @@ export async function GET(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // P1-5: Rate limit GET responses (60 req/min per user)
+  const rlKey = `responses:get:${user.id}`
+  const { allowed: rlAllowed } = await checkRateLimitAsync(rlKey, { maxAttempts: 60, windowMs: 60_000 })
+  if (!rlAllowed) {
+    return NextResponse.json({ error: 'Muitas requisições. Tente novamente mais tarde.' }, { status: 429 })
   }
 
   const url = new URL(req.url)

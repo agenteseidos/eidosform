@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -446,7 +446,8 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
   const paginatedResponses = filteredResponses.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   // Reset page when filters change
-  useMemo(() => { setPage(1) }, [statusFilter, dateFilter, searchQuery])
+  // P1-6: Reset page when filters change (moved from useMemo to useEffect)
+  useEffect(() => { setPage(1) }, [statusFilter, dateFilter, searchQuery])
 
   const handleDelete = async () => {
     if (!responseToDelete) return

@@ -26,10 +26,9 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: true })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Failed to list folders:', error)
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
-
-  return NextResponse.json({ folders: data })
 }
 
 // POST /api/folders — create new folder
@@ -60,7 +59,8 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Failed to create folder:', error)
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
   return NextResponse.json({ folder: data }, { status: 201 })

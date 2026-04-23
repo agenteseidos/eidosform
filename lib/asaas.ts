@@ -112,9 +112,11 @@ export async function createCheckout(params: {
   cancelUrl: string
   expiredUrl: string
   customerId: string
+  customValue?: number
 }): Promise<{ id: string; url: string }> {
-  const { plan, cycle, successUrl, cancelUrl, expiredUrl, customerId } = params
-  const price = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
+  const { plan, cycle, successUrl, cancelUrl, expiredUrl, customerId, customValue } = params
+  const basePrice = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
+  const price = customValue !== undefined ? customValue : basePrice
   const nextDueDate = new Date()
   nextDueDate.setDate(nextDueDate.getDate() + 1)
 

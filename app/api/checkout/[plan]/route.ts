@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createCheckout, createCustomer, cancelSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
+import { calculateUpgradePrice, isUpgrade } from '@/lib/proration'
 import { log, logError } from '@/lib/logger'
 
 const VALID_PLANS = new Set<string>(PLAN_ORDER.filter((p) => p !== 'free'))
@@ -63,6 +64,72 @@ export async function POST(
     })
   }
 
+  // Downgrade: não aplica proration, cancela ao final do período
+  if (profile.asaasSubscriptionId && profile.plan !== plan) {
+    if (!isUpgrade(profile.plan as PlanId, plan as PlanId)) {
+      return NextResponse.json({
+        message: 'Downgrades são processados ao final do período atual.',
+        isDowngrade: true,
+      })
+    }
+  }
+
+  // Calcular proration para upgrade
+  let proration: { credit: number; newPrice: number; originalPrice: number; finalPrice: number } | null = null
+  let checkoutValue: number | undefined
+
+  if (profile.asaasSubscriptionId && profile.plan !== plan && isUpgrade(profile.plan as PlanId, plan as PlanId)) {
+    const { data: planData } = await supabase
+      .from('profiles')
+      .select('plan_expires_at')
+      .eq('id', profile.profileId)
+      .single()
+
+    if (planData?.plan_expires_at) {
+      const { data: lastCheckout } = await supabase
+        .from('billing_checkouts')
+        .select('cycle')
+        .eq('profile_id', profile.profileId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const currentCycle = (lastCheckout?.cycle ?? 'MONTHLY') as BillingCycle
+
+      proration = calculateUpgradePrice({
+        currentPlan: profile.plan as PlanId,
+        currentCycle,
+        planExpiresAt: planData.plan_expires_at,
+        newPlan: plan as PlanId,
+        newCycle: cycle,
+      })
+
+      log('[checkout] Proration calculada', {
+        currentPlan: profile.plan,
+        newPlan: plan,
+        credit: proration.credit,
+        originalPrice: proration.originalPrice,
+        finalPrice: proration.finalPrice,
+      })
+
+      // Se crédito cobre o novo plano, não precisa cobrar
+      if (proration.finalPrice <= 0) {
+        log('[checkout] Crédito cobre o novo plano, ativando diretamente', {
+          userId: profile.profileId,
+          credit: proration.credit,
+          newPlan: plan,
+        })
+        return NextResponse.json({
+          message: 'Seu crédito cobre o novo plano. Ele será ativado automaticamente.',
+          coveredByCredit: true,
+          proration,
+        })
+      }
+
+      checkoutValue = proration.finalPrice
+    }
+  }
+
   try {
     // Cancela assinatura anterior se existir
     if (profile.asaasSubscriptionId && profile.plan !== plan) {
@@ -97,14 +164,15 @@ export async function POST(
       log('[checkout] Customer do Asaas atualizado a partir da conta logada', { userId: profile.profileId, customerId })
     }
 
-    const price = cycle === 'MONTHLY'
+    const basePrice = cycle === 'MONTHLY'
       ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
       : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
+    const price = checkoutValue ?? basePrice
     const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
     const successUrl = `${origin}/billing?checkout=success`
     const cancelUrl = `${origin}/billing?checkout=cancelled`
     const expiredUrl = `${origin}/billing?checkout=expired`
-    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId, profileId: profile.profileId })
+    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId, profileId: profile.profileId, isProrated: !!checkoutValue })
     const checkout = await createCheckout({
       plan: plan as Exclude<PlanId, 'free'>,
       cycle,
@@ -112,8 +180,9 @@ export async function POST(
       cancelUrl,
       expiredUrl,
       customerId,
+      ...(checkoutValue ? { customValue: checkoutValue } : {}),
     })
-    log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: 'checkout', checkoutId: checkout.id, profileId: profile.profileId })
+    log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: checkoutValue ? 'prorated_checkout' : 'checkout', checkoutId: checkout.id, profileId: profile.profileId })
 
     await supabase
       .from('billing_checkouts')
@@ -126,6 +195,11 @@ export async function POST(
         status: 'pending',
         last_event: 'CHECKOUT_CREATED',
         payment_method: null,
+        ...(proration ? {
+          original_price: proration.originalPrice,
+          proration_credit: proration.credit,
+          final_price: proration.finalPrice,
+        } : {}),
       }, { onConflict: 'checkout_id' })
 
     return NextResponse.json({
@@ -134,6 +208,7 @@ export async function POST(
       plan,
       cycle,
       value: price,
+      ...(proration ? { proration } : {}),
     })
   } catch (err) {
     logError('[checkout] Erro ao processar checkout', err)

@@ -230,7 +230,7 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        const { user } = await resolveBillingContext({
+        const { user, checkoutLink } = await resolveBillingContext({
           customerId,
           subscriptionId: payment?.subscription ?? null,
         })
@@ -242,10 +242,21 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        const { plan, cycle } = detectPlanAndCycle(
-          payment.value,
-          (body as unknown as Record<string, unknown>).description as string | undefined
-        )
+        // Prefer plan/cycle from checkout record (handles prorated values)
+        let plan: string
+        let cycle: 'MONTHLY' | 'YEARLY'
+        if (checkoutLink?.plan && checkoutLink?.cycle) {
+          plan = checkoutLink.plan
+          cycle = checkoutLink.cycle as 'MONTHLY' | 'YEARLY'
+          log('[asaas-webhook] Using plan/cycle from checkout record', { plan, cycle })
+        } else {
+          const detected = detectPlanAndCycle(
+            payment.value,
+            (body as unknown as Record<string, unknown>).description as string | undefined
+          )
+          plan = detected.plan
+          cycle = detected.cycle
+        }
         const planConfig = PLANS[plan as PlanName]
         const planExpiresAt = calculateExpiryDate(cycle)
 

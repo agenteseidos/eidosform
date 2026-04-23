@@ -49,26 +49,33 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const [navigationHistory, setNavigationHistory] = useState<number[]>([])
   const metaEvents = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
   const partialResponsesEnabled = (ownerPlan === 'plus' || ownerPlan === 'professional')
-  const [isEmbedded, setIsEmbedded] = useState(false)
+  const [isEmbedded, setIsEmbedded] = useState<boolean | null>(null)
 
   // Detect iframe embedding
   useEffect(() => {
     try {
-      if (window.self !== window.top) {
-        setIsEmbedded(true)
-      }
+      setIsEmbedded(window.self !== window.top)
     } catch {
- setIsEmbedded(true)
+      setIsEmbedded(true)
     }
   }, [])
+
+  // Loading state until embed detection completes
+  if (isEmbedded === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="w-6 h-6 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin" />
+      </div>
+    )
+  }
 
   // Block unauthorized embeds
   if (isEmbedded && !allowEmbed) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-b from-slate-50 to-white">
         <div className="text-center max-w-md">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-violet-100 flex items-center justify-center">
-            <Lock className="w-10 h-10 text-violet-500" />
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-100 flex items-center justify-center">
+            <Lock className="w-10 h-10 text-amber-600" />
           </div>
           <h1 className="text-2xl font-bold text-slate-900 mb-3">
             Embed não disponível
@@ -80,7 +87,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
             href={`${window.location.origin}/f/${(form as { slug?: string }).slug || ''}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors text-sm font-medium"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
           >
             Abrir formulário
             <ExternalLink className="w-4 h-4" />

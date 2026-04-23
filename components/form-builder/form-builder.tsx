@@ -229,7 +229,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const [showPublishDialog, setShowPublishDialog] = useState(false)
   const [showAddQuestion, setShowAddQuestion] = useState(false)
   const [activeTab, setActiveTab] = useState('questions')
-  const [embedWidth, setEmbedWidth] = useState('100%')
+  const [embedWidth, setEmbedWidth] = useState('100')
   const [embedHeight, setEmbedHeight] = useState('600')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<'questions' | 'editor' | 'preview'>('questions')
@@ -1489,10 +1489,16 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           <div className="flex-1">
                             <Label className="text-xs text-slate-500">Largura</Label>
                             <Input
-                              type="number"
+                              type="text"
                               value={embedWidth}
                               onChange={(e) => setEmbedWidth(e.target.value)}
                               placeholder="100%"
+                              onBlur={(e) => {
+                                const val = e.target.value.trim()
+                                if (val && !val.endsWith('%') && !val.endsWith('px') && !isNaN(Number(val))) {
+                                  setEmbedWidth(val + '%')
+                                }
+                              }}
                               className="mt-1 h-8 text-sm"
                             />
                           </div>

@@ -292,14 +292,6 @@ export async function POST(req: NextRequest) {
     const ownerPlan = (ownerProfile?.plan ?? 'free') as PlanName
     const ownerPlanConfig = PLANS[ownerPlan]
 
-    // Email de notificação (system email — always allowed)
-    try {
-      const { sendNewResponseNotification } = await import('@/lib/email')
-      await sendNewResponseNotification(form_id as string, form.user_id, responseId)
-    } catch (e) {
-      logError('Email notification failed:', e)
-    }
-
     // Notificação por email configurada no form — feature gated
     if (form.notify_email_enabled && form.notify_email && ownerPlanConfig?.emailNotifications) {
       sendEmailNotification({

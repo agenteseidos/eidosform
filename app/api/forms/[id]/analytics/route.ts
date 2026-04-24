@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { PLANS, PlanName } from '@/lib/plan-limits'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -27,6 +28,16 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
+  // P1 FIX: Feature gate — advanced analytics (abandonment, avg time) require Plus plan
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const planConfig = PLANS[userPlan]
+  const questions = (form.questions as Array<{ id: string; title?: string }>) ?? []
+
   // Total de respostas
   const { count: totalResponses } = await supabase
     .from('responses')
@@ -52,7 +63,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     .eq('completed', true)
 
   let avgCompletionTimeSeconds: number | null = null
-  if (completedTimestamps && completedTimestamps.length > 0) {
+  if (planConfig?.partialResponses && completedTimestamps && completedTimestamps.length > 0) {
     const durations = completedTimestamps
       .map((r: { created_at: string; updated_at: string | null }) => {
         const start = new Date(r.created_at).getTime()
@@ -65,28 +76,37 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     }
   }
 
-  // Abandono por pergunta (respostas com completed=false, agrupadas por last_question_answered)
-  const { data: incompleteResponses } = await supabase
-    .from('responses')
-    .select('last_question_answered')
-    .eq('form_id', id)
-    .eq('completed', false)
-    .not('last_question_answered', 'is', null)
+  // Abandono por pergunta (feature Plus+)
+  const abandonmentByQuestion = planConfig?.partialResponses
+    ? await (async () => {
+        const { data: incompleteResponses } = await supabase
+          .from('responses')
+          .select('last_question_answered')
+          .eq('form_id', id)
+          .eq('completed', false)
+          .not('last_question_answered', 'is', null)
 
-  const abandonmentMap: Record<string, number> = {}
-  for (const r of (incompleteResponses ?? [])) {
-    const q = r.last_question_answered as string
-    abandonmentMap[q] = (abandonmentMap[q] ?? 0) + 1
-  }
+        const abandonmentMap: Record<string, number> = {}
+        for (const r of (incompleteResponses ?? [])) {
+          const q = r.last_question_answered as string
+          abandonmentMap[q] = (abandonmentMap[q] ?? 0) + 1
+        }
 
-  const questions = (form.questions as Array<{ id: string; title?: string }>) ?? []
-  const abandonmentByQuestion = questions.map((q, index) => ({
-    question_id: q.id,
-    question_title: q.title ?? `Pergunta ${index + 1}`,
-    question_index: index + 1,
-    abandoned_count: abandonmentMap[q.id] ?? 0,
-    abandonment_rate: total > 0 ? Math.round(((abandonmentMap[q.id] ?? 0) / total) * 100) : 0,
-  }))
+        return questions.map((q, index) => ({
+          question_id: q.id,
+          question_title: q.title ?? `Pergunta ${index + 1}`,
+          question_index: index + 1,
+          abandoned_count: abandonmentMap[q.id] ?? 0,
+          abandonment_rate: total > 0 ? Math.round(((abandonmentMap[q.id] ?? 0) / total) * 100) : 0,
+        }))
+      })()
+    : questions.map((q, index) => ({
+        question_id: q.id,
+        question_title: q.title ?? `Pergunta ${index + 1}`,
+        question_index: index + 1,
+        abandoned_count: 0,
+        abandonment_rate: 0,
+      }))
 
   return NextResponse.json({
     form_id: id,

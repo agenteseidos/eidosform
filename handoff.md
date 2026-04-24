@@ -797,3 +797,202 @@ Tipos: short_text, long_text, dropdown, checkboxes, email, phone, number, date, 
 **Builder CRUD:** ✅ Criar/editar/salvar/publicar/despublicar funcionando
 **Duplicar/Deletar:** ✅ Funcional com plan gates
 **Tipos de pergunta:** ✅ 18 tipos suportados em builder, validação e player
+
+---
+
+## Revalidação Zéfa — Blocos 3 e 4 (2026-04-24)
+
+### Bloco 3 — Commits do Zeca
+
+| Commit | Item | Veredito |
+|--------|------|----------|
+| `3e4120b` | Trigger auto-create profile | ✅ **Aprovada** — SECURITY DEFINER, ON CONFLICT DO NOTHING, search_path limpo |
+| `841241c` | Botão despublicar | ✅ **Aprovada** — handleUnpublish seta status draft, loading state, toast |
+| `8967611` | /settings no middleware | ✅ **Aprovada** — startsWith cobre sub-rotas |
+
+### Bloco 4 — Commits do Toin
+
+| Commit | Item | Veredito |
+|--------|------|----------|
+| `143349a` | v1 API is_closed/paused | ✅ **Aprovada** — 403 para forms fechados e pausados |
+| `143349a` | v1 API respondent_id ownership | ⚠️ **Aprovada com correção** — Verificação existia mas respondent_id nunca era salvo no INSERT/UPDATE, tornando a checagem inútil |
+
+### Novo achado P1 pela Zéfa
+
+| Prioridade | Achado | Correção | Commit |
+|------------|--------|----------|--------|
+| **P1** | v1 API não persistia `respondent_id` — ownership check era inútil, qualquer pessoa com response_id podia atualizar respostas parciais alheias | Adicionado `respondent_id` ao INSERT e UPDATE | `46188e5` |
+
+## Status: ✅ Blocos 3 e 4 Revalidados e Aprovados
+
+**P0:** 0 novas (trigger P0 do Zeca aprovado)
+**P1:** 1 nova corrigida (v1 API respondent_id persistence)
+**P2:** 11 herdadas (sem mudança)
+
+---
+
+# Bloco 6 — LGPD + Redirect + Forms Fechados + WhatsApp (Itens A-F)
+
+**Data:** 2026-04-24
+**Responsável:** Toin
+**Tipo:** Auditoria + Correções P0/P1
+**Commits:** `3602316`
+
+---
+
+## Item A: Consentimento/LGPD e tratamento de dados no fluxo do produto
+
+### O que foi auditado
+- Página `/privacidade` — conteúdo completo
+- Página `/termos` — conteúdo completo
+- Registro de usuário — checkbox de termos
+- Fluxo de coleta de dados no player
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Menção a LGPD nos Termos (Seção 8: Proteção de Dados LGPD)
+- ✅ Política de Privacidade robusta com bases legais, direitos do titular, DPO, ANPD
+- ✅ Usuário é tratado como controlador dos dados dos respondentes
+- ✅ Eidos atua como operadora
+- ✅ Dados de respondentes: responsabilidade do controlador (usuário)
+- ✅ Cookies e pixels de terceiros documentados com links para políticas de privacidade
+- ✅ Direito de arrependimento (CDC art. 49) documentado
+
+### 🟡 P2 (não corrigido)
+1. Não há checkbox de aceitação dos termos no registro — aceitação é implícita ao usar a plataforma. Considere adicionar checkbox explícito.
+
+---
+
+## Item B: Páginas /privacidade e /termos + links visíveis no produto
+
+### O que foi auditado
+- `app/(public)/privacidade/page.tsx` — página de privacidade
+- `app/(public)/termos/page.tsx` — página de termos
+- `app/privacy/page.tsx` — redirect → `/privacidade`
+- `app/terms/page.tsx` — redirect → `/termos`
+- Footer da landing page (`app/page.tsx`)
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Páginas existem com conteúdo completo e bem formatado
+- ✅ Links no footer da landing page (Privacidade + Termos)
+- ✅ Cross-links entre as páginas (termos ↔ privacidade)
+- ✅ Footer com links em ambas as páginas
+- ✅ Redirects `/privacy` → `/privacidade` e `/terms` → `/termos` funcionam
+
+---
+
+## Item C: Redirect após envio + tela de agradecimento
+
+### O que foi auditado
+- `components/form-player/form-player.tsx` — fluxo de submit e thank you screen
+- `app/f/[slug]/page.tsx` — carregamento do form com campos de redirect
+- `lib/database.types.ts` — campos `redirect_url`, `redirect_delay`, `thank_you_*`
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Redirect com URL customizada funciona (`form.redirect_url`)
+- ✅ Redirect delay respeitado (`form.redirect_delay`, default 2800ms)
+- ✅ `ensureHttps()` garante protocolo HTTPS no redirect
+- ✅ Tela de agradecimento padrão com campos customizáveis (title, description, button_text, button_url)
+- ✅ Animações de entrada com Framer Motion
+- ✅ Mensagem de redirecionamento exibida quando redirect_url está configurado
+
+---
+
+## Item D: Formulários fechados/bloqueados no player
+
+### O que foi auditado
+- `app/f/[slug]/page.tsx` — checagem de `is_closed` e `paused`
+- `components/form-player/form-player.tsx` — tela de form fechado
+- `app/api/responses/route.ts` — verificação backend de is_closed e paused
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Form fechado (`is_closed`) mostra tela "Formulário encerrado" com ícone de cadeado
+- ✅ Backend rejeita respostas com 403 quando form está fechado
+- ✅ Form pausado (`paused`) mostra tela "Formulário pausado" no server component
+- ✅ Backend rejeita respostas com 403 quando form está pausado
+- ✅ Limite de respostas por plano verificado antes de inserir (429 se atingido)
+- ✅ Todas as telas respeitam o tema do formulário
+
+---
+
+## Item E: Gates por plano no WhatsApp + falhas + rate limit
+
+### O que foi auditado
+- `app/api/whatsapp/send/route.ts` — endpoint de envio (form-aware e direct)
+- `app/api/forms/[id]/whatsapp/route.ts` — CRUD de settings com plan gates
+- `app/api/form/[id]/whatsapp/settings/route.ts` — CRUD de settings com plan gates
+- `lib/plan-limits.ts` — definição de `whatsappNotifications`
+- `lib/integration-stubs.ts` — auto-send on form response
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Form-aware send verifica plano (Plus/Professional) — 403 se free
+- ✅ Settings GET/POST/PATCH verificam plano Plus+
+- ✅ Rate limit: 100 envios/hora por telefone (in-memory)
+- ✅ Falhas tratadas com mensagens descritivas (NOT_AUTH, UNAVAILABLE, VPS_ERROR)
+- ✅ Auto-send delegado ao endpoint interno com INTERNAL_API_SECRET
+- ✅ Direct mode protegido por INTERNAL_API_SECRET (P2 herdado — adicionar plan gate)
+
+---
+
+## Item F: WhatsApp settings + envio automático + variáveis + logs
+
+### O que foi auditado
+- `app/api/form/[id]/whatsapp/settings/route.ts` — CRUD completo
+- `app/api/whatsapp/send/route.ts` — envio com template
+- `lib/integration-stubs.ts` — auto-send on response
+- `supabase/migrations/20260405_whatsapp_logs.sql` — tabela de logs
+
+### Resultado
+
+**🟡 P1:**
+1. **`form_whatsapp_logs` nunca era escrita.** Tabela existia no banco com schema completo, mas nenhum código fazia insert. Envios de WhatsApp não eram auditáveis.
+
+### O que foi corrigido
+- ✅ `3602316` — Adicionado `logWhatsAppSend()` que faz insert na tabela `form_whatsapp_logs` para cada envio (sucesso ou falha). Chamado em ambos os caminhos (try/catch) do `sendWhatsAppOnFormResponse`.
+
+### Itens OK
+- ✅ Settings CRUD funciona com validação (owner_phone required, plan gate Plus+)
+- ✅ Envio automático ao receber resposta completa (Plus+ only)
+- ✅ Variáveis substituídas: `{form_name}`, `{nome}`, `{email}`, `{phone}`, `{response_id}`, `{response_link}`, `{meta_events}`, + qualquer `{key}` do leadData
+- ✅ Rate limit por telefone (100/hora)
+- ✅ Validação de número de telefone
+- ✅ Timeout de 30s no envio
+- ✅ Tratamento de erros (auth, unavailable, VPS error)
+
+---
+
+## Commits Bloco 6
+
+| Hash | Descrição |
+|------|-----------|
+| `3602316` | fix(P1): add WhatsApp send logging to form_whatsapp_logs table |
+
+## P2 Pendentes (acumulados)
+
+| Item | Descrição | Origem |
+|------|-----------|--------|
+| CSP unsafe-inline/eval | Trade-off com Next.js + pixels | Bloco 1 |
+| Rate limit in-memory cold starts | Baixo impacto (tem fallback Supabase) | Bloco 1 |
+| answer_items RLS desconhecido | Verificar no Dashboard | Bloco 1 |
+| anon_insert_responses CHECK(true) | Revisar ordem de migrations | Bloco 1 |
+| consolidate RLS migrations | Múltiplas migrations de fix | Bloco 1 |
+| NEXT_PUBLIC_APP_URL validation | Garantir em produção | Bloco 1 |
+| api/whatsapp/send direct mode | Bypass se INTERNAL_API_SECRET vazado | Bloco 1 |
+| api-key-settings silent catch | catch silencioso no fetch de status | Bloco 2 |
+| Dashboard Suspense boundary | Server component sem loading fallback visual | Bloco 2 |
+| PAYMENT_DELETED webhook | Não tratado (Asaas usa SUBSCRIPTION_DELETED) | Bloco 2 |
+| is_published field inconsistency | Campo existe mas sistema usa `status` | Bloco 3 |
+| DRY serializeAnswerValue | Função duplicada inline no v1 route | Bloco 4 |
+| Checkbox de aceitação de termos no registro | Aceitação é implícita | Bloco 6 |
+
+## Status: ✅ Bloco 6 Concluído
+
+**P0:** 0 encontradas
+**P1:** 1 corrigida (WhatsApp logs)
+**P2:** 13 documentadas (11 herdadas + 2 novas)
+
+**LGPD:** ✅ Conteúdo robusto nos termos e privacidade
+**Páginas legais:** ✅ Existem com links acessíveis no footer
+**Redirect + agradecimento:** ✅ Funcional com URL customizada e delay
+**Forms fechados:** ✅ Tela de bloqueio + rejeição no backend
+**WhatsApp gates:** ✅ Plan check, rate limit, tratamento de falhas
+**WhatsApp settings + auto-send + variáveis:** ✅ Funcional, logs corrigidos

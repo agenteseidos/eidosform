@@ -26,7 +26,7 @@ export default async function BillingPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_cycle, responses_used, responses_limit')
+    .select('plan, plan_cycle, responses_used, responses_limit, plan_expires_at')
     .eq('id', user.id)
     .single()
 
@@ -34,6 +34,10 @@ export default async function BillingPage() {
   const currentCycle = (profile?.plan_cycle as string) || null
   const usedResponses = profile?.responses_used ?? 0
   const planLimit = profile?.responses_limit ?? 100
+  const planExpiresAt = profile?.plan_expires_at ? new Date(profile.plan_expires_at) : null
+  const cycleLabel = planExpiresAt
+    ? planExpiresAt.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })
+    : '—'
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
@@ -58,7 +62,7 @@ export default async function BillingPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-semibold">Uso atual — Plano {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Ciclo reinicia em {new Date(Date.now() + 32 * 86400000).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}</p>
+            <p className="text-sm text-slate-500 mt-0.5">{currentPlan === 'free' ? 'Plano gratuito — sem ciclo de cobrança' : `Ciclo reinicia em ${cycleLabel}`}</p>
           </div>
           <Badge className="bg-[#F5B731]/15 text-[#F5B731] font-semibold border border-[#F5B731]/30">
             {PLAN_LABELS[currentPlan] || currentPlan}

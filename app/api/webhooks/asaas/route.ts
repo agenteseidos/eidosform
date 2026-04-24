@@ -316,7 +316,7 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        const { user } = await resolveBillingContext({
+        const { user, checkoutLink } = await resolveBillingContext({
           customerId,
           subscriptionId: payment?.subscription ?? null,
         })
@@ -324,6 +324,28 @@ export async function POST(req: NextRequest) {
           logWarn('[asaas-webhook] User not found for overdue payment context', {
             customerId,
             subscriptionId: payment?.subscription ?? null,
+          })
+          break
+        }
+
+        // Guard: only apply downgrade if the event belongs to the profile's active subscription
+        const overdueSubId = payment?.subscription ?? null
+        const { data: overdueProfile } = await supabase
+          .from('profiles')
+          .select('asaas_subscription_id, plan')
+          .eq('id', user.id)
+          .single()
+
+        if (overdueProfile?.plan === 'free') {
+          log('[asaas-webhook] PAYMENT_OVERDUE ignored — user already on free plan', { userId: user.id, subscriptionId: overdueSubId })
+          break
+        }
+
+        if (overdueSubId && overdueProfile?.asaas_subscription_id && overdueSubId !== overdueProfile.asaas_subscription_id) {
+          log('[asaas-webhook] PAYMENT_OVERDUE ignored — subscription mismatch (old/ghost subscription)', {
+            userId: user.id,
+            eventSubscriptionId: overdueSubId,
+            activeSubscriptionId: overdueProfile.asaas_subscription_id,
           })
           break
         }
@@ -367,6 +389,28 @@ export async function POST(req: NextRequest) {
           logWarn('[asaas-webhook] User not found for deleted subscription context', {
             customerId,
             subscriptionId: subscription?.id ?? null,
+          })
+          break
+        }
+
+        // Guard: only apply downgrade if the deleted subscription is the profile's active one
+        const deletedSubId = subscription?.id ?? null
+        const { data: deletedProfile } = await supabase
+          .from('profiles')
+          .select('asaas_subscription_id, plan')
+          .eq('id', user.id)
+          .single()
+
+        if (deletedProfile?.plan === 'free') {
+          log('[asaas-webhook] SUBSCRIPTION_DELETED ignored — user already on free plan', { userId: user.id, subscriptionId: deletedSubId })
+          break
+        }
+
+        if (deletedSubId && deletedProfile?.asaas_subscription_id && deletedSubId !== deletedProfile.asaas_subscription_id) {
+          log('[asaas-webhook] SUBSCRIPTION_DELETED ignored — subscription mismatch (old/ghost subscription)', {
+            userId: user.id,
+            eventSubscriptionId: deletedSubId,
+            activeSubscriptionId: deletedProfile.asaas_subscription_id,
           })
           break
         }

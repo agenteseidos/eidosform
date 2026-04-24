@@ -89,7 +89,6 @@ export async function POST(
 
     if (planData?.plan_expires_at) {
       const currentCycle = (profile.plan_cycle ?? 'MONTHLY') as BillingCycle
-      console.log('[CHECKOUT-PRORATION] profile.plan_cycle =', profile.plan_cycle, '| resolved currentCycle =', currentCycle)
 
       proration = calculateUpgradePrice({
         currentPlan: profile.plan as PlanId,

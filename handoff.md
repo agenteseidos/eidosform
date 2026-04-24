@@ -1727,3 +1727,60 @@ Middleware de roteamento para domínios personalizados no `middleware.ts`.
 ## Status: ✅ Feature implementada
 
 Domínios personalizados agora funcionam end-to-end: adicionar → verificar DNS → servir formulário via domínio próprio.
+
+# Revalidação Zéfa — Custom Domain Middleware (2026-04-24)
+
+**Responsável:** Zéfa
+**Commit auditado:** `79a7291`
+**Commits correção:** `d872c91`
+
+## Audit do Zeca (commit `79a7291`)
+
+### O que foi implementado
+- Middleware resolve custom domain → form slug via Supabase REST (anon key)
+- `NextResponse.rewrite()` preserva hostname no browser
+- Cache em memória com TTL 60s
+- Redirect 302 para app principal se domínio não encontrado
+- Porta removida via `.split(':')[0]`
+
+## Achados pela Zéfa
+
+| Prioridade | Problema | Impacto | Correção |
+|------------|----------|---------|----------|
+| **P0** | RLS bloqueia query do middleware — `custom_domains` só tinha policy `auth.uid() = user_id`. Anon key não consegue ler nenhuma row. Domínios personalizados nunca resolviam silenciosamente. | Feature completamente quebrada | Migration: `CREATE POLICY "Anon can read verified custom domains" ON custom_domains FOR SELECT USING (verified = true)` |
+| **P0** | API routes eram reescritas — `/api/responses` virava `/f/slug/api/responses` → 404. Submissões de formulário via custom domain completamente quebradas. | Submissões não funcionam | Skip rewrite para `/api/*` paths |
+| **P0** | `_next/data/*` routes eram reescritas — Client-side navigation no custom domain quebrada (data fetching do Next.js falhava). | Navegação no form quebrada | Skip rewrite para `/_next/*` paths |
+| **P1** | CSRF bloqueava partial responses de custom domain — `/api/forms/[id]/partial-response` não estava em `publicWritePaths`, origin do custom domain não está em `ALLOWED_ORIGINS` | Auto-save não funciona em custom domain | CSRF bypass para `isVerifiedCustomDomain` (seguro: cookies são domain-scoped) |
+
+## Pontos de auditoria (itens 1-9)
+
+1. **Rewrite funciona?** ✅ Sim, `NextResponse.rewrite()` preserva hostname. Browser mostra domínio do cliente.
+2. **Cache seguro?** ✅ TTL 60s adequado. Sem invalidação quando domínio é removido (aceitável — form continua publicado por até 60s). Cache negativo ausente (P2 — requests para domínios desconhecidos sempre hitting DB).
+3. **Race condition?** ⚠️ Domínio removido mas cache ainda aponta — form continua servido por até 60s. Aceitável porque form precisa estar `published` e a consulta original também checava `verified=true`.
+4. **SQL injection via hostname?** ✅ `encodeURIComponent(hostname)` usado no query param. Seguro contra injection.
+5. **Gate de plano?** ✅ Gate na API CRUD (`/api/domains`). Middleware não precisa verificar — só roteia domínios verificados.
+6. **RLS?** ❌ **P0 corrigido** — Tabela tinha RLS mas sem policy para anon. Query do middleware sempre retornava vazio.
+7. **Submissões via custom domain?** ❌ **P0 corrigido** — `/api/responses` era reescrita para path inexistente.
+8. **Edge cases?** ✅ Porta removida. Path preservado. ⚠️ www subdomain não normalizado (P2).
+9. **Performance?** ✅ Cache evita DB hits. Duas queries por cache miss (custom_domains + forms) — aceitável com 60s TTL. Poderia ser single query com join (P2).
+
+## Commits
+
+| Hash | Descrição |
+|------|-----------|
+| `d872c91` | fix(P0): custom domain middleware - RLS anon read + skip rewrite for API/_next paths |
+
+## P2 Pendentes
+
+| Item | Descrição |
+|------|-----------|
+| Sem negative cache | Domínios desconhecidos sempre hitting DB |
+| www subdomain não normalizado | `www.forms.cliente.com.br` não resolve se domínio cadastrado é `forms.cliente.com.br` |
+| Single query com join | Duas queries por cache miss poderiam ser uma |
+
+## Status: ✅ Custom Domain Middleware Corrigido
+
+**P0:** 3 corrigidas (RLS anon read, API rewrite, _next/data rewrite)
+**P1:** 1 corrigida (CSRF bypass para custom domains)
+
+Feature agora funciona end-to-end: adicionar → verificar DNS → servir formulário → submissão via domínio próprio.

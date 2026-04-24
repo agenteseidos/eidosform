@@ -19,6 +19,17 @@ export async function GET(req: NextRequest, { params }: Params) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // P1 FIX: Feature gate — webhooks require Plus plan
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  if (!PLANS[userPlan]?.webhooks) {
+    return NextResponse.json({ error: 'Webhooks disponíveis a partir do plano Plus' }, { status: 403 })
+  }
+
   const { data: form, error } = await supabase
     .from('forms')
     .select('id, webhook_url')
@@ -83,6 +94,17 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // P1 FIX: Feature gate — webhooks require Plus plan
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  if (!PLANS[userPlan]?.webhooks) {
+    return NextResponse.json({ error: 'Webhooks disponíveis a partir do plano Plus' }, { status: 403 })
+  }
 
   const { error } = await supabase
     .from('forms')

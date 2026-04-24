@@ -11,7 +11,6 @@ import {
   Sparkles,
   Menu,
   X,
-  Star,
   Instagram,
   Linkedin,
   Youtube,
@@ -93,7 +92,6 @@ const plans = [
       'Respostas ilimitadas',
       'TikTok Pixel + GTM',
       'Webhooks',
-      'Domínio personalizado',
       'Taxa de abandono por campo',
       'Dark mode',
       'Suporte prioritário',
@@ -148,7 +146,7 @@ function NavBar() {
             <Link href="/login">
               <button className="text-sm text-slate-400 hover:text-white transition-colors px-3 py-1.5">Entrar</button>
             </Link>
-            <Link href="/login">
+            <Link href="/register">
               <button className="text-sm font-semibold bg-[#F5B731] hover:bg-[#E8923A] text-black px-4 py-2 rounded-lg shadow-lg shadow-[#F5B731]/20 transition-all hover:shadow-[#E8923A]/30">
                 Criar conta grátis
               </button>
@@ -168,7 +166,7 @@ function NavBar() {
             className="md:hidden overflow-hidden border-t border-white/5 bg-[#0A0A0F]"
           >
             <div className="px-4 py-4 flex flex-col gap-3 text-sm">
-              <Link href="/login">
+              <Link href="/register">
                 <button className="w-full text-sm font-semibold bg-[#F5B731] hover:bg-[#E8923A] text-black px-4 py-2.5 rounded-lg mt-1">
                   Criar conta grátis
                 </button>
@@ -245,7 +243,7 @@ export default function PgbLandingPage() {
 
           <Reveal delay={0.15}>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link href="/login">
+              <Link href="/register">
                 <button className="w-full sm:w-auto bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-4 rounded-xl shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5 flex items-center gap-2">
                   Criar minha conta grátis
                   <ArrowRight className="w-5 h-5" />
@@ -274,53 +272,9 @@ export default function PgbLandingPage() {
             </div>
           </Reveal>
 
-          {/* Logos placeholder */}
-          <Reveal delay={0.05}>
-            <div className="flex flex-wrap items-center justify-center gap-8 mb-16 opacity-40">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="w-28 h-10 rounded-lg bg-white/10 flex items-center justify-center text-xs text-slate-500 font-mono">
-                  [PLACEHOLDER]
-                </div>
-              ))}
-            </div>
-          </Reveal>
+          {/* Logos — adicionar logos reais de clientes quando disponíveis */}
 
-          {/* Testimonials */}
-          <div className="grid md:grid-cols-3 gap-6 mb-12">
-            {[1, 2, 3].map((i) => (
-              <Reveal key={i} delay={i * 0.05}>
-                <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-6">
-                  <div className="flex gap-1 mb-3">
-                    {Array.from({ length: 5 }).map((_, s) => (
-                      <Star key={s} className="w-4 h-4 fill-[#F5B731] text-[#F5B731]" />
-                    ))}
-                  </div>
-                  <p className="text-slate-400 text-sm leading-relaxed mb-4 italic">
-                    &quot;[PLACEHOLDER — substituir por depoimento real]&quot;
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-white/10" />
-                    <div>
-                      <p className="text-sm font-medium text-white">[Nome]</p>
-                      <p className="text-xs text-slate-500">[Cargo, Empresa]</p>
-                    </div>
-                  </div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-
-          {/* Numbers */}
-          <Reveal>
-            <div className="flex flex-wrap items-center justify-center gap-12 text-center">
-              {['[X] formulários criados', '[Y] respostas coletadas', '[Z] usuários ativos'].map((txt, i) => (
-                <div key={i}>
-                  <p className="text-3xl font-black text-[#F5B731]">[PLACEHOLDER]</p>
-                  <p className="text-sm text-slate-500 mt-1">{txt}</p>
-                </div>
-              ))}
-            </div>
-          </Reveal>
+          {/* Depoimentos e números — adicionar quando houver clientes reais */}
         </div>
       </section>
 
@@ -514,7 +468,7 @@ export default function PgbLandingPage() {
                   <span className="text-xs font-medium text-slate-400 bg-white/5 px-3 py-1 rounded-full">{tag}</span>
                   <h3 className="text-xl font-black text-white mt-4 mb-3">{title}</h3>
                   <p className="text-sm text-slate-400 leading-relaxed mb-6">{desc}</p>
-                  <Link href="/login" className="inline-flex items-center text-sm font-semibold text-[#F5B731] hover:text-[#E8923A] transition-colors gap-1">
+                  <Link href="/register" className="inline-flex items-center text-sm font-semibold text-[#F5B731] hover:text-[#E8923A] transition-colors gap-1">
                     Criar meu form agora <ArrowRight className="w-4 h-4" />
                   </Link>
                 </div>
@@ -555,7 +509,7 @@ export default function PgbLandingPage() {
 
           <Reveal delay={0.2}>
             <div className="text-center mt-12">
-              <Link href="/login">
+              <Link href="/register">
                 <button className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-4 rounded-xl shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
                   Começar agora — é grátis
                 </button>
@@ -699,7 +653,7 @@ export default function PgbLandingPage() {
           </Reveal>
           <Reveal delay={0.1}>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link href="/login">
+              <Link href="/register">
                 <button className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-4 rounded-xl shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5 flex items-center gap-2">
                   Criar minha conta agora — é grátis
                   <ArrowRight className="w-5 h-5" />

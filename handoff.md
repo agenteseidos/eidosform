@@ -445,3 +445,167 @@ Zeca reportou zero P0/P1. Sem correções necessárias. Confirmado pela leitura 
 **Billing:** ✅ Checkout, proration, downgrade block funcionando
 
 **Veredito final Bloco 2:** ✅ **APROVADO** — Pronto para produção
+
+---
+
+# Bloco 4 — Dados + Integrações (Itens A-G)
+
+**Data:** 2026-04-24
+**Responsável:** Toin
+**Tipo:** Auditoria + Correções P0/P1
+**Commits:** `143349a`
+
+---
+
+## Item A: Webhooks externos do formulário
+
+### O que foi auditado
+- `lib/webhook-dispatcher.ts` — dispatch com retry
+- `lib/webhook-validator.ts` — SSRF protection
+- `lib/webhook-logger.ts` — logging
+- `app/api/forms/[id]/webhook/route.ts` — CRUD webhook_url
+- `app/api/responses/route.ts` — disparo no POST
+- `app/api/v1/forms/[id]/route.ts` — disparo no POST v1
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Webhook dispara ao receber resposta completa (ambos endpoints)
+- ✅ Timeout configurado (10s via AbortController)
+- ✅ Retry com backoff (4 tentativas: 0, 1s, 2s, 4s)
+- ✅ Log de erro (`logError` após falha)
+- ✅ SSRF protection (bloqueia localhost, IPs privados, non-HTTPS)
+- ✅ Feature gated (Plus+)
+- ✅ Não bloqueia fluxo (fire-and-forget)
+
+---
+
+## Item B: API pública com API key, auth, erros e CORS
+
+### O que foi auditado
+- `lib/api-key-auth.ts` — auth centralizado
+- `app/api/v1/forms/route.ts` — GET list
+- `app/api/v1/forms/[id]/route.ts` — GET form, GET responses, POST submit
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ API key format validado (`ek_` prefix, min 16 chars)
+- ✅ Plan check (professional/enterprise only)
+- ✅ Rate limit (100 req/min por key)
+- ✅ CORS whitelist (não wildcard)
+- ✅ Erros claros com status codes apropriados
+
+---
+
+## Item C: Meta Pixel / Google Ads / GTM / TikTok
+
+### O que foi auditado
+- `components/pixels/pixel-injector.tsx` — injeção no frontend
+- `app/f/[slug]/page.tsx` — gating por plano
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Todos os 4 pixels suportados (Meta, Google Ads, TikTok, GTM)
+- ✅ Eventos onLoad (PageView, ViewContent) e onSubmit (CompleteRegistration, Lead, SubmitForm, dataLayer)
+- ✅ Gate por plano: `canShowPixels` verifica plus/professional
+- ✅ Meta Pixel ID sanitizado (apenas numérico, 10-20 dígitos)
+- ✅ `form.pixels = null` para planos sem permissão (server-side)
+
+---
+
+## Item D: Meta events (CAPI)
+
+### O que foi auditado
+- `lib/meta-capi.ts` — server-side CAPI dispatch
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Server-side Lead events com deduplicação via eventId
+- ✅ SHA-256 hashing para Advanced Matching (email, phone, name)
+- ✅ PII extraction inteligente por tipo de pergunta e título
+- ✅ Feature gated (Plus+, verifica `ownerPlanConfig?.pixels`)
+- ✅ Graceful degradation se META_ACCESS_TOKEN/META_PIXEL_ID ausentes
+- ✅ Fire-and-forget, nunca bloqueia o fluxo
+
+---
+
+## Item E: Gravação e leitura de answer_items
+
+### O que foi auditado
+- `app/api/responses/route.ts` — insert/delete answer_items
+- `app/api/v1/forms/[id]/route.ts` — insert/delete answer_items
+- `supabase/migrations/` — RLS policies para answer_items
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ answer_items inseridos em ambos endpoints (novo e update)
+- ✅ Delete + re-insert em updates (respostas parciais)
+- ✅ `serializeAnswerValue` cobre: string, number, boolean, array, object
+- ✅ RLS: anon pode insert (para forms publicados), delete apenas para responses de forms publicados, owners leem seus próprios
+- ✅ `answer_items` RLS coberto por migrations (confirmado)
+
+---
+
+## Item F: Exportação CSV
+
+### O que foi auditado
+- `app/api/forms/[id]/export-csv/route.ts`
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ UTF-8 com BOM (`\uFEFF`) para compatibilidade Excel
+- ✅ Escaping correto (quotes, commas, newlines)
+- ✅ Feature gated (Starter+)
+- ✅ Rate limit (5/hora por usuário)
+- ✅ Formatação especial para address (rua, número, cidade) e file_upload (nome do arquivo)
+- ✅ Headers completos: ID, Submetido em, Completo, perguntas, meta_events, UTM
+
+---
+
+## Item G: Métricas e analytics do dashboard
+
+### O que foi auditado
+- `app/api/forms/[id]/analytics/route.ts`
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ total_responses, completed_responses, completion_rate calculados corretamente
+- ✅ avg_completion_time_seconds (Plus+ only, usa created_at vs updated_at)
+- ✅ abandonment_by_question (Plus+ only, usa last_question_answered)
+- ✅ Métricas básicas disponíveis para todos os planos
+- ✅ Feature gate implementado corretamente
+
+---
+
+## Correções P0/P1
+
+| Prioridade | Problema | Correção | Commit |
+|------------|----------|----------|--------|
+| **P1** | `/api/v1/forms/[id]` POST não verificava `is_closed` e `paused` — forms fechados/pausados aceitavam respostas via API pública | Adicionada verificação de `is_closed` (403) e `paused` (403) antes de processar | `143349a` |
+| **P1** | `/api/v1/forms/[id]` POST não validava ownership de `existingResponseId` — qualquer caller com response_id podia atualizar respostas parciais alheias | Adicionada verificação de `respondent_id` match (403 se não corresponder) | `143349a` |
+
+---
+
+## P2 Pendentes (acumulados)
+
+| Item | Descrição | Origem |
+|------|-----------|--------|
+| CSP unsafe-inline/eval | Trade-off com Next.js + pixels | Bloco 1 |
+| Rate limit in-memory cold starts | Baixo impacto | Bloco 1 |
+| answer_items RLS desconhecido | Verificar no Dashboard (agora confirmado em migrations) | Bloco 1 |
+| anon_insert_responses CHECK(true) | Revisar ordem de migrations | Bloco 1 |
+| consolidate RLS migrations | Múltiplas migrations de fix | Bloco 1 |
+| NEXT_PUBLIC_APP_URL validation | Garantir em produção | Bloco 1 |
+| api/whatsapp/send direct mode | Bypass se INTERNAL_API_SECRET vazado | Bloco 1 |
+| api-key-settings silent catch | catch silencioso no fetch de status | Bloco 2 |
+| Dashboard Suspense boundary | Server component sem loading fallback visual | Bloco 2 |
+| PAYMENT_DELETED webhook | Não tratado (Asaas usa SUBSCRIPTION_DELETED) | Bloco 2 |
+| DRY serializeAnswerValue | Função duplicada inline no v1 route | Bloco 4 |
+
+---
+
+## Status: ✅ Bloco 4 Aprovado
+
+**P0:** 0 encontradas
+**P1:** 2 corrigidas (v1 API is_closed/paused, v1 API respondent_id ownership)
+**P2:** 11 documentadas
+
+**Webhooks:** ✅ Robusto com retry, timeout, SSRF protection, logging
+**API Pública:** ✅ Auth, CORS, rate limit, erros claros
+**Pixels:** ✅ 4 plataformas, gate por plano, sanitização
+**Meta CAPI:** ✅ Server-side com PII hashing, deduplicação
+**Answer Items:** ✅ Gravação e leitura consistentes, RLS adequado
+**CSV Export:** ✅ UTF-8 BOM, escaping correto, feature gated
+**Analytics:** ✅ Métricas corretas, gate por plano

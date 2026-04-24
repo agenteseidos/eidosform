@@ -206,7 +206,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   const { data: form } = await supabase
     .from('forms')
-    .select('id, user_id, status, questions, webhook_url')
+    .select('id, user_id, status, questions, webhook_url, is_closed, paused')
     .eq('id', id)
     .eq('user_id', auth.userId)
     .eq('status', 'published')
@@ -217,6 +217,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         status: string
         questions: Array<{ id: string; required?: boolean }> | null
         webhook_url: string | null
+        is_closed: boolean
+        paused: boolean
       } | null
     }
 
@@ -224,6 +226,20 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json(
       { error: 'Form not found or not published' },
       { status: 404, headers: getCorsHeaders(req.headers.get("origin")) }
+    )
+  }
+
+  // Block submissions to closed or paused forms
+  if (form.is_closed) {
+    return NextResponse.json(
+      { error: 'This form is not accepting new responses.' },
+      { status: 403, headers: getCorsHeaders(req.headers.get("origin")) }
+    )
+  }
+  if (form.paused) {
+    return NextResponse.json(
+      { error: 'This form is paused because the creator\'s plan has expired.' },
+      { status: 403, headers: getCorsHeaders(req.headers.get("origin")) }
     )
   }
 
@@ -251,6 +267,29 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   let responseId: string
 
   if (existingResponseId) {
+    // Verify ownership: respondent_id must match
+    const { data: existingResponse } = await supabase
+      .from('responses')
+      .select('id, respondent_id')
+      .eq('id', existingResponseId)
+      .eq('form_id', id)
+      .single() as { data: { id: string; respondent_id: string | null } | null }
+
+    if (!existingResponse) {
+      return NextResponse.json(
+        { error: 'Response not found' },
+        { status: 404, headers: getCorsHeaders(req.headers.get("origin")) }
+      )
+    }
+
+    const bodyRespondentId = typeof body.respondent_id === 'string' ? body.respondent_id : null
+    if (existingResponse.respondent_id && existingResponse.respondent_id !== bodyRespondentId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 403, headers: getCorsHeaders(req.headers.get("origin")) }
+      )
+    }
+
     const { data: updated, error } = await supabase
       .from('responses')
       .update({

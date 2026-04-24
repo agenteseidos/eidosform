@@ -996,3 +996,181 @@ Tipos: short_text, long_text, dropdown, checkboxes, email, phone, number, date, 
 **Forms fechados:** ✅ Tela de bloqueio + rejeição no backend
 **WhatsApp gates:** ✅ Plan check, rate limit, tratamento de falhas
 **WhatsApp settings + auto-send + variáveis:** ✅ Funcional, logs corrigidos
+
+---
+
+# Bloco 5 — Player + Condicional + WhatsApp + Dashboard (Itens A-G)
+
+**Data:** 2026-04-24
+**Responsável:** Zeca
+**Tipo:** Auditoria + Correções P0/P1
+**Commits:** `9fb9897`, `80dc800`
+
+---
+
+## Item A: Reorder de perguntas/blocos no builder
+
+### O que foi auditado
+- `components/form-builder/form-builder.tsx` — `Reorder.Group` do framer-motion
+- `handleReorder` atualiza estado e marca `hasUnsavedChanges`
+- Autosave com debounce de 1500ms persiste via `updateFormViaApi`
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Drag and drop funciona via framer-motion `Reorder.Group` + `useDragControls`
+- ✅ Ordem persiste via autosave (debounce 1500ms) que chama PATCH no form
+- ✅ API aceita reorder (PATCH com `questions` array atualizado)
+
+---
+
+## Item B: Lógica condicional no builder e persistência
+
+### O que foi auditado
+- `components/form-builder/jump-rules-editor.tsx` — editor de jump rules
+- `lib/form-logic-engine.ts` — engine de avaliação
+- `lib/conditional-engine.ts` — bridge para conditional rules
+- `lib/jump-logic.ts` — avaliação de jump rules
+- `components/form-player/form-player.tsx` — aplicação no player
+
+### O que foi encontrado
+
+**🟡 P1:**
+1. **Stale `currentIndex` quando conditional logic muda `visibleQuestions`.** Quando uma resposta altera quais perguntas são visíveis, o `currentIndex` pode ficar fora dos limites ou apontar para uma pergunta errada. Isso pode crashar o player ou mostrar a pergunta incorreta.
+
+2. **Submit não valida todas as perguntas obrigatórias visíveis.** O `handleSubmit` só chamava `validateCurrentQuestion` (última pergunta). Se uma pergunta obrigatória no meio do form não fosse respondida, o backend marcava como `completed: false` silenciosamente, mas o usuário via a tela de obrigado.
+
+### O que foi corrigido
+- ✅ `9fb9897` — Adicionado `useEffect` para clamp `currentIndex` quando `visibleQuestions` muda
+- ✅ `9fb9897` — Adicionado `validateAllVisibleQuestions` que valida todas as perguntas obrigatórias visíveis antes do submit, e navega para a primeira com erro
+
+### Edge cases avaliados
+- ✅ Loops em jump rules: `buildQuestionPath` usa `visited` Set para prevenir loops infinitos
+- ✅ Regras contraditórias: primeira regra que bate é usada (first-match wins)
+- ✅ Jump para pergunta inexistente: `findIndex` retorna -1, jump é ignorado
+
+---
+
+## Item C: Player público renderizar todas as perguntas corretamente
+
+### O que foi auditado
+- `components/form-player/question-renderer.tsx` — switch com 18 tipos
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Todos os 18 tipos renderizam: short_text, long_text, dropdown, checkboxes, email, phone, number, date, rating, opinion_scale, yes_no, file_upload, nps, url, address, cpf, calendly, content_block
+- ✅ Mobile friendly: classes responsivas (sm:, md:), safe-area-inset, clamp para altura
+- ✅ Default case retorna "Tipo não suportado" ao invés de crashar
+
+---
+
+## Item D: Navegação completa do player + obrigatoriedade + validações
+
+### O que foi auditado
+- `goToNext` / `goToPrevious` com `navigationHistory`
+- `validateCurrentQuestion` — validação por tipo
+- Jump rules avaliação no `goToNext`
+
+### Resultado: ✅ P1 corrigida (ver Item B #2)
+- ✅ Next/back funciona com `navigationHistory` stack
+- ✅ Campos obrigatórios bloqueiam avanço (agora TODOS os visíveis, não só o atual)
+- ✅ Validações por tipo: email (regex), url (new URL), phone (regex), cpf (validator)
+- ✅ Jump rules avaliadas antes de avançar
+
+---
+
+## Item E: Submit final + gravação correta no banco
+
+### O que foi auditado
+- `handleSubmit` no player
+- `POST /api/responses` — gravação + answer_items
+- Pixel events (Meta CAPI, webhooks, email, WhatsApp)
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Dados gravados completos (answers JSONB + answer_items normalizados)
+- ✅ Meta CAPI dispara para Plus+ com PII hashing
+- ✅ Webhook externo dispara para Plus+ com retry
+- ✅ Email notification dispara quando configurado
+- ✅ WhatsApp notification dispara para Plus+
+- ✅ Redirect funciona com `ensureHttps` e delay configurável
+- ✅ Response limit checado antes de aceitar
+
+---
+
+## Item F: Respostas parciais ponta a ponta
+
+### O que foi auditado
+- `savePartialResponseDebounced` no player (debounce 2s)
+- `loadPartialProgress` no player
+- `GET/PUT /api/forms/[id]/partial-response`
+
+### Resultado: ✅ Nenhuma P0/P1 encontrada
+- ✅ Auto-save parcial com debounce de 2s (Plus+ only)
+- ✅ Retomada: carrega respostas + posição salva
+- ✅ Race condition mitigada: `isSubmittedRef` impede novos saves após submit, timer cleared no submit
+- ✅ Plan gated (Plus+)
+- ✅ Upsert: encontra response existente ou cria novo
+
+**🔵 P2 (documentado):**
+1. Race condition narrow: se um partial save fetch já está in-flight quando o submit é disparado, o partial save pode sobrescrever `answers` com dados stale. Impacto limitado: `completed` não é alterado pelo partial save, e `answer_items` não são tocados.
+
+---
+
+## Item G: Dashboard respostas — listagem, filtros, busca e visualização individual
+
+### O que foi auditado
+- `app/(dashboard)/forms/[id]/responses/page.tsx` — server component
+- `components/responses/responses-dashboard.tsx` — client component
+
+### O que foi encontrado
+
+**🟡 P1:**
+1. **Todas as respostas carregadas sem limite.** O server component fazia `.select('*')` sem `.range()`, carregando todas as respostas na memória. Forms com milhares de respostas causariam lentidão e alto uso de memória.
+
+### O que foi corrigido
+- ✅ `80dc800` — Adicionado `.range(0, 499)` com `count: 'exact'`. Dashboard mostra total real + "mostrando X mais recentes" quando excede 500.
+
+### Itens verificados OK
+- ✅ Listagem paginada client-side (20 por página)
+- ✅ Filtros: status (all/complete/partial), data (today/7d/30d), busca textual
+- ✅ Visualização individual: dialog com todas as perguntas, UTM, meta events, preview de arquivos
+- ✅ Exportação: CSV/XLSX/PDF (API), plan gated
+- ✅ Métricas: total, completas, parciais, taxa de conclusão, hoje
+
+---
+
+## Commits Bloco 5
+
+| Hash | Descrição |
+|------|-----------|
+| `9fb9897` | fix(P1): clamp currentIndex on conditional logic change + validate all required on submit |
+| `80dc800` | fix(P1): server-side pagination limit (500) for responses dashboard |
+
+## P2 Pendentes (acumulados)
+
+| Item | Descrição | Origem |
+|------|-----------|--------|
+| CSP unsafe-inline/eval | Trade-off com Next.js + pixels | Bloco 1 |
+| Rate limit in-memory cold starts | Baixo impacto | Bloco 1 |
+| answer_items RLS desconhecido | Verificar no Dashboard | Bloco 1 |
+| anon_insert_responses CHECK(true) | Revisar ordem de migrations | Bloco 1 |
+| consolidate RLS migrations | Múltiplas migrations de fix | Bloco 1 |
+| NEXT_PUBLIC_APP_URL validation | Garantir em produção | Bloco 1 |
+| api/whatsapp/send direct mode | Bypass se INTERNAL_API_SECRET vazado | Bloco 1 |
+| api-key-settings silent catch | catch silencioso no fetch de status | Bloco 2 |
+| Dashboard Suspense boundary | Server component sem loading fallback visual | Bloco 2 |
+| PAYMENT_DELETED webhook | Não tratado (Asaas usa SUBSCRIPTION_DELETED) | Bloco 2 |
+| DRY serializeAnswerValue | Função duplicada inline no v1 route | Bloco 4 |
+| Partial save race condition | Narrow: in-flight partial save pode sobrescrever answers pós-submit | Bloco 5 |
+| Responses full server pagination | Atualmente limit 500; considerar cursor-based para forms muito grandes | Bloco 5 |
+
+## Status: ✅ Bloco 5 Concluído
+
+**P0:** 0 encontradas
+**P1:** 3 corrigidas (stale index, submit validation, responses pagination)
+**P2:** 13 documentadas
+
+**Reorder:** ✅ Funcional com autosave
+**Lógica Condicional:** ✅ Jump rules + conditional visibility, edge cases cobertos
+**Player Renderização:** ✅ 18 tipos, mobile friendly
+**Navegação:** ✅ Next/back/validação completa
+**Submit:** ✅ Gravação + pixels + redirect
+**Respostas Parciais:** ✅ Auto-save + retomada
+**Dashboard:** ✅ Listagem, filtros, busca, visualização individual, exportação

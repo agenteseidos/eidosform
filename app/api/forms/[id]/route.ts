@@ -110,6 +110,18 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const userPlan = (profile?.plan ?? 'free') as PlanName
   const planConfig = PLANS[userPlan]
 
+  // P0 FIX: Bloquear pixels (Meta, Google, TikTok, GTM) para plano free
+  if (pixels !== undefined && pixels !== null && typeof pixels === 'object') {
+    const px = pixels as Record<string, unknown>
+    const hasPixels = Object.values(px).some(v => v !== null && v !== undefined && v !== '')
+    if (hasPixels && !planConfig?.pixels) {
+      return NextResponse.json(
+        { error: 'Pixels de rastreamento disponíveis a partir do plano Plus' },
+        { status: 403 }
+      )
+    }
+  }
+
   // Validar plano para pixel events condicionais
   // Only block when user is trying to SET pixel features to non-null values
   if ((pixel_event_on_start !== undefined && pixel_event_on_start !== null) ||

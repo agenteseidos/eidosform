@@ -3,6 +3,7 @@ import { FormInsert } from '@/lib/database.types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkFormLimit } from '@/lib/plan-limits'
+import { PLANS, PlanName } from '@/lib/plan-limits'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -84,12 +85,12 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     thank_you_description: sourceForm.thank_you_description,
     thank_you_button_text: sourceForm.thank_you_button_text,
     thank_you_button_url: sourceForm.thank_you_button_url,
-    pixels: sourceForm.pixels,
+    pixels: null,
     plan: sourceForm.plan,
     redirect_url: sourceForm.redirect_url,
-    webhook_url: sourceForm.webhook_url,
-    pixel_event_on_start: sourceForm.pixel_event_on_start,
-    pixel_event_on_complete: sourceForm.pixel_event_on_complete,
+    webhook_url: null,
+    pixel_event_on_start: null,
+    pixel_event_on_complete: null,
     welcome_enabled: sourceForm.welcome_enabled,
     welcome_title: sourceForm.welcome_title,
     welcome_description: sourceForm.welcome_description,

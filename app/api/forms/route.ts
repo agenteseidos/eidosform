@@ -4,6 +4,7 @@ import { FormInsert, FormStatus } from '@/lib/database.types'
 import { validateWebhookUrl } from '@/lib/webhook-validator'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkFormLimit } from '@/lib/plan-limits'
+import { PLANS } from '@/lib/plan-limits'
 
 // T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -105,6 +106,15 @@ export async function POST(req: NextRequest) {
     .single()
   const userPlan = ((profile as { plan: string } | null)?.plan || 'free') as import('@/lib/plans').PlanId
 
+  // P1 FIX: Strip pixels for free/starter users on form creation
+  let sanitizedPixels = pixels || null
+  if (sanitizedPixels && typeof sanitizedPixels === 'object') {
+    const planConfig = PLANS[userPlan]
+    if (!planConfig?.pixels) {
+      sanitizedPixels = null
+    }
+  }
+
   const insert: FormInsert = {
     user_id: user.id,
     title,
@@ -114,7 +124,7 @@ export async function POST(req: NextRequest) {
     theme: theme || 'midnight',
     questions: questions || [],
     thank_you_message: thank_you_message || 'Obrigado pela sua resposta!',
-    pixels: pixels || null,
+    pixels: sanitizedPixels,
     plan: userPlan,
     redirect_url: redirect_url ? ensureHttps(redirect_url) : null,
     webhook_url: webhook_url || null,

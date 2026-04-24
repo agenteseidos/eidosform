@@ -1,9 +1,10 @@
 # Handoff — Auditoria de Segurança e Monetização (Bloco 1)
 
 **Data:** 2026-04-24
-**Responsável:** Zeca
-**Tipo:** Auditoria + Correções P0/P1
-**Commits:** `8083ac8`, `8074f96`, `e032fec`, `dcb90f0`, `e1475d4`, `3ecf04d`, `2c1f28d`
+**Responsável:** Zeca (auditoria) → Zéfa (revalidação)
+**Tipo:** Auditoria + Correções P0/P1 + Revalidação
+**Commits Zeca:** `8083ac8`, `8074f96`, `e032fec`, `dcb90f0`, `e1475d4`, `3ecf04d`, `2c1f28d`
+**Commits Zéfa:** `e354739`, `ea5d9bd`
 
 ---
 
@@ -198,7 +199,40 @@ Auditoria completa em 5 áreas (RLS, Segurança, Gates de plano, Limites, Pixels
 
 ---
 
-## Status: ✅ Bloco 1 Concluído
+## Revalidação Zéfa (2026-04-24)
+
+### Correções do Zeca — Veredito
+
+| Commit | Item | Veredito |
+|--------|------|----------|
+| `8083ac8` | RLS rate_limit_entries | ✅ **Aprovada com ressalva** — RLS correto, mas faltou SECURITY DEFINER nas funções (corrigido em `ea5d9bd`) |
+| `8074f96` | Gate Professional em /api/domains | ✅ **Aprovada** — Todos os 4 métodos (POST/GET/DELETE/PATCH) cobertos |
+| `e032fec` | Gates pixels POST/PUT/duplicate | ✅ **Aprovada** — Pixels bloqueados em criação, edição e duplicação |
+| `dcb90f0` | Gate Plus em webhook GET/DELETE | ✅ **Aprovada** — GET e DELETE agora verificam plano |
+| `e1475d4` | Gate Plus em WhatsApp GET | ✅ **Aprovada** — Verificação de plano antes de retornar settings |
+| `3ecf04d` | Gate Plus em analytics avançado | ✅ **Aprovada** — Abandono e tempo médio bloqueados, básicos liberados |
+| `2c1f28d` | Gate Professional em API key DELETE | ✅ **Aprovada** — Verifica professional ou enterprise |
+
+### Novos achados pela Zéfa
+
+| Prioridade | Achado | Correção |
+|------------|--------|----------|
+| **P1** | `POST /api/forms` permitia setar `webhook_url` sem verificar plano (bypass do gate do Zeca) | ✅ `e354739` — Strip webhook_url para usuários sem feature |
+| **P1** | Funções `check_rate_limit` e `cleanup_rate_limit_entries` sem `SECURITY DEFINER` — RLS deny policy bloqueia anon de chamar as funções, quebrando rate limiting persistente | ✅ `ea5d9bd` — Adicionado SECURITY DEFINER + SET search_path |
+
+### P2 Pendentes (herdados do Zeca, sem mudança)
+
+| Item | Descrição |
+|------|-----------|
+| CSP unsafe-inline/eval | Trade-off com Next.js + pixels |
+| Rate limit in-memory cold starts | Baixo impacto (tem fallback Supabase) |
+| answer_items RLS desconhecido | Verificar no Dashboard |
+| anon_insert_responses CHECK(true) | Revisar ordem de migrations |
+| consolidate RLS migrations | Múltiplas migrations de fix |
+| NEXT_PUBLIC_APP_URL validation | Garantir em produção |
+| api/whatsapp/send direct mode | Bypass se INTERNAL_API_SECRET vazado |
+
+## Status: ✅ Bloco 1 Revalidado e Limpo para Produção
 
 **P0:** 2 corrigidas (RLS rate_limit_entries, domains gate, pixels PUT)
 **P1:** 6 corrigidas (webhook GET/DELETE, whatsapp GET, analytics, api-key DELETE, pixels POST/duplicate)

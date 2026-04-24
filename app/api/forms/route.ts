@@ -106,14 +106,18 @@ export async function POST(req: NextRequest) {
     .single()
   const userPlan = ((profile as { plan: string } | null)?.plan || 'free') as import('@/lib/plans').PlanId
 
+  const planConfig = PLANS[userPlan]
+
   // P1 FIX: Strip pixels for free/starter users on form creation
   let sanitizedPixels = pixels || null
   if (sanitizedPixels && typeof sanitizedPixels === 'object') {
-    const planConfig = PLANS[userPlan]
     if (!planConfig?.pixels) {
       sanitizedPixels = null
     }
   }
+
+  // P1 FIX: Block webhook_url for users without webhooks feature
+  const sanitizedWebhookUrl = (webhook_url && planConfig?.webhooks) ? webhook_url : null
 
   const insert: FormInsert = {
     user_id: user.id,
@@ -127,7 +131,7 @@ export async function POST(req: NextRequest) {
     pixels: sanitizedPixels,
     plan: userPlan,
     redirect_url: redirect_url ? ensureHttps(redirect_url) : null,
-    webhook_url: webhook_url || null,
+    webhook_url: sanitizedWebhookUrl,
   }
 
   const { data, error } = await supabase

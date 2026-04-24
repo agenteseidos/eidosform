@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { addDomain, removeDomain, checkDomainStatus } from '@/lib/custom-domain'
 import { logError } from '@/lib/logger'
+import { PLANS, PlanName } from '@/lib/plan-limits'
 
 // POST /api/domains — adicionar domínio personalizado
 // Body: { domain: string, form_id: string }
@@ -19,6 +20,20 @@ export async function POST(req: NextRequest) {
 
   if (!domain || !form_id) {
     return NextResponse.json({ error: 'domain and form_id are required' }, { status: 400 })
+  }
+
+  // P0 FIX: Feature gate — custom domains require Professional plan
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  if (!PLANS[userPlan]?.customDomain) {
+    return NextResponse.json(
+      { error: 'Domínio personalizado requer plano Professional' },
+      { status: 403 }
+    )
   }
 
   // Verificar ownership do form
@@ -72,6 +87,20 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // P1 FIX: Feature gate — custom domains require Professional plan
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  if (!PLANS[userPlan]?.customDomain) {
+    return NextResponse.json(
+      { error: 'Domínio personalizado requer plano Professional' },
+      { status: 403 }
+    )
+  }
+
   // P2-01 FIX: Avoid select('*') — specify only needed columns
   const { data: domains, error } = await supabase
     .from('custom_domains')
@@ -94,6 +123,20 @@ export async function DELETE(req: NextRequest) {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // P1 FIX: Feature gate — custom domains require Professional plan
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  if (!PLANS[userPlan]?.customDomain) {
+    return NextResponse.json(
+      { error: 'Domínio personalizado requer plano Professional' },
+      { status: 403 }
+    )
   }
 
   const body = await req.json()
@@ -133,6 +176,20 @@ export async function PATCH(req: NextRequest) {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // P1 FIX: Feature gate — custom domains require Professional plan
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+  const userPlan = (profile?.plan ?? 'free') as PlanName
+  if (!PLANS[userPlan]?.customDomain) {
+    return NextResponse.json(
+      { error: 'Domínio personalizado requer plano Professional' },
+      { status: 403 }
+    )
   }
 
   const body = await req.json()

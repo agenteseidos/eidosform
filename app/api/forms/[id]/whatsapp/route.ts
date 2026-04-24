@@ -45,6 +45,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    // P1 FIX: Plan check — WhatsApp requires Plus or Professional plan
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', user.id)
+      .single()
+    const plan = (userProfile?.plan ?? 'free') as PlanId
+    if (!PLANS[plan]?.whatsappNotifications) {
+      return NextResponse.json({ error: 'WhatsApp requires Plus or Professional plan' }, { status: 403 })
+    }
+
     const { data: settings, error: settingsError } = await supabase
       .from('form_whatsapp_settings')
       .select('*')

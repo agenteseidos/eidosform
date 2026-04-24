@@ -101,6 +101,20 @@ export async function DELETE() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // P1 FIX: Verify plan before allowing revocation
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single() as { data: { plan: string } | null }
+
+  if (!profile || (profile.plan !== 'professional' && profile.plan !== 'enterprise')) {
+    return NextResponse.json(
+      { error: 'API key access requires Professional or Enterprise plan' },
+      { status: 403 }
+    )
+  }
+
   const { error: updateError } = await supabase
     .from('profiles')
     .update({ api_key: null, api_key_created_at: null } as ProfileUpdate)

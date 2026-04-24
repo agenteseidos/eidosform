@@ -390,7 +390,50 @@ O fluxo de billing está robusto:
 | Dashboard Suspense boundary | Server component sem loading fallback visual |
 | PAYMENT_DELETED webhook | Não tratado (Asaas usa SUBSCRIPTION_DELETED) |
 
-## Status: ✅ Bloco 2 Auditorado e Corrigido
+## Revalidação Zéfa — Bloco 2 (2026-04-24)
+
+### Commit `40f826e` — Admin Plan Change
+
+**Veredito: ✅ Aprovada**
+
+Análise:
+- Busca plano atual antes de atualizar, detecta upgrade/downgrade via PLAN_ORDER
+- Reseta `responses_limit` (do config do novo plano), `responses_used`, `limit_alert_sent`
+- Ao setar free: limpa `plan_status`, `plan_expires_at`, `asaas_subscription_id`
+- Ao setar pago: marca `plan_status: active`
+- Chama `handleDowngrade`/`handleUpgrade` para pausar/despausar forms
+- Erro nos handlers é non-blocking (log + continua)
+- `isValidPlan` garante que só planos válidos são aceitos
+- `requireAdmin()` protege a rota
+
+Edge cases testados:
+- **Mesmo plano:** reset de `responses_used: 0` acontece, mas é ação admin — aceitável
+- **Free → free:** sem handler chamado, reseta limites para defaults — OK
+- **`planConfig` undefined:** impossível porque `isValidPlan` filtra antes
+- **Privilege escalation:** rota protegida por `requireAdmin()`, plano validado contra `PLAN_ORDER` — sem bypass
+
+Nenhum P0/P1 encontrado.
+
+### Commit `5cd8128` — Billing Page Date
+
+**Veredito: ✅ Aprovada**
+
+Análise:
+- Adiciona `plan_expires_at` ao select do perfil
+- Formata com `toLocaleDateString('pt-BR')`
+- Free mostra "Plano gratuito — sem ciclo de cobrança"
+
+Edge case: se `plan_expires_at` está no passado (assinatura expirada sem cancelamento), mostra data passada. Não é bug — webhook deveria ter tratado a expiração.
+
+Nenhum P0/P1 encontrado.
+
+### Items 8 e 9 (Webhook e Billing)
+
+Zeca reportou zero P0/P1. Sem correções necessárias. Confirmado pela leitura do handoff — implementação está sólida.
+
+---
+
+## Status: ✅ Bloco 2 Revalidado e Aprovado
 
 **P0:** 0 encontradas
 **P1:** 2 corrigidas (admin plan change, billing page date)
@@ -400,3 +443,5 @@ O fluxo de billing está robusto:
 **UI/UX:** ✅ Loading/empty states/toasts bem cobertos, billing date corrigido
 **Webhook:** ✅ Robusto, sem brechas
 **Billing:** ✅ Checkout, proration, downgrade block funcionando
+
+**Veredito final Bloco 2:** ✅ **APROVADO** — Pronto para produção

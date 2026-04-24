@@ -31,12 +31,14 @@ export default async function ResponsesPage({ params }: ResponsesPageProps) {
     notFound()
   }
 
-  const [{ data: responsesData }, { data: profile }] = await Promise.all([
+  // P1-G1: Server-side pagination — load first 500 responses max to prevent memory issues
+  const [{ data: responsesData, count: totalCount }, { data: profile }] = await Promise.all([
     supabase
       .from('responses')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('form_id', id)
-      .order('submitted_at', { ascending: false }),
+      .order('submitted_at', { ascending: false })
+      .range(0, 499),
     supabase
       .from('profiles')
       .select('plan')
@@ -46,12 +48,16 @@ export default async function ResponsesPage({ params }: ResponsesPageProps) {
 
   const responses = (responsesData || []) as Response[]
   const userPlan = (profile?.plan as string) || 'free'
+  const totalResponseCount = totalCount ?? responses.length
+  const hasMoreResponses = totalResponseCount > 500
 
   return (
     <ResponsesDashboard
       form={form}
       responses={responses}
       userPlan={userPlan}
+      totalResponseCount={totalResponseCount}
+      hasMoreResponses={hasMoreResponses}
     />
   )
 }

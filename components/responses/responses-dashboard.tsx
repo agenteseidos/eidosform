@@ -70,6 +70,8 @@ interface ResponsesDashboardProps {
   form: Form
   responses: Response[]
   userPlan?: string
+  totalResponseCount?: number
+  hasMoreResponses?: boolean
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -380,7 +382,7 @@ function ResponseDetailDialog({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ResponsesDashboard({ form, responses: initialResponses, userPlan = 'free' }: ResponsesDashboardProps) {
+export function ResponsesDashboard({ form, responses: initialResponses, userPlan = 'free', totalResponseCount, hasMoreResponses }: ResponsesDashboardProps) {
   const supabase = createClient()
   const questions = (form.questions as QuestionConfig[]) || []
 
@@ -539,7 +541,9 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
               {form.status === 'closed' && <Badge className="bg-amber-100 text-amber-700 border-0">Encerrado</Badge>}
             </div>
             <p className="text-slate-500 mt-1 text-sm">
-              {responses.length} {responses.length === 1 ? 'resposta' : 'respostas'} no total
+              {totalResponseCount != null && totalResponseCount !== responses.length
+                ? `${totalResponseCount} ${totalResponseCount === 1 ? 'resposta' : 'respostas'} no total (mostrando ${responses.length} mais recentes)`
+                : `${responses.length} ${responses.length === 1 ? 'resposta' : 'respostas'} no total`}
             </p>
           </div>
 

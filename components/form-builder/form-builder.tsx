@@ -31,6 +31,7 @@ import {
   Trash2,
   GripVertical,
   Eye,
+  EyeOff,
   Code,
 
   Globe,
@@ -477,6 +478,20 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     }
   }
 
+  const handleUnpublish = async () => {
+    setIsSaving(true)
+    try {
+      const payload = { ...buildFormPayload(), status: 'draft' as FormStatus }
+      await updateFormViaApi(payload)
+      setForm(prev => ({ ...prev, status: 'draft' as FormStatus }))
+      toast.success('Formulário movido para rascunho')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao despublicar')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const addQuestion = (type: QuestionConfig['type']) => {
     const newQuestion = createDefaultQuestion(type)
     setQuestions([...questions, newQuestion])
@@ -670,6 +685,18 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               )}
               <span>Publicar</span>
             </Button>
+            {form.status === 'published' && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleUnpublish}
+                disabled={isSaving}
+                className="border-slate-300 text-slate-600 hover:bg-slate-100 hover:text-slate-800 font-medium px-4"
+              >
+                <EyeOff className="w-4 h-4 mr-1.5" />
+                <span className="hidden sm:inline">Despublicar</span>
+              </Button>
+            )}
 
             {/* B20: Avatar do usuário no header */}
             {userInfo && (

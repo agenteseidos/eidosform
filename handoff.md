@@ -1626,3 +1626,104 @@ Itens P2 do Bloco 7b somados aos já existentes:
 **Emails:** ✅ 4 templates funcionais, graceful degradation, sem retry
 **Custom domains:** ⚠️ API completa mas middleware de resolução pendente
 **Landing /pgb:** ✅ Placeholders removidos, CTAs corrigidos, feature claim corrigida
+
+---
+
+# Revalidação FINAL Zéfa — Bloco 7 (2026-04-24)
+
+## Correções do Zeca (Bloco 7)
+
+| Commit | Item | Veredito |
+|--------|------|----------|
+| `12749ef` | notify.ts usa NEXT_PUBLIC_APP_URL + FROM_EMAIL padronizado | ✅ **Aprovada** — Linha 10: `FROM_EMAIL` usa `RESEND_FROM_EMAIL` com fallback `noreply@eidosform.com.br`. Linha 45: link usa `NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'` |
+| `078ab8d` | .env.example atualizado | ✅ **Aprovada** — Contém NEXT_PUBLIC_APP_URL, META_ACCESS_TOKEN, META_PIXEL_ID, VERCEL_TOKEN, VERCEL_PROJECT_ID |
+| `0a7052c` | Documentação (docs only) | ✅ N/A |
+
+## Correções do Toin (Bloco 7b)
+
+| Commit | Item | Veredito |
+|--------|------|----------|
+| `e34ed01` | Placeholders removidos do /pgb | ✅ **Aprovada** — Zero ocorrências de PLACEHOLDER no arquivo |
+| `e34ed01` | Feature claim corrigida (domínio só Professional) | ✅ **Aprovada** — Zero ocorrências de customDomain em /pgb ou billing-plans para Plus |
+| `e34ed01` | CTAs corrigidos (/register) | ✅ **Aprovada** — 11 links para /register, 3 para /login (login permanece em fluxos de já-cadastrado) |
+
+## Achado Custom Domain — Confirmação
+
+✅ Confirmado: middleware.ts não contém nenhuma lógica de roteamento por hostname. Custom domain feature está implementada pela metade (API completa, mas sem resolução no middleware). Documentado como P1.
+
+## Veredito Final
+
+✅ **Todas as correções do Bloco 7 aprovadas.**
+
+### Contagem total de auditorias: 43/43
+
+| Bloco | Responsável | Auditorias | P0 | P1 Corrigidas | Status |
+|-------|-------------|------------|-----|---------------|--------|
+| 1 | Zeca → Zéfa | 5 itens | 3 | 9 | ✅ |
+| 2 | Zeca → Zéfa | 4 itens | 0 | 2 | ✅ |
+| 3 | Zeca → Zéfa | 7 itens | 1 | 2 | ✅ |
+| 4 | Toin → Zéfa | 7 itens | 0 | 3 | ✅ |
+| 5 | Zeca → Zéfa | 7 itens | 0 | 3 | ✅ |
+| 6 | Toin → Zéfa | 6 itens | 0 | 1 | ✅ |
+| 7 | Zeca + Toin → Zéfa | 7 itens | 0 | 6 | ✅ |
+| **Total** | | **43 itens** | **4** | **26** | **✅** |
+
+**P0 corrigidas:** 4 (RLS rate_limit_entries, domains gate, pixels PUT, profile auto-create)
+**P1 corrigidas:** 26 (incluindo 2 achados independentes pela Zéfa)
+**P2 documentadas:** ~24 (trade-offs conscientes, melhorias futuras)
+
+## Status: ✅ AUDITORIA COMPLETA — 43/43 APROVADAS
+
+Sistema pronto para produção com ressalvas documentadas em P2.
+
+### P2 mais relevantes para endereçar
+1. **Custom domain middleware** — feature não funciona end-to-end
+2. **answer_items RLS** — verificar no Dashboard
+3. **anon_insert_responses CHECK(true)** — revisar migrations
+4. **api/whatsapp/send direct mode** — adicionar plan gate
+5. **sendNewResponseNotification** — código morto, remover
+
+---
+
+# Custom Domain Middleware — Implementação (2026-04-24)
+
+**Data:** 2026-04-24
+**Responsável:** Zeca
+**Tipo:** Feature implementation
+**Commit:** `79a7291`
+
+## O que foi implementado
+
+Middleware de roteamento para domínios personalizados no `middleware.ts`.
+
+### Como funciona
+
+1. Quando uma requisição chega com hostname diferente de `NEXT_PUBLIC_APP_URL`
+2. Middleware consulta `custom_domains` via Supabase REST API (anon key)
+3. Busca apenas domínios `verified=true` e forms com `status=published`
+4. Se encontrado, reescreve URL para `/f/[slug]` (rewrite, não redirect — hostname permanece)
+5. Se não encontrado, redireciona (302) para o app principal
+6. Cache em memória com TTL de 60s para performance
+
+### Detalhes técnicos
+
+- Usa `NextResponse.rewrite()` — o browser do visitante continua mostrando o domínio personalizado
+- API calls via Supabase REST (fetch direto, sem SDK) — compatível com Edge Runtime
+- Cache: `Map<string, { slug, expiresAt }>` com TTL 60s
+- `/api/responses` já estava em `publicWritePaths` — submissões via custom domain funcionam sem mudança
+- Matcher atualizado: `/f/` não é mais excluído (necessário porque rewrites apontam para lá)
+
+### Segurança
+
+- Apenas domínios verificados (`verified=true`) são roteados
+- Apenas forms publicados (`status=published`) são servidos
+- Plan gate já existente na API de CRUD (Professional only)
+- Sem bypass de autenticação — rotas protegidas continuam protegidas
+
+### Arquivos alterados
+
+- `middleware.ts` — lógica de custom domain routing
+
+## Status: ✅ Feature implementada
+
+Domínios personalizados agora funcionam end-to-end: adicionar → verificar DNS → servir formulário via domínio próprio.

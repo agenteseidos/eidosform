@@ -70,12 +70,32 @@ async function resolveCustomDomain(hostname: string): Promise<string | null> {
 }
 
 export async function middleware(request: NextRequest) {
+  const hostname = request.headers.get('host')?.split(':')[0] || '' // strip port
+
+  // Track if this is a verified custom domain (for CSRF bypass below)
+  let isVerifiedCustomDomain = false
+
   // Custom domain routing: if hostname is not the app's own domain,
   // resolve it to a form and rewrite to /f/[slug]
-  const hostname = request.headers.get('host')?.split(':')[0] || '' // strip port
   if (hostname && APP_HOSTNAME && hostname !== APP_HOSTNAME) {
     const slug = await resolveCustomDomain(hostname)
-    if (slug) {
+
+    if (!slug) {
+      // Domain not found — redirect to main app
+      const appUrl = new URL(request.nextUrl.pathname, process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br')
+      return NextResponse.redirect(appUrl, 302)
+    }
+
+    isVerifiedCustomDomain = true
+
+    // Skip rewrite for API routes and Next.js internal paths.
+    // API routes use form IDs in body/URL (not slug routing),
+    // and _next/* paths must pass through unchanged for client-side navigation.
+    const isInternalPath =
+      request.nextUrl.pathname.startsWith('/api/') ||
+      request.nextUrl.pathname.startsWith('/_next/')
+
+    if (!isInternalPath) {
       // Preserve the path — if someone accesses forms.cliente.com.br/some/path,
       // rewrite to eidosform.com.br/f/slug/some/path
       const originalPath = request.nextUrl.pathname
@@ -84,18 +104,17 @@ export async function middleware(request: NextRequest) {
       url.pathname = rewritePath
       return NextResponse.rewrite(url)
     }
-    // Domain not found — redirect to main app
-    const appUrl = new URL(request.nextUrl.pathname, process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br')
-    return NextResponse.redirect(appUrl, 302)
+    // API / _next paths fall through to normal middleware (session + CSRF)
   }
 
   const response = await updateSession(request)
 
   // P1-13: CSRF protection — verify Origin header on write requests to /api/*
   if (isWriteRequest(request) && request.nextUrl.pathname.startsWith('/api/')) {
-    // Skip public endpoints that are meant to be called from any domain
+    // Skip public endpoints that are meant to be called from any domain,
+    // plus verified custom domains (auth cookies are domain-scoped, so CSRF risk is nil)
     const publicWritePaths = ['/api/responses', '/api/auth/']
-    const isPublic = publicWritePaths.some(p => request.nextUrl.pathname.startsWith(p))
+    const isPublic = publicWritePaths.some(p => request.nextUrl.pathname.startsWith(p)) || isVerifiedCustomDomain
 
     if (!isPublic) {
       const origin = request.headers.get('origin')

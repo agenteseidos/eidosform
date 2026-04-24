@@ -251,4 +251,152 @@ Auditoria completa em 5 áreas (RLS, Segurança, Gates de plano, Limites, Pixels
 
 ## Próximos Passos
 
-Bloco 1 completo. Zeca aguarda diretrizes para Bloco 2 ou nova missão.
+Bloco 1 completo. Bloco 2 (Operação) abaixo.
+
+---
+
+# Bloco 2 — Operação (Itens 6-9)
+
+**Data:** 2026-04-24
+**Responsável:** Zeca
+**Tipo:** Auditoria + Correções P0/P1
+**Commits:** `40f826e`, `5cd8128`
+
+---
+
+## Item 6: Painel Admin
+
+### O que foi auditado
+- Layout admin (`requireAdminUser` no server component)
+- API routes: `/api/admin/metrics`, `/api/admin/users`, `/api/admin/users/[id]/plan`
+- API routes WhatsApp: `qr`, `status`, `disconnect` — todas com `requireAdmin`
+- Componentes frontend: `admin-metrics-cards.tsx`, `admin-users-table.tsx`
+- Proteção: `lib/admin-auth.ts` — `requireAdmin()` (API) e `requireAdminUser()` (pages)
+- Verificação de ADMIN_EMAILS env var
+
+### O que foi encontrado
+
+**🟡 P1:**
+1. **`PATCH /api/admin/users/[id]/plan`** — Atualizava apenas o campo `plan` no profile. Não chamava `handleDowngrade`/`handleUpgrade`, não resetava `responses_limit`, `responses_used`, `plan_expires_at`. Admin podia setar free e os forms continuavam recebendo respostas.
+
+**✅ Sem P0 encontrada.** Proteção de acesso está sólida.
+
+### O que foi corrigido
+- ✅ `40f826e` — Admin plan change agora: busca plano atual, detecta upgrade/downgrade, chama `handleDowngrade`/`handleUpgrade`, reseta limites, limpa campos Asaas ao setar free.
+
+---
+
+## Item 7: Loading states, empty states, toasts e mensagens de erro
+
+### O que foi auditado
+- Dashboard: loading skeleton (`FormCardSkeleton`/`FormGridSkeleton`), empty state ("Crie seu primeiro formulário"), paused forms banner
+- Auth pages (login, register, forgot, reset, verify-email): toasts via sonner em todos os erros/sucesso
+- Dashboard shell: toasts para criar pasta, mover formulário
+- Form card: toast ao copiar link
+- Delete/duplicate form buttons: toasts de sucesso/erro
+- Settings (profile, password, API key, domains): toasts e loading states
+- Admin (metrics cards, users table): loading states e error handling
+- Checkout page: loading, error, already-subscribed, missing-billing states
+- Checkout success overlay: polling com loading, success, cancelled, expired, network error
+
+### O que foi encontrado
+
+**🟡 P1:**
+1. **Billing page** — Mostrava "Ciclo reinicia em {hardcoded Date.now() + 32 days}" ao invés de usar `plan_expires_at` do perfil. Data sempre errada.
+
+**🔵 P2 (cosmético, não corrigido):**
+1. `api-key-settings.tsx` — catch silencioso (`// silently fail`) no fetch inicial de status
+2. Dashboard não tem Suspense boundary no server component principal (carregamento SSR, não spinner)
+
+### O que foi corrigido
+- ✅ `5cd8128` — Billing page agora lê `plan_expires_at` do perfil. Free mostra "sem ciclo de cobrança".
+
+---
+
+## Item 8: Webhook Asaas
+
+### O que foi auditado
+- `app/api/webhooks/asaas/route.ts` — handler completo
+- Eventos: `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`, `PAYMENT_OVERDUE`, `SUBSCRIPTION_DELETED`
+- Autenticação: token via header, query param, ou HMAC signature
+- Guards contra subscription fantasma (verificação de subscription_id ativa)
+- Fallback de detecção de plano por valor quando não há checkout record
+- Cancelamento de assinatura antiga em cenário de upgrade
+- Emails de ativação e cancelamento
+- `resolveBillingContext` com fallback por customer_id
+
+### O que foi encontrado
+
+**✅ Nenhuma P0/P1 encontrada.**
+
+O webhook está bem implementado:
+- 3 eventos principais cobertos (confirmed, overdue, deleted)
+- Guards contra ghost subscriptions (comparação de subscription_id)
+- Guard contra downgrade duplo (verifica se já é free)
+- Fallback de plano por valor quando checkout record não existe
+- Cancelamento de sub antiga após upgrade
+- Logging e webhook event logging
+- Tratamento de erros non-blocking
+
+**🔵 P2 (não corrigido):**
+1. `PAYMENT_DELETED` não é tratado — mas Asaas usa `SUBSCRIPTION_DELETED` para cancelamentos
+2. Detect de plano por descrição é fallback frágil, mas é só usado quando não há checkout record
+
+---
+
+## Item 9: Billing page e fluxo de upgrade
+
+### O que foi auditado
+- `app/(dashboard)/billing/page.tsx` — página de planos
+- `components/billing-plans.tsx` — cards de planos com toggle mensal/anual
+- `app/(dashboard)/checkout/[plan]/page.tsx` — página de checkout
+- `app/api/checkout/[plan]/route.ts` — criação de checkout Asaas
+- `app/api/checkout/status/route.ts` — polling de status com fallback Asaas
+- Edge cases: downgrade bloqueado, anual→mensal bloqueado, proration credit
+
+### O que foi encontrado
+
+**✅ Nenhuma P0/P1 nova encontrada.** (O P1 da billing page foi tratado no Item 7)
+
+O fluxo de billing está robusto:
+- Downgrade retorna `isDowngrade: true` e não permite checkout
+- Anual→mensal mesmo plano está desabilitado no UI
+- Proration com credit cover (ativação direta sem checkout)
+- Checkout status com fallback polling Asaas
+- Missing billing fields retorna erro descritivo
+- `alreadySubscribed` impede checkout duplicado
+
+---
+
+## Commits Bloco 2
+
+| Hash | Descrição |
+|------|-----------|
+| `40f826e` | fix(P1): admin plan change now calls handleUpgrade/handleDowngrade |
+| `5cd8128` | fix(P1): billing page uses real plan_expires_at instead of hardcoded date |
+
+## P2 Pendentes (acumulados Bloco 1 + 2)
+
+| Item | Descrição |
+|------|-----------|
+| CSP unsafe-inline/eval | Trade-off com Next.js + pixels |
+| Rate limit in-memory cold starts | Baixo impacto |
+| answer_items RLS desconhecido | Verificar no Dashboard |
+| anon_insert_responses CHECK(true) | Revisar ordem de migrations |
+| consolidate RLS migrations | Múltiplas migrations de fix |
+| NEXT_PUBLIC_APP_URL validation | Garantir em produção |
+| api/whatsapp/send direct mode | Bypass se INTERNAL_API_SECRET vazado |
+| api-key-settings silent catch | catch silencioso no fetch de status |
+| Dashboard Suspense boundary | Server component sem loading fallback visual |
+| PAYMENT_DELETED webhook | Não tratado (Asaas usa SUBSCRIPTION_DELETED) |
+
+## Status: ✅ Bloco 2 Auditorado e Corrigido
+
+**P0:** 0 encontradas
+**P1:** 2 corrigidas (admin plan change, billing page date)
+**P2:** 10 documentadas
+
+**Admin:** ✅ Proteção adequada, privilege escalation corrigido
+**UI/UX:** ✅ Loading/empty states/toasts bem cobertos, billing date corrigido
+**Webhook:** ✅ Robusto, sem brechas
+**Billing:** ✅ Checkout, proration, downgrade block funcionando

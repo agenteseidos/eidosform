@@ -296,6 +296,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         answers: answers as Record<string, import('@/lib/database.types').Json>,
         completed,
         last_question_answered: lastQuestionAnswered ?? null,
+        ...(bodyRespondentId ? { respondent_id: bodyRespondentId } : {}),
         ...utmData,
       } as ResponseUpdate)
       .eq('id', existingResponseId)
@@ -320,6 +321,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         answers: answers as Record<string, import('@/lib/database.types').Json>,
         completed,
         last_question_answered: lastQuestionAnswered ?? null,
+        respondent_id: typeof body.respondent_id === 'string' ? body.respondent_id : null,
         ...utmData,
       } as ResponseInsert)
       .select('id')

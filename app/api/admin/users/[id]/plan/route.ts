@@ -72,7 +72,7 @@ export async function PATCH(
           log('[admin/plan] Upgrade processed', { userId: id, unpausedForms: result.unpausedCount })
         }
       } catch (err) {
-        log('[admin/plan] handleUpgrade/handleDowngrade failed (non-blocking)', err)
+        log('[admin/plan] handleUpgrade/handleDowngrade failed (non-blocking)', err as Record<string, unknown>)
       }
     }
   } catch (err) {

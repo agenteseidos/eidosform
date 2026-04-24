@@ -166,6 +166,22 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
   }, [visibleQuestions])
 
+  // P1-B5: Clamp currentIndex when visibleQuestions changes (conditional logic may hide/show questions)
+  useEffect(() => {
+    if (pendingPositionRef.current) return // position restore handles this
+    if (visibleQuestions.length === 0) return
+    if (currentIndex >= 0 && currentIndex >= visibleQuestions.length) {
+      setCurrentIndex(visibleQuestions.length - 1)
+    }
+    // If current question was hidden by conditional logic, find nearest visible question
+    const currentQ = visibleQuestions[currentIndex]
+    if (!currentQ && currentIndex >= 0) {
+      // Try to find a question that was previously visible at or near this index
+      const newIndex = Math.min(currentIndex, visibleQuestions.length - 1)
+      setCurrentIndex(newIndex)
+    }
+  }, [visibleQuestions, currentIndex])
+
   const currentQuestion = visibleQuestions[currentIndex]
   const isContentStep = currentQuestion?.type === 'content_block'
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
@@ -322,6 +338,50 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }, 2000)
   }
 
+  // P1-B5: Validate ALL visible required questions before submit
+  const validateAllVisibleQuestions = useCallback((candidateAnswers?: Record<string, Json>) => {
+    const answerSource = candidateAnswers ?? answers
+    const newErrors: Record<string, string> = {}
+    let allValid = true
+    for (const q of visibleQuestions) {
+      if (q.type === 'content_block') continue
+      if (q.required) {
+        const val = answerSource[q.id]
+        if (val === undefined || val === null || val === '') {
+          newErrors[q.id] = 'Este campo é obrigatório'
+          allValid = false
+        } else if (Array.isArray(val) && val.length === 0) {
+          newErrors[q.id] = 'Selecione ao menos uma opção'
+          allValid = false
+        }
+      }
+      if (answerSource[q.id] && q.type === 'email') {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(answerSource[q.id]))) {
+          newErrors[q.id] = 'Por favor, insira um e-mail válido'
+          allValid = false
+        }
+      }
+      if (answerSource[q.id] && q.type === 'url') {
+        try { new URL(String(answerSource[q.id])) } catch {
+          newErrors[q.id] = 'Por favor, insira uma URL válida'
+          allValid = false
+        }
+      }
+    }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors)
+      // Navigate to first question with error
+      const firstErrorId = Object.keys(newErrors)[0]
+      const errorIdx = visibleQuestions.findIndex(q => q.id === firstErrorId)
+      if (errorIdx !== -1 && errorIdx !== currentIndex) {
+        setNavigationHistory(prev => [...prev, currentIndex])
+        setDirection(1)
+        setCurrentIndex(errorIdx)
+      }
+    }
+    return allValid
+  }, [visibleQuestions, answers, currentIndex])
+
   const handleSubmit = async (submissionAnswers?: Record<string, Json>) => {
     // Limpar timer de partial save para evitar race condition
     if (partialSaveTimerRef.current) {
@@ -340,6 +400,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       const finalAnswers = submissionAnswers ?? answers
 
     if (!validateCurrentQuestion(finalAnswers)) return
+    if (!validateAllVisibleQuestions(finalAnswers)) { setIsSubmitting(false); return }
     setIsSubmitting(true)
 
     try {

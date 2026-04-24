@@ -1491,3 +1491,138 @@ Análise:
 **Custom domains:** ⚠️ Middleware de resolução pendente (P1 documentado)
 **Landing /pgb:** ✅ Funcional, PLACEHOLDERs precisam de decisão
 **Responsividade:** ✅ Adequada
+
+---
+
+# Bloco 7b — Emails + Domínio + /pgb (3 itens em profundidade)
+
+**Data:** 2026-04-24
+**Responsável:** Toin
+**Tipo:** Auditoria profunda + Correções P0/P1
+**Commits:** `e34ed01`
+
+---
+
+## Item A: Emails transacionais — auditoria completa
+
+### Pontos que enviam email
+| Função | Arquivo | Evento | Destinatário |
+|--------|---------|--------|-------------|
+| `sendEmailNotification` | `lib/notify.ts` | Nova resposta no form | Email configurado pelo dono |
+| `sendLimitAlert` | `lib/resend.ts` | 80% do limite de respostas | Email do profile |
+| `sendPlanActivated` | `lib/resend.ts` | Webhook Asaas PAYMENT_CONFIRMED | Email do profile |
+| `sendPlanCancelled` | `lib/resend.ts` | Webhook Asaas SUBSCRIPTION_DELETED | Email do profile |
+| `sendNewResponseNotification` | `lib/resend.ts` | **CÓDIGO MORTO** — nunca importado | N/A |
+
+### Templates HTML
+- ✅ 4 templates inline com HTML estilizado (max-width 600px, cores EidosForm)
+- ✅ `escapeHtml` usado para sanitizar `formTitle`
+- ✅ Links usam `NEXT_PUBLIC_APP_URL` (corrigido em Bloco 7)
+- ⚠️ `FROM_EMAIL` inconsistente: `resend.ts` usa `noreply@eidosform.com.br`, `notify.ts` usa `notificacoes@eidosform.com.br` (diferente mas aceitável — notificação vs transacional)
+
+### Error handling
+- ✅ Graceful degradation: se `RESEND_API_KEY` ausente, faz log e retorna sem crashar
+- ✅ Erros do Resend logados via `logError`
+- ✅ Emails são fire-and-forget — nunca bloqueiam o fluxo principal
+- ❌ Sem retry/queue em caso de falha (P2)
+
+### Resultado: ✅ Nenhuma P0/P1 nova encontrada
+- **P2:** `sendNewResponseNotification` é código morto — remover
+- **P2:** Sem Reply-To configurado nos emails
+- **P2:** Sem retry/queue para falhas de envio
+
+---
+
+## Item B: Domínio personalizado — auditoria completa
+
+### Rotas de API
+- ✅ `POST /api/domains` — Adicionar domínio (gate Professional, ownership check)
+- ✅ `GET /api/domains` — Listar domínios do usuário (gate Professional)
+- ✅ `DELETE /api/domains` — Remover domínio (gate Professional, ownership check)
+- ✅ `PATCH /api/domains` — Verificar status (gate Professional)
+
+### Verificação DNS
+- ✅ CNAME validado via `resolveCname` (DNS lookup)
+- ✅ Verifica se CNAME aponta para `*.vercel.app`
+- ❌ Sem verificação de TXT record (P2)
+
+### Provisionamento SSL
+- ✅ Handled automaticamente pelo Vercel ao adicionar domínio via API
+
+### Middleware para servir form em custom domain
+- ❌ **P1 já documentado:** Não existe middleware que resolva hostname → form. Domínios são adicionados ao Vercel mas não há roteamento para o form correto. A feature não funciona end-to-end.
+
+### Isolamento
+- ✅ Ownership verificado em todas as rotas (user_id match)
+- ❌ Sem verificação de unicidade de domínio — dois users podem adicionar o mesmo domínio (P2)
+
+### Rate limiting
+- ❌ Sem rate limiting específico por domínio (P2)
+
+### Resultado: ⚠️ P1 já documentado (middleware de resolução)
+
+---
+
+## Item C: Landing /pgb — auditoria completa
+
+### Copy
+- ✅ Hero, features, personas, FAQ — copy completa e bem escrita
+- ✅ FAQ com 10 perguntas relevantes ao público brasileiro
+- ✅ Preços corretos (Free R$0, Starter R$49, Plus R$127, Professional R$257)
+
+### Problemas encontrados e corrigidos
+
+| Prioridade | Problema | Ação | Commit |
+|------------|----------|------|--------|
+| **P1** | Placeholders visíveis: `[PLACEHOLDER]` em logos, depoimentos, stats | ✅ Removidos — seção de prova social removida até ter conteúdo real | `e34ed01` |
+| **P1** | "Domínio personalizado" listado no plano Plus (só disponível no Professional) | ✅ Removido da lista de features do Plus | `e34ed01` |
+| **P1** | CTAs "Criar conta grátis" apontavam para `/login` em vez de `/register` | ✅ Corrigidos para `/register` | `e34ed01` |
+
+### P2 pendentes
+| Item | Descrição |
+|------|-----------|
+| Footer links todos `href="#"` | Precisa apontar para páginas reais (Blog, Carreiras, Status, etc.) |
+| Social links sem URL | Instagram, Linkedin, Youtube, Twitter sem perfil real |
+| `force-dynamic` em /pgb | Poderia ser SSG (página estática) para performance |
+| "7 dias de teste" | Mencionado mas sem lógica de trial no sistema |
+
+### Recomendações para /pgb
+1. **Prova social:** Recriar seção quando houver clientes reais. Não publicar placeholders.
+2. **Footer:** Adicionar links reais ou remover colunas sem páginas.
+3. **Social:** Conectar perfis reais ou remover ícones.
+4. **Trial:** Remover menção a "7 dias de teste" se não houver lógica, ou implementar.
+
+---
+
+## Commits Bloco 7b
+
+| Hash | Descrição |
+|------|----------|
+| `e34ed01` | fix(P1): remove placeholder content and fix CTAs on /pgb landing page |
+
+## P2 Pendentes (acumulados)
+
+Itens P2 do Bloco 7b somados aos já existentes:
+| Item | Descrição | Origem |
+|------|-----------|--------|
+| `sendNewResponseNotification` código morto | Nunca importado — remover | Bloco 7b |
+| Sem Reply-To em emails | Respostas vão para noreply | Bloco 7 |
+| Sem retry/queue para emails | Fire-and-forget sem retry | Bloco 7b |
+| Custom domain sem middleware | Domínios não roteados para forms | Bloco 7 |
+| Custom domain sem unicidade | Dois users podem adicionar mesmo domínio | Bloco 7 |
+| Custom domain sem TXT verification | Só CNAME é validado | Bloco 7b |
+| Custom domain sem rate limiting | Sem limite por domínio | Bloco 7b |
+| Footer /pgb links "#" | Precisa páginas reais | Bloco 7b |
+| Social links sem URL | Precisa perfis reais | Bloco 7b |
+| force-dynamic em /pgb | Poderia ser SSG | Bloco 7 |
+| "7 dias de teste" sem lógica | Mencionado mas não implementado | Bloco 7b |
+
+## Status: ✅ Bloco 7b Concluído
+
+**P0:** 0 encontradas
+**P1:** 3 corrigidas (placeholders, feature claim errada, CTAs)
+**P2:** 11 novas documentadas
+
+**Emails:** ✅ 4 templates funcionais, graceful degradation, sem retry
+**Custom domains:** ⚠️ API completa mas middleware de resolução pendente
+**Landing /pgb:** ✅ Placeholders removidos, CTAs corrigidos, feature claim corrigida

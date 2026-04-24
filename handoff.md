@@ -609,3 +609,191 @@ Zeca reportou zero P0/P1. Sem correções necessárias. Confirmado pela leitura 
 **Answer Items:** ✅ Gravação e leitura consistentes, RLS adequado
 **CSV Export:** ✅ UTF-8 BOM, escaping correto, feature gated
 **Analytics:** ✅ Métricas corretas, gate por plano
+
+---
+
+# Bloco 3 — Auth + Builder + Player (Itens A-G)
+
+**Data:** 2026-04-24
+**Responsável:** Zeca
+**Tipo:** Auditoria + Correções P0/P1
+**Commits:** `3e4120b`, `841241c`, `8967611`
+
+---
+
+## Item A: Auth email/senha (cadastro, login, logout, sessão, expiração)
+
+### O que foi auditado
+- `/api/auth/signup` — cadastro com rate limit
+- `/api/auth/login` — login com rate limit (5 tentativas/15 min)
+- `(auth)/login/page.tsx` — login frontend (Supabase client + Google OAuth)
+- `(auth)/register/page.tsx` — cadastro frontend com validação
+- `lib/auth.ts` — timeout de inatividade (30 min)
+- `lib/supabase/middleware.ts` — proteção de rotas + timeout
+- Dashboard layout — server component auth check
+
+### O que foi encontrado
+
+**🔴 P0:**
+1. **Sem trigger para criar profile no signup.** Quando um usuário se cadastra via Supabase Auth, nenhuma row é criada na tabela `profiles`. Isso quebra: plan checks (retorna null em vez de 'free'), form limits (consulta `responses_limit`), dashboard layout (profile.plan lookup falha). Sem migrations, sem código client-side — o profile nunca era criado automaticamente.
+
+**✅ Itens OK:**
+- Rate limiting: 5 tentativas/15 min por email no login e signup
+- Password strength: mínimo 8 caracteres, indicador visual
+- Login/logout: funciona via Supabase client
+- Sessão: cookie-based via Supabase SSR
+- Timeout de inatividade: 30 min via cookie `__lastActivity`
+- Brute force: rate limit + Supabase built-in protections
+
+### O que foi corrigido
+- ✅ `3e4120b` — Migration `20260424_auto_create_profile_on_signup.sql`: trigger `AFTER INSERT ON auth.users` cria profile com plano free, 50 responses, 0 used.
+
+---
+
+## Item B: Reset de senha e confirmação de email
+
+### O que foi auditado
+- `(auth)/forgot-password/page.tsx` — envio de link de recuperação
+- `(auth)/reset-password/page.tsx` — redefinição de senha
+- `(auth)/verify-email/page.tsx` — tela de verificação + reenvio
+- `auth/callback/route.ts` — callback para reset e confirmação
+
+### O que foi encontrado
+**✅ Nenhuma P0/P1 encontrada.**
+- Forgot password: usa `resetPasswordForEmail`, sempre mostra sucesso (anti-enumeration)
+- Reset: usa `updateUser`, valida senha diferente da atual
+- Verify email: usa `resend`, permite reenvio
+- Links: expiram via configuração do Supabase (24h padrão)
+- Callback: detecta `type=recovery` e redireciona para `/reset-password`
+
+---
+
+## Item C: Callback auth em todos os cenários e redirects
+
+### O que foi auditado
+- `auth/callback/route.ts` — handler de callback OAuth + email
+
+### O que foi encontrado
+**✅ Nenhuma P0/P1 encontrada.**
+- Open redirect protegido: valida `next` começa com `/` e não `//`
+- Error handling: redireciona para `/login?error=auth` em caso de falha
+- Recovery flow: detecta `type=recovery` e redireciona para reset-password
+- OAuth: redirect correto para dashboard ou `next`
+
+---
+
+## Item D: Proteção de rotas privadas e acesso sem sessão
+
+### O que foi auditado
+- `lib/supabase/middleware.ts` — middleware de proteção
+- `(dashboard)/layout.tsx` — server component auth check
+- `(dashboard)/settings/page.tsx` — auth check individual
+
+### O que foi encontrado
+
+**🟡 P1:**
+1. **`/settings` ausente do middleware.** A rota `/settings` não estava no array `protectedRoutes` do middleware. A proteção existia apenas no server component (segunda linha), mas o middleware deveria ser a primeira defesa.
+
+### O que foi corrigido
+- ✅ `8967611` — Adicionado `/settings` ao array de rotas protegidas do middleware.
+
+---
+
+## Item E: Builder criar/editar/salvar/publicar/despublicar formulário
+
+### O que foi auditado
+- `components/form-builder/form-builder.tsx` — CRUD completo no frontend
+- `api/forms/route.ts` — POST (criar), GET (listar)
+- `api/forms/[id]/route.ts` — GET, PATCH, PUT, DELETE
+- Autosave: debounce de 1500ms
+
+### O que foi encontrado
+
+**🟡 P1:**
+1. **Sem botão de despublicar.** Usuário podia publicar formulário mas não tinha como voltar para rascunho. A função `handleUnpublish` não existia.
+
+**✅ Itens OK:**
+- CRUD completo no backend (POST/GET/PATCH/DELETE)
+- Publicar muda `status` para `'published'` ✅
+- Autosave com debounce de 1500ms ✅
+- Validação de slug, título, perguntas antes de publicar ✅
+- Plan gates para pixels, webhooks, email notifications ✅
+- `updated_at` atualizado em cada PATCH ✅
+
+### O que foi corrigido
+- ✅ `841241c` — Adicionada função `handleUnpublish` e botão "Despublicar" no header do builder.
+
+---
+
+## Item F: Builder duplicar/deletar formulário
+
+### O que foi auditado
+- `api/forms/[id]/duplicate/route.ts` — duplicação
+- `api/forms/[id]/route.ts` DELETE — deleção
+- `components/dashboard/duplicate-form-button.tsx`
+- `components/dashboard/delete-form-button.tsx`
+
+### O que foi encontrado
+**✅ Nenhuma P0/P1 encontrada.**
+- Duplicate: verifica ownership, form limit, gera slug único, limpa pixels/webhook/pixel_events ✅
+- Delete: verifica ownership, remove form (cascata via DB para responses) ✅
+- Rate limiting em duplicação via `checkFormLimit` ✅
+
+---
+
+## Item G: Testar todos os tipos de pergunta no builder
+
+### O que foi auditado
+- `lib/database.types.ts` — 18 tipos definidos em `QuestionType`
+- `lib/questions.ts` — 18 tipos com ícone, label, config padrão
+- `lib/field-validators.ts` — validação backend para todos os 18 tipos
+- `components/form-player/question-renderer.tsx` — renderização no player
+
+### O que foi encontrado
+**✅ Nenhuma P0/P1 encontrada.** Todos os 18 tipos são suportados em:
+1. **Definição de tipo** (`database.types.ts`) ✅
+2. **Builder UI** (`questions.ts` — 18 entries) ✅
+3. **Validação backend** (`field-validators.ts` — 18 cases) ✅
+4. **Player renderer** (`question-renderer.tsx` — 18 cases) ✅
+
+Tipos: short_text, long_text, dropdown, checkboxes, email, phone, number, date, rating, opinion_scale, yes_no, file_upload, nps, url, address, cpf, calendly, content_block.
+
+---
+
+## Commits Bloco 3
+
+| Hash | Descrição |
+|------|----------|
+| `3e4120b` | fix(P0): auto-create profile on user signup via database trigger |
+| `841241c` | fix(P1): add unpublish button to form builder |
+| `8967611` | fix(P1): add /settings to middleware protected routes |
+
+## P2 Pendentes (acumulados Bloco 1 + 2 + 3)
+
+| Item | Descrição |
+|------|-----------|
+| CSP unsafe-inline/eval | Trade-off com Next.js + pixels |
+| Rate limit in-memory cold starts | Baixo impacto (tem fallback Supabase) |
+| answer_items RLS desconhecido | Verificar no Dashboard |
+| anon_insert_responses CHECK(true) | Revisar ordem de migrations |
+| consolidate RLS migrations | Múltiplas migrations de fix |
+| NEXT_PUBLIC_APP_URL validation | Garantir em produção |
+| api/whatsapp/send direct mode | Bypass se INTERNAL_API_SECRET vazado |
+| api-key-settings silent catch | catch silencioso no fetch de status |
+| Dashboard Suspense boundary | Server component sem loading fallback visual |
+| PAYMENT_DELETED webhook | Não tratado (Asaas usa SUBSCRIPTION_DELETED) |
+| is_published field inconsistency | Campo existe mas sistema usa `status`. Redundante mas sem impacto. |
+
+## Status: ✅ Bloco 3 Concluído
+
+**P0:** 1 corrigida (profile auto-create on signup)
+**P1:** 2 corrigidas (unpublish button, /settings middleware protection)
+**P2:** 11 documentadas
+
+**Auth:** ✅ Cadastro/login/logout/sessão funcionando, profile criado automaticamente
+**Reset/Confirmação:** ✅ Fluxos completos com anti-enumeration
+**Callback:** ✅ OAuth e email callback protegidos contra open redirect
+**Rotas protegidas:** ✅ Middleware cobre /billing, /forms, /settings, /admin
+**Builder CRUD:** ✅ Criar/editar/salvar/publicar/despublicar funcionando
+**Duplicar/Deletar:** ✅ Funcional com plan gates
+**Tipos de pergunta:** ✅ 18 tipos suportados em builder, validação e player

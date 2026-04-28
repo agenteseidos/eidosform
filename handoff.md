@@ -1866,3 +1866,98 @@ Feature agora funciona end-to-end: adicionar → verificar DNS → servir formul
 **ETAPA 1: ✅ LIMPA — APROVADA**
 
 Todas as 4 correções P0 foram validadas e aprovadas. Nenhuma correção adicional necessária. Commit `c1d7cd5` está pronto para deploy.
+
+---
+
+# ETAPA 2 — P1 Críticos (Relatório Claude)
+
+**Data:** 2026-04-28
+**Responsável:** Zeca (executor)
+**Commit:** `2e55522`
+
+## Correções Aplicadas
+
+### P1-A — IDOR residual em `x-response-id`
+- **Arquivo:** `app/api/responses/route.ts`
+- **Problema:** Quando `respondent_id` era `null` na response existente, qualquer pessoa com o `response_id` podia atualizar a resposta.
+- **Correção:** Rejeita update se `existingResponse.respondent_id` é null (respostas anônimas não são atualizáveis via este path). Ambos os valores (`existing` e `body`) devem estar presentes e corresponder.
+
+### P1-B — Vazamento de `error.message` em admin
+- **Arquivo:** `app/api/admin/users/[id]/plan/route.ts`
+- **Problema:** `error.message` do Supabase era retornado diretamente ao cliente, podendo vazar detalhes internos.
+- **Correção:** Mensagem genérica "Failed to update user plan".
+
+### P1-C — PATCH do form aceita `plan` arbitrário
+- **Arquivo:** `app/api/forms/[id]/route.ts`
+- **Problema:** Campo `plan` era aceito no body e persistido no update, permitindo privilege escalation.
+- **Correção:** Campo `plan` removido do destructuring e do objeto de update. Comentário documentando que plan é gerenciado exclusivamente via billing/admin.
+
+### P1-D — Webhooks externos sem HMAC
+- **Arquivo:** `lib/webhook-dispatcher.ts`
+- **Problema:** Payloads de webhook não tinham assinatura, impossibilitando verificação pelo consumidor.
+- **Correção:** Adicionada assinatura HMAC-SHA256 usando `WEBHOOK_SECRET` env var. Headers: `X-EidosForm-Signature: sha256=...`, `X-EidosForm-Timestamp`. Se `WEBHOOK_SECRET` não configurada, funciona sem assinatura (backward compat).
+
+### P1-E — Sem limite de quantidade/tamanho de questions
+- **Arquivos:** `app/api/forms/route.ts`, `app/api/forms/[id]/route.ts`, `lib/plan-definitions.ts`
+- **Problema:** Não havia limite de perguntas por formulário, permitindo abuse.
+- **Correção:** Adicionado `maxQuestions` por plano (Free: 25, Starter: 50, Plus: 100, Professional: 200). Validação em POST e PATCH. Limite de 500KB para payload serializado de perguntas.
+
+### P1-F — Webhook URL vulnerável a DNS rebinding
+- **Arquivo:** `lib/webhook-validator.ts`
+- **Problema:** Validação era síncrona e não resolvia hostname, permitindo DNS rebinding (hostname → IP privado).
+- **Correção:** Nova função `validateWebhookUrlAsync()` que resolve DNS antes do fetch. Cache de 60s. Bloqueia cloud metadata endpoints (169.254.169.254, .compute.internal, .eks.amazonaws.com). Usado no webhook-dispatcher.
+
+### P1-G — Email HTML sem escape no nome
+- **Arquivo:** `lib/resend.ts`
+- **Problema:** `name` e `plan` eram interpolados diretamente no HTML sem escape, permitindo XSS via stored name.
+- **Correção:** `escapeHtml()` aplicado em `name` e `plan` em `sendLimitAlert`, `sendPlanActivated` e `sendPlanCancelled`.
+
+### P1-H — `welcome_image_url` sem validação
+- **Arquivo:** `app/api/forms/[id]/route.ts`
+- **Problema:** URL de imagem de boas-vindas não era validada.
+- **Correção:** Validação de URL (HTTP/HTTPS), bloqueio de localhost/private IPs.
+
+### P1-I — `/api/forms/[id]/export` sem rate limit
+- **Arquivo:** `app/api/forms/[id]/export/route.ts`
+- **Problema:** Endpoint de exportação não tinha rate limit, podendo ser abusado para DoS.
+- **Correção:** Rate limit de 10 req/min por usuário via `checkRateLimitAsync`.
+
+### P1-J — Fallback heurístico no Asaas
+- **Arquivo:** `app/api/webhooks/asaas/route.ts`
+- **Problema:** `detectPlanAndCycle()` usava parsing de descrição para adivinhar plano (frágil, não confiável).
+- **Correção:** Heurística removida. Se valor não corresponde a nenhum preço conhecido, default `starter`. Parâmetro `description` removido.
+
+### P1-K — Migrations RLS antigas/confusas
+- **Arquivo:** `supabase/migrations/20260428_consolidate_rls_policies.sql`
+- **Problema:** 5 migrations conflitantes criavam/dropavam policies com mesmos nomes, estado final dependia da ordem de execução.
+- **Correção:** Migration de consolidação idempotente que: (1) dropa todas as policies existentes por nome, (2) recria conjunto limpo. Inclui anon INSERT com CHECK (form published) como defense-in-depth, service_role full access, authenticated owner policies.
+
+## Arquivos Alterados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `app/api/responses/route.ts` | P1-A: IDOR fix |
+| `app/api/admin/users/[id]/plan/route.ts` | P1-B: error.message |
+| `app/api/forms/[id]/route.ts` | P1-C, P1-E, P1-H: plan strip, questions limit, image URL |
+| `lib/webhook-dispatcher.ts` | P1-D: HMAC signature |
+| `lib/webhook-validator.ts` | P1-F: DNS rebinding protection |
+| `lib/resend.ts` | P1-G: HTML escape |
+| `app/api/forms/route.ts` | P1-E: questions limit |
+| `app/api/forms/[id]/export/route.ts` | P1-I: rate limit |
+| `app/api/webhooks/asaas/route.ts` | P1-J: remove heuristic |
+| `lib/plan-definitions.ts` | P1-E: maxQuestions field |
+| `supabase/migrations/20260428_consolidate_rls_policies.sql` | P1-K: RLS consolidation |
+
+## Migrations Criadas
+
+- `20260428_consolidate_rls_policies.sql` — Consolidação idempotente de RLS para responses e answer_items
+
+## Testes
+
+- TypeScript compilation: ✅ zero novos erros (único erro pré-existente: Star icon em pgb/page.tsx)
+- Nenhum teste unitário existente para rodar
+
+## Status: ✅ ETAPA 2 completa, pronta para auditoria da Zéfa
+
+**P1 corrigidos:** 11/11
+**Commit:** `2e55522`

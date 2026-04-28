@@ -1,10 +1,11 @@
 /**
  * lib/webhook-dispatcher.ts — Dispara webhooks externos ao receber resposta
- * 1 tentativa, log de falha
- * Bug #4: SSRF protection — blocks private IPs and non-HTTPS URLs
+ * Retry com backoff: 4 tentativas (0, 1s, 2s, 4s).
+ * P1-D: HMAC-SHA256 signature for payload verification by consumers.
+ * SSRF protection — blocks private IPs and non-HTTPS URLs.
  */
 
-import { validateWebhookUrl } from './webhook-validator'
+import { validateWebhookUrlAsync } from './webhook-validator'
 import { logError } from '@/lib/logger'
 
 export interface WebhookFieldMeta {
@@ -23,11 +24,24 @@ export interface WebhookPayload {
   fields?: WebhookFieldMeta[]
 }
 
+/**
+ * Generate HMAC-SHA256 signature for webhook payload.
+ * Consumers can verify using: crypto.createHmac('sha256', secret).update(payload).digest('hex')
+ */
+async function generateWebhookSignature(payload: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const keyData = encoder.encode(secret)
+  const data = encoder.encode(payload)
+  const key = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const sig = await crypto.subtle.sign('HMAC', key, data)
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
 
 /**
  * Dispara POST para webhook_url configurada pelo usuário.
- * Retry com backoff: 3 tentativas (1s, 2s, 4s).
+ * Retry com backoff: 4 tentativas (0, 1s, 2s, 4s).
  * Falhas são logadas mas não bloqueiam o fluxo.
+ * Inclui header X-EidosForm-Signature com HMAC-SHA256 para verificação pelo consumidor.
  */
 export async function dispatchWebhook(params: {
   webhookUrl: string
@@ -39,8 +53,8 @@ export async function dispatchWebhook(params: {
 }): Promise<{ success: boolean; statusCode?: number; error?: string }> {
   const { webhookUrl, formId, responseId, responseData, fields } = params
 
-  // SSRF validation
-  const urlCheck = validateWebhookUrl(webhookUrl)
+  // SSRF validation (async — includes DNS rebinding check)
+  const urlCheck = await validateWebhookUrlAsync(webhookUrl)
   if (!urlCheck.safe) {
     logError(
       `[webhook-dispatcher] BLOCKED`,
@@ -58,6 +72,12 @@ export async function dispatchWebhook(params: {
     ...(fields && fields.length > 0 ? { fields } : {}),
   }
 
+  const bodyStr = JSON.stringify(payload)
+
+  // P1-D: Generate HMAC signature so consumers can verify authenticity
+  const webhookSecret = process.env.WEBHOOK_SECRET
+  const signature = webhookSecret ? await generateWebhookSignature(bodyStr, webhookSecret) : null
+
   const delays = [0, 1000, 2000, 4000]
   let lastError: string | undefined
 
@@ -70,14 +90,20 @@ export async function dispatchWebhook(params: {
     const timeout = setTimeout(() => controller.abort(), 10_000)
 
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-EidosForm-Event': 'form.response',
+        'X-EidosForm-Form-Id': formId,
+      }
+      if (signature) {
+        headers['X-EidosForm-Signature'] = `sha256=${signature}`
+        headers['X-EidosForm-Timestamp'] = new Date().toISOString()
+      }
+
       const res = await fetch(webhookUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-EidosForm-Event': 'form.response',
-          'X-EidosForm-Form-Id': formId,
-        },
-        body: JSON.stringify(payload),
+        headers,
+        body: bodyStr,
         signal: controller.signal,
         redirect: 'manual',
       })

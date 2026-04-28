@@ -69,7 +69,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const body = await req.json()
-  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url } = body
+  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url } = body
+
+  // P1-C: Ignore 'plan' field — plan is managed exclusively via billing/admin endpoints
+  // Prevents users from escalating their own plan via PATCH
 
   // Validate slug if provided
   if (slug && !/^[a-z0-9-]+$/.test(slug)) {
@@ -109,6 +112,23 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   const userPlan = (profile?.plan ?? 'free') as PlanName
   const planConfig = PLANS[userPlan]
+
+  // P1-E: Validate question count and payload size per plan
+  if (questions !== undefined && Array.isArray(questions)) {
+    if (questions.length > (planConfig?.maxQuestions ?? 25)) {
+      return NextResponse.json(
+        { error: `Limite de ${planConfig?.maxQuestions ?? 25} perguntas por formulário atingido (seu plano: ${userPlan})` },
+        { status: 403 }
+      )
+    }
+    const serializedSize = JSON.stringify(questions).length
+    if (serializedSize > 500_000) {
+      return NextResponse.json(
+        { error: 'Payload de perguntas excede 500KB. Reduza o tamanho das perguntas.' },
+        { status: 413 }
+      )
+    }
+  }
 
   // P0 FIX: Bloquear pixels (Meta, Google, TikTok, GTM) para plano free
   if (pixels !== undefined && pixels !== null && typeof pixels === 'object') {
@@ -156,6 +176,32 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       { error: 'Notificações por email disponíveis a partir do plano Plus' },
       { status: 403 }
     )
+  }
+
+  // P1-H: Validate welcome_image_url if provided
+  if (welcome_image_url !== undefined && welcome_image_url !== null && welcome_image_url !== '') {
+    try {
+      const imgUrl = new URL(welcome_image_url)
+      if (!['https:', 'http:'].includes(imgUrl.protocol)) {
+        return NextResponse.json(
+          { error: 'welcome_image_url deve usar HTTP ou HTTPS' },
+          { status: 400 }
+        )
+      }
+      // Block private IPs in image URL (SSRF prevention)
+      const hostname = imgUrl.hostname.toLowerCase()
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') {
+        return NextResponse.json(
+          { error: 'welcome_image_url não pode apontar para localhost' },
+          { status: 400 }
+        )
+      }
+    } catch {
+      return NextResponse.json(
+        { error: 'welcome_image_url inválido' },
+        { status: 400 }
+      )
+    }
   }
 
   const integrationValidation = validateFormIntegrations({
@@ -229,7 +275,6 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(thank_you_button_text !== undefined && { thank_you_button_text }),
     ...(thank_you_button_url !== undefined && { thank_you_button_url: ensureHttps(thank_you_button_url) }),
     ...(pixels !== undefined && { pixels }),
-    ...(plan !== undefined && { plan }),
     ...(redirect_url !== undefined && { redirect_url: ensureHttps(redirect_url) }),
     ...(webhook_url !== undefined && { webhook_url }),
     ...(pixel_event_on_start !== undefined && { pixel_event_on_start }),

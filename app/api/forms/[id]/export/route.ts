@@ -4,6 +4,7 @@ import { PLANS, PlanName } from '@/lib/plan-limits'
 import { buildExcelExport } from '@/lib/export-excel'
 import { buildPdfExport } from '@/lib/export-pdf'
 import { sanitizeCellValue } from '@/lib/sanitize-formula'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 interface QuestionRow {
   id: string
@@ -52,6 +53,17 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     .single()
 
   const userPlan = (profile?.plan ?? 'free') as PlanName
+
+  // P1-I: Rate limit export endpoint (10 requests per minute per user)
+  const rlKey = `export:${user.id}`
+  const { allowed: rlAllowed } = await checkRateLimitAsync(rlKey, { maxAttempts: 10, windowMs: 60_000 })
+  if (!rlAllowed) {
+    return NextResponse.json(
+      { error: 'Muitas requisições de exportação. Tente novamente mais tarde.' },
+      { status: 429 }
+    )
+  }
+
   if (!PLANS[userPlan]?.csvExport) {
     return NextResponse.json(
       { error: 'Exportação CSV disponível a partir do plano Starter' },

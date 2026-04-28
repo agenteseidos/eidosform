@@ -15,6 +15,7 @@ export interface PlanConfig {
   yearlyPrice: number
   maxResponses: number
   maxForms: number
+  maxQuestions: number
   maxUsers: number
   watermark: boolean
   pixels: boolean
@@ -38,6 +39,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     yearlyPrice: 0,
     maxResponses: 100,
     maxForms: 3,
+    maxQuestions: 25,
     maxUsers: 1,
     watermark: true,
     pixels: false,
@@ -70,6 +72,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     yearlyPrice: 29,
     maxResponses: 1000,
     maxForms: 100,
+    maxQuestions: 50,
     maxUsers: 1,
     watermark: true,
     pixels: false,
@@ -99,6 +102,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     yearlyPrice: 97,
     maxResponses: 5000,
     maxForms: -1,
+    maxQuestions: 100,
     maxUsers: 1,
     watermark: false,
     pixels: true,
@@ -136,6 +140,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     yearlyPrice: 197,
     maxResponses: 15000,
     maxForms: -1,
+    maxQuestions: 200,
     maxUsers: 10,
     watermark: false,
     pixels: true,
@@ -165,6 +170,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
 
 export interface PlanLimits {
   maxResponses: number
+  maxQuestions: number
   maxForms: number
   watermark: boolean
   pixels: boolean
@@ -178,6 +184,7 @@ export const PLAN_LIMITS: Record<PlanName, PlanLimits> = Object.fromEntries(
     key,
     {
       maxResponses: p.maxResponses,
+      maxQuestions: p.maxQuestions,
       maxForms: p.maxForms,
       watermark: p.watermark,
       pixels: p.pixels,

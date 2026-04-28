@@ -80,14 +80,15 @@ export async function sendLimitAlert(params: {
 }) {
   const { to, name, usage, limit, plan } = params
   const pct = Math.round((usage / limit) * 100)
+  const safeName = escapeHtml(name)
   return sendEmail({
     to,
     subject: `Atenção: você usou ${pct}% do seu limite de respostas`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
         <h2 style="color:#f59e0b">⚠️ Limite de respostas se aproximando</h2>
-        <p>Olá, <strong>${name}</strong>!</p>
-        <p>Você já usou <strong>${usage} de ${limit}</strong> respostas do plano <strong>${plan}</strong>.</p>
+        <p>Olá, <strong>${safeName}</strong>!</p>
+        <p>Você já usou <strong>${usage} de ${limit}</strong> respostas do plano <strong>${escapeHtml(plan)}</strong>.</p>
         <p>Para não perder respostas, considere fazer upgrade.</p>
         <a href="${process.env.NEXT_PUBLIC_APP_URL}/billing"
            style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
@@ -106,14 +107,15 @@ export async function sendPlanActivated(params: {
   plan: string
 }) {
   const { to, name, plan } = params
+  const safeName = escapeHtml(name)
   return sendEmail({
     to,
     subject: `Plano ${plan} ativado! 🚀`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
         <h2 style="color:#10b981">Plano ativado com sucesso! 🚀</h2>
-        <p>Olá, <strong>${name}</strong>!</p>
-        <p>Seu plano <strong>${plan}</strong> foi ativado. Aproveite todos os recursos!</p>
+        <p>Olá, <strong>${safeName}</strong>!</p>
+        <p>Seu plano <strong>${escapeHtml(plan)}</strong> foi ativado. Aproveite todos os recursos!</p>
         <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard"
            style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
           Acessar dashboard
@@ -131,14 +133,15 @@ export async function sendPlanCancelled(params: {
   plan: string
 }) {
   const { to, name, plan } = params
+  const safeName = escapeHtml(name)
   return sendEmail({
     to,
     subject: `Assinatura ${plan} cancelada`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
         <h2 style="color:#ef4444">Assinatura cancelada</h2>
-        <p>Olá, <strong>${name}</strong>!</p>
-        <p>Sua assinatura do plano <strong>${plan}</strong> foi cancelada. Você voltou para o plano Free.</p>
+        <p>Olá, <strong>${safeName}</strong>!</p>
+        <p>Sua assinatura do plano <strong>${escapeHtml(plan)}</strong> foi cancelada. Você voltou para o plano Free.</p>
         <p>Se foi um engano ou quer reativar, acesse seu dashboard.</p>
         <a href="${process.env.NEXT_PUBLIC_APP_URL}/billing"
            style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">

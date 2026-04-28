@@ -89,6 +89,31 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Fetch plan for feature gates and limits
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+  const userPlan = ((profile as { plan: string } | null)?.plan || 'free') as import('@/lib/plans').PlanId
+  const planConfig = PLANS[userPlan]
+
+  // P1-E: Validate question count and payload size per plan
+  const formQuestions = Array.isArray(questions) ? questions : []
+  if (formQuestions.length > (planConfig?.maxQuestions ?? 25)) {
+    return NextResponse.json(
+      { error: `Limite de ${planConfig?.maxQuestions ?? 25} perguntas por formulário atingido (seu plano: ${userPlan})` },
+      { status: 403 }
+    )
+  }
+  const serializedSize = JSON.stringify(formQuestions).length
+  if (serializedSize > 500_000) {
+    return NextResponse.json(
+      { error: 'Payload de perguntas excede 500KB. Reduza o tamanho das perguntas.' },
+      { status: 413 }
+    )
+  }
+
   // Validate webhook_url if provided
   if (webhook_url) {
     const webhookCheck = validateWebhookUrl(webhook_url)
@@ -96,17 +121,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Invalid webhook_url: ${webhookCheck.reason}` }, { status: 400 })
     }
   }
-
-  // P1-01 FIX: Fetch plan from profiles using join (single query via checkFormLimit alternative)
-  // Default to 'free' if plan not found or missing
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('plan')
-    .eq('id', user.id)
-    .single()
-  const userPlan = ((profile as { plan: string } | null)?.plan || 'free') as import('@/lib/plans').PlanId
-
-  const planConfig = PLANS[userPlan]
 
   // P1 FIX: Strip pixels for free/starter users on form creation
   let sanitizedPixels = pixels || null

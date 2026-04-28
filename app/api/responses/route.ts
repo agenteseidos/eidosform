@@ -250,9 +250,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
     }
 
-    // Verify ownership: respondent_id from body must match, or if null, reject (anonymous can't update)
+    // P1-A: Verify ownership — both respondent_id values must be present AND match.
+    // If the response was created without respondent_id (anonymous), it cannot be updated via this path.
     const bodyRespondentId = typeof respondent_id === 'string' ? respondent_id : null
-    if (existingResponse.respondent_id && existingResponse.respondent_id !== bodyRespondentId) {
+    if (!existingResponse.respondent_id || existingResponse.respondent_id !== bodyRespondentId) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 403, headers: CORS_HEADERS })
     }
 

@@ -1813,3 +1813,56 @@ Feature agora funciona end-to-end: adicionar → verificar DNS → servir formul
 - Validação agora checa `cname.vercel-dns.com` ou `*.vercel-dns.com`
 
 ## Status: ✅ ETAPA 1 completa, pronta para auditoria da Zéfa
+
+---
+
+# Revalidação Zéfa — ETAPA 1 P0 Imediatos (2026-04-28)
+
+**Responsável:** Zéfa (revalidação)
+**Commit auditado:** `c1d7cd5`
+
+## Veredito por Item
+
+### P0-C — Domínio .com → .com.br
+**Veredito: ✅ APROVADA**
+
+- `app/page.tsx`: `suporte@eidosform.com` → `suporte@eidosform.com.br` ✅
+- `app/pgb/page.tsx`: `contato@eidosform.com` → `contato@eidosform.com.br` ✅
+- `app/(dashboard)/billing/page.tsx`: `suporte@eidosform.com` → `suporte@eidosform.com.br` ✅
+- Grep global: zero ocorrências de `eidosform.com` (sem `.br`) restantes no código ✅
+
+### P0-D — Free plan 50 → 100 respostas
+**Veredito: ✅ APROVADA**
+
+- Trigger `20260424_auto_create_profile_on_signup.sql`: `responses_limit` alterado de 50 para 100 ✅
+- Migration `20260428_fix_free_plan_100_responses.sql`: UPDATE para existing free users com `responses_limit = 50` ✅ (idempotente)
+- `lib/plan-definitions.ts`: `free.maxResponses = 100` já estava correto ✅
+- Alinhamento total: trigger + migration + plan-definitions = 100 ✅
+
+### P0-B — Formula injection em exports
+**Veredito: ✅ APROVADA**
+
+- `lib/sanitize-formula.ts`: Prefixa `'` em valores que começam com `=`, `+`, `-`, `@`, `\t`, `\r`, `\n` ✅
+- Aplicado em `export-csv/route.ts` (CSV) ✅
+- Aplicado em `export/route.ts` (CSV no export genérico) ✅
+- Aplicado em `lib/export-excel.ts` (Excel — todas as branches: string, array, object) ✅
+- Aplicado em `lib/export-pdf.ts` (PDF — todas as branches) ✅
+- Não há outros caminhos de export no código ✅
+- PDF injection notavelmente menos relevante (jsPDF não interpreta fórmulas), mas sanitização defensiva é correta ✅
+
+### P0-A — Custom domain CNAME
+**Veredito: ✅ APROVADA**
+
+- `lib/custom-domain.ts`: Validação corrigida — agora checa `cname === 'cname.vercel-dns.com' || cname.endsWith('.vercel-dns.com')` ✅
+- `components/settings/domain-settings.tsx`: Instrução CNAME corrigida para `cname.vercel-dns.com` (copyCname + display) ✅
+- `cname.eidosform.com` (errado) completamente removido ✅
+
+## Bypass/Lacuna Residual
+
+**Nenhum encontrado.** Todas as 4 correções são completas e não apresentam bypass óbvio.
+
+## Conclusão Final
+
+**ETAPA 1: ✅ LIMPA — APROVADA**
+
+Todas as 4 correções P0 foram validadas e aprovadas. Nenhuma correção adicional necessária. Commit `c1d7cd5` está pronto para deploy.

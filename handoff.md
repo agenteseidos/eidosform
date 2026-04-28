@@ -1982,3 +1982,75 @@ Adicionado `Star` ao bloco de imports de `lucide-react` em `app/pgb/page.tsx`.
 - Push em main → `316b40d`
 
 ## Status: ✅ Build destravado
+
+# ETAPA 3 — P2 Prioritários (Relatório Claude)
+
+**Data:** 2026-04-28
+**Responsável:** Zeca (executor)
+**Commit:** `0ba5ba0`
+
+## Correções Aplicadas
+
+### P2-E — API key em plaintext
+- **Arquivos:** `lib/api-key-auth.ts`, `app/api/settings/api-key/route.ts`
+- **Migration:** `20260428_hash_api_keys.sql`
+- **O que foi feito:** Migração de plaintext para SHA-256 hash. Nova coluna `api_key_hash` na tabela profiles. RPC `verify_api_key_hash` para lookup por hash. Fallback para keys legacy ainda em plaintext. POST salva hash e limpa plaintext.
+
+### P2-N — Increment de response count não atômico
+- **Migration:** `20260428_atomic_response_count.sql`
+- **O que foi feito:** Novo RPC `check_and_increment_response` que faz check de limite + increment em uma única query atômica. Elimina race condition entre `checkResponseLimit` e `incrementResponseCount`. O RPC antigo `increment_responses_used` continua funcionando para backward compat.
+
+### P2-G — Dashboard select('*') e contagem em memória
+- **Arquivo:** `app/(dashboard)/forms/page.tsx`
+- **O que foi feito:** Select explícito de campos necessários (13 campos vs `*`). Contagem de respostas via RPC `get_response_counts_by_forms` em vez de carregar todas as responses e contar em memória.
+
+### P2-F — handleDowngrade carrega responses demais
+- **Arquivo:** `lib/plan-limits.ts`
+- **Migration:** `20260428_response_counts_rpc.sql`
+- **O que foi feito:** Substituída query `.select('form_id').in('form_id', formIds)` por RPC `get_response_counts_by_forms` que faz `GROUP BY` + `COUNT` no banco. Elimina carregamento de todas as responses em memória.
+
+### P2-A — /api/upload GET expõe configuração
+- **Arquivo:** `app/api/upload/route.ts`
+- **O que foi feito:** Adicionada verificação de autenticação ao GET. Endpoint não retorna mais `configured: true/false` para anônimos.
+
+### P2-O — PATCH do builder sem limite de payload
+- **Arquivo:** `app/api/forms/[id]/route.ts`
+- **O que foi feito:** Adicionado limite de 500KB para payload serializado no PATCH.
+
+### P2-B — Upload de welcome image aceita SVG
+- **Arquivo:** `app/api/forms/[id]/route.ts`
+- **O que foi feito:** Validação de extensão `.svg` e `.svgz` bloqueada na URL de welcome_image (risco XSS em browsers que interpretam SVG inline).
+
+### P2-C — Webhook Asaas aceita token por query fallback
+- **Arquivo:** `app/api/webhooks/asaas/route.ts`
+- **O que foi feito:** Removido `accessTokenQuery` como método de autenticação. Token aceito apenas via header (`asaas-access-token` ou `access_token`) + HMAC signature.
+
+## Migrations Criadas
+
+| Migration | Descrição |
+|-----------|-----------|
+| `20260428_hash_api_keys.sql` | Coluna api_key_hash + RPC verify_api_key_hash + migração existentes |
+| `20260428_atomic_response_count.sql` | RPC check_and_increment_response (check+increment atômico) |
+| `20260428_response_counts_rpc.sql` | RPC get_response_counts_by_forms (GROUP BY aggregate) |
+
+## Arquivos Alterados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `lib/api-key-auth.ts` | P2-E: hash-based lookup |
+| `app/api/settings/api-key/route.ts` | P2-E: salva hash, GET usa hash |
+| `app/(dashboard)/forms/page.tsx` | P2-G: select explícito + RPC aggregate |
+| `lib/plan-limits.ts` | P2-F: handleDowngrade usa RPC |
+| `app/api/upload/route.ts` | P2-A: auth no GET |
+| `app/api/forms/[id]/route.ts` | P2-O: payload limit, P2-B: SVG block |
+| `app/api/webhooks/asaas/route.ts` | P2-C: remove query param fallback |
+
+## Testes
+
+- TypeScript compilation: ✅ zero erros
+- Nenhum teste unitário existente para rodar
+
+## Status: ✅ ETAPA 3 completa, pronta para auditoria
+
+**P2 corrigidos:** 8/8
+**Commit:** `0ba5ba0`

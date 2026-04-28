@@ -51,7 +51,7 @@ export async function PATCH(
         responses_used: 0,
         limit_alert_sent: false,
         ...(newPlan === 'free'
-          ? { plan_status: 'cancelled', plan_expires_at: null, asaas_subscription_id: null }
+          ? { plan_status: 'cancelled', plan_cycle: null, plan_expires_at: null, asaas_subscription_id: null }
           : { plan_status: 'active' }),
       })
       .eq('id', id)

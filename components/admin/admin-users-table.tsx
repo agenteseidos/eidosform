@@ -31,12 +31,17 @@ export function AdminUsersTable() {
   const [search, setSearch] = useState('')
   const [serverSearch, setServerSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null)
   const [nextPlan, setNextPlan] = useState<PlanId>('free')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    const timeout = setTimeout(() => setServerSearch(search.trim()), 250)
+    const timeout = setTimeout(() => {
+      setServerSearch(search.trim())
+      setPage(1)
+    }, 250)
     return () => clearTimeout(timeout)
   }, [search])
 
@@ -50,6 +55,8 @@ export function AdminUsersTable() {
 
         const params = new URLSearchParams()
         if (serverSearch) params.set('search', serverSearch)
+        params.set('page', String(page))
+        params.set('limit', '20')
 
         const response = await fetch(`/api/admin/users${params.toString() ? `?${params.toString()}` : ''}`, {
           cache: 'no-store',
@@ -57,8 +64,11 @@ export function AdminUsersTable() {
 
         if (!response.ok) throw new Error('Falha ao carregar usuários')
 
-        const json = await response.json() as { users: AdminUser[] }
-        if (active) setUsers(json.users)
+        const json = await response.json() as { users: AdminUser[]; total: number }
+        if (active) {
+          setUsers(json.users)
+          setTotal(json.total ?? json.users.length)
+        }
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Falha ao carregar usuários')
       } finally {
@@ -70,7 +80,7 @@ export function AdminUsersTable() {
     return () => {
       active = false
     }
-  }, [serverSearch])
+  }, [serverSearch, page])
 
   const emptyMessage = useMemo(() => {
     if (loading) return 'Carregando usuários...'
@@ -78,6 +88,8 @@ export function AdminUsersTable() {
     if (serverSearch) return 'Nenhum usuário encontrado para essa busca.'
     return 'Nenhum usuário encontrado.'
   }, [error, loading, serverSearch])
+
+  const totalPages = Math.max(1, Math.ceil(total / 20))
 
   function openPlanDialog(user: AdminUser) {
     setSelectedUser(user)
@@ -130,7 +142,7 @@ export function AdminUsersTable() {
             </div>
 
             <p className="text-sm text-slate-500">
-              {loading ? 'Carregando...' : `${users.length} usuário(s)`}
+              {loading ? 'Carregando...' : `${total} usuário(s)`}
             </p>
           </div>
 
@@ -173,6 +185,18 @@ export function AdminUsersTable() {
                 )}
               </TableBody>
             </Table>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 text-sm text-slate-500">
+            <span>Página {page} de {totalPages}</span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={loading || page <= 1}>
+                Anterior
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={loading || page >= totalPages}>
+                Próxima
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

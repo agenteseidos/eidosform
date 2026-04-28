@@ -8,23 +8,32 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const search = request.nextUrl.searchParams.get('search')?.trim().toLowerCase() ?? ''
+  const page = Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('page') ?? '1', 10) || 1)
+  const limit = Math.min(100, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('limit') ?? '20', 10) || 20))
+  const from = (page - 1) * limit
+  const to = from + limit - 1
   const supabase = createAdminClient()
 
-  // P1-02 FIX: Avoid N+1 by using aggregate function instead of fetching all forms
-  // Get forms count grouped by user_id using a single query
-  const { data: profiles, error: profilesError } = await supabase
+  let profilesQuery = supabase
     .from('profiles')
-    .select('id, email, plan, created_at')
+    .select('id, email, plan, created_at', { count: 'exact' })
     .order('created_at', { ascending: false })
+
+  if (search) {
+    profilesQuery = profilesQuery.ilike('email', `%${search}%`)
+  }
+
+  const { data: profiles, error: profilesError, count } = await profilesQuery.range(from, to)
 
   if (profilesError) {
     return NextResponse.json({ error: 'Failed to load admin users' }, { status: 500 })
   }
 
-  // Fetch form counts per user in a single query (using RPC or aggregate select)
+  const profileIds = (profiles ?? []).map((profile) => profile.id)
   const { data: formCounts, error: formsError } = await supabase
     .from('forms')
-    .select('user_id')  // Only fetch user_id to minimize payload
+    .select('user_id')
+    .in('user_id', profileIds.length > 0 ? profileIds : ['00000000-0000-0000-0000-000000000000'])
 
   if (formsError) {
     return NextResponse.json({ error: 'Failed to count forms' }, { status: 500 })
@@ -36,9 +45,7 @@ export async function GET(request: NextRequest) {
     formsCountByUser.set(form.user_id, (formsCountByUser.get(form.user_id) ?? 0) + 1)
   }
 
-  const users = (profiles ?? [])
-    .filter((profile) => !search || profile.email.toLowerCase().includes(search))
-    .map((profile) => ({
+  const users = (profiles ?? []).map((profile) => ({
       id: profile.id,
       email: profile.email,
       plan: normalizePlan(profile.plan),
@@ -46,5 +53,11 @@ export async function GET(request: NextRequest) {
       formsCount: formsCountByUser.get(profile.id) ?? 0,
     }))
 
-  return NextResponse.json({ users })
+  return NextResponse.json({
+    users,
+    total: count ?? users.length,
+    page,
+    limit,
+    hasMore: (count ?? 0) > to + 1,
+  })
 }

@@ -9,6 +9,8 @@ export type ApiAuthSuccess = { ok: true; userId: string; plan: string; apiKey: s
 export type ApiAuthFailure = { ok: false; status: 401 | 429; error: string; retryAfter?: number }
 export type ApiAuthResult = ApiAuthSuccess | ApiAuthFailure
 
+type ApiKeyProfile = { id: string; plan: string; api_key_hash?: string | null }
+
 /**
  * Authenticate an API v1 request via X-API-Key or Authorization: Bearer header.
  * Validates:
@@ -45,9 +47,9 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
 
   const { data: profile } = await supabase
     .rpc('verify_api_key_hash', { p_api_key: apiKey })
-    .single() as { data: { id: string; plan: string; api_key_hash: string } | null }
+    .single() as { data: ApiKeyProfile | null }
 
-  let resolvedProfile = profile
+  let resolvedProfile: ApiKeyProfile | null = profile
 
   if (!resolvedProfile) {
     // Fallback: check plaintext api_key column for keys not yet migrated
@@ -55,13 +57,13 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
       .from('profiles')
       .select('id, plan')
       .eq('api_key', apiKey)
-      .single() as { data: { id: string; plan: string } | null }
+.single() as { data: ApiKeyProfile | null }
 
     if (!legacyProfile) {
       return { ok: false, status: 401, error: 'Unauthorized. Invalid API key.' }
     }
 
-    resolvedProfile = legacyProfile as { id: string; plan: string; api_key_hash?: string }
+    resolvedProfile = legacyProfile
   }
 
   if (resolvedProfile.plan !== 'professional' && resolvedProfile.plan !== 'enterprise') {

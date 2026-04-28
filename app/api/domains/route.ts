@@ -199,6 +199,17 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'domain is required' }, { status: 400 })
   }
 
+  const { data: existing } = await supabase
+    .from('custom_domains')
+    .select('id')
+    .eq('domain', domain)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!existing) {
+    return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
+  }
+
   const result = await checkDomainStatus(domain)
   if (!result.success) {
     return NextResponse.json({ error: result.error }, { status: 400 })

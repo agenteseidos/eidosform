@@ -9,9 +9,9 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
 
   const [{ count: usersCount, error: usersError }, { count: formsCount, error: formsError }, { count: responsesCount, error: responsesError }] = await Promise.all([
-    supabase.from('profiles').select('*', { count: 'exact', head: true }),
-    supabase.from('forms').select('*', { count: 'exact', head: true }),
-    supabase.from('responses').select('*', { count: 'exact', head: true }),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }),
+    supabase.from('forms').select('id', { count: 'exact', head: true }),
+    supabase.from('responses').select('id', { count: 'exact', head: true }),
   ])
 
   const error = usersError ?? formsError ?? responsesError

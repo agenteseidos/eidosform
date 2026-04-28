@@ -49,18 +49,14 @@ const FIXED_TEMPLATE_VARIABLES = [
 ]
 
 const DEFAULT_MESSAGE_TEMPLATE = 'Nova resposta em {form_name}: {nome}'
-const DEFAULT_WHATSAPP_INSTANCE = 'default'
-const DEFAULT_RATE_LIMIT_PER_HOUR = 100
 
 function normalizeSettingsSnapshot(
-  settings: Pick<FormWhatsAppSettings, 'enabled' | 'owner_phone' | 'message_template' | 'instance_name' | 'rate_limit_per_hour'>
+  settings: Pick<FormWhatsAppSettings, 'enabled' | 'owner_phone' | 'message_template'>
 ) {
   return JSON.stringify({
     enabled: settings.enabled ?? false,
     owner_phone: settings.owner_phone ?? '',
     message_template: settings.message_template ?? DEFAULT_MESSAGE_TEMPLATE,
-    instance_name: settings.instance_name ?? DEFAULT_WHATSAPP_INSTANCE,
-    rate_limit_per_hour: settings.rate_limit_per_hour ?? DEFAULT_RATE_LIMIT_PER_HOUR,
   })
 }
 
@@ -76,8 +72,6 @@ export function WhatsAppPanel({
   const [messageTemplate, setMessageTemplate] = useState(
     initialSettings?.message_template ?? DEFAULT_MESSAGE_TEMPLATE
   )
-  const [instance] = useState(initialSettings?.instance_name ?? DEFAULT_WHATSAPP_INSTANCE)
-  const [rateLimit] = useState(initialSettings?.rate_limit_per_hour ?? DEFAULT_RATE_LIMIT_PER_HOUR)
   const [isTestingMessage, setIsTestingMessage] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingSettings, setIsLoadingSettings] = useState(true)
@@ -105,8 +99,6 @@ export function WhatsAppPanel({
                 enabled: s.enabled ?? false,
                 owner_phone: s.owner_phone ?? '',
                 message_template: s.message_template ?? DEFAULT_MESSAGE_TEMPLATE,
-                instance_name: s.instance_name ?? DEFAULT_WHATSAPP_INSTANCE,
-                rate_limit_per_hour: s.rate_limit_per_hour ?? DEFAULT_RATE_LIMIT_PER_HOUR,
               })
             )
           } else {
@@ -115,8 +107,6 @@ export function WhatsAppPanel({
                 enabled: false,
                 owner_phone: '',
                 message_template: DEFAULT_MESSAGE_TEMPLATE,
-                instance_name: DEFAULT_WHATSAPP_INSTANCE,
-                rate_limit_per_hour: DEFAULT_RATE_LIMIT_PER_HOUR,
               })
             )
           }
@@ -139,8 +129,6 @@ export function WhatsAppPanel({
       enabled,
       owner_phone: ownerPhone,
       message_template: messageTemplate,
-      instance_name: instance,
-      rate_limit_per_hour: rateLimit,
     })
 
     if (currentSnapshot === initialSnapshot) return
@@ -166,7 +154,6 @@ export function WhatsAppPanel({
               enabled,
               owner_phone: ownerPhone,
               message_template: messageTemplate,
-                  rate_limit_per_hour: rateLimit,
             }),
           })
 
@@ -189,7 +176,7 @@ export function WhatsAppPanel({
     }, 3000) // 3 second debounce — gives user time to type without interruption
 
     return () => clearTimeout(timer)
-  }, [enabled, ownerPhone, messageTemplate, formId, instance, rateLimit, settingsInitialized, initialSnapshot])
+  }, [enabled, ownerPhone, messageTemplate, formId, settingsInitialized, initialSnapshot])
 
   const handleToggle = useCallback((checked: boolean) => {
     setEnabled(checked)

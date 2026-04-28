@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { log, logWarn, logError } from '@/lib/logger'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 const RATE_LIMIT_MS = 30_000
-let lastQrTime = 0
 
 function getWhatsappUrl(path: string): string {
-  // Force production domain — Vercel env var may not be loaded in time
-  const base = 'https://wpp.eidosform.com.br'
+  const base = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br'
   return `${base}${path}`
 }
 
@@ -32,16 +31,18 @@ export async function POST(request: NextRequest) {
   log('[QR] Auth OK', { user: auth.user?.email || 'unknown' });
 
   // Rate limit
-  const now = Date.now()
-  const remaining = RATE_LIMIT_MS - (now - lastQrTime)
-  if (remaining > 0) {
-    logWarn('[QR] Rate limited', { remainingMs: remaining });
+  const rateLimitKey = `admin:whatsapp:qr:${auth.user?.id ?? 'unknown'}`
+  const { allowed, resetIn } = await checkRateLimitAsync(rateLimitKey, {
+    maxAttempts: 1,
+    windowMs: RATE_LIMIT_MS,
+  })
+  if (!allowed) {
+    logWarn('[QR] Rate limited', { remainingMs: resetIn });
     return NextResponse.json(
-      { error: `Rate limited. Try again in ${Math.ceil(remaining / 1000)} seconds.` },
+      { error: `Rate limited. Try again in ${Math.ceil(resetIn / 1000)} seconds.` },
       { status: 429 }
     )
   }
-  lastQrTime = now
 
   const fetchUrl = getWhatsappUrl('/api/whatsapp/qr');
   log('[QR] Fetching', { fetchUrl });
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
   } catch (err: unknown) {
     logError('[QR] Generation failed', err);
     return NextResponse.json(
-      { error: 'Failed to generate QR code', debug: String(err) },
+      { error: 'Failed to generate QR code' },
       { status: 500 }
     )
   }

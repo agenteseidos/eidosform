@@ -90,9 +90,11 @@ export async function checkAndIncrementResponseCount(userId: string): Promise<{
 }> {
   const supabase = createPublicClient()
 
-  const { data, error } = await supabase
-    .rpc('check_and_increment_response', { p_user_id: userId })
-    .single() as {
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args: Record<string, unknown>
+  ) => {
+    single: () => Promise<{
       data: {
         allowed: boolean
         usage: number
@@ -101,7 +103,10 @@ export async function checkAndIncrementResponseCount(userId: string): Promise<{
         near_limit: boolean
       } | null
       error: unknown
-    }
+    }>
+  }
+
+  const { data, error } = await rpc('check_and_increment_response', { p_user_id: userId }).single()
 
   if (error || !data) {
     return { allowed: false, usage: 0, limit: 0, plan: 'free', nearLimit: false }

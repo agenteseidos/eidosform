@@ -4,35 +4,18 @@ import { logError, logWarn } from '@/lib/logger'
 import { createServerClient } from '@supabase/ssr'
 import { PLANS } from '@/lib/plan-limits'
 import { PlanId } from '@/lib/plans'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
-// In-memory rate limiter: tracks sends per phone number per hour
-const rateLimiter = new Map<string, { count: number; resetAt: number }>()
 const MAX_SENDS_PER_HOUR = 100
 
-function checkRateLimit(phone: string): boolean {
-  const now = Date.now()
-  const entry = rateLimiter.get(phone)
-
-  if (!entry || now > entry.resetAt) {
-    rateLimiter.set(phone, { count: 1, resetAt: now + 3600_000 })
-    return true
-  }
-
-  if (entry.count >= MAX_SENDS_PER_HOUR) {
-    return false
-  }
-
-  entry.count++
-  return true
+async function checkWhatsAppRateLimit(phone: string, maxAttempts = MAX_SENDS_PER_HOUR): Promise<boolean> {
+  const cleanPhone = phone.replace(/\D/g, '')
+  const { allowed } = await checkRateLimitAsync(`whatsapp:${cleanPhone}`, {
+    maxAttempts,
+    windowMs: 3_600_000,
+  })
+  return allowed
 }
-
-// Clean up expired entries every 10 minutes
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of rateLimiter) {
-    if (now > entry.resetAt) rateLimiter.delete(key)
-  }
-}, 600_000)
 
 interface FormAwareRequest {
   formId: string
@@ -45,7 +28,6 @@ interface FormAwareRequest {
 }
 
 interface DirectSendRequest {
-  instance: string
   to: string
   message: string
 }
@@ -155,7 +137,7 @@ function isInternalRequest(req: NextRequest): boolean {
  * 1. Form-aware (recommended): { formId, leadData: { name, email, phone, ... } }
  *    Fetches settings from DB, builds message from template, sends via VPS.
  *
- * 2. Direct (legacy): { instance, to, message }
+ * 2. Direct (legacy/internal): { to, message }
  *    Sends directly via VPS. Requires internal auth.
  *
  * Auth: Bearer token (INTERNAL_API_SECRET) for server-to-server
@@ -180,7 +162,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // Mode 2: Direct send (backward compat)
-    if (body.instance && body.to && body.message) {
+    if (body.to && body.message) {
       if (!isInternal) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
       }
@@ -188,7 +170,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     return NextResponse.json(
-      { success: false, error: 'Provide { formId, leadData } or { instance, to, message }' },
+      { success: false, error: 'Provide { formId, leadData } or { to, message }' },
       { status: 400 }
     )
   } catch (error) {
@@ -245,7 +227,7 @@ async function handleFormAwareSend(
   }
 
   // 2. Rate limit check
-  if (!checkRateLimit(settings.owner_phone)) {
+  if (!(await checkWhatsAppRateLimit(settings.owner_phone, settings.rate_limit_per_hour ?? MAX_SENDS_PER_HOUR))) {
     return NextResponse.json(
       { success: false, error: 'Rate limit exceeded. Try again later.' },
       { status: 429 }
@@ -299,7 +281,7 @@ async function handleDirectSend(data: DirectSendRequest): Promise<NextResponse> 
     )
   }
 
-  if (!checkRateLimit(cleanPhone)) {
+  if (!(await checkWhatsAppRateLimit(cleanPhone))) {
     return NextResponse.json(
       { success: false, error: 'Rate limit exceeded' },
       { status: 429 }

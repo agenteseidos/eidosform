@@ -1,30 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
-// Rate limit: 10 requests por IP por minuto
-// NOTE: In-memory Map is per-isolate. On serverless (Vercel), cold starts reset this.
-// This is acceptable for CEP lookups (low-risk, read-only, rate-limited at 10/min).
-// Migration to Supabase RPC is not justified for this use case.
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT = 10
 const WINDOW_MS = 60_000
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + WINDOW_MS })
-    return false
-  }
-  entry.count++
-  return entry.count > RATE_LIMIT
-}
 
 type Params = { params: Promise<{ cep: string }> }
 
 export async function GET(req: NextRequest, { params }: Params) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
 
-  if (isRateLimited(ip)) {
+  const { allowed } = await checkRateLimitAsync(`cep:${ip}`, {
+    maxAttempts: RATE_LIMIT,
+    windowMs: WINDOW_MS,
+  })
+
+  if (!allowed) {
     return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 })
   }
 

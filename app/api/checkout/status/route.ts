@@ -101,6 +101,7 @@ export async function GET() {
       .update({
         plan: checkoutPlan as PlanId,
         plan_status: 'active',
+        plan_cycle: cycle,
         plan_expires_at: now.toISOString(),
         limit_alert_sent: false,
         responses_limit: planConfig?.maxResponses ?? 100,

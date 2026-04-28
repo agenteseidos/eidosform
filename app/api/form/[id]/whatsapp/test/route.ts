@@ -24,7 +24,6 @@ function getServiceClient() {
  * Body:
  * - owner_phone: string (required) - Phone number to send test message
  * - message_template: string (required) - Message template to test
- * - instance_name: string (optional) - WhatsApp instance to use
  * 
  * Status codes:
  * - 200: OK (message sent)
@@ -89,7 +88,7 @@ export async function POST(
 
     // 4. Parse request body
     const body = await request.json()
-    const { owner_phone, message_template, instance_name = 'default' } = body
+    const { owner_phone, message_template } = body
 
     // 5. Validate input
     if (!owner_phone || typeof owner_phone !== 'string') {
@@ -123,7 +122,6 @@ export async function POST(
         Authorization: `Bearer ${internalApiSecret}`,
       },
       body: JSON.stringify({
-        instance: instance_name,
         to: owner_phone,
         message: message_template,
       }),

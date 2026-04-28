@@ -3,7 +3,7 @@ import { FormInsert } from '@/lib/database.types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkFormLimit } from '@/lib/plan-limits'
-import { PLANS, PlanName } from '@/lib/plan-limits'
+import { normalizePlan } from '@/lib/plans'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     thank_you_button_text: sourceForm.thank_you_button_text,
     thank_you_button_url: sourceForm.thank_you_button_url,
     pixels: null,
-    plan: sourceForm.plan,
+    plan: normalizePlan(sourceForm.plan),
     redirect_url: sourceForm.redirect_url,
     webhook_url: null,
     pixel_event_on_start: null,

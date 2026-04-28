@@ -5,6 +5,7 @@ import { validateWebhookUrl } from '@/lib/webhook-validator'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkFormLimit } from '@/lib/plan-limits'
 import { PLANS } from '@/lib/plan-limits'
+import { normalizePlan } from '@/lib/plans'
 
 // T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -95,7 +96,7 @@ export async function POST(req: NextRequest) {
     .select('plan')
     .eq('id', user.id)
     .single()
-  const userPlan = ((profile as { plan: string } | null)?.plan || 'free') as import('@/lib/plans').PlanId
+  const userPlan = normalizePlan((profile as { plan: string } | null)?.plan)
   const planConfig = PLANS[userPlan]
 
   // P1-E: Validate question count and payload size per plan

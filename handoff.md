@@ -2087,3 +2087,65 @@ Adicionado `Star` ao bloco de imports de `lucide-react` em `app/pgb/page.tsx`.
 
 ## Status
 ✅ Minha parte da **ETAPA 4** ficou pronta no escopo de UI/UX/integrações assumido aqui.
+
+
+# ETAPA 4 — P2 restantes importantes (2026-04-28)
+
+**Data:** 2026-04-28
+**Responsável:** Zeca
+**Tipo:** Correções P2 importantes + endurecimento operacional
+**Commits:** `2179d52`
+
+## Correções aplicadas
+
+### P2-H — `app/api/whatsapp/send/route.ts`
+- Removido rate limit in-memory com `setInterval` em ambiente serverless.
+- Substituído por rate limit persistente via `checkRateLimitAsync`/Supabase.
+- Direct send interno passou a aceitar apenas `{ to, message }`, sem `instance` hardcoded/inútil.
+
+### P2-I — `app/api/admin/whatsapp/qr/route.ts`
+- Removido rate limit por variável de módulo (`lastQrTime`).
+- Adotado rate limit persistente por admin (`admin:whatsapp:qr:<userId>`).
+- Removido vazamento de `debug` no erro 500.
+- Proxy agora respeita `WHATSAPP_API_URL` antes do fallback.
+
+### P2-J — `app/api/domains/route.ts`
+- `PATCH` agora valida ownership do domínio na tabela `custom_domains` antes de consultar status no Vercel.
+- Fecha enumeração/status-check de domínios de terceiros.
+
+### P2-K — `app/api/admin/users/route.ts`
+- Adicionada paginação server-side (`page`, `limit`, `total`, `hasMore`).
+- Query de forms passou a contar apenas usuários da página atual.
+- `components/admin/admin-users-table.tsx` atualizado com navegação anterior/próxima.
+
+### P2-L — `app/api/admin/metrics/route.ts`
+- Removido `select('*')` desnecessário em contagens head-only.
+- Agora usa `select('id', { count: 'exact', head: true })`.
+
+### P2-M — refresh/sessão na mudança de plano
+- `app/api/checkout/status/route.ts` agora persiste `plan_cycle` junto com o plano ativado.
+- `app/api/admin/users/[id]/plan/route.ts` limpa `plan_cycle` ao voltar usuário para free.
+- Evita estado parcial na UI de billing após mudança de plano/ciclo.
+
+### P2-P — `app/api/cep/[cep]/route.ts`
+- Rate limit in-memory substituído por `checkRateLimitAsync` persistente por IP.
+
+### P2-Q — `forms.plan`
+- Nova migration `20260428_fix_forms_plan_constraint.sql`:
+  - normaliza valores legados (`pro`/`enterprise` → `professional`)
+  - aplica constraint válida: `free | starter | plus | professional`
+- Criação e duplicação de forms passaram a usar `normalizePlan(...)` para evitar persistir valor inválido.
+
+### P2-R — hardcodes de instâncias WhatsApp
+- Removidos hardcodes de instâncias no builder (`default`, `instancia-2`, `instancia-3`).
+- Test send não envia mais `instance_name` fake para `/api/whatsapp/send`.
+- QR admin deixou de forçar domínio fixo sem respeitar env quando disponível.
+
+### Ajustes acoplados
+- `lib/api-key-auth.ts` e `lib/plan-limits.ts` receberam pequenos ajustes de tipagem para manter `tsc --noEmit` limpo.
+
+## Testes
+- `npm exec tsc --noEmit` ✅
+
+## Status
+- **ETAPA 4:** ✅ concluída no escopo pedido e pronta para auditoria.

@@ -16,13 +16,13 @@ Nenhum P0/P1 restante
 - `0ba5ba0` — webhook do Asaas removeu o fallback inseguro por query string e aceita apenas header/HMAC
 
 ## Correções feitas pela auditoria
-- commit `b2c888c` — corrigido `DELETE /api/settings/api-key` para limpar também `api_key_hash`, evitando que a chave revogada continuasse válida
-- commit `b2c888c` — corrigido fallback legacy de `authenticateApiKey` para também aplicar gate de plano e rate limit
-- commit `b2c888c` — integrado o RPC `check_and_increment_response` ao endpoint `POST /api/responses`, validando de fato o incremento atômico prometido na etapa
+- commit `48bbb08` — corrigido `DELETE /api/settings/api-key` para limpar também `api_key_hash`, evitando que a chave revogada continuasse válida
+- commit `48bbb08` — corrigido fallback legacy de `authenticateApiKey` para também aplicar gate de plano e rate limit
+- commit `48bbb08` — integrado o RPC `check_and_increment_response` ao endpoint `POST /api/responses`, validando de fato o incremento atômico prometido na etapa
 
 ## Commits relevantes da etapa
 - `0ba5ba0` — fix(P2): ETAPA 3 — P2 prioritários
-- `b2c888c` — fix(audit): close etapa 3 audit findings
+- `48bbb08` — fix(audit): close etapa 3 audit findings
 
 ## Veredito final
 A ETAPA 3 pode avançar, porque após os ajustes da auditoria não restaram P0/P1 em aberto.

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { CheckCircle2, ArrowRight, AlertCircle, Clock3, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 export function CheckoutSuccessOverlay() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const pathname = usePathname()
   const [visible, setVisible] = useState(false)
   const [resolvedStatus, setResolvedStatus] = useState<string | null>(null)
   const [isPolling, setIsPolling] = useState(false)
@@ -58,11 +59,13 @@ export function CheckoutSuccessOverlay() {
         if (firstStatus === 'success') {
           setIsPolling(false)
           setResolvedStatus('success')
+          router.refresh()
           return
         }
         if (firstStatus === 'cancelled' || firstStatus === 'expired') {
           setIsPolling(false)
           setResolvedStatus(firstStatus)
+          router.refresh()
           return
         }
 
@@ -81,12 +84,14 @@ export function CheckoutSuccessOverlay() {
             clearInterval(pollTimer)
             setIsPolling(false)
             setResolvedStatus('success')
+            router.refresh()
             return
           }
           if (s === 'cancelled' || s === 'expired') {
             clearInterval(pollTimer)
             setIsPolling(false)
             setResolvedStatus(s)
+            router.refresh()
             return
           }
           // Too many consecutive fetch errors → stop polling, show degraded state
@@ -105,7 +110,7 @@ export function CheckoutSuccessOverlay() {
       mounted = false
       if (pollTimer) clearInterval(pollTimer)
     }
-  }, [status])
+  }, [router, status])
 
   const content = useMemo(() => {
     if (resolvedStatus === 'cancelled') {
@@ -167,13 +172,20 @@ export function CheckoutSuccessOverlay() {
       description: 'Seu checkout foi encerrado, mas não encontramos confirmação de pagamento ainda. Seu plano atual continua o mesmo. Tente recarregar a página em instantes.',
       buttonLabel: 'Voltar ao EidosForm',
     }
-  }, [resolvedStatus])
+  }, [isPolling, resolvedStatus])
 
   const handleRedirect = () => {
     if (content.buttonAction === 'reload') {
       router.refresh()
       return
     }
+
+    if (resolvedStatus === 'success' && pathname === '/billing') {
+      setVisible(false)
+      router.refresh()
+      return
+    }
+
     router.push('/forms')
   }
 

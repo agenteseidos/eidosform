@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,25 +21,40 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
   const [revoking, setRevoking] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Load current API key status on mount
-  useEffect(() => {
+  const loadApiKeyStatus = useCallback(async () => {
     if (!isProfessional) {
       setInitialLoading(false)
+      setLoadError(null)
       return
     }
 
-    fetch('/api/settings/api-key')
-      .then((res) => res.json())
-      .then((data) => {
-        setHasApiKey(data.has_api_key ?? false)
-        setApiKeyPreview(data.api_key_preview ?? null)
-      })
-      .catch(() => {
-        // silently fail
-      })
-      .finally(() => setInitialLoading(false))
+    try {
+      setInitialLoading(true)
+      setLoadError(null)
+
+      const res = await fetch('/api/settings/api-key', { cache: 'no-store' })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao carregar status da API Key')
+      }
+
+      setHasApiKey(data.has_api_key ?? false)
+      setApiKeyPreview(data.api_key_preview ?? null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao carregar status da API Key'
+      setLoadError(message)
+    } finally {
+      setInitialLoading(false)
+    }
   }, [isProfessional])
+
+  // Load current API key status on mount
+  useEffect(() => {
+    loadApiKeyStatus()
+  }, [loadApiKeyStatus])
 
   const handleGenerate = async () => {
     setLoading(true)
@@ -122,6 +137,27 @@ export function ApiKeySettings({ isProfessional }: ApiKeySettingsProps) {
         <div className="flex items-center gap-3">
           <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
           <span className="text-sm text-slate-500">Carregando configurações de API...</span>
+        </div>
+      </Card>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <Card className="p-6 mb-6 border border-red-200 bg-red-50/60">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <Key className="w-5 h-5 text-red-500" />
+              <h2 className="text-lg font-semibold text-slate-900">API Key</h2>
+            </div>
+            <p className="text-sm text-red-700">{loadError}</p>
+            <p className="text-xs text-slate-500 mt-1">Tente recarregar o status antes de gerar ou revogar a chave.</p>
+          </div>
+          <Button variant="outline" onClick={loadApiKeyStatus} className="shrink-0">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Tentar novamente
+          </Button>
         </div>
       </Card>
     )

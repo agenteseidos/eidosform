@@ -2054,3 +2054,36 @@ Adicionado `Star` ao bloco de imports de `lucide-react` em `app/pgb/page.tsx`.
 
 **P2 corrigidos:** 8/8
 **Commit:** `0ba5ba0`
+
+---
+
+# ETAPA 4 — P2 restantes (UI/UX, sessão e WhatsApp)
+
+**Data:** 2026-04-28
+**Responsável:** Toin
+**Tipo:** Correções P2 focadas em UX/estado/integrações
+**Commit:** ver histórico git da ETAPA 4 (`fix(P2): improve billing refresh and settings UX`)
+
+## Correções aplicadas
+
+### 1. API Key settings sem erro silencioso
+- **Arquivo:** `components/settings/api-key-settings.tsx`
+- **Problema:** falha no carregamento inicial do status da API Key era engolida silenciosamente, deixando a tela sem contexto nem recuperação.
+- **Correção:** o carregamento virou fluxo explícito com estado de erro, card informativo e botão “Tentar novamente”. Também passou a usar `cache: 'no-store'`.
+
+### 2. Refresh/estado do billing após checkout
+- **Arquivo:** `components/checkout-success-overlay.tsx`
+- **Problema:** após confirmação/cancelamento/expiração no polling, a UI podia permanecer stale no `/billing` até refresh manual, causando inconsistência de plano/limites exibidos.
+- **Correção:** `router.refresh()` é disparado quando o polling resolve status final. No sucesso dentro do `/billing`, o CTA fecha o overlay e atualiza a página em vez de forçar navegação imediata, mantendo o estado visual consistente.
+
+### 3. WhatsApp settings com hardcode/inconsistência de snapshot
+- **Arquivo:** `components/form-builder/whatsapp-panel.tsx`
+- **Problema:** havia hardcodes de instâncias fake (`instancia-2`, `instancia-3`) e o snapshot/autosave ignorava `instance_name` e `rate_limit_per_hour`, deixando estado salvo e estado em memória desalinhados.
+- **Correção:** removidos hardcodes de instâncias fictícias; defaults centralizados; snapshot e autosave agora incluem `instance_name` e `rate_limit_per_hour`, alinhando UI e payload persistido.
+
+## Validação
+- `npx eslint components/settings/api-key-settings.tsx components/checkout-success-overlay.tsx components/form-builder/whatsapp-panel.tsx` ✅
+- `npx tsc --noEmit` ⚠️ ainda falha por erros pré-existentes fora do escopo desta etapa (`lib/api-key-auth.ts`, `lib/plan-limits.ts`)
+
+## Status
+✅ Minha parte da **ETAPA 4** ficou pronta no escopo de UI/UX/integrações assumido aqui.

@@ -120,7 +120,7 @@ export async function DELETE() {
 
   const { error: updateError } = await supabase
     .from('profiles')
-    .update({ api_key: null, api_key_created_at: null } as ProfileUpdate)
+    .update({ api_key: null, api_key_hash: null, api_key_created_at: null } as ProfileUpdate)
     .eq('id', user.id)
 
   if (updateError) {

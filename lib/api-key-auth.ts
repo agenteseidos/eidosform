@@ -47,7 +47,9 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
     .rpc('verify_api_key_hash', { p_api_key: apiKey })
     .single() as { data: { id: string; plan: string; api_key_hash: string } | null }
 
-  if (!profile) {
+  let resolvedProfile = profile
+
+  if (!resolvedProfile) {
     // Fallback: check plaintext api_key column for keys not yet migrated
     const { data: legacyProfile } = await supabase
       .from('profiles')
@@ -59,11 +61,10 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
       return { ok: false, status: 401, error: 'Unauthorized. Invalid API key.' }
     }
 
-    // Return using legacy profile data
-    return { ok: true, userId: legacyProfile.id, plan: legacyProfile.plan, apiKey }
+    resolvedProfile = legacyProfile as { id: string; plan: string; api_key_hash?: string }
   }
 
-  if (profile.plan !== 'professional' && profile.plan !== 'enterprise') {
+  if (resolvedProfile.plan !== 'professional' && resolvedProfile.plan !== 'enterprise') {
     return { ok: false, status: 401, error: 'Unauthorized. Professional plan required for API access.' }
   }
 
@@ -78,5 +79,5 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
     }
   }
 
-  return { ok: true, userId: profile.id, plan: profile.plan, apiKey }
+  return { ok: true, userId: resolvedProfile.id, plan: resolvedProfile.plan, apiKey }
 }

@@ -81,6 +81,41 @@ export async function incrementResponseCount(userId: string): Promise<void> {
   await supabase.rpc('increment_responses_used', { p_user_id: userId })
 }
 
+export async function checkAndIncrementResponseCount(userId: string): Promise<{
+  allowed: boolean
+  usage: number
+  limit: number
+  plan: PlanName
+  nearLimit: boolean
+}> {
+  const supabase = createPublicClient()
+
+  const { data, error } = await supabase
+    .rpc('check_and_increment_response', { p_user_id: userId })
+    .single() as {
+      data: {
+        allowed: boolean
+        usage: number
+        limit_val: number
+        plan: PlanName
+        near_limit: boolean
+      } | null
+      error: unknown
+    }
+
+  if (error || !data) {
+    return { allowed: false, usage: 0, limit: 0, plan: 'free', nearLimit: false }
+  }
+
+  return {
+    allowed: data.allowed,
+    usage: data.usage,
+    limit: data.limit_val,
+    plan: data.plan ?? 'free',
+    nearLimit: data.near_limit,
+  }
+}
+
 export async function checkFormLimit(userId: string): Promise<{ allowed: boolean; usage: number; limit: number }> {
   const supabase = await createClient()
 

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { checkResponseLimit, incrementResponseCount, PLANS, PlanName } from '@/lib/plan-limits'
+import { checkAndIncrementResponseCount, PLANS, PlanName } from '@/lib/plan-limits'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
@@ -223,11 +223,12 @@ export async function POST(req: NextRequest) {
 
   // Bug #1: ALWAYS check response limit before accepting (not just completed)
   const existingResponseId = req.headers.get('x-response-id')
+  let newResponseLimitCheck: Awaited<ReturnType<typeof checkAndIncrementResponseCount>> | null = null
   if (!existingResponseId) {
-    const limitCheck = await checkResponseLimit(form.user_id)
-    if (!limitCheck.allowed) {
+    newResponseLimitCheck = await checkAndIncrementResponseCount(form.user_id)
+    if (!newResponseLimitCheck.allowed) {
       return NextResponse.json(
-        { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit },
+        { error: 'Limite de respostas atingido para o plano atual', plan: newResponseLimitCheck.plan, limit: newResponseLimitCheck.limit },
         { status: 429, headers: CORS_HEADERS }
       )
     }
@@ -286,8 +287,6 @@ export async function POST(req: NextRequest) {
     responseId = newResponse.id
     responseMetaEvents = Array.isArray(newResponse.meta_events) ? newResponse.meta_events : []
 
-    // Bug #1: Always increment response count on new responses
-    await incrementResponseCount(form.user_id).catch((err) => logError('Failed to increment response count', err))
   }
 
   // Inserir answer_items normalizados para analytics

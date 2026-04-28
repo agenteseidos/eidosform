@@ -35,9 +35,13 @@ export async function POST() {
       .map(b => b.toString(16).padStart(2, '0')).join('')
   }
 
+  // P2-E: Store hash of API key instead of plaintext
+  const { createHash } = await import('crypto')
+  const keyHash = createHash('sha256').update(newKey).digest('hex')
+
   const { error: updateError } = await supabase
     .from('profiles')
-    .update({ api_key: newKey, api_key_created_at: new Date().toISOString() } as ProfileUpdate)
+    .update({ api_key_hash: keyHash, api_key_created_at: new Date().toISOString(), api_key: null } as ProfileUpdate)
     .eq('id', user.id)
 
   if (updateError) {
@@ -58,9 +62,9 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('api_key, plan')
+    .select('api_key_hash, plan')
     .eq('id', user.id)
-    .single() as { data: { api_key: string | null; plan: string } | null }
+    .single() as { data: { api_key_hash: string | null; plan: string } | null }
 
   if (!profile) {
     // Create profile with free plan for new users
@@ -81,13 +85,12 @@ export async function GET() {
     })
   }
 
-  const maskedKey = profile.api_key
-    ? profile.api_key.slice(0, 8) + '*'.repeat(Math.max(0, profile.api_key.length - 12)) + profile.api_key.slice(-4)
-    : null
+  // P2-E: Check api_key_hash (new) or api_key (legacy migration fallback)
+  const hasKey = !!profile.api_key_hash || !!(profile as Record<string, unknown>).api_key
 
   return NextResponse.json({
-    has_api_key: !!profile.api_key,
-    api_key_preview: maskedKey,
+    has_api_key: hasKey,
+    api_key_preview: hasKey ? 'ek_••••••••••••' : null,
     plan: profile.plan,
   })
 }

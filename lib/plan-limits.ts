@@ -146,12 +146,10 @@ export async function handleDowngrade(
     return { pausedCount: 0 }
   }
 
-  // Step 3: Count responses per form via RPC or direct query
+  // P2-F: Use RPC aggregate instead of loading all responses into memory
   const formIds = publishedForms.map((f: { id: string }) => f.id)
   const { data: responseCounts } = await supabase
-    .from('responses')
-    .select('form_id')
-    .in('form_id', formIds)
+    .rpc('get_response_counts_by_forms', { p_form_ids: formIds }) as { data: Array<{ form_id: string; response_count: number }> | null }
 
   // Build response count map
   const countMap = new Map<string, number>()
@@ -160,8 +158,7 @@ export async function handleDowngrade(
   }
   if (responseCounts) {
     for (const r of responseCounts) {
-      const fid = (r as { form_id: string }).form_id
-      countMap.set(fid, (countMap.get(fid) ?? 0) + 1)
+      countMap.set(r.form_id, r.response_count)
     }
   }
 

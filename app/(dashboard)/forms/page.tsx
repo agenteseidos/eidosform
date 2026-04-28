@@ -16,15 +16,16 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
+  // P2-G: Select only needed fields instead of '*' and use aggregate query for response counts
   const [{ data: formsData }, { data: foldersData }] = await Promise.all([
     supabase
       .from('forms')
-      .select('*')
+      .select('id, title, description, slug, status, theme, questions, is_closed, paused, updated_at, created_at, folder_id')
       .eq('user_id', user!.id)
       .order('updated_at', { ascending: false }),
     supabase
       .from('folders')
-      .select('*')
+      .select('id, name, created_at')
       .eq('user_id', user!.id)
       .order('created_at', { ascending: true }),
   ])
@@ -32,24 +33,21 @@ export default async function DashboardPage() {
   const forms = (formsData || []) as Form[]
   const folders = (foldersData || []) as Folder[]
 
+  // P2-G: Use aggregate RPC for response counts instead of loading all responses
   const formIds = forms.map(f => f.id)
-  const { data: responseCounts } = formIds.length > 0 
-    ? await supabase
-        .from('responses')
-        .select('form_id')
-        .in('form_id', formIds)
-    : { data: [] }
-
-  const responseCountMap = new Map<string, number>()
-  responseCounts?.forEach((r: { form_id: string }) => {
-    const count = responseCountMap.get(r.form_id) || 0
-    responseCountMap.set(r.form_id, count + 1)
-  })
+  let responseCountsByForm: Record<string, number> = {}
+  if (formIds.length > 0) {
+    const { data: counts } = await (supabase as any)
+      .rpc('get_response_counts_by_forms', { p_form_ids: formIds })
+    if (counts) {
+      for (const c of counts) {
+        responseCountsByForm[c.form_id] = c.response_count
+      }
+    }
+  }
 
   const isNewUser = forms.length === 0
   const pausedForms = forms.filter(f => (f as { paused?: boolean }).paused).length
-
-  const responseCountsByForm = Object.fromEntries(responseCountMap.entries())
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">

@@ -119,8 +119,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET endpoint to check if R2 is configured
+// GET endpoint to check if R2 is configured (requires auth)
 export async function GET() {
+  const supabase = await createClient()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   return NextResponse.json({
     configured: isR2Configured(),
   })

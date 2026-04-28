@@ -69,6 +69,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const body = await req.json()
+
+  // P2-O: Payload size limit for PATCH (500KB)
+  const bodyStr = JSON.stringify(body)
+  if (bodyStr.length > 500 * 1024) {
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
+
   const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url } = body
 
   // P1-C: Ignore 'plan' field — plan is managed exclusively via billing/admin endpoints
@@ -193,6 +200,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') {
         return NextResponse.json(
           { error: 'welcome_image_url não pode apontar para localhost' },
+          { status: 400 }
+        )
+      }
+      // P2-B: Block SVG files (XSS risk when rendered as img src in some browsers)
+      const pathname = imgUrl.pathname.toLowerCase()
+      if (pathname.endsWith('.svg') || pathname.endsWith('.svgz')) {
+        return NextResponse.json(
+          { error: 'SVG não é permitido como imagem de boas-vindas' },
           { status: 400 }
         )
       }

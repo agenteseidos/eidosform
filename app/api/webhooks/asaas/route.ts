@@ -181,11 +181,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to read body' }, { status: 400 })
   }
 
-  // Auth: accept token via asaas-access-token header, access_token header,
-  // or accessToken query param.
+  // P2-C: Only accept token via header (asaas-access-token or access_token), not query param
   const webhookToken = (process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN)?.trim()
   const accessTokenHeader = req.headers.get('asaas-access-token') ?? req.headers.get('access_token')
-  const accessTokenQuery = req.nextUrl.searchParams.get('accessToken')
   const hmacHeader = req.headers.get('asaas-signature')
 
   if (!webhookToken) {
@@ -193,15 +191,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  const tokenMatch =
-    accessTokenHeader === webhookToken ||
-    accessTokenQuery === webhookToken
+  const tokenMatch = accessTokenHeader === webhookToken
   const hmacMatch = !!(hmacHeader && verifyAsaasSignature(rawBody, hmacHeader, webhookToken))
 
   if (!tokenMatch && !hmacMatch) {
     logWarn('[asaas-webhook] Auth failed', {
       hasHeader: !!accessTokenHeader,
-      hasQueryToken: !!accessTokenQuery,
       tokenPrefix: webhookToken.slice(0, 8),
     })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

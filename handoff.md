@@ -1961,3 +1961,24 @@ Todas as 4 correções P0 foram validadas e aprovadas. Nenhuma correção adicio
 
 **P1 corrigidos:** 11/11
 **Commit:** `2e55522`
+
+---
+
+# Fix Build Vercel — Star Import (2026-04-28)
+
+**Data:** 2026-04-28
+**Responsável:** Zeca
+**Tipo:** Bug fix (build blocker)
+**Commit:** `316b40d`
+
+## Problema
+Deploy Vercel falhava com `Cannot find name 'Star'` em `app/pgb/page.tsx` linha 571. O componente `Star` do lucide-react era usado no badge "Mais popular" mas não estava nos imports.
+
+## Correção
+Adicionado `Star` ao bloco de imports de `lucide-react` em `app/pgb/page.tsx`.
+
+## Validação
+- `npx tsc --noEmit` → zero erros
+- Push em main → `316b40d`
+
+## Status: ✅ Build destravado

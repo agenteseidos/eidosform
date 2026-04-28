@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { sanitizeCellValue } from '@/lib/sanitize-formula'
 
 interface QuestionRow {
   id: string
@@ -113,7 +114,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   const escapeCSV = (value: unknown): string => {
-    const str = formatValue(value)
+    const str = sanitizeCellValue(formatValue(value))
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
       return `"${str.replace(/"/g, '""')}"`
     }

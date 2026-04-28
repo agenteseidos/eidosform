@@ -3,7 +3,7 @@
 import { resolveCname } from 'dns/promises'
 
 const VERCEL_API = 'https://api.vercel.com'
-const VERCEL_DOMAIN_SUFFIX = 'vercel.app' // Expected target for CNAME validation
+const VERCEL_CNAME_TARGET = 'cname.vercel-dns.com' // Standard Vercel CNAME target for custom domains
 
 function getVercelConfig() {
   const token = process.env.VERCEL_TOKEN
@@ -91,8 +91,8 @@ export async function validateDomainCNAME(domain: string): Promise<boolean> {
       return false
     }
 
-    // Verifica se algum CNAME aponta para um domínio vercel.app
-    return cnames.some((cname) => cname.includes(VERCEL_DOMAIN_SUFFIX))
+    // Verifica se algum CNAME aponta para o target Vercel correto
+    return cnames.some((cname) => cname === VERCEL_CNAME_TARGET || cname.endsWith('.vercel-dns.com'))
   } catch (error) {
     // DNS resolution failed or domain doesn't exist
     console.warn(`CNAME validation failed for domain ${domain}:`, error)

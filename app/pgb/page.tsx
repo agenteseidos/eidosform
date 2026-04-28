@@ -659,7 +659,7 @@ export default function PgbLandingPage() {
                   <ArrowRight className="w-5 h-5" />
                 </button>
               </Link>
-              <a href="mailto:contato@eidosform.com" className="text-sm text-slate-400 hover:text-white transition-colors">
+              <a href="mailto:contato@eidosform.com.br" className="text-sm text-slate-400 hover:text-white transition-colors">
                 Ainda na dúvida? Fala com a gente →
               </a>
             </div>

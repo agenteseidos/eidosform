@@ -87,7 +87,7 @@ export default async function BillingPage() {
 
       <p className="text-center text-sm text-slate-500 mt-8">
         Todos os planos incluem SSL, backups diários e suporte por e-mail.{' '}
-        <a href="mailto:suporte@eidosform.com" className="text-[#F5B731] hover:underline">
+        <a href="mailto:suporte@eidosform.com.br" className="text-[#F5B731] hover:underline">
           Dúvidas? Fale conosco
         </a>
       </p>

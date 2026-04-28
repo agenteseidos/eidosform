@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs'
+import { sanitizeCellValue } from '@/lib/sanitize-formula'
 
 interface QuestionRow {
   id: string
@@ -22,10 +23,10 @@ const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_c
 
 function cellValue(value: unknown): string {
   if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) return value.join('; ')
+  if (Array.isArray(value)) return sanitizeCellValue(value.join('; '))
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value)
+  if (typeof value === 'object') return sanitizeCellValue(JSON.stringify(value))
+  return sanitizeCellValue(String(value))
 }
 
 export async function buildExcelExport(

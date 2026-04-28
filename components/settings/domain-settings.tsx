@@ -144,7 +144,7 @@ export function DomainSettings({ isProfessional, defaultFormId }: DomainSettings
   }
 
   const copyCname = () => {
-    navigator.clipboard.writeText('cname.eidosform.com')
+    navigator.clipboard.writeText('cname.vercel-dns.com')
     toast.success('Copiado!')
   }
 
@@ -236,7 +236,7 @@ export function DomainSettings({ isProfessional, defaultFormId }: DomainSettings
                 {[
                   { label: 'Tipo', value: 'CNAME' },
                   { label: 'Nome', value: domainRecord.domain.split('.')[0] },
-                  { label: 'Valor', value: 'cname.eidosform.com', copyable: true },
+                  { label: 'Valor', value: 'cname.vercel-dns.com', copyable: true },
                 ].map(({ label, value, copyable }) => (
                   <div key={label} className="flex items-center justify-between bg-white rounded-lg p-3 border border-amber-100">
                     <div className="text-xs font-mono text-slate-600">

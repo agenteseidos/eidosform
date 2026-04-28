@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { buildExcelExport } from '@/lib/export-excel'
 import { buildPdfExport } from '@/lib/export-pdf'
+import { sanitizeCellValue } from '@/lib/sanitize-formula'
 
 interface QuestionRow {
   id: string
@@ -89,7 +90,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   const escapeCSV = (value: unknown): string => {
-    const str = Array.isArray(value) ? value.join('; ') : String(value ?? '')
+    const str = sanitizeCellValue(Array.isArray(value) ? value.join('; ') : String(value ?? ''))
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
       return `"${str.replace(/"/g, '""')}"`
     }

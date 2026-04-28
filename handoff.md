@@ -1784,3 +1784,32 @@ Domínios personalizados agora funcionam end-to-end: adicionar → verificar DNS
 **P1:** 1 corrigida (CSRF bypass para custom domains)
 
 Feature agora funciona end-to-end: adicionar → verificar DNS → servir formulário → submissão via domínio próprio.
+
+# ETAPA 1 — P0 Imediatos (Relatório Claude)
+
+**Data:** 2026-04-28
+**Responsável:** Zeca (executor)
+**Commit:** `c1d7cd5`
+
+## Correções Aplicadas
+
+### P0-C — Domínio .com vs .com.br
+- `app/page.tsx`: `suporte@eidosform.com` → `suporte@eidosform.com.br`
+- `app/pgb/page.tsx`: `contato@eidosform.com` → `contato@eidosform.com.br`
+- `app/(dashboard)/billing/page.tsx`: `suporte@eidosform.com` → `suporte@eidosform.com.br`
+
+### P0-D — Free plan 50→100 respostas
+- Trigger `20260424_auto_create_profile_on_signup.sql`: `responses_limit` alterado de 50 para 100
+- Migration `20260428_fix_free_plan_100_responses.sql`: UPDATE para usuários free existentes com limit=50
+- Alinhado com `lib/plan-definitions.ts` (free.maxResponses = 100)
+
+### P0-B — Formula injection em exports
+- Criado `lib/sanitize-formula.ts` com `sanitizeCellValue()` — prefixa `'` em valores que começam com `=`, `+`, `-`, `@`, `\t`, `\r`, `\n`
+- Aplicado em: `export-csv/route.ts`, `export/route.ts`, `lib/export-excel.ts`, `lib/export-pdf.ts`
+
+### P0-A — Custom domain CNAME
+- `lib/custom-domain.ts`: Validação CNAME corrigida de `vercel.app` para `cname.vercel-dns.com` (target padrão Vercel)
+- `components/settings/domain-settings.tsx`: Instrução CNAME corrigida para `cname.vercel-dns.com`
+- Validação agora checa `cname.vercel-dns.com` ou `*.vercel-dns.com`
+
+## Status: ✅ ETAPA 1 completa, pronta para auditoria da Zéfa

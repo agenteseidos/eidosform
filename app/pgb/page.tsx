@@ -27,6 +27,7 @@ import {
   Globe,
   Download,
   Moon,
+  Star,
 } from 'lucide-react'
 
 /* ─── Fade-in wrapper ─── */

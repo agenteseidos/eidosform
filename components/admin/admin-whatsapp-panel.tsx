@@ -16,15 +16,8 @@ type SendLog = {
   form: string
   date: string
   status: 'enviado' | 'erro'
+  errorMessage?: string | null
 }
-
-const MOCK_LOGS: SendLog[] = [
-  { id: '1', recipient: '+55 81 99999-0001', form: 'Pesquisa de Satisfação', date: '2026-04-06 21:30', status: 'enviado' },
-  { id: '2', recipient: '+55 81 99999-0002', form: 'Formulário de Contato', date: '2026-04-06 21:15', status: 'enviado' },
-  { id: '3', recipient: '+55 81 99999-0003', form: 'Inscrição Evento', date: '2026-04-06 20:45', status: 'erro' },
-  { id: '4', recipient: '+55 81 99999-0004', form: 'Pesquisa de Satisfação', date: '2026-04-06 20:10', status: 'enviado' },
-  { id: '5', recipient: '+55 81 99999-0005', form: 'Feedback Produto', date: '2026-04-06 19:55', status: 'enviado' },
-]
 
 const QR_EXPIRY_MS = 60_000
 
@@ -38,7 +31,9 @@ export function AdminWhatsAppPanel() {
   const [qrExpired, setQrExpired] = useState(false)
   const [qrError, setQrError] = useState<string | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
-  const [logs, setLogs] = useState<SendLog[]>(MOCK_LOGS)
+  const [logs, setLogs] = useState<SendLog[]>([])
+  const [logsLoading, setLogsLoading] = useState(true)
+  const [logsError, setLogsError] = useState<string | null>(null)
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -59,9 +54,25 @@ export function AdminWhatsAppPanel() {
     }
   }, [])
 
+  const fetchLogs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/whatsapp/logs', { cache: 'no-store' })
+      if (!res.ok) throw new Error('Falha ao buscar logs')
+      const data = (await res.json()) as { logs?: SendLog[] }
+      setLogs(data.logs ?? [])
+      setLogsError(null)
+    } catch {
+      setLogs([])
+      setLogsError('Não foi possível carregar os logs reais de envio.')
+    } finally {
+      setLogsLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     fetchStatus()
-  }, [fetchStatus])
+    fetchLogs()
+  }, [fetchStatus, fetchLogs])
 
   useEffect(() => {
     if (!qrGeneratedAt) return
@@ -282,22 +293,39 @@ export function AdminWhatsAppPanel() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {logs.map(log => (
-              <div key={log.id} className="flex items-start sm:items-center justify-between gap-2 py-2 border-b last:border-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      log.status === 'enviado' ? 'bg-green-500' : 'bg-red-500'
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <div className="font-medium truncate">{log.recipient}</div>
-                    <div className="text-sm text-gray-500 truncate">{log.form}</div>
+            {logsLoading ? (
+              <div className="py-8 text-center text-sm text-gray-500">Carregando logs reais...</div>
+            ) : logsError ? (
+              <div className="py-8 text-center text-sm text-gray-500">
+                {logsError}
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="py-8 text-center text-sm text-gray-500">
+                Ainda não há logs reais de envios para exibir.
+              </div>
+            ) : (
+              logs.map(log => (
+                <div key={log.id} className="flex items-start sm:items-center justify-between gap-2 py-2 border-b last:border-0">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div
+                      className={`w-2 h-2 rounded-full mt-2 sm:mt-1 ${
+                        log.status === 'enviado' ? 'bg-green-500' : 'bg-red-500'
+                      }`}
+                    />
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{log.recipient}</div>
+                      <div className="text-sm text-gray-500 truncate">{log.form}</div>
+                      {log.errorMessage && (
+                        <div className="text-xs text-red-500 truncate">{log.errorMessage}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-500 whitespace-nowrap flex-shrink-0">
+                    {new Date(log.date).toLocaleString('pt-BR')}
                   </div>
                 </div>
-                <div className="text-sm text-gray-500 whitespace-nowrap flex-shrink-0">{log.date}</div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

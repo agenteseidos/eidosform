@@ -2274,3 +2274,42 @@ Adicionado `Star` ao bloco de imports de `lucide-react` em `app/pgb/page.tsx`.
 
 ## Status
 - **ETAPA 4:** ✅ concluída no escopo pedido e pronta para auditoria.
+
+---
+
+# ETAPA 6 — Correção P1 do Admin WhatsApp (2026-04-29)
+
+**Data:** 2026-04-29
+**Responsável:** Zeca
+**Tipo:** Correção P1 segura + revalidação
+**Commit:** `854f3d5`
+
+## Demanda
+Corrigir o P1 da ETAPA 6 em `components/admin/admin-whatsapp-panel.tsx`, onde a seção "Últimos envios" exibia `MOCK_LOGS` hardcoded como se fossem logs reais.
+
+## O que foi feito
+- removido o uso de `MOCK_LOGS` no painel admin
+- criada rota protegida `GET /api/admin/whatsapp/logs`
+- a nova rota lê logs reais de `form_whatsapp_logs`, ordena por recência e resolve o título do formulário
+- a UI agora mostra estados honestos de carregamento, vazio e erro, sem inventar telemetria
+- mantida a seção visível porque já existia base real segura pronta no banco
+
+## Resultado / estado atual
+- o painel Admin → WhatsApp → “Últimos envios” deixou de mostrar dados falsos
+- quando há logs reais, a UI mostra os envios recentes
+- quando não há logs, a UI informa claramente que ainda não existem logs reais
+- quando a carga falha, a UI informa erro de carregamento em vez de mascarar com mock
+
+## Arquivos alterados
+- `components/admin/admin-whatsapp-panel.tsx`
+- `app/api/admin/whatsapp/logs/route.ts`
+
+## Validação
+- `npx eslint components/admin/admin-whatsapp-panel.tsx app/api/admin/whatsapp/logs/route.ts` ✅ (apenas warning preexistente de `<img>` no QR code)
+- `npx tsc --noEmit` ✅
+
+## Pendências
+- nenhuma dentro do escopo deste P1
+
+## Próximo passo
+- auditoria/revalidação da Zéfa sobre o fluxo do painel admin de WhatsApp

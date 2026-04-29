@@ -281,6 +281,7 @@ export async function POST(req: NextRequest) {
       .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string } | null }
 
     if (insertError || !newResponse) {
+      logError('Failed to insert response:', insertError, { form_id: form_id, respondent_id })
       return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
     }
 

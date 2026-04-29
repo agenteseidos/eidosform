@@ -36,6 +36,7 @@ export async function checkResponseLimit(userId: string): Promise<{
     .single()
 
   if (error || !profile) {
+    logError('checkAndIncrementResponseCount: failed to fetch profile', error, { userId })
     return { allowed: false, usage: 0, limit: 0, plan: 'free', nearLimit: false }
   }
 

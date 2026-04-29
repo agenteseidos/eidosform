@@ -397,8 +397,13 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       })
 
       if (!res.ok) {
-        const data = await res.json()
-        toast.error(data.error ?? 'Falha ao enviar resposta')
+        let errorMsg = 'Falha ao enviar resposta'
+        try {
+          const data = await res.json()
+          errorMsg = data.error ?? errorMsg
+        } catch { /* response body not JSON */ }
+        console.error('[EidosForm] Submit failed:', res.status, errorMsg)
+        toast.error(errorMsg)
         setIsSubmitting(false)
         return
       }
@@ -413,7 +418,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         setTimeout(() => { window.location.href = ensureHttps(form.redirect_url!) }, redirectDelay)
       }
     } catch (e) {
-      toast.error('Falha ao enviar resposta')
+      console.error('[EidosForm] Submit error:', e)
+      toast.error('Falha ao enviar resposta. Tente novamente.')
       setIsSubmitting(false)
     }
   }

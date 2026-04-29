@@ -2313,3 +2313,74 @@ Corrigir o P1 da ETAPA 6 em `components/admin/admin-whatsapp-panel.tsx`, onde a 
 
 ## Próximo passo
 - auditoria/revalidação da Zéfa sobre o fluxo do painel admin de WhatsApp
+
+---
+
+# Revalidação FINAL Zéfa — ETAPAS 5 e 6 (2026-04-29)
+
+**Responsável:** Zéfa  
+**Tipo:** Auditoria final de erro-zero (sem correções)  
+**Commits auditados:** `919ac62`, `854f3d5`
+
+## Demanda
+Reauditar o estado atual das ETAPAS 5 e 6, confirmar se os P1 apontados anteriormente foram realmente resolvidos e verificar se restou algum P0/P1 aberto nessas duas etapas.
+
+## Verificações executadas
+- leitura do `handoff.md` atual e do histórico recente dos arquivos centrais
+- inspeção direta de:
+  - `components/form-player/form-player.tsx`
+  - `components/admin/admin-whatsapp-panel.tsx`
+  - `app/api/admin/whatsapp/logs/route.ts`
+  - `components/responses/responses-dashboard.tsx`
+  - `app/(dashboard)/forms/[id]/responses/page.tsx`
+- `npx eslint components/form-player/form-player.tsx components/admin/admin-whatsapp-panel.tsx app/api/admin/whatsapp/logs/route.ts components/responses/responses-dashboard.tsx app/'(dashboard)'/forms/'[id]'/responses/page.tsx`
+- `npx tsc --noEmit` → ✅ sem erros
+
+## Resultado da revalidação
+
+### ETAPA 5 — `components/form-player/form-player.tsx`
+**Status:** ✅ **APROVADA**
+
+#### P1 auditado
+- **Commit:** `919ac62`
+- **Problema anterior:** hooks declarados depois de returns condicionais baseados em `isEmbedded`
+- **Estado atual:** corrigido
+
+#### Evidência
+- todos os hooks principais (`useEffect`, `useCallback`, `useRef`) ficam antes dos returns condicionais de embed
+- os returns de `isEmbedded === null` e `isEmbedded && !allowEmbed` aparecem apenas depois da fase de declaração dos hooks
+- não encontrei nova violação de regra de hooks nem novo risco P0/P1 dentro do player desta etapa
+
+### ETAPA 6 — Admin WhatsApp + Responses
+**Status:** ✅ **APROVADA**
+
+#### P1 auditado
+- **Commit:** `854f3d5`
+- **Problema anterior:** painel Admin WhatsApp exibia `MOCK_LOGS` hardcoded como se fossem logs reais
+- **Estado atual:** corrigido
+
+#### Evidência
+- `components/admin/admin-whatsapp-panel.tsx` não usa mais `MOCK_LOGS`
+- a UI busca logs reais via `fetch('/api/admin/whatsapp/logs')`
+- a rota `app/api/admin/whatsapp/logs/route.ts` está protegida por `requireAdmin(request)`
+- a rota lê `form_whatsapp_logs`, ordena por recência, resolve títulos dos formulários e devolve estados honestos para loading/vazio/erro
+- não encontrei novo P0/P1 no fluxo auditado desta etapa
+
+## Achados remanescentes
+Nenhum **P0** ou **P1** novo/remanescente encontrado nas ETAPAS 5 e 6.
+
+### Observação fora de P0/P1
+O eslint ainda acusa em `components/responses/responses-dashboard.tsx`:
+- `react-hooks/set-state-in-effect` em `useEffect(() => { setPage(1) }, [statusFilter, dateFilter, searchQuery])`
+
+Isso confirma dívida de lint/arquitetura já conhecida no dashboard, mas **não caracteriza P0/P1** no estado atual desta revalidação.
+
+## Veredito final
+- **ETAPA 5 status final:** APROVADA
+- **ETAPA 6 status final:** APROVADA
+- **P0/P1 restantes?:** não
+- **Ciclo erro-zero encerrado?:** sim
+- **Próximo agente recomendado:** nenhum
+
+## Conclusão
+As correções dos P1 das ETAPAS 5 e 6 foram validadas com sucesso. No estado atual do código, **o ciclo erro-zero dessas duas etapas pode ser encerrado**.

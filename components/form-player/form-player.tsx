@@ -60,43 +60,6 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
   }, [])
 
-  // Loading state until embed detection completes
-  if (isEmbedded === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="w-6 h-6 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  // Block unauthorized embeds
-  if (isEmbedded && !allowEmbed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-b from-slate-50 to-white">
-        <div className="text-center max-w-md">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-100 flex items-center justify-center">
-            <Lock className="w-10 h-10 text-amber-600" />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-3">
-            Embed não disponível
-          </h1>
-          <p className="text-slate-600 mb-4">
-            A incorporação de formulários requer o plano <span className="font-semibold">Plus</span> ou superior.
-          </p>
-          <a
-            href={`${window.location.origin}/f/${(form as { slug?: string }).slug || ''}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
-          >
-            Abrir formulário
-            <ExternalLink className="w-4 h-4" />
-          </a>
-        </div>
-      </div>
-    )
-  }
-
   // Check authentication on mount
   useEffect(() => {
     let cancelled = false
@@ -528,6 +491,43 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   }, [currentQuestion, goToNext, goToPrevious, isSubmitted, isSubmitting])
 
   // Wheel navigation removido — navegação apenas via botões ou resposta
+
+  // Loading state until embed detection completes
+  if (isEmbedded === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="w-6 h-6 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  // Block unauthorized embeds
+  if (isEmbedded && !allowEmbed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-b from-slate-50 to-white">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-100 flex items-center justify-center">
+            <Lock className="w-10 h-10 text-amber-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-3">
+            Embed não disponível
+          </h1>
+          <p className="text-slate-600 mb-4">
+            A incorporação de formulários requer o plano <span className="font-semibold">Plus</span> ou superior.
+          </p>
+          <a
+            href={`${window.location.origin}/f/${(form as { slug?: string }).slug || ''}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
+          >
+            Abrir formulário
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   // ─── Thank you screen ────────────────────────────────────────────────────────
   if (isSubmitted) {

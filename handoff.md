@@ -1,3 +1,128 @@
+# ETAPA 5 — Correção P1 do player público (2026-04-29)
+
+**Responsável:** Toin
+**Tipo:** Correção cirúrgica de regressão P1
+**Commit:** ver último commit desta etapa no histórico git (`fix(P1): move player embed returns below hooks`)
+
+## Demanda
+Corrigir a violação das regras de hooks em `components/form-player/form-player.tsx`, apontada pela Zéfa na revalidação da ETAPA 5.
+
+## O que causava o bug
+O componente fazia `return` condicional com base em `isEmbedded` antes de declarar outros hooks (`useEffect`, `useCallback`, `useRef`). Quando o estado de embed mudava entre renders, a ordem/quantidade de hooks executados também mudava, abrindo espaço para erro de runtime no React no player público.
+
+## O que foi feito
+- movi os retornos condicionais de loading de embed e bloqueio de embed para depois da declaração de todos os hooks do componente;
+- mantive a lógica e a UI originais, sem ampliar escopo;
+- preservei o fluxo de renderização condicional apenas no trecho final do componente.
+
+## Arquivos alterados
+- `components/form-player/form-player.tsx`
+
+## Validações
+- `npx eslint components/form-player/form-player.tsx` → ✅ sem erros, com 1 warning pré-existente (`catch (e)` não usado)
+- `npx tsc --noEmit` → ✅ sem erros
+
+## Resultado / estado atual
+P1 corrigido no player público. Todos os hooks agora ficam antes de qualquer `return` condicional baseado em `isEmbedded`.
+
+## Pendências
+- nenhuma dentro do escopo desta correção
+
+## Próximo passo
+- commitar a correção e seguir a revalidação da ETAPA 5
+
+---
+
+# Revalidação Zéfa — ETAPAS 5 e 6 (2026-04-29)
+
+**Responsável:** Zéfa
+**Tipo:** Auditoria de revalidação (sem correções)
+**Escopo:**
+- **ETAPA 5:** Form Builder
+- **ETAPA 6:** Admin + Responses
+
+## Confirmação de auditoria prévia
+
+Sim. As duas etapas **já tinham auditoria anterior registrada** no repositório:
+- `audit-etapa-5.md`
+- `audit-etapa-6.md`
+- blocos correspondentes já presentes neste `handoff.md`
+
+Mesmo assim, foi feita **revalidação real do código atual**.
+
+## Verificações executadas
+
+- leitura do handoff atual e dos arquivos centrais das Etapas 5 e 6
+- inspeção de rotas/componentes do builder, player, responses e admin
+- `npx tsc --noEmit` → ✅ sem erros
+- `eslint` direcionado para os arquivos auditados → ❌ encontrou regressões reais
+
+## Achados
+
+### P1 — Player público com violação de Hooks do React, risco de quebra em runtime
+- **Etapa:** 5
+- **Arquivo:** `components/form-player/form-player.tsx`
+- **Área afetada:** player público / navegação do formulário
+- **Evidência:** há `useEffect`, `useCallback` e `useRef` declarados **depois** de retornos condicionais baseados em `isEmbedded`.
+- **Impacto:** a ordem dos hooks muda entre renders. Isso viola as regras do React e pode causar erro do tipo *Rendered more/fewer hooks than expected*, quebrando o player justamente no fluxo público do formulário.
+- **Status:** **não auditado como limpo no estado atual**. É uma regressão relevante.
+- **O que corrigir no ciclo erro-zero:**
+  1. mover todos os hooks para antes de qualquer `return` condicional;
+  2. manter apenas renderização condicional no JSX final, sem alterar a ordem de hooks;
+  3. rerodar eslint e validar abertura do form público e do embed bloqueado.
+
+### P1 — Admin WhatsApp mostra logs falsos/mockados como se fossem reais
+- **Etapa:** 6
+- **Arquivo:** `components/admin/admin-whatsapp-panel.tsx`
+- **Área afetada:** painel Admin → WhatsApp → “Últimos envios”
+- **Evidência:** o componente usa `MOCK_LOGS` hardcoded e inicializa o estado com esses dados.
+- **Impacto:** o admin recebe telemetria operacional falsa. Isso pode induzir diagnóstico e tomada de decisão errados sobre envios de WhatsApp.
+- **Status:** funcionalidade administrativa **não está confiável** no estado atual.
+- **O que corrigir no ciclo erro-zero:**
+  1. remover `MOCK_LOGS` da UI final;
+  2. carregar logs reais de `form_whatsapp_logs` por API admin protegida, ou ocultar a seção até existir backend real;
+  3. deixar explícito estado vazio/loading/error.
+
+### P2 — Dashboard de respostas continua limitado a 500 registros e filtros são parciais
+- **Etapa:** 6
+- **Arquivos:** `app/(dashboard)/forms/[id]/responses/page.tsx`, `components/responses/responses-dashboard.tsx`
+- **Impacto:** busca/filtros/paginação operam só sobre as 500 respostas carregadas. Em forms grandes, o dashboard não representa o conjunto completo.
+- **Observação:** já era uma limitação conhecida e segue presente.
+
+### P2 — Lint falha em Responses Dashboard por padrão de estado dentro de effect
+- **Etapa:** 6
+- **Arquivo:** `components/responses/responses-dashboard.tsx`
+- **Impacto:** não parece quebrar a funcionalidade principal, mas o arquivo não está limpo em lint e merece ajuste para evitar dívida e comportamento cascata.
+
+### P3 — Lint falha no builder por texto com aspas não escapadas
+- **Etapa:** 5
+- **Arquivo:** `components/form-builder/form-builder.tsx`
+- **Impacto:** baixo. Não quebra o fluxo, mas mantém a etapa com ruído de lint.
+
+## Veredito por etapa
+
+### ETAPA 5 — Form Builder
+**REPROVADA**
+
+Motivo principal: o player/builder dessa etapa hoje contém uma regressão P1 real em `components/form-player/form-player.tsx`, suficiente para invalidar a aprovação anterior no estado atual do código.
+
+### ETAPA 6 — Admin + Responses
+**REPROVADA**
+
+Motivo principal: o painel admin de WhatsApp expõe logs mockados como se fossem produção, o que compromete a confiabilidade operacional. Além disso, o dashboard de respostas segue com limitação parcial já conhecida.
+
+## Resumo objetivo
+- **ETAPA 5 status:** REPROVADA
+- **ETAPA 6 status:** REPROVADA
+- **P0/P1 encontrados?:** Sim, **2 P1**
+- **Próximo agente recomendado:** **ambos**
+
+## Recomendação de execução
+- **Toin:** corrigir `components/form-player/form-player.tsx` e limpar os warnings/lints relacionados ao fluxo do player/responses.
+- **Zeca:** corrigir o painel admin de WhatsApp para consumir logs reais ou remover a seção mockada até existir backend admin apropriado.
+
+---
+
 # Handoff — Auditoria de Segurança e Monetização (Bloco 1)
 
 **Data:** 2026-04-24

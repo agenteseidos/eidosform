@@ -172,3 +172,39 @@ Corrigir riscos de abuso via funções internas, exposição indevida de configu
 ## Arquivos alterados
 - `supabase/migrations/20260430_fix_security_definer_public_access_whatsapp_logs.sql` (NOVO)
 - `handoff.md` (atualizado)
+
+---
+
+## Etapa 4 — Sessão, checkout e hardening operacional
+**Data:** 2026-04-30 | **Commits:** `18ce322`, `c6e5a1e`
+
+### 1. Cookie `__lastActivity` — proteção contra burla de timeout
+**Arquivos:** `lib/auth.ts`, `lib/supabase/middleware.ts`
+
+- **`httpOnly: true`** — cookie não é mais acessível via JS/XSS. Apenas o middleware (server-side) atualiza o timestamp.
+- **Cap para `Date.now()`** — middleware agora faz `Math.min(cookieValue, Date.now())` antes de verificar timeout. Se um atacante injetar timestamp futuro (via cookie manipulation antes do fix), é neutralizado.
+- Fluxo de timeout permanece 30min de inatividade, sem mudança de UX.
+
+### 2. Revogação de sessão — troca de senha
+**Arquivo:** `components/settings/password-settings.tsx`
+
+- Alteração de senha nas configurações agora faz `signOut()` e redireciona para `/login`.
+- Antes: senha mudava mas todas as sessões permaneciam ativas (incluindo dispositivos comprometidos).
+- Reset de senha (via email) já revogava sessão — consistente agora.
+
+### 3. Rate limiting — checkout e API key
+**Arquivos:** `app/api/checkout/status/route.ts`, `app/api/checkout/[plan]/route.ts`, `app/api/settings/api-key/route.ts`
+
+| Endpoint | Limite | Justificativa |
+|---|---|---|
+| `GET /api/checkout/status` | 30 req/min/user | Protege API externa do Asaas contra polling abusivo |
+| `POST /api/checkout/[plan]` | 10 req/min/user | Previne spam de criação de checkout |
+| `POST/DELETE /api/settings/api-key` | 5 req/min/user | Previne abuso de geração/revogação de keys |
+
+Todos retornam `429` com header `Retry-After`.
+
+### Validação
+- `next build` passa sem erros
+
+### Pendências
+- Nenhuma pendência dentro desta etapa

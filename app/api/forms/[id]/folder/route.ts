@@ -56,7 +56,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
   return NextResponse.json({ form: data })

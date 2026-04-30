@@ -4,6 +4,29 @@ import { createClient } from '@/lib/supabase/server'
 import { checkUploadRateLimitAsync } from '@/lib/upload-rate-limit'
 import { logError } from '@/lib/logger'
 
+// Magic byte signatures for supported file types
+const MAGIC_BYTES: Record<string, number[][]> = {
+  'image/jpeg': [[0xFF, 0xD8, 0xFF]],
+  'image/png': [[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]],
+  'image/gif': [[0x47, 0x49, 0x46, 0x38]], // GIF8
+  'image/webp': [[0x52, 0x49, 0x46, 0x46]], // RIFF...WEBP
+  'application/pdf': [[0x25, 0x50, 0x44, 0x46]], // %PDF
+}
+
+function detectMimeType(buf: Buffer): string | null {
+  for (const [mime, signatures] of Object.entries(MAGIC_BYTES)) {
+    if (signatures.some(sig => buf.slice(0, sig.length).equals(Buffer.from(sig)))) {
+      // Extra check: WEBP must have WEBP at offset 8
+      if (mime === 'image/webp') {
+        const webpTag = buf.slice(8, 12).toString('ascii')
+        if (webpTag !== 'WEBP') continue
+      }
+      return mime
+    }
+  }
+  return null
+}
+
 // Check if R2 is configured
 function isR2Configured(): boolean {
   return !!(
@@ -60,10 +83,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     }
 
-    // Validate file type
+    // Validate file type (client-reported MIME)
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
     if (!allowedTypes.includes(file.type)) {
       return NextResponse.json({ error: 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP, PDF' }, { status: 400 })
+    }
+
+    // Validate magic bytes (don't trust client MIME)
+    let effectiveMime = file.type
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const detectedMime = detectMimeType(buffer)
+    if (!detectedMime || !allowedTypes.includes(detectedMime)) {
+      return NextResponse.json({ error: 'Invalid file content. File content does not match declared type.' }, { status: 400 })
+    }
+    if (detectedMime !== file.type) {
+      effectiveMime = detectedMime
     }
 
     // Validate file size (10MB max)
@@ -86,13 +120,11 @@ export async function POST(request: NextRequest) {
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
     const key = `uploads/${user.id}/${timestamp}-${randomId}-${sanitizedName}`
     
-    const buffer = Buffer.from(await file.arrayBuffer())
-    
     await r2.send(new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,
       Key: key,
       Body: buffer,
-      ContentType: file.type,
+      ContentType: effectiveMime,
     }))
 
     const publicUrl = process.env.R2_PUBLIC_URL 
@@ -104,7 +136,7 @@ export async function POST(request: NextRequest) {
       url: publicUrl,
       file: {
         name: file.name,
-        type: file.type,
+        type: effectiveMime,
         size: file.size,
       },
     }, {

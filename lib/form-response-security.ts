@@ -6,7 +6,16 @@ const MAX_ANSWER_KEYS = 200
 export { MAX_PAYLOAD_BYTES, MAX_ANSWER_KEYS }
 
 export function sanitizeValue(val: unknown): unknown {
-  if (typeof val === 'string') return val.replace(/<[^>]*>/g, '')
+  if (typeof val === 'string') {
+    // Strip HTML tags and normalize dangerous patterns
+    return val
+      .replace(/<\/?[a-zA-Z][^>]*>/g, '')   // remove HTML tags
+      .replace(/&[a-zA-Z]+;?/g, (match) => {  // decode common entities then re-strip
+        const decoded = match.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x?[0-9a-fA-F]+;?/g, '')
+        return decoded
+      })
+      .replace(/<[^>]*>/g, '')                // second pass after entity decode
+  }
   if (Array.isArray(val)) return val.map(sanitizeValue)
   if (val && typeof val === 'object') {
     return Object.fromEntries(

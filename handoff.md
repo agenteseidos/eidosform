@@ -39,6 +39,15 @@ Corrigir os riscos mais graves identificados nas auditorias (`auditoria-final.md
 - **`app/api/auth/reset-password/route.ts`** — NOVO endpoint para reset de senha via API
 - **`app/api/auth/resend-verification/route.ts`** — NOVO endpoint com rate limit (3/15min), sempre retorna sucesso
 
+## Correção pós-handoff — regressão de auth
+**Data:** 2026-04-30
+
+Os auth routes (`login`, `forgot-password`, `reset-password`, `resend-verification`, `signup`) usavam `createPublicClient()` (service_role key + `persistSession: false`), quebrando criação/persistência de sessão do usuário.
+
+**Correção:** substituído por `await createClient()` de `@/lib/supabase/server` (anon key + cookie handling SSR). Rate limit mantido intacto.
+
+Commit: `fix(auth): replace createPublicClient with createClient in auth routes`
+
 ## Validação
 - `tsc --noEmit` passa sem erros
 

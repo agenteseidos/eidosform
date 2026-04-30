@@ -208,3 +208,51 @@ Todos retornam `429` com header `Retry-After`.
 
 ### Pendências
 - Nenhuma pendência dentro desta etapa
+
+---
+
+## Etapa 5 — Hardening final (upload, CSP, sanitizeValue)
+
+**Data:** 2026-04-30 | **Commit:** `4bd3319`
+
+### 1. Upload magic bytes validation
+**Arquivo:** `app/api/upload/route.ts`
+
+- **Adicionada** validação de magic bytes para todos os tipos suportados (JPEG, PNG, GIF, WebP, PDF)
+- Antes: confiava apenas no MIME type enviado pelo client (trivialmente forjável)
+- Agora: lê os primeiros bytes do arquivo e verifica assinatura real
+- Se MIME detectado ≠ MIME declarado, usa o detectado para storage
+- Bloqueia uploads de conteúdo disfarçado (ex: `.jpg` contendo script)
+
+### 2. CSP hardening
+**Arquivo:** `next.config.ts`
+
+- **Removido** `'unsafe-eval'` de `script-src` nas duas políticas (dashboard + form player)
+- **Adicionadas** diretivas `form-action 'self'` e `base-uri 'self'` em ambas
+- `unsafe-eval` permitia `eval()` / `new Function()` em qualquer contexto — superfície de XSS amplificada
+
+### 3. `sanitizeValue` hardening
+**Arquivo:** `lib/form-response-security.ts`
+
+- **Melhorada** sanitização de strings em respostas de forms
+- Primeira pass: remove tags HTML normais
+- Segunda pass: decodifica entidades HTML (`&lt;`, `&#x3c;`, etc.) e re-strip tags
+- Previne bypass via HTML entity encoding (`&lt;script&gt;`)
+
+### 4. Vazamento de `error.message` em folder route
+**Arquivo:** `app/api/forms/[id]/folder/route.ts`
+
+- Substituído `error.message` por mensagem genérica, consistente com correção do P0-3
+
+### Validação
+- `tsc --noEmit` passa sem erros
+
+### Pendências (requerem redesign/mudança maior)
+- **P0-A:** Custom domain CNAME validation — requer decisão de infraestrutura DNS
+- **P0-B:** CSV/XLSX formula injection — requer neutralizar células no export (já existe `sanitize-formula.ts`, verificar se está aplicado)
+- **P0-C:** Domínios `.com` vs `.com.br` — requer decisão de marca/infra
+- **P0-D:** `responses_limit` default no trigger — migration simples mas afeta billing
+- **P1-A:** Anonymous response IDOR — requer redesign do fluxo de partial response
+- **P1-D:** Webhooks sem HMAC — requer geração/armazenamento de secret por usuário
+- **P1-F:** DNS rebinding em webhook URL — requer mudança de arquitetura de validação
+- **P2-21:** API Key plaintext — requer hash + migration de dados existentes

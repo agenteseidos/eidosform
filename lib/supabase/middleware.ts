@@ -57,7 +57,11 @@ export async function updateSession(request: NextRequest) {
   // Check for inactivity timeout if user is authenticated
   if (user && isProtectedRoute) {
     const lastActivityCookie = request.cookies.get(getLastActivityCookieName())?.value
-    const hasTimedOut = hasInactivityTimeout(lastActivityCookie)
+    // Prevent tampering: cap cookie value to now so future-timestamp attacks are neutralized
+    const safeLastActivity = lastActivityCookie
+      ? Math.min(parseInt(lastActivityCookie, 10), Date.now()).toString()
+      : undefined
+    const hasTimedOut = hasInactivityTimeout(safeLastActivity)
 
     if (hasTimedOut) {
       // Clear session and redirect to login

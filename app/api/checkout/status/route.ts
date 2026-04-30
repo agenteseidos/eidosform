@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
 import { PLANS, handleUpgrade } from '@/lib/plan-limits'
 import { type PlanId } from '@/lib/plans'
@@ -21,6 +22,18 @@ export async function GET() {
 
   if (authError || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Rate limit checkout status polling (30 req/min per user to protect Asaas API)
+  const statusLimit = await checkRateLimitAsync(`checkout-status:${user.id}`, {
+    maxAttempts: 30,
+    windowMs: 60 * 1000,
+  })
+  if (!statusLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests', retryAfter: Math.ceil(statusLimit.resetIn / 1000) },
+      { status: 429, headers: { 'Retry-After': Math.ceil(statusLimit.resetIn / 1000).toString() } }
+    )
   }
 
   const [{ data: profile }, { data: checkout }] = await Promise.all([

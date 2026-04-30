@@ -5,6 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { createCheckout, createCustomer, cancelSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
@@ -33,6 +34,18 @@ export async function POST(
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Rate limit checkout creation (10 req/min per user)
+  const checkoutLimit = await checkRateLimitAsync(`checkout-create:${user.id}`, {
+    maxAttempts: 10,
+    windowMs: 60 * 1000,
+  })
+  if (!checkoutLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many checkout attempts', retryAfter: Math.ceil(checkoutLimit.resetIn / 1000) },
+      { status: 429, headers: { 'Retry-After': Math.ceil(checkoutLimit.resetIn / 1000).toString() } }
+    )
   }
 
   const profile = await getBillingProfileForUser(user.id, user.email)

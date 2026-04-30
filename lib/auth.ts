@@ -46,7 +46,7 @@ export function getInactivityTimeoutCookieOptions() {
   return {
     name: LAST_ACTIVITY_COOKIE_NAME,
     maxAge: INACTIVITY_TIMEOUT_MS / 1000, // Convert to seconds
-    httpOnly: false, // Need to be accessible from client for updates
+    httpOnly: true, // Server-only: prevents JS/XSS from tampering with timestamp to bypass timeout
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',

@@ -42,9 +42,12 @@ export function PasswordSettings() {
     if (error) {
       toast.error('Falha ao alterar senha. Tente novamente.')
     } else {
-      toast.success('Senha alterada com sucesso!')
+      toast.success('Senha alterada com sucesso! Faça login novamente.')
       setNewPassword('')
       setConfirmPassword('')
+      // Revoke all sessions by signing out — user must re-authenticate
+      await supabase.auth.signOut()
+      window.location.href = '/login'
     }
   }
 

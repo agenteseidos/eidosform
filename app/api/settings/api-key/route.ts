@@ -1,6 +1,7 @@
 import type { ProfileUpdate } from '@/lib/database.types'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 // POST /api/settings/api-key — gerar/regenerar API key
 export async function POST() {
@@ -22,6 +23,18 @@ export async function POST() {
     return NextResponse.json(
       { error: 'API key access requires Professional or Enterprise plan' },
       { status: 403 }
+    )
+  }
+
+  // Rate limit API key operations (5 req/min per user)
+  const keyLimit = await checkRateLimitAsync(`api-key-ops:${user.id}`, {
+    maxAttempts: 5,
+    windowMs: 60 * 1000,
+  })
+  if (!keyLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many API key operations', retryAfter: Math.ceil(keyLimit.resetIn / 1000) },
+      { status: 429, headers: { 'Retry-After': Math.ceil(keyLimit.resetIn / 1000).toString() } }
     )
   }
 

@@ -115,3 +115,60 @@ Corrigir os próximos riscos práticos de exploração identificados nas auditor
 
 ## Commit
 - `8b9dbf9` — `fix(security): etapa 2 - rate limit whatsapp test, domain takeover prevention, XSS in content blocks`
+
+---
+
+# Handoff — Etapa 3: Superfícies de Abuso Interno e Automação
+
+**Data:** 2026-04-30  
+**Responsável:** Toin  
+**Tipo:** Correção de segurança (etapa 3)  
+**Status:** ✅ Concluída
+
+## Demanda
+Corrigir riscos de abuso via funções internas, exposição indevida de configuração e políticas mal escopadas.
+
+## Itens corrigidos
+
+### 1. SECURITY DEFINER functions — acesso de PUBLIC revogado
+**Arquivo:** `supabase/migrations/20260430_fix_security_definer_public_access_whatsapp_logs.sql`
+
+- **REVOKE EXECUTE FROM PUBLIC** em todas as 8 funções SECURITY DEFINER:
+  - `check_rate_limit`, `cleanup_rate_limit_entries`, `get_response_counts_by_forms`
+  - `check_and_increment_response`, `increment_responses_used`
+  - `verify_api_key_hash`, `handle_new_user`, `increment_response_count`
+- **GRANT EXECUTE** apenas para `authenticated` + `service_role` (onde aplicável)
+- `handle_new_user` (trigger function) e `cleanup_rate_limit_entries` restritos a `service_role` apenas
+
+### 2. Forms públicos expondo dados sensíveis
+**Arquivo:** `supabase/migrations/20260430_fix_security_definer_public_access_whatsapp_logs.sql`
+
+- **Criada** view `published_forms` com `security_barrier = true` — expõe apenas colunas seguras:
+  - ✅ `id, title, description, slug, status, theme, questions, thank_you_*, pixels, redirect_url, welcome_*, is_closed, paused, hide_branding, pixel_event_*, created_at, updated_at`
+  - ❌ NÃO expõe: `webhook_url, notify_email, notify_email_enabled, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_id, google_sheets_enabled, google_sheets_share_email, google_sheets_url, user_id, plan`
+- **GRANT SELECT** na view para `anon` e `authenticated`
+- **Removida** policy `anon_read_published_forms` — anon não pode mais consultar a tabela `forms` diretamente
+- App (form player, sitemap) usa `createPublicClient` (service_role key), então continua funcionando sem alteração de código
+
+### 3. Policies/logs mal escopadas
+**Arquivo:** `supabase/migrations/20260430_fix_security_definer_public_access_whatsapp_logs.sql`
+
+- **Removida** policy `Service role can insert WhatsApp logs` (usava `WITH CHECK (true)` — qualquer role podia inserir)
+- **Criada** policy `service_role_insert_whatsapp_logs` — INSERT restrito a `service_role`
+- **Recriada** policy `owners_read_whatsapp_logs` — SELECT restrito a `authenticated` (form owners)
+- Anon não tem nenhum acesso à tabela `form_whatsapp_logs`
+
+## Validação
+- `tsc --noEmit` passa sem erros
+- Nenhuma alteração de código de app necessária
+
+## Commit
+- `d9086c4` — `fix(security): etapa 3 - revoke PUBLIC execute on SECURITY DEFINER functions, restrict whatsapp_logs, create safe published_forms view`
+
+## Pendências
+- **Migration precisa ser aplicada** no Supabase (executar `20260430_fix_security_definer_public_access_whatsapp_logs.sql` manualmente ou via dashboard)
+- Nenhuma pendência de código dentro desta etapa
+
+## Arquivos alterados
+- `supabase/migrations/20260430_fix_security_definer_public_access_whatsapp_logs.sql` (NOVO)
+- `handoff.md` (atualizado)

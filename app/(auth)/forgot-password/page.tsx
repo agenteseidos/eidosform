@@ -2,7 +2,6 @@
 
 export const dynamic = 'force-dynamic'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,7 +14,6 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [sent, setSent] = useState(false)
-  const supabase = createClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,15 +23,25 @@ export default function ForgotPasswordPage() {
     }
 
     setIsLoading(true)
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-    })
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
 
-    if (error) {
-      toast.error('Falha ao enviar link de recuperação')
+      if (res.status === 429) {
+        const data = await res.json()
+        toast.error(`Muitas tentativas. Aguarde ${data.retryAfter || 60}s.`)
+        setIsLoading(false)
+        return
+      }
+
+      setSent(true)
+    } catch {
+      // Still show success to prevent email enumeration
+      setSent(true)
     }
-    // Always show success message to prevent email enumeration
-    setSent(true)
     setIsLoading(false)
   }
 

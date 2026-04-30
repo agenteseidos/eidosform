@@ -479,7 +479,11 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
     })
     const csv = [
       headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ...rows.map(row => row.map(cell => {
+        const raw = String(cell)
+        const safe = /^[=+\-@\t\r]/.test(raw) ? "'" + raw : raw
+        return `"${safe.replace(/"/g, '""')}"`
+      }).join(','))
     ].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')

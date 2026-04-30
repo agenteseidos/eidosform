@@ -3,7 +3,6 @@
 export const dynamic = 'force-dynamic'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,7 +18,6 @@ export default function ResetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const supabase = createClient()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,18 +36,24 @@ export default function ResetPasswordPage() {
     }
 
     setIsLoading(true)
-    const { error } = await supabase.auth.updateUser({ password })
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      const data = await res.json()
 
-    if (error) {
-      if (error.message?.toLowerCase().includes('same') || error.message?.toLowerCase().includes('different from the old')) {
-        toast.error('A nova senha deve ser diferente da senha atual.')
-      } else {
-        toast.error('Falha ao redefinir senha. Tente novamente.')
+      if (!res.ok) {
+        toast.error(data.error || 'Falha ao redefinir senha. Tente novamente.')
+        setIsLoading(false)
+        return
       }
-      setIsLoading(false)
-    } else {
-      await supabase.auth.signOut()
+
       router.push('/login?message=Senha redefinida com sucesso! Faça login com a nova senha.')
+    } catch {
+      toast.error('Falha ao redefinir senha. Tente novamente.')
+      setIsLoading(false)
     }
   }
 

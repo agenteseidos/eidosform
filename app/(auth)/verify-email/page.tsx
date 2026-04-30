@@ -3,7 +3,6 @@
 export const dynamic = 'force-dynamic'
 import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { EidosLogo } from '@/components/ui/eidos-logo'
 import { toast } from 'sonner'
@@ -15,7 +14,6 @@ function VerifyEmailContent() {
   const searchParams = useSearchParams()
   const email = searchParams.get('email') || ''
   const [isResending, setIsResending] = useState(false)
-  const supabase = createClient()
 
   const handleResend = async () => {
     if (!email) {
@@ -23,16 +21,19 @@ function VerifyEmailContent() {
       return
     }
     setIsResending(true)
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
-    if (error) {
-      toast.error('Falha ao reenviar e-mail')
-    } else {
+    try {
+      const res = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+
+      if (res.status === 429) {
+        toast.error('Muitas tentativas. Aguarde antes de tentar novamente.')
+      } else {
+        toast.success('E-mail reenviado!')
+      }
+    } catch {
       toast.success('E-mail reenviado!')
     }
     setIsResending(false)

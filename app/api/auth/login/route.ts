@@ -39,9 +39,9 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) {
-      // Log failed attempt for rate limiting (already counted by checkRateLimitAsync)
+      // Return generic error to avoid leaking auth details
       return NextResponse.json(
-        { error: error.message || 'Login failed' },
+        { error: 'Invalid email or password' },
         { status: 401 }
       )
     }

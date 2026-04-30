@@ -48,22 +48,30 @@ function LoginForm() {
     }
 
     setIsLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const data = await res.json()
 
-    if (error) {
-      if (error.message === 'Invalid login credentials') {
-        toast.error('E-mail ou senha incorretos')
-      } else if (error.message === 'Email not confirmed') {
-        toast.error('E-mail ainda não confirmado. Verifique sua caixa de entrada.')
-      } else {
-        toast.error('Falha ao entrar. Tente novamente.')
+      if (!res.ok) {
+        if (res.status === 429) {
+          toast.error(`Muitas tentativas. Aguarde ${data.retryAfter || 60}s antes de tentar novamente.`)
+        } else {
+          toast.error('E-mail ou senha incorretos')
+        }
+        setIsLoading(false)
+        return
       }
-      setIsLoading(false)
-    } else {
+
+      // Session is set by the API via cookies — refresh supabase client
+      await supabase.auth.getSession()
       router.push('/forms')
+    } catch {
+      toast.error('Falha ao entrar. Tente novamente.')
+      setIsLoading(false)
     }
   }
 

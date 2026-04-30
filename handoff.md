@@ -58,3 +58,60 @@ Commit: `fix(auth): replace createPublicClient with createClient in auth routes`
 ## Próximos passos sugeridos
 - Etapa 2: demais itens da auditoria
 - Testar os fluxos de auth manualmente no browser
+
+---
+
+# Handoff — Etapa 2: Correções de Segurança (Exploração Prática em Produção)
+
+**Data:** 2026-04-30  
+**Responsável:** Toin  
+**Tipo:** Correção de segurança (exploração prática)  
+**Status:** ✅ Concluída
+
+## Demanda
+Corrigir os próximos riscos práticos de exploração identificados nas auditorias.
+
+## Itens corrigidos
+
+### 1. WhatsApp de teste / abuso operacional
+**Arquivo:** `app/api/form/[id]/whatsapp/test/route.ts`
+
+- **Adicionado** rate limit de 5 testes por usuário por 15 minutos
+- Usa `checkRateLimitAsync` com Supabase RPC (persistente entre invocações serverless)
+- Retorna 429 com `resetIn` quando excedido
+- Impede spam de mensagens de teste e risco de ban da operação WhatsApp
+
+### 2. Custom domains / takeover
+**Arquivo:** `app/api/domains/route.ts`
+
+- **Adicionada** verificação de ownership antes do upsert de domínio
+- Se o domínio já existe e pertence a outro usuário, retorna 409 (Conflict)
+- Impede que um usuário assuma (takeover) o domínio personalizado de outro
+- O endpoint de DELETE e PATCH já verificavam ownership corretamente
+
+### 3. XSS em content blocks
+**Arquivos:**
+- `app/api/forms/[id]/route.ts` (PATCH — update)
+- `app/api/forms/route.ts` (POST — create)
+- `components/form-player/question-renderer.tsx` (render do player)
+
+**Server-side (create + update):**
+- Adicionada validação de URLs dentro de `questions` array
+- Bloqueia esquemas perigosos: `javascript:`, `data:`, `vbscript:`, `mhtml:`, `x-javascript:`
+- Valida `contentButtonUrl`, `imageUrl` e `videoUrl` em cada pergunta
+- Retorna 400 com mensagem descritiva se URL insegura detectada
+- Função `isSafeUrl` e `validateQuestionUrls` adicionadas em ambos os routes
+
+**Client-side (player render):**
+- Adicionada função `isSafeUrl` no question-renderer
+- O `<a href>` de `contentButtonUrl` agora só renderiza se a URL for segura
+- Defesa em profundidade: mesmo que algo passe pelo server, o player não renderiza
+
+## Validação
+- `tsc --noEmit` passa sem erros
+
+## Pendências
+- Nenhuma pendência dentro desta etapa
+
+## Commit
+- `8b9dbf9` — `fix(security): etapa 2 - rate limit whatsapp test, domain takeover prevention, XSS in content blocks`

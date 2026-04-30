@@ -1,4 +1,4 @@
-import { createPublicClient } from '@/lib/supabase/public'
+import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     const normalizedEmail = email.toLowerCase().trim()
     // P0-1: Use signUp directly — it already returns a clear error for duplicate emails.
     // Previously used admin.listUsers() which was O(n), leaked all user metadata, and could OOM.
-    const supabase = createPublicClient()
+    const supabase = await createClient()
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,

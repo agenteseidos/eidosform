@@ -1,4 +1,4 @@
-import { createPublicClient } from '@/lib/supabase/public'
+import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Supabase client and attempt login
-    const supabase = createPublicClient()
+    const supabase = await createClient()
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,

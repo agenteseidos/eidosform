@@ -114,6 +114,11 @@ export async function POST(req: NextRequest) {
       { status: 413 }
     )
   }
+  // Validate URLs inside questions to prevent XSS (javascript:, data: URIs)
+  const urlError = validateQuestionUrls(formQuestions)
+  if (urlError) {
+    return NextResponse.json({ error: urlError }, { status: 400 })
+  }
 
   // Validate webhook_url if provided
   if (webhook_url) {
@@ -163,4 +168,35 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ form: data }, { status: 201 })
+}
+
+// Validate URLs inside question objects to prevent XSS (javascript:, data:, vbscript: URIs)
+function isSafeUrl(url: unknown): boolean {
+  if (!url || typeof url !== 'string') return true
+  const trimmed = url.trim().toLowerCase()
+  if (!trimmed) return true
+  if (/^(javascript|data|vbscript|mhtml|x-javascript):/i.test(trimmed)) return false
+  try {
+    const parsed = new URL(trimmed)
+    return ['https:', 'http:', 'mailto:', 'tel:'].includes(parsed.protocol)
+  } catch {
+    return !trimmed.includes(':')
+  }
+}
+
+function validateQuestionUrls(questions: unknown[]): string | null {
+  for (const q of questions) {
+    if (!q || typeof q !== 'object') continue
+    const question = q as Record<string, unknown>
+    if (!isSafeUrl(question.contentButtonUrl)) {
+      return 'URL inválida em contentButtonUrl: protocolo não permitido'
+    }
+    if (!isSafeUrl(question.imageUrl)) {
+      return 'URL inválida em imageUrl: protocolo não permitido'
+    }
+    if (!isSafeUrl(question.videoUrl)) {
+      return 'URL inválida em videoUrl: protocolo não permitido'
+    }
+  }
+  return null
 }

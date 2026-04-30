@@ -523,6 +523,20 @@ interface QuestionRendererProps {
   onClearError?: () => void
 }
 
+/** Block dangerous URL schemes (javascript:, data:, vbscript:) for XSS prevention */
+function isSafeUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false
+  const trimmed = url.trim().toLowerCase()
+  if (!trimmed) return false
+  if (/^(javascript|data|vbscript|mhtml|x-javascript):/i.test(trimmed)) return false
+  try {
+    const parsed = new URL(trimmed)
+    return ['https:', 'http:', 'mailto:', 'tel:'].includes(parsed.protocol)
+  } catch {
+    return !trimmed.includes(':')
+  }
+}
+
 export const QuestionRenderer = React.memo(function QuestionRenderer({ 
   question, 
   value, 
@@ -995,7 +1009,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
             null
           )}
           {question.contentButtonText ? (
-            question.contentButtonUrl ? (
+            question.contentButtonUrl && isSafeUrl(question.contentButtonUrl) ? (
               <a
                 href={question.contentButtonUrl}
                 target="_blank"

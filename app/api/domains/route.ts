@@ -48,6 +48,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
+  // Prevent domain takeover: check if domain already belongs to another user
+  const { data: existingDomain } = await supabase
+    .from('custom_domains')
+    .select('id, user_id')
+    .eq('domain', domain)
+    .single()
+  if (existingDomain && existingDomain.user_id !== user.id) {
+    return NextResponse.json(
+      { error: 'This domain is already registered by another user' },
+      { status: 409 }
+    )
+  }
+
   const result = await addDomain(domain, form.slug)
   if (!result.success) {
     return NextResponse.json({ error: result.error }, { status: 400 })

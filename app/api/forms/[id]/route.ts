@@ -135,6 +135,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         { status: 413 }
       )
     }
+    // Validate URLs inside questions to prevent XSS (javascript:, data: URIs)
+    const urlError = validateQuestionUrls(questions)
+    if (urlError) {
+      return NextResponse.json({ error: urlError }, { status: 400 })
+    }
   }
 
   // P0 FIX: Bloquear pixels (Meta, Google, TikTok, GTM) para plano free
@@ -376,4 +381,39 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 function hasPixelEventRules(questions: unknown): boolean {
   if (!Array.isArray(questions)) return false
   return questions.some((q: { pixelEvents?: unknown[] }) => q.pixelEvents && q.pixelEvents.length > 0)
+}
+
+// Validate URLs inside question objects to prevent XSS (javascript:, data:, vbscript: URIs)
+function isSafeUrl(url: unknown): boolean {
+  if (!url || typeof url !== 'string') return true // null/undefined is fine
+  const trimmed = url.trim().toLowerCase()
+  if (!trimmed) return true
+  // Block dangerous schemes
+  if (/^(javascript|data|vbscript|mhtml|x-javascript):/i.test(trimmed)) return false
+  try {
+    const parsed = new URL(trimmed)
+    return ['https:', 'http:', 'mailto:', 'tel:'].includes(parsed.protocol)
+  } catch {
+    // Relative URLs are allowed (handled by the browser)
+    return !trimmed.includes(':')
+  }
+}
+
+function validateQuestionUrls(questions: unknown[]): string | null {
+  for (const q of questions) {
+    if (!q || typeof q !== 'object') continue
+    const question = q as Record<string, unknown>
+    // Check contentButtonUrl
+    if (!isSafeUrl(question.contentButtonUrl)) {
+      return 'URL inválida em contentButtonUrl: protocolo não permitido'
+    }
+    // Check any other URL fields that could be XSS vectors
+    if (!isSafeUrl(question.imageUrl)) {
+      return 'URL inválida em imageUrl: protocolo não permitido'
+    }
+    if (!isSafeUrl(question.videoUrl)) {
+      return 'URL inválida em videoUrl: protocolo não permitido'
+    }
+  }
+  return null
 }

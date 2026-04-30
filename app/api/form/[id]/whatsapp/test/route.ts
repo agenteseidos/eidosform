@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS } from '@/lib/plan-limits'
 import { PlanId } from '@/lib/plans'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -86,7 +87,19 @@ export async function POST(
       )
     }
 
-    // 4. Parse request body
+    // 4. Rate limit: 5 test sends per user per 15 minutes
+    const { allowed, resetIn } = await checkRateLimitAsync(`whatsapp-test:${user.id}`, {
+      maxAttempts: 5,
+      windowMs: 15 * 60 * 1000,
+    })
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Try again later.', resetIn },
+        { status: 429 }
+      )
+    }
+
+    // 5. Parse request body
     const body = await request.json()
     const { owner_phone, message_template } = body
 

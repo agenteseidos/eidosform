@@ -1,55 +1,10 @@
--- OBSOLETE: Superseded by 20260428_consolidate_rls_policies.sql (P1-K consolidation).
--- Kept for migration history only. Do not rely on the policies created here.
-
--- FIX P0: Corrige vazamento de RLS nas tabelas responses e answer_items
--- Políticas anteriores usavam USING(true) permitindo acesso irrestrito a anônimos.
--- As novas políticas restringem leitura/update/delete ao escopo do form publicado.
-
--- Drop políticas inseguras existentes
-DROP POLICY IF EXISTS "anon_read_responses" ON responses;
-DROP POLICY IF EXISTS "anon_update_responses" ON responses;
-DROP POLICY IF EXISTS "anon_delete_answer_items" ON answer_items;
-
--- Recria leitura anon: apenas responses de forms publicados
-CREATE POLICY "anon_read_responses"
-  ON responses FOR SELECT
-  TO anon
-  USING (
-    EXISTS (
-      SELECT 1 FROM forms
-      WHERE forms.id = responses.form_id
-        AND forms.status = 'published'
-    )
-  );
-
--- Recria update anon: apenas responses de forms publicados
-CREATE POLICY "anon_update_responses"
-  ON responses FOR UPDATE
-  TO anon
-  USING (
-    EXISTS (
-      SELECT 1 FROM forms
-      WHERE forms.id = responses.form_id
-        AND forms.status = 'published'
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM forms
-      WHERE forms.id = responses.form_id
-        AND forms.status = 'published'
-    )
-  );
-
--- Recria delete anon em answer_items: apenas para responses de forms publicados
-CREATE POLICY "anon_delete_answer_items"
-  ON answer_items FOR DELETE
-  TO anon
-  USING (
-    EXISTS (
-      SELECT 1 FROM responses r
-      JOIN forms f ON f.id = r.form_id
-      WHERE r.id = answer_items.response_id
-        AND f.status = 'published'
-    )
-  );
+-- NEUTRALIZED (P1-K fix, 2026-05-01)
+--
+-- This migration previously dropped and recreated anon_read_responses, anon_update_responses,
+-- and anon_delete_answer_items. Those policies were removed permanently by:
+--   - 20260430_fix_rls_responses_answer_items_profiles.sql
+--   - 20260501_enforce_rls_final_state.sql  (authoritative idempotent final state)
+--
+-- The SQL was replaced with a no-op to prevent creation of insecure policies
+-- in fresh environments, even transiently. Do not restore the original statements.
+SELECT 1; -- no-op

@@ -213,6 +213,7 @@ Todos retornam `429` com header `Retry-After`.
 
 ## Etapa 5 — Hardening final (upload, CSP, sanitizeValue)
 
+
 **Data:** 2026-04-30 | **Commit:** `4bd3319`
 
 ### 1. Upload magic bytes validation
@@ -268,15 +269,13 @@ A maioria dos itens P1/P2 já estava implementada nas etapas 1–5. Esta etapa c
 - `detectPlanAndCycle` agora retorna `null` quando o valor não corresponde a nenhum preço conhecido (removido default para 'starter').
 - Handler PAYMENT_CONFIRMED/PAYMENT_RECEIVED: se não há `checkoutLink` E `detectPlanAndCycle` retorna null, loga erro e faz `break` sem ativar plano.
 
-#### P1-K — Migrations RLS conflitantes marcadas como obsoletas
-**Arquivos:**
-- `supabase/migrations/20260318_public_access_rls.sql`
-- `supabase/migrations/20260327_fix_p0_rls_responses.sql`
-- `supabase/migrations/20260327_fix_rls_p0_v2.sql`
-- `supabase/migrations/20260327_fix_rls_response_leak.sql`
-- `supabase/migrations/20260327_fix_response_visibility_rls.sql`
+#### P1-K — Migrations RLS conflitantes: correção cosmética (INSUFICIENTE — substituída pela Etapa 7)
+**Status:** ⚠️ Supersedida — ver Etapa 7 abaixo.
 
-Todos marcados com header `-- OBSOLETE:` apontando para a migration definitiva `20260428_consolidate_rls_policies.sql`.
+A solução anterior apenas adicionava `-- OBSOLETE:` como comentário. O SQL continuava executável.
+Além disso, `20260428_consolidate_rls_policies.sql` recriava as policies perigosas (`anon_read_responses`,
+`anon_update_responses`, `anon_delete_answer_items`) que os arquivos 20260327 tinham removido — regressão
+invisível que só era corrigida pelos `20260430_*`. Ver Etapa 7 para a correção real.
 
 #### P2-E — API key plaintext fallback removido
 **Arquivo:** `lib/api-key-auth.ts`
@@ -296,3 +295,59 @@ Todos marcados com header `-- OBSOLETE:` apontando para a migration definitiva `
 
 ### Validação
 - `next build` passa sem erros
+
+---
+
+## Etapa 7 — P1-K Correção Real: Neutralização de Migrations e Estado Final Idempotente
+
+**Data:** 2026-05-01 | **Relatório:** `correcoes-pendentes-p1k.md`
+
+### Por que a Etapa 6 era insuficiente
+
+1. **Comentário cosmético não neutraliza SQL.** Os 5 arquivos antigos ainda executavam `CREATE POLICY` em ambiente novo.
+2. **Regressão oculta:** `20260428_consolidate_rls_policies.sql` **recriava** `anon_read_responses`, `anon_update_responses` e `anon_delete_answer_items` — que os arquivos 20260327 já tinham removido. Se as migrations parassem após o consolidate e antes dos `20260430_*`, o banco ficava com anon podendo ler/modificar respostas de qualquer form publicado.
+
+### O que foi feito
+
+#### Neutralização das 5 migrations antigas
+
+Os 5 arquivos tiveram seu conteúdo SQL substituído por `SELECT 1; -- no-op`:
+- `supabase/migrations/20260318_public_access_rls.sql`
+- `supabase/migrations/20260327_fix_p0_rls_responses.sql`
+- `supabase/migrations/20260327_fix_rls_p0_v2.sql`
+- `supabase/migrations/20260327_fix_rls_response_leak.sql`
+- `supabase/migrations/20260327_fix_response_visibility_rls.sql`
+
+Em ambiente novo, esses arquivos **não criam absolutamente nenhuma policy**.
+
+#### Nova migration definitiva e idempotente
+
+**`supabase/migrations/20260501_enforce_rls_final_state.sql`**
+
+- Roda **por último** (data 20260501 — posterior a todos os arquivos existentes)
+- Inicia com `DROP POLICY IF EXISTS` para todos os nomes que já existiram em qualquer migration
+- Define o estado final correto explicitamente:
+  - `responses`: anon INSERT apenas; owners SELECT/UPDATE/DELETE; service_role ALL
+  - `answer_items`: anon INSERT apenas; owners SELECT/INSERT/DELETE; service_role ALL
+  - `forms`: anon sem acesso direto (usa `published_forms` view)
+- Pode ser re-executada ilimitadas vezes sem efeito colateral
+
+### Por que o risco está neutralizado
+
+- Antigos são no-ops: nunca criam policies perigosas, nem transitoriamente
+- Parar em qualquer ponto após os `20260430_*` = estado seguro
+- `20260501_enforce_rls_final_state.sql` varre e reaplica o estado correto mesmo que qualquer migration anterior tenha criado algo inesperado
+- Executar qualquer dos 5 arquivos antigos manualmente = não-operação
+
+### Arquivos alterados
+- `supabase/migrations/20260318_public_access_rls.sql` — neutralizado (no-op)
+- `supabase/migrations/20260327_fix_p0_rls_responses.sql` — neutralizado (no-op)
+- `supabase/migrations/20260327_fix_rls_p0_v2.sql` — neutralizado (no-op)
+- `supabase/migrations/20260327_fix_rls_response_leak.sql` — neutralizado (no-op)
+- `supabase/migrations/20260327_fix_response_visibility_rls.sql` — neutralizado (no-op)
+- `supabase/migrations/20260501_enforce_rls_final_state.sql` — **NOVO** (state definitivo)
+- `correcoes-pendentes-p1k.md` — **NOVO** (relatório completo)
+- `handoff.md` — atualizado
+
+### Pendências para produção
+- Aplicar `20260501_enforce_rls_final_state.sql` no Supabase (via dashboard ou manualmente)

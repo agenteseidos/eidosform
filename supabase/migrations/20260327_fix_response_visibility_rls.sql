@@ -1,45 +1,12 @@
--- OBSOLETE: Superseded by 20260428_consolidate_rls_policies.sql (P1-K consolidation).
--- Kept for migration history only. Do not rely on the policies created here.
-
--- Fix QA Round 1: authenticated owners must be able to read responses and answer items
--- even after anonymous public submissions.
-
-DO $$ BEGIN
-  CREATE POLICY "owners_read_responses_v2" ON responses FOR SELECT
-    TO authenticated
-    USING (
-      EXISTS (
-        SELECT 1
-        FROM forms
-        WHERE forms.id = responses.form_id
-          AND forms.user_id = auth.uid()
-      )
-    );
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "owners_delete_responses_v2" ON responses FOR DELETE
-    TO authenticated
-    USING (
-      EXISTS (
-        SELECT 1
-        FROM forms
-        WHERE forms.id = responses.form_id
-          AND forms.user_id = auth.uid()
-      )
-    );
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "owners_read_answer_items_v2" ON answer_items FOR SELECT
-    TO authenticated
-    USING (
-      EXISTS (
-        SELECT 1
-        FROM responses r
-        JOIN forms f ON f.id = r.form_id
-        WHERE r.id = answer_items.response_id
-          AND f.user_id = auth.uid()
-      )
-    );
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- NEUTRALIZED (P1-K fix, 2026-05-01)
+--
+-- This migration previously created owners_read_responses_v2, owners_delete_responses_v2,
+-- and owners_read_answer_items_v2 (with DO/EXCEPTION guard). Those _v2 policies are
+-- dropped by 20260428_consolidate_rls_policies.sql and replaced with canonical names.
+-- The definitive policy set is enforced by:
+--   - 20260428_consolidate_rls_policies.sql
+--   - 20260501_enforce_rls_final_state.sql  (authoritative idempotent final state)
+--
+-- The SQL was replaced with a no-op to prevent any intermediate state issues
+-- in fresh environments. Do not restore the original statements.
+SELECT 1; -- no-op

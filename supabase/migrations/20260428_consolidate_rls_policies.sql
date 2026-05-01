@@ -9,6 +9,13 @@
 --   20260327_fix_rls_p0_v2.sql
 --   20260327_fix_rls_response_leak.sql
 --
+-- NOTE (2026-05-01 P2 residual fix): anon_read_responses, anon_update_responses and
+-- anon_delete_answer_items were intentionally removed from this file.
+-- Creating them here then removing them in 20260430_* produced a transient insecure
+-- window for deploys that stopped between the two migrations.
+-- The DROP IF EXISTS statements below are kept so that environments where those
+-- policies were created by an earlier version of this file are cleaned up correctly.
+--
 -- Final state (idempotent — safe to run multiple times):
 
 -- ============================================================
@@ -39,34 +46,8 @@ CREATE POLICY "anon_insert_responses" ON responses
     )
   );
 
--- anon: SELECT only responses of published forms
-CREATE POLICY "anon_read_responses" ON responses
-  FOR SELECT TO anon
-  USING (
-    EXISTS (
-      SELECT 1 FROM forms
-      WHERE forms.id = responses.form_id
-        AND forms.status = 'published'
-    )
-  );
-
--- anon: UPDATE only responses of published forms
-CREATE POLICY "anon_update_responses" ON responses
-  FOR UPDATE TO anon
-  USING (
-    EXISTS (
-      SELECT 1 FROM forms
-      WHERE forms.id = responses.form_id
-        AND forms.status = 'published'
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM forms
-      WHERE forms.id = responses.form_id
-        AND forms.status = 'published'
-    )
-  );
+-- anon_read_responses and anon_update_responses intentionally NOT created here.
+-- See header note.
 
 -- authenticated: SELECT responses for forms they own
 CREATE POLICY "owners_read_responses" ON responses
@@ -135,17 +116,7 @@ CREATE POLICY "anon_insert_answer_items" ON answer_items
   FOR INSERT TO anon
   WITH CHECK (true);
 
--- anon: DELETE only for responses of published forms
-CREATE POLICY "anon_delete_answer_items" ON answer_items
-  FOR DELETE TO anon
-  USING (
-    EXISTS (
-      SELECT 1 FROM responses r
-      JOIN forms f ON f.id = r.form_id
-      WHERE r.id = answer_items.response_id
-        AND f.status = 'published'
-    )
-  );
+-- anon_delete_answer_items intentionally NOT created here. See header note.
 
 -- authenticated: SELECT answer_items for forms they own
 CREATE POLICY "owners_read_answer_items" ON answer_items

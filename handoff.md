@@ -351,3 +351,32 @@ Em ambiente novo, esses arquivos **não criam absolutamente nenhuma policy**.
 
 ### Pendências para produção
 - Aplicar `20260501_enforce_rls_final_state.sql` no Supabase (via dashboard ou manualmente)
+
+---
+
+## Etapa 8 — P2 Residual: Eliminação da janela insegura no `20260428`
+
+**Data:** 2026-05-01 | **Relatório:** `correcoes-pendentes-p2-residual.md`
+
+### Problema
+
+`20260428_consolidate_rls_policies.sql` criava `anon_read_responses`, `anon_update_responses` e `anon_delete_answer_items` — policies inseguras — que só eram removidas pelos arquivos `20260430_*`. Um deploy que parasse entre as duas migrations deixava o banco exposto transitoriamente.
+
+### O que foi feito
+
+**Arquivo:** `supabase/migrations/20260428_consolidate_rls_policies.sql`
+
+- Removidos os três `CREATE POLICY` perigosos (`anon_read_responses`, `anon_update_responses`, `anon_delete_answer_items`)
+- Mantidos os `DROP IF EXISTS` correspondentes (idempotentes; limpam ambientes que rodaram versão anterior)
+- Adicionado comentário de cabeçalho explicando a remoção
+
+### Por que é seguro
+
+- Ambientes existentes não re-executam a migration — `20260430` e `20260501` já garantem o estado correto neles
+- Ambientes novos nunca verão as policies inseguras, nem transitoriamente
+- `DROP IF EXISTS` são no-ops se as policies não existem — sem efeito colateral
+- `20260501_enforce_rls_final_state.sql` continua válido e idempotente
+
+### Resultado
+
+**P2 residual zerado.** A cadeia de migrations é segura em qualquer ponto de parada.

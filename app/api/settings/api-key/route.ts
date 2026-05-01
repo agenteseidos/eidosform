@@ -1,6 +1,7 @@
 import type { ProfileUpdate } from '@/lib/database.types'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 // POST /api/settings/api-key — gerar/regenerar API key
@@ -80,21 +81,26 @@ export async function GET() {
     .single() as { data: { api_key_hash: string | null; plan: string } | null }
 
   if (!profile) {
-    // Create profile with free plan for new users
-    const { data: newProfile, error: createError } = await supabase
+    // Profile missing (user signed up before auto-create trigger). Use admin client
+    // to bypass RLS — there is no INSERT policy for authenticated users on profiles.
+    const adminSupabase = createAdminClient()
+    const { data: upserted, error: upsertError } = await adminSupabase
       .from('profiles')
-      .insert({ id: user.id, email: user.email ?? '', plan: 'free' })
-      .select('api_key, plan')
-      .single() as { data: { api_key: string | null; plan: string } | null, error: unknown }
+      .upsert(
+        { id: user.id, email: user.email ?? '', plan: 'free' },
+        { onConflict: 'id', ignoreDuplicates: false }
+      )
+      .select('api_key_hash, plan')
+      .single() as { data: { api_key_hash: string | null; plan: string } | null, error: unknown }
 
-    if (createError || !newProfile) {
+    if (upsertError || !upserted) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
     return NextResponse.json({
-      has_api_key: false,
-      api_key_preview: null,
-      plan: newProfile.plan,
+      has_api_key: !!upserted.api_key_hash,
+      api_key_preview: upserted.api_key_hash ? 'ek_••••••••••••' : null,
+      plan: upserted.plan,
     })
   }
 

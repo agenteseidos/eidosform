@@ -13,6 +13,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 interface AccountActionsProps {
   planKey: string
@@ -24,6 +25,11 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
   const [cancelOpen, setCancelOpen] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [cancelled, setCancelled] = useState(initialPlanStatus === 'canceling')
+
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteStep, setDeleteStep] = useState<1 | 2>(1)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   const expiresFormatted = planExpiresAt
     ? new Date(planExpiresAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -56,14 +62,30 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
   }
 
   const handleDeleteAccount = async () => {
-    if (!confirm('Tem certeza? Esta ação não pode ser desfeita. Todos os seus formulários, respostas e dados serão excluídos permanentemente.')) return
-    const supabase = createClient()
-    const { error } = await supabase.auth.signOut()
-    if (error) {
-      toast.error('Erro ao sair da conta')
-    } else {
-      window.location.href = '/login'
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/account/delete', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error ?? 'Erro ao deletar conta')
+        return
+      }
+      const supabase = createClient()
+      await supabase.auth.signOut()
+      window.location.href = '/'
+    } catch {
+      toast.error('Erro de rede ao deletar conta')
+    } finally {
+      setDeleting(false)
     }
+  }
+
+  const handleDeleteDialogClose = (open: boolean) => {
+    if (!open) {
+      setDeleteStep(1)
+      setDeleteConfirmText('')
+    }
+    setDeleteOpen(open)
   }
 
   return (
@@ -100,7 +122,7 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs text-slate-500">Remove todos os dados permanentemente</p>
           <button
-            onClick={handleDeleteAccount}
+            onClick={() => setDeleteOpen(true)}
             className="text-xs text-slate-400 hover:text-red-500 underline underline-offset-2 transition-colors min-h-[44px] px-2 inline-flex items-center"
           >
             Deletar conta
@@ -108,6 +130,7 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
         </div>
       </div>
 
+      {/* Cancel subscription dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -145,6 +168,86 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
               {canceling ? 'Cancelando...' : 'Confirmar cancelamento'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete account dialog */}
+      <Dialog open={deleteOpen} onOpenChange={handleDeleteDialogClose}>
+        <DialogContent className="max-w-md">
+          {deleteStep === 1 ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-red-600">Deletar conta</DialogTitle>
+                <DialogDescription asChild>
+                  <div className="space-y-3 text-sm text-slate-600">
+                    <p>
+                      Esta ação é <strong className="text-slate-800">permanente e irreversível</strong>. Serão deletados:
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 text-slate-500">
+                      <li>Todos os seus formulários e respostas</li>
+                      <li>Configurações de domínio e API keys</li>
+                      <li>Histórico de cobranças</li>
+                      <li>Sua assinatura ativa (se houver)</li>
+                    </ul>
+                    <div className="pt-2">
+                      <p className="mb-2 font-medium text-slate-700">
+                        Digite <span className="font-mono bg-slate-100 px-1 rounded">DELETAR</span> para continuar:
+                      </p>
+                      <Input
+                        value={deleteConfirmText}
+                        onChange={e => setDeleteConfirmText(e.target.value)}
+                        placeholder="DELETAR"
+                        className="font-mono"
+                        autoComplete="off"
+                      />
+                    </div>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <DialogClose asChild>
+                  <Button variant="outline">Cancelar</Button>
+                </DialogClose>
+                <Button
+                  variant="destructive"
+                  disabled={deleteConfirmText !== 'DELETAR'}
+                  onClick={() => setDeleteStep(2)}
+                >
+                  Continuar
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-red-600">Tem certeza absoluta?</DialogTitle>
+                <DialogDescription asChild>
+                  <div className="space-y-2 text-sm text-slate-600">
+                    <p>
+                      Ao confirmar, sua conta e <strong className="text-slate-800">todos os seus dados</strong> serão
+                      deletados imediatamente. Não há como desfazer esta ação.
+                    </p>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  variant="outline"
+                  disabled={deleting}
+                  onClick={() => setDeleteStep(1)}
+                >
+                  Voltar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteAccount}
+                  disabled={deleting}
+                >
+                  {deleting ? 'Deletando...' : 'Deletar conta definitivamente'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </>

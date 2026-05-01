@@ -23,7 +23,7 @@ export default async function SettingsPage() {
   // Fetch real plan from profiles table
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, full_name, phone, cpf_cnpj, address, address_number, complement, postal_code, province, city, state')
+    .select('plan, plan_expires_at, full_name, phone, cpf_cnpj, address, address_number, complement, postal_code, province, city, state')
     .eq('id', user.id)
     .single()
 
@@ -120,7 +120,7 @@ export default async function SettingsPage() {
       <ApiKeySettings isProfessional={isProfessional} />
 
       {/* Ações da conta */}
-      <AccountActions planKey={planKey} />
+      <AccountActions planKey={planKey} planExpiresAt={profile?.plan_expires_at} />
     </div>
   )
 }

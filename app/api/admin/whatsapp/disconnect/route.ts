@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logError } from '@/lib/logger'
 
 function getWhatsappUrl(path: string): string {
   const base = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br'
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')
-      console.error('WhatsApp disconnect proxy failed:', response.status, text)
+      logError('WhatsApp disconnect proxy failed:', undefined, { status: response.status, text })
       return NextResponse.json(
         { error: 'Failed to disconnect' },
         { status: 502 }
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     const data = await response.json()
     return NextResponse.json({ success: data.success !== false })
   } catch (err: unknown) {
-    console.error('WhatsApp disconnect failed:', err)
+    logError('WhatsApp disconnect failed:', err)
     return NextResponse.json(
       { error: 'Failed to disconnect' },
       { status: 500 }

@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkFormLimit } from '@/lib/plan-limits'
 import { normalizePlan } from '@/lib/plans'
+import { logError } from '@/lib/logger'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -108,7 +109,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     .single()
 
   if (duplicateError || !duplicated) {
-    return NextResponse.json({ error: duplicateError?.message ?? 'Failed to duplicate form' }, { status: 500 })
+    logError('Failed to duplicate form:', duplicateError)
+    return NextResponse.json({ error: 'Erro ao duplicar formulário' }, { status: 500 })
   }
 
   return NextResponse.json({ form: duplicated }, { status: 201 })

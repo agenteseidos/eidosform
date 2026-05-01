@@ -1,4 +1,5 @@
 import { validateWebhookUrl } from '@/lib/webhook-validator'
+import { logError } from '@/lib/logger'
 /**
  * app/api/forms/[id]/webhook/route.ts — Gerenciar webhook_url do form
  * GET: retorna configuração atual
@@ -81,7 +82,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     .eq('user_id', user.id)
 
   if (error) {
-    console.error('Failed to update webhook:', error)
+    logError('Failed to update webhook:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
@@ -113,7 +114,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     .eq('user_id', user.id)
 
   if (error) {
-    console.error('Failed to delete webhook:', error)
+    logError('Failed to delete webhook:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 

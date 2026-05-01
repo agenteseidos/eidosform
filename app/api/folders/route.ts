@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { Database } from '@/lib/database.types'
+import { logError } from '@/lib/logger'
 
 type FolderInsert = Database['public']['Tables']['folders']['Insert']
 
@@ -26,9 +27,11 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: true })
 
   if (error) {
-    console.error('Failed to list folders:', error)
+    logError('Failed to list folders:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
+
+  return NextResponse.json({ folders: data })
 }
 
 // POST /api/folders — create new folder
@@ -59,7 +62,7 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) {
-    console.error('Failed to create folder:', error)
+    logError('Failed to create folder:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 

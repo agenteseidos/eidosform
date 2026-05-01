@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
+import { logWarn } from '@/lib/logger'
 
 // P1-13: Allowed origins for write operations (CSRF protection)
 const ALLOWED_ORIGINS = process.env.NEXT_PUBLIC_APP_URL
@@ -7,8 +8,10 @@ const ALLOWED_ORIGINS = process.env.NEXT_PUBLIC_APP_URL
   : []
 
 // Custom domain cache: domain → { slug, expiresAt }
+// Limited to 1000 entries to prevent unbounded memory growth (S1-P2-26)
 const customDomainCache = new Map<string, { slug: string; expiresAt: number }>()
 const CACHE_TTL_MS = 60_000 // 1 minute
+const CACHE_MAX_SIZE = 1000
 
 const APP_HOSTNAME = process.env.NEXT_PUBLIC_APP_URL
   ? new URL(process.env.NEXT_PUBLIC_APP_URL).hostname
@@ -59,6 +62,11 @@ async function resolveCustomDomain(hostname: string): Promise<string | null> {
     const form = forms[0]
     if (form.status !== 'published') return null
 
+    // Evict oldest entry if cache is full
+    if (customDomainCache.size >= CACHE_MAX_SIZE) {
+      const firstKey = customDomainCache.keys().next().value
+      if (firstKey) customDomainCache.delete(firstKey)
+    }
     customDomainCache.set(hostname, {
       slug: form.slug,
       expiresAt: Date.now() + CACHE_TTL_MS,
@@ -119,6 +127,9 @@ export async function middleware(request: NextRequest) {
     if (!isPublic) {
       const origin = request.headers.get('origin')
       const referer = request.headers.get('referer')
+      if (ALLOWED_ORIGINS.length === 0 && process.env.NODE_ENV === 'production') {
+        logWarn('CSRF check disabled: NEXT_PUBLIC_APP_URL not set in production', { path: request.nextUrl.pathname })
+      }
       const allowed = ALLOWED_ORIGINS.length > 0
         ? ALLOWED_ORIGINS.some(o => origin === o || (referer && referer.startsWith(o)))
         : true // No allowed origins configured — skip check in development

@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { logError } from '@/lib/logger'
 
 // 30 minutes inactivity timeout
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000
@@ -74,6 +75,6 @@ export async function clearAuthSession(supabase: SupabaseClient): Promise<void> 
   try {
     await supabase.auth.signOut()
   } catch (error) {
-    console.error('Error clearing auth session:', error)
+    logError('Error clearing auth session:', error)
   }
 }

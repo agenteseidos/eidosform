@@ -33,6 +33,14 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
 
   const handleFileSelect = useCallback(async (file: File) => {
     setUploadError(null)
+
+    // Validate file size client-side before sending (server also enforces 10MB)
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setUploadError('Arquivo muito grande. Tamanho máximo: 10MB')
+      return
+    }
+
     setIsUploading(true)
 
     try {
@@ -90,7 +98,7 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,application/pdf"
+        accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

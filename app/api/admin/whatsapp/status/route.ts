@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logError } from '@/lib/logger'
 
 function getWhatsappUrl(path: string): string {
   const base = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br'
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
     })
 
     if (!response.ok) {
-      console.error('WhatsApp status proxy failed:', response.status)
+      logError('WhatsApp status proxy failed:', undefined, { status: response.status })
       return NextResponse.json(
         { authenticated: false, connected: false, phoneNumber: null },
         { status: 200 }
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
       phoneNumber: data.phoneNumber ?? data.phone ?? data.jid ?? null,
     })
   } catch (err: unknown) {
-    console.error('WhatsApp status check failed:', err)
+    logError('WhatsApp status check failed:', err)
     return NextResponse.json(
       { authenticated: false, connected: false, phoneNumber: null },
       { status: 200 }

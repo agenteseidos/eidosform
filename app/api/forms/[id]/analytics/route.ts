@@ -41,13 +41,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // Total de respostas
   const { count: totalResponses } = await supabase
     .from('responses')
-    .select('*', { count: 'exact', head: true })
+    .select('id', { count: 'exact', head: true })
     .eq('form_id', id)
 
   // Respostas completas
   const { count: completedResponses } = await supabase
     .from('responses')
-    .select('*', { count: 'exact', head: true })
+    .select('id', { count: 'exact', head: true })
     .eq('form_id', id)
     .eq('completed', true)
 
@@ -55,12 +55,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const completed = completedResponses ?? 0
   const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
 
-  // Tempo médio de conclusão
+  // Tempo médio de conclusão (limitado a 10k para evitar DoS em forms populares)
   const { data: completedTimestamps } = await supabase
     .from('responses')
     .select('created_at, updated_at')
     .eq('form_id', id)
     .eq('completed', true)
+    .limit(10000)
 
   let avgCompletionTimeSeconds: number | null = null
   if (planConfig?.partialResponses && completedTimestamps && completedTimestamps.length > 0) {

@@ -6,6 +6,7 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkFormLimit } from '@/lib/plan-limits'
 import { PLANS } from '@/lib/plan-limits'
 import { normalizePlan } from '@/lib/plans'
+import { logError } from '@/lib/logger'
 
 // T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
   const { data, error, count } = await query
 
   if (error) {
-    console.error('Failed to list forms:', error)
+    logError('Failed to list forms:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
@@ -82,10 +83,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'title and slug are required' }, { status: 400 })
   }
 
-  // Validate slug format (lowercase, alphanumeric, hyphens only)
-  if (!/^[a-z0-9-]+$/.test(slug)) {
+  // Validate slug format: min 3 chars, starts with alphanumeric, lowercase + hyphens only
+  if (!/^[a-z0-9][a-z0-9-]{2,60}$/.test(slug)) {
     return NextResponse.json(
-      { error: 'slug must contain only lowercase letters, numbers, and hyphens' },
+      { error: 'slug deve ter entre 3 e 61 caracteres, começar com letra ou número, e conter apenas letras minúsculas, números e hífens' },
       { status: 400 }
     )
   }

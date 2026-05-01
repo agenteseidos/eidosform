@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getRequestUser } from '@/lib/supabase/request-auth'
+import { logError } from '@/lib/logger'
 
 type RouteParams = {
   params: Promise<{ id: string }>
@@ -47,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .single()
 
   if (error) {
-    console.error('Failed to update folder:', error)
+    logError('Failed to update folder:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 
@@ -82,7 +83,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     .eq('user_id', user.id)
 
   if (error) {
-    console.error('Failed to delete folder:', error)
+    logError('Failed to delete folder:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
+
+  return NextResponse.json({ success: true })
 }

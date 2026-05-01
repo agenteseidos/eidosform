@@ -19,7 +19,7 @@ export const PLAN_PRICES = {
 } as const
 
 import { PlanId } from '@/lib/plans'
-import { log } from '@/lib/logger'
+import { log, logWarn } from '@/lib/logger'
 
 /** @deprecated Use PlanId from lib/plans.ts */
 export type PlanName = PlanId
@@ -62,7 +62,8 @@ async function asaasFetch(path: string, options: RequestInit = {}) {
   })
   const data = await res.json()
   if (!res.ok) {
-    throw new Error(`Asaas API error ${res.status}: ${JSON.stringify(data.errors ?? data)}`)
+    logWarn(`Asaas API error ${res.status}`, { errors: JSON.stringify(data.errors ?? data) })
+    throw new Error(`Asaas API error ${res.status}`)
   }
   return data
 }

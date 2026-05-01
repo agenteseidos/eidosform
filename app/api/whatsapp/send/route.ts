@@ -174,7 +174,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 }
     )
   } catch (error) {
-    console.error('[whatsapp/send] Error:', error)
+    logError('[whatsapp/send] Error:', error)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }

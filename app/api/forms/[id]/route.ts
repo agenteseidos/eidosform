@@ -81,10 +81,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // P1-C: Ignore 'plan' field — plan is managed exclusively via billing/admin endpoints
   // Prevents users from escalating their own plan via PATCH
 
-  // Validate slug if provided
-  if (slug && !/^[a-z0-9-]+$/.test(slug)) {
+  // Validate slug if provided: min 3 chars, starts with alphanumeric
+  if (slug && !/^[a-z0-9][a-z0-9-]{2,60}$/.test(slug)) {
     return NextResponse.json(
-      { error: 'slug must contain only lowercase letters, numbers, and hyphens' },
+      { error: 'slug deve ter entre 3 e 61 caracteres, começar com letra ou número, e conter apenas letras minúsculas, números e hífens' },
       { status: 400 }
     )
   }
@@ -369,7 +369,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     .eq('id', id)
 
   if (error) {
-    console.error('Failed to delete form:', error)
+    logError('Failed to delete form:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }
 

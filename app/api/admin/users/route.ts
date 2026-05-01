@@ -30,18 +30,25 @@ export async function GET(request: NextRequest) {
   }
 
   const profileIds = (profiles ?? []).map((profile) => profile.id)
-  const { data: formCounts, error: formsError } = await supabase
-    .from('forms')
-    .select('user_id')
-    .in('user_id', profileIds.length > 0 ? profileIds : ['00000000-0000-0000-0000-000000000000'])
+
+  let formCounts: { user_id: string }[] = []
+  let formsError: unknown = null
+
+  if (profileIds.length > 0) {
+    const result = await supabase
+      .from('forms')
+      .select('user_id')
+      .in('user_id', profileIds)
+    formCounts = result.data ?? []
+    formsError = result.error
+  }
 
   if (formsError) {
     return NextResponse.json({ error: 'Failed to count forms' }, { status: 500 })
   }
 
-  // Count forms by user in memory (efficient since we only have user_id)
   const formsCountByUser = new Map<string, number>()
-  for (const form of formCounts ?? []) {
+  for (const form of formCounts) {
     formsCountByUser.set(form.user_id, (formsCountByUser.get(form.user_id) ?? 0) + 1)
   }
 

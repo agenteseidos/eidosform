@@ -380,3 +380,55 @@ Em ambiente novo, esses arquivos **não criam absolutamente nenhuma policy**.
 ### Resultado
 
 **P2 residual zerado.** A cadeia de migrations é segura em qualquer ponto de parada.
+
+---
+
+## Etapa 9 — Correções P3: qualidade, UX e hardening residual
+
+**Data:** 2026-04-30 | **Relatório:** `correcoes-p3.md`
+
+### Bugs funcionais corrigidos
+
+#### GET /api/folders não retornava resposta (S1-P2-8)
+**Arquivo:** `app/api/folders/route.ts`
+- O handler GET terminava sem `return` no caminho de sucesso — listagem de pastas estava quebrada.
+- Adicionado `return NextResponse.json({ folders: data })`.
+
+#### DELETE /api/folders/[id] não retornava resposta (S1-P2-9)
+**Arquivo:** `app/api/folders/[id]/route.ts`
+- Mesmo bug em DELETE — front-end não recebia confirmação 200.
+- Adicionado `return NextResponse.json({ success: true })`.
+
+### Hardening de segurança
+
+| Fix | Arquivo | Descrição |
+|---|---|---|
+| P3-I | `lib/asaas.ts` | `asaasFetch` não expõe mais `JSON.stringify(data.errors)` — loga internamente e lança erro genérico |
+| S1-P2-13 | `app/api/admin/users/route.ts` | Removido UUID mágico `00000000-...`; query forms pulada quando profileIds vazio |
+| S1-P2-14/18 | `app/api/forms/route.ts`, `app/api/forms/[id]/route.ts` | Slug regex reforçada: mínimo 3 chars, começa com alfanumérico (`/^[a-z0-9][a-z0-9-]{2,60}$/`) |
+| S1-P2-19 | `app/api/forms/[id]/duplicate/route.ts` | `duplicateError?.message` não vaza mais; mensagem genérica + logError |
+| S1-P2-25 | `middleware.ts` | logWarn em produção quando ALLOWED_ORIGINS vazio (CSRF check desativado) |
+| S1-P2-26 | `middleware.ts` | customDomainCache limitada a 1000 entradas (evict FIFO) |
+| S1-P3-5 | `app/api/responses/route.ts` | Removido `Authorization` de CORS Allow-Headers (endpoint não usa Bearer) |
+| S1-P3-7 | `app/api/forms/[id]/analytics/route.ts` | `select('*')` → `select('id')` nos COUNT queries |
+| S1-P3-8 | `question-renderer.tsx` | Validação de tamanho client-side antes do upload (10MB) |
+| S1-P3-9 | `question-renderer.tsx` | `accept="image/*"` → tipos exatos que o servidor aceita |
+
+### Padronização de logging (console.error → logError)
+
+Arquivos: `lib/auth.ts`, `app/api/admin/whatsapp/disconnect/route.ts`, `app/api/admin/whatsapp/status/route.ts`, `app/api/folders/route.ts`, `app/api/folders/[id]/route.ts`, `app/api/forms/route.ts`, `app/api/forms/[id]/route.ts`, `app/api/forms/[id]/webhook/route.ts`, `app/api/whatsapp/send/route.ts`
+
+### P3 já estavam corrigidos
+
+- P3-B: `__lastActivity` httpOnly: true (Etapa 4)
+- P3-G: `incrementResponseCount` agora é atômico via RPC
+- P3-L: CSV injection: fórmulas neutralizadas em `responses-dashboard.tsx`
+
+### P3 não corrigidos (complexidade desproporcional)
+
+Documentados em `correcoes-p3.md` — todos os itens são de baixo impacto ou requerem redesign maior (nova feature de audit log, isomorphic-dompurify, consolidação de WhatsApp endpoints, RPC SQL para analytics).
+
+### Validação
+
+- `tsc --noEmit`: ✅ 0 erros
+- `next build`: ✅ 0 erros

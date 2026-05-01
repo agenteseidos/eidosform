@@ -1,53 +1,63 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { KeyRound, Eye, EyeOff } from 'lucide-react'
+import { KeyRound, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import Link from 'next/link'
 
 export function PasswordSettings() {
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
-  const supabase = createClient()
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!newPassword || !confirmPassword) {
+    if (!currentPassword || !newPassword || !confirmPassword) {
       toast.error('Preencha todos os campos')
       return
     }
     if (newPassword.length < 8) {
-      toast.error('A senha deve ter no mínimo 8 caracteres')
+      toast.error('A nova senha deve ter no mínimo 8 caracteres')
       return
     }
     if (newPassword !== confirmPassword) {
       toast.error('As senhas não coincidem')
       return
     }
+    if (currentPassword === newPassword) {
+      toast.error('A nova senha deve ser diferente da senha atual')
+      return
+    }
 
     setIsLoading(true)
-    const { error } = await supabase.auth.updateUser({ password: newPassword })
-    setIsLoading(false)
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
 
-    if (error) {
-      toast.error('Falha ao alterar senha. Tente novamente.')
-    } else {
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || 'Falha ao alterar senha. Tente novamente.')
+        return
+      }
+
       toast.success('Senha alterada com sucesso! Faça login novamente.')
-      setNewPassword('')
-      setConfirmPassword('')
-      // Revoke all sessions by signing out — user must re-authenticate
-      await supabase.auth.signOut()
       window.location.href = '/login'
+    } catch {
+      toast.error('Erro inesperado. Tente novamente.')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -60,6 +70,29 @@ export function PasswordSettings() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
+          <Label htmlFor="currentPassword">Senha atual</Label>
+          <div className="relative mt-1.5">
+            <Input
+              id="currentPassword"
+              type={showCurrent ? 'text' : 'password'}
+              placeholder="Informe sua senha atual"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              disabled={isLoading}
+              className="pr-10"
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowCurrent(!showCurrent)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors h-11 w-11 flex items-center justify-center"
+            >
+              {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        <div>
           <Label htmlFor="newPassword">Nova senha</Label>
           <div className="relative mt-1.5">
             <Input
@@ -70,6 +103,7 @@ export function PasswordSettings() {
               onChange={(e) => setNewPassword(e.target.value)}
               disabled={isLoading}
               className="pr-10"
+              autoComplete="new-password"
             />
             <button
               type="button"
@@ -92,6 +126,7 @@ export function PasswordSettings() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               disabled={isLoading}
               className="pr-10"
+              autoComplete="new-password"
             />
             <button
               type="button"
@@ -103,20 +138,21 @@ export function PasswordSettings() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-1">
+        <div className="pt-1">
           <Button
             type="submit"
             disabled={isLoading}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
-            {isLoading ? 'Salvando...' : 'Alterar senha'}
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              'Alterar senha'
+            )}
           </Button>
-          <Link
-            href="/forgot-password"
-            className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
-          >
-            Esqueci minha senha
-          </Link>
         </div>
       </form>
     </Card>

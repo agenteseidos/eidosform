@@ -17,11 +17,13 @@ import { Button } from '@/components/ui/button'
 interface AccountActionsProps {
   planKey: string
   planExpiresAt?: string | null
+  planStatus?: string | null
 }
 
-export function AccountActions({ planKey, planExpiresAt }: AccountActionsProps) {
+export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlanStatus }: AccountActionsProps) {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [canceling, setCanceling] = useState(false)
+  const [cancelled, setCancelled] = useState(initialPlanStatus === 'canceling')
 
   const expiresFormatted = planExpiresAt
     ? new Date(planExpiresAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -37,6 +39,7 @@ export function AccountActions({ planKey, planExpiresAt }: AccountActionsProps) 
         return
       }
       setCancelOpen(false)
+      setCancelled(true)
       const expires = data.expiresAt
         ? new Date(data.expiresAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
         : null
@@ -68,17 +71,27 @@ export function AccountActions({ planKey, planExpiresAt }: AccountActionsProps) 
       {planKey !== 'free' && (
         <div className="pt-4 border-t border-slate-100">
           <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-slate-500">
-              {expiresFormatted
-                ? `Você continuará no plano Free após ${expiresFormatted}`
-                : 'Você continuará no plano Free'}
-            </p>
-            <button
-              onClick={() => setCancelOpen(true)}
-              className="text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors min-h-[44px] px-2 inline-flex items-center cursor-pointer"
-            >
-              Cancelar assinatura
-            </button>
+            {cancelled ? (
+              <p className="text-xs text-slate-500">
+                {expiresFormatted
+                  ? `Assinatura cancelada — acesso até ${expiresFormatted}`
+                  : 'Assinatura cancelada'}
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-500">
+                  {expiresFormatted
+                    ? `Você continuará no plano Free após ${expiresFormatted}`
+                    : 'Você continuará no plano Free'}
+                </p>
+                <button
+                  onClick={() => setCancelOpen(true)}
+                  className="text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors min-h-[44px] px-2 inline-flex items-center cursor-pointer"
+                >
+                  Cancelar assinatura
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -28,6 +28,9 @@ export async function POST() {
 
   const adminSupabase = createAdminClient()
 
+  // form_whatsapp_settings.created_by → profiles(id) has no ON DELETE CASCADE
+  await adminSupabase.from('form_whatsapp_settings').delete().eq('created_by', user.id)
+
   // Deleting the auth user cascades to profiles → forms → responses → answer_items
   // → billing_checkouts → folders → custom_domains → whatsapp_logs (via forms)
   const { error } = await adminSupabase.auth.admin.deleteUser(user.id)

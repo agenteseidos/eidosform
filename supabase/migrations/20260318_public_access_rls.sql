@@ -1,3 +1,9 @@
+-- OBSOLETE: anon_read_responses, anon_update_responses, anon_delete_answer_items superseded by
+-- 20260428_consolidate_rls_policies.sql and then removed by 20260430_fix_rls_responses_answer_items_profiles.sql.
+-- anon_insert_responses and anon_insert_answer_items superseded by 20260428_consolidate_rls_policies.sql.
+-- anon_read_published_forms removed by 20260430_fix_security_definer_public_access_whatsapp_logs.sql.
+-- Kept for migration history only.
+
 -- Allow anonymous (unauthenticated) users to read published forms
 CREATE POLICY "anon_read_published_forms"
   ON forms FOR SELECT

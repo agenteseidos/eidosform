@@ -1,3 +1,6 @@
+-- OBSOLETE: Superseded by 20260428_consolidate_rls_policies.sql (P1-K consolidation).
+-- Kept for migration history only. Do not rely on the policies created here.
+
 -- FIX P0: Corrige vazamento de RLS nas tabelas responses e answer_items
 -- Políticas anteriores usavam USING(true) permitindo acesso irrestrito a anônimos.
 -- As novas políticas restringem leitura/update/delete ao escopo do form publicado.

@@ -19,16 +19,12 @@ function getSupabase() {
   )
 }
 
-function detectPlanAndCycle(value: number): { plan: string; cycle: 'MONTHLY' | 'YEARLY' } {
+function detectPlanAndCycle(value: number): { plan: string; cycle: 'MONTHLY' | 'YEARLY' } | null {
   for (const [plan, prices] of Object.entries(PLAN_PRICES)) {
     if (value === prices.yearly) return { plan, cycle: 'YEARLY' }
     if (value === prices.monthly) return { plan, cycle: 'MONTHLY' }
   }
-
-  // P1-J: No heuristic fallback — if value doesn't match any known plan price,
-  // default to starter instead of guessing from description (fragile/unreliable)
-  logWarn('[asaas-webhook] Unmapped payment value, defaulting to starter', { value })
-  return { plan: 'starter', cycle: 'MONTHLY' }
+  return null
 }
 
 function calculateExpiryDate(cycle: 'MONTHLY' | 'YEARLY'): string {
@@ -242,9 +238,11 @@ export async function POST(req: NextRequest) {
           cycle = checkoutLink.cycle as 'MONTHLY' | 'YEARLY'
           log('[asaas-webhook] Using plan/cycle from checkout record', { plan, cycle })
         } else {
-          const detected = detectPlanAndCycle(
-            payment.value
-          )
+          const detected = detectPlanAndCycle(payment.value)
+          if (!detected) {
+            logError('[asaas-webhook] Unmapped payment value, no plan activated', { value: payment.value, customerId })
+            break
+          }
           plan = detected.plan
           cycle = detected.cycle
         }

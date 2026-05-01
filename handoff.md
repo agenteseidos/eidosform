@@ -252,7 +252,47 @@ Todos retornam `429` com header `Retry-After`.
 - **P0-B:** CSV/XLSX formula injection — requer neutralizar células no export (já existe `sanitize-formula.ts`, verificar se está aplicado)
 - **P0-C:** Domínios `.com` vs `.com.br` — requer decisão de marca/infra
 - **P0-D:** `responses_limit` default no trigger — migration simples mas afeta billing
-- **P1-A:** Anonymous response IDOR — requer redesign do fluxo de partial response
-- **P1-D:** Webhooks sem HMAC — requer geração/armazenamento de secret por usuário
-- **P1-F:** DNS rebinding em webhook URL — requer mudança de arquitetura de validação
-- **P2-21:** API Key plaintext — requer hash + migration de dados existentes
+
+---
+
+## Etapa 6 — Correções P1/P2 pendentes
+
+**Data:** 2026-04-30 | **Relatório:** `correcoes-pendentes.md`
+
+### Itens corrigidos nesta etapa
+
+A maioria dos itens P1/P2 já estava implementada nas etapas 1–5. Esta etapa corrigiu os 3 restantes:
+
+#### P1-J — Webhook Asaas sem ativação de plano inválido
+**Arquivo:** `app/api/webhooks/asaas/route.ts`
+- `detectPlanAndCycle` agora retorna `null` quando o valor não corresponde a nenhum preço conhecido (removido default para 'starter').
+- Handler PAYMENT_CONFIRMED/PAYMENT_RECEIVED: se não há `checkoutLink` E `detectPlanAndCycle` retorna null, loga erro e faz `break` sem ativar plano.
+
+#### P1-K — Migrations RLS conflitantes marcadas como obsoletas
+**Arquivos:**
+- `supabase/migrations/20260318_public_access_rls.sql`
+- `supabase/migrations/20260327_fix_p0_rls_responses.sql`
+- `supabase/migrations/20260327_fix_rls_p0_v2.sql`
+- `supabase/migrations/20260327_fix_rls_response_leak.sql`
+- `supabase/migrations/20260327_fix_response_visibility_rls.sql`
+
+Todos marcados com header `-- OBSOLETE:` apontando para a migration definitiva `20260428_consolidate_rls_policies.sql`.
+
+#### P2-E — API key plaintext fallback removido
+**Arquivo:** `lib/api-key-auth.ts`
+- Removido bloco de fallback que buscava `api_key` em plaintext na tabela `profiles`.
+- Migration `20260428_hash_api_keys.sql` já limpou todos os valores plaintext (SET api_key = NULL).
+- Agora usa exclusivamente `verify_api_key_hash` RPC (SHA-256).
+
+### Itens já implementados (verificados)
+- **P1-A** — IDOR via X-Response-Id: ✅ corrigido em `app/api/responses/route.ts:254-259`
+- **P1-D** — Webhooks HMAC: ✅ corrigido em `lib/webhook-dispatcher.ts`
+- **P1-F** — DNS rebinding: ✅ corrigido em `lib/webhook-validator.ts`
+- **P2-N** — Race condition response count: ✅ RPC `check_and_increment_response` em `lib/plan-limits.ts`
+- **P2-G** — Dashboard select(*): ✅ colunas específicas + RPC em `app/(dashboard)/forms/page.tsx`
+- **P2-F** — handleDowngrade carrega responses: ✅ RPC `get_response_counts_by_forms` em `lib/plan-limits.ts`
+- **P2-O** — PATCH sem limite de payload: ✅ limite 500KB em `app/api/forms/[id]/route.ts`
+- **P2-I** — Export sem rate limit: ✅ `checkRateLimitAsync` em `app/api/forms/[id]/export/route.ts`
+
+### Validação
+- `next build` passa sem erros

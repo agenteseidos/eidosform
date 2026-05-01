@@ -1,3 +1,6 @@
+-- OBSOLETE: Superseded by 20260428_consolidate_rls_policies.sql (P1-K consolidation).
+-- Kept for migration history only. Do not rely on the policies created here.
+
 -- FIX P0 v2: Garante remoção completa de todas as policies anon problemáticas em responses e answer_items.
 -- Esta migration substitui e reforça a 20260327_fix_p0_rls_responses.sql.
 -- As policies anteriores usavam USING(true) permitindo leitura/update irrestrito por anônimos.

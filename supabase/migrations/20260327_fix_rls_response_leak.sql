@@ -1,3 +1,6 @@
+-- OBSOLETE: Superseded by 20260428_consolidate_rls_policies.sql (P1-K consolidation).
+-- Kept for migration history only. Do not rely on the policies created here.
+
 -- P0 Fix: Remove overly permissive anon policies on responses and answer_items
 -- anon should only INSERT (submit forms). SELECT/UPDATE/DELETE restricted to authenticated owners.
 

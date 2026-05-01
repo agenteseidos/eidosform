@@ -1,3 +1,6 @@
+-- OBSOLETE: Superseded by 20260428_consolidate_rls_policies.sql (P1-K consolidation).
+-- Kept for migration history only. Do not rely on the policies created here.
+
 -- Fix QA Round 1: authenticated owners must be able to read responses and answer items
 -- even after anonymous public submissions.
 

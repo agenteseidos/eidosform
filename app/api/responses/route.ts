@@ -90,6 +90,7 @@ function isResponseComplete(
 
 // POST /api/responses — submeter resposta (completa ou parcial)
 export async function POST(req: NextRequest) {
+  try {
   // Bug #2: Rate limit — max 10 per minute per IP
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown'
   const rateCheck = await checkResponseRateLimitAsync(ip)
@@ -408,6 +409,10 @@ export async function POST(req: NextRequest) {
       'X-RateLimit-Remaining': String(rateCheck.remaining),
     },
   })
+  } catch (err) {
+    logError('POST /api/responses crashed:', err)
+    return NextResponse.json({ error: 'Erro interno do servidor', detail: err instanceof Error ? err.message : String(err) }, { status: 500, headers: CORS_HEADERS })
+  }
 }
 
 // GET /api/responses — list responses for authenticated user

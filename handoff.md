@@ -432,3 +432,59 @@ Documentados em `correcoes-p3.md` — todos os itens são de baixo impacto ou re
 
 - `tsc --noEmit`: ✅ 0 erros
 - `next build`: ✅ 0 erros
+
+---
+
+## Fix: Upload de imagem no form-player (Storage + payload limit)
+
+**Data:** 2026-05-02  
+**Responsável:** Toin  
+**Tipo:** Bug fix  
+**Status:** ✅ Concluída
+
+### Problema
+Quando um respondente anexa uma imagem num formulário, o frontend codifica em base64 e inclui no JSON do payload. Isso ultrapassava o limite de 50KB (`MAX_PAYLOAD_BYTES`), retornando erro 413.
+
+### Causa raiz
+O endpoint `/api/upload` existente requer autenticação (`createClient`), mas respondentes de forms são anônimos. Quando falhava com 503 (R2 não configurado), o frontend fazia fallback para base64 — que infla o payload.
+
+### O que foi feito
+
+#### 1. Novo endpoint público de upload
+**Arquivo:** `app/api/upload/public/route.ts` (NOVO)
+
+- Endpoint `/api/upload/public` — sem autenticação, acessível por respondentes anônimos
+- Rate limit por IP (reutiliza `checkUploadRateLimitAsync`)
+- Validação de magic bytes (mesmo padrão do endpoint autenticado)
+- CORS headers públicas (necessário para forms embutidos em qualquer domínio)
+- Arquivos salvos em `public-uploads/` no R2 (separado de uploads autenticados)
+- Max 10MB, tipos: JPEG, PNG, GIF, WebP, PDF
+
+#### 2. Frontend atualizado
+**Arquivo:** `components/form-player/question-renderer.tsx`
+
+- Upload agora aponta para `/api/upload/public` em vez de `/api/upload`
+- Fallback para base64 mantido (para quando R2 não está configurado)
+- Quando R2 está disponível, o payload contém apenas a URL pública (poucos bytes)
+
+#### 3. Payload limit aumentado
+**Arquivo:** `app/api/responses/route.ts`
+
+- `MAX_PAYLOAD_BYTES` aumentado de 50KB para 1MB
+- Justificativa: formulários longos com campos de texto podem ultrapassar 50KB mesmo sem uploads
+- Proteção contra abuso mantida: rate limit (10 req/min/IP), honeypot, MAX_ANSWER_KEYS (200)
+
+### Validação
+- `tsc --noEmit`: ✅ 0 erros
+
+### Arquivos alterados
+- `app/api/upload/public/route.ts` (NOVO)
+- `components/form-player/question-renderer.tsx` (modificado)
+- `app/api/responses/route.ts` (modificado)
+- `handoff.md` (atualizado)
+
+### Pendências
+- Nenhuma pendência de código
+
+### Nota
+Bucket do Supabase Storage não foi criado pois o projeto já usa R2 (Cloudflare) como storage. O endpoint existente `/api/upload` (autenticado) e o novo `/api/upload/public` (anônimo) ambos usam R2.

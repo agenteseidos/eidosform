@@ -47,7 +47,7 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch('/api/upload', {
+      const response = await fetch('/api/upload/public', {
         method: 'POST',
         body: formData,
       })
@@ -79,7 +79,7 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
         throw new Error(result.error || 'Falha no upload')
       }
 
-      // Success - store the R2 URL
+      // Success - store the URL
       onChange({
         name: result.file.name,
         type: result.file.type,

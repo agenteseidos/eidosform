@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { cancelSubscription } from '@/lib/asaas'
+import { logError } from '@/lib/logger'
 
 export async function POST() {
   const supabase = await createClient()
@@ -36,7 +37,8 @@ export async function POST() {
 
   try {
     await cancelSubscription(profile.asaas_subscription_id)
-  } catch {
+  } catch (err) {
+    logError('Asaas cancel failed', err, { subscriptionId: profile.asaas_subscription_id, userId: user.id })
     // Reverte o status para evitar inconsistência
     await supabase
       .from('profiles')

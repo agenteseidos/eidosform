@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { cancelSubscription } from '@/lib/asaas'
+import { logError } from '@/lib/logger'
 
 export async function POST() {
   const supabase = await createClient()
@@ -21,8 +22,8 @@ export async function POST() {
   if (profile?.asaas_subscription_id && profile.plan_status !== 'cancelled') {
     try {
       await cancelSubscription(profile.asaas_subscription_id)
-    } catch {
-      // Best-effort — proceed with account deletion regardless
+    } catch (err) {
+      logError('Asaas cancel on delete failed', err, { subscriptionId: profile.asaas_subscription_id, userId: user.id })
     }
   }
 

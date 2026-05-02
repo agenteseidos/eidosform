@@ -256,9 +256,19 @@ function validateFileUpload(value: unknown): FieldValidationResult {
   if (typeof obj.name !== 'string' || typeof obj.url !== 'string') {
     return { valid: false, error: 'Upload deve ter name (string) e url (string)' }
   }
-  // Aceita data URLs (base64) e URLs normais
-  if (!obj.url.startsWith('data:') && !obj.url.startsWith('http')) {
+  // URL must be from Supabase Storage (no base64)
+ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const allowedPrefix = supabaseUrl
+    ? `${supabaseUrl}/storage/v1/object/public/form-uploads/`
+    : '/storage/v1/object/public/form-uploads/'
+  if (!obj.url.startsWith(allowedPrefix) && !obj.url.startsWith('https://') && !obj.url.startsWith('http://')) {
     return { valid: false, error: 'URL do arquivo inválida' }
+  }
+  // Validate size if present
+  if (obj.size !== undefined) {
+    if (typeof obj.size !== 'number' || obj.size <= 0 || obj.size > 10 * 1024 * 1024) {
+      return { valid: false, error: 'Tamanho do arquivo inválido' }
+    }
   }
   return { valid: true }
 }

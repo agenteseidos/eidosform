@@ -24,9 +24,10 @@ interface FileUploadQuestionProps {
   value: FileUploadValue | null
   onChange: (value: FileUploadValue | null) => void
   theme: ThemeConfig
+  formId: string
 }
 
-const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, value, onChange, theme }: FileUploadQuestionProps) {
+const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, value, onChange, theme, formId }: FileUploadQuestionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -44,47 +45,38 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
     setIsUploading(true)
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await fetch('/api/upload/public', {
+      // 1. Request signed upload URL
+      const signRes = await fetch('/api/upload/sign-url', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ form_id: formId, mime: file.type, size: file.size }),
       })
 
-      const result = await response.json()
-
-      if (!response.ok) {
-        // If R2 is not configured, fall back to base64
-        if (response.status === 503 && !result.configured) {
-          // Fall back to base64 for local/demo usage
-          const reader = new FileReader()
-          reader.onload = () => {
-            onChange({
-              name: file.name,
-              type: file.type,
-              size: file.size,
-              url: reader.result as string, // base64 data URL
-            })
-            setIsUploading(false)
-          }
-          reader.onerror = () => {
-            setUploadError('Falha ao ler arquivo')
-            setIsUploading(false)
-          }
-          reader.readAsDataURL(file)
-          return
-        }
-        
-        throw new Error(result.error || 'Falha no upload')
+      const signData = await signRes.json()
+      if (!signRes.ok) {
+        throw new Error(signData.error || 'Erro ao obter URL de upload')
       }
 
-      // Success - store the URL
+      // 2. Upload directly to Supabase Storage (browser → storage)
+      const uploadRes = await fetch(signData.upload_url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type,
+          Authorization: `Bearer ${signData.upload_token}`,
+        },
+        body: file,
+      })
+
+      if (!uploadRes.ok) {
+        throw new Error('Falha ao enviar arquivo')
+      }
+
+      // 3. Store only the public URL (no base64)
       onChange({
-        name: result.file.name,
-        type: result.file.type,
-        size: result.file.size,
-        url: result.url,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        url: signData.public_url,
       })
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Falha no upload')
@@ -529,6 +521,7 @@ interface QuestionRendererProps {
   error?: string
   onSubmit: (skipValidation?: boolean, valueOverride?: Json) => void
   onClearError?: () => void
+  formId: string
 }
 
 /** Block dangerous URL schemes (javascript:, data:, vbscript:) for XSS prevention */
@@ -552,7 +545,8 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
   theme,
   error,
   onSubmit,
-  onClearError
+  onClearError,
+  formId,
 }: QuestionRendererProps) {
   const [isFocused, setIsFocused] = useState(false)
 
@@ -966,6 +960,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
           value={value as FileUploadValue | null}
           onChange={(v) => onChange(v as Json)}
           theme={theme}
+          formId={formId}
         />
       )
 

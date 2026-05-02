@@ -898,6 +898,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                   onChange={(value) => updateAnswer(currentQuestion.id, value)}
                   theme={theme}
                   error={errors[currentQuestion.id]}
+                  formId={form.id}
                   onSubmit={(skipValidation?: boolean, valueOverride?: Json) => {
                     const pendingAnswer = valueOverride !== undefined
                       ? { questionId: currentQuestion.id, value: valueOverride }

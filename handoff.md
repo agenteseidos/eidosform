@@ -488,3 +488,94 @@ O endpoint `/api/upload` existente requer autenticação (`createClient`), mas r
 
 ### Nota
 Bucket do Supabase Storage não foi criado pois o projeto já usa R2 (Cloudflare) como storage. O endpoint existente `/api/upload` (autenticado) e o novo `/api/upload/public` (anônimo) ambos usam R2.
+
+---
+
+## Upload via Supabase Storage (Signed URL)
+
+**Data:** 2026-05-02  
+**Responsável:** Toin  
+**Tipo:** Feature/Migração  
+**Status:** ✅ Concluída
+
+### Problema
+Upload de imagem no form-player usava base64 inline no JSON → payload grande → erro 413. R2 não estava configurado. Migrado para Supabase Storage com upload direto do browser via signed URL.
+
+### O que foi feito
+
+#### 1. Migration — bucket `form-uploads`
+**Arquivo:** `supabase/migrations/20260502_create_form_uploads_bucket.sql` (NOVO)
+
+- Bucket público para leitura (public: true)
+- Limite 10MB, tipos: JPEG, PNG, GIF, WebP, PDF
+- Policy SELECT para qualquer um (public read)
+- Sem policy INSERT para anon — upload só via signed URL (service_role)
+
+#### 2. Novo endpoint `/api/upload/sign-url`
+**Arquivo:** `app/api/upload/sign-url/route.ts` (NOVO)
+
+- Recebe `{ form_id, mime, size }`
+- Rate limit por IP (checkResponseRateLimitAsync)
+- Valida form existe e está published (via createAdminClient)
+- Valida tipo e tamanho (máx 10MB)
+- Gera caminho: `{user_id}/{form_id}/{uuid}.{ext}`
+- Retorna `{ upload_url, upload_token, public_url, path }` via `createSignedUploadUrl`
+
+#### 3. Frontend — upload direto browser → Supabase
+**Arquivo:** `components/form-player/question-renderer.tsx` (modificado)
+
+- Pedir signed URL do `/api/upload/sign-url`
+- PUT direto pro Supabase Storage (sem passar pelo Next.js)
+- Salva apenas `{ url: public_url, name, size, type }`
+- Fallback base64 removido — se upload falhar, mostra erro claro
+- `formId` adicionado às props do QuestionRenderer
+
+**Arquivo:** `components/form-player/form-player.tsx` (modificado)
+
+- Passa `formId={form.id}` para QuestionRenderer
+
+#### 4. Payload limit reduzido
+**Arquivo:** `app/api/responses/route.ts` (modificado)
+
+- `MAX_PAYLOAD_BYTES` de volta para 50KB (upload agora é via Storage, não no payload)
+
+#### 5. Validação de upload atualizada
+**Arquivo:** `lib/field-validators.ts` (modificado)
+
+- Valida URL do Supabase Storage
+- Valida size se presente
+- Removida aceitação de data URLs (base64)
+
+#### 6. Upload autenticado migrado para Supabase Storage
+**Arquivo:** `app/api/upload/route.ts` (reescrito)
+
+- Removida dependência de R2/S3
+- Upload via admin client (service_role) para bucket `form-uploads`
+- Caminho: `assets/{user_id}/{uuid}-{name}.{ext}`
+- Magic bytes validation mantida
+
+#### 7. Endpoint público deletado
+**Deletado:** `app/api/upload/public/route.ts`
+
+#### 8. R2 limpo
+- Nenhuma referência a R2 no código fonte (apenas node_modules)
+- Variáveis R2_* podem ser removidas do Vercel se desejado
+
+### Validação
+- `tsc --noEmit`: ✅ 0 erros
+
+### Pendências
+- **Migration precisa ser aplicada** no Supabase: `20260502_create_form_uploads_bucket.sql`
+- Testar upload ponta-a-ponta com imagem 5MB
+- Testar form sem upload continua funcionando
+
+### Arquivos alterados
+- `supabase/migrations/20260502_create_form_uploads_bucket.sql` (NOVO)
+- `app/api/upload/sign-url/route.ts` (NOVO)
+- `app/api/upload/route.ts` (reescrito)
+- `app/api/upload/public/route.ts` (DELETADO)
+- `components/form-player/question-renderer.tsx` (modificado)
+- `components/form-player/form-player.tsx` (modificado)
+- `app/api/responses/route.ts` (modificado)
+- `lib/field-validators.ts` (modificado)
+- `handoff.md` (atualizado)

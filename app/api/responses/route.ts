@@ -15,7 +15,7 @@ import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 // Maximum payload size (1MB — covers long text forms with URLs; file uploads go to R2)
-const MAX_PAYLOAD_BYTES = 1024 * 1024
+const MAX_PAYLOAD_BYTES = 50 * 1024
 // Maximum number of answer keys (prevents flooding with fake question ids)
 const MAX_ANSWER_KEYS = 200
 

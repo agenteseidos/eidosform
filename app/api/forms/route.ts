@@ -7,6 +7,8 @@ import { checkFormLimit } from '@/lib/plan-limits'
 import { PLANS } from '@/lib/plan-limits'
 import { normalizePlan } from '@/lib/plans'
 import { logError } from '@/lib/logger'
+import { FormCreateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
+import { sanitizeContentBlocks } from '@/lib/html'
 
 // T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {
@@ -76,20 +78,18 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const body = await req.json()
-  const { title, description, slug, theme, questions, thank_you_message, pixels, redirect_url, webhook_url } = body
+  const rawBody = await req.json()
 
-  if (!title || !slug) {
-    return NextResponse.json({ error: 'title and slug are required' }, { status: 400 })
-  }
-
-  // Validate slug format: min 3 chars, starts with alphanumeric, lowercase + hyphens only
-  if (!/^[a-z0-9][a-z0-9-]{2,60}$/.test(slug)) {
+  // Etapa 7 — Zod schema validation (defense-in-depth before business rules).
+  const parsed = FormCreateSchema.safeParse(rawBody)
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: 'slug deve ter entre 3 e 61 caracteres, começar com letra ou número, e conter apenas letras minúsculas, números e hífens' },
+      { error: 'Payload inválido', issues: formatZodIssues(parsed.error) },
       { status: 400 }
     )
   }
+  const body = parsed.data
+  const { title, description, slug, theme, questions, thank_you_message, pixels, redirect_url, webhook_url } = body
 
   // Fetch plan for feature gates and limits
   const { data: profile } = await supabase
@@ -140,6 +140,9 @@ export async function POST(req: NextRequest) {
   // P1 FIX: Block webhook_url for users without webhooks feature
   const sanitizedWebhookUrl = (webhook_url && planConfig?.webhooks) ? webhook_url : null
 
+  // P0-FB1: server-side sanitize content_block bodies before persisting.
+  const sanitizedQuestions = sanitizeContentBlocks(questions ?? []) as FormInsert['questions']
+
   const insert: FormInsert = {
     user_id: user.id,
     title,
@@ -147,7 +150,7 @@ export async function POST(req: NextRequest) {
     slug,
     status: 'draft',
     theme: theme || 'midnight',
-    questions: questions || [],
+    questions: sanitizedQuestions ?? [],
     thank_you_message: thank_you_message || 'Obrigado pela sua resposta!',
     pixels: sanitizedPixels,
     plan: userPlan,

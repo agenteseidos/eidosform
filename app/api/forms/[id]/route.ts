@@ -7,12 +7,14 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { validateFormIntegrations } from '@/lib/form-integrations'
 import { extractSpreadsheetId, connectSpreadsheet } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
+import { FormUpdateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
+import { sanitizeContentBlocks } from '@/lib/html'
 
 // T1/T2: Ensure URLs have protocol before persisting
-function ensureHttps(url: string): string {
-  if (!url) return url
+function ensureHttps(url: string | null | undefined): string | null {
+  if (!url) return null
   const trimmed = url.trim()
-  if (!trimmed) return trimmed
+  if (!trimmed) return null
   if (/^https?:\/\//i.test(trimmed)) return trimmed
   return `https://${trimmed}`
 }
@@ -68,26 +70,27 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
-  const body = await req.json()
+  const rawBody = await req.json()
 
   // P2-O: Payload size limit for PATCH (500KB)
-  const bodyStr = JSON.stringify(body)
+  const bodyStr = JSON.stringify(rawBody)
   if (bodyStr.length > 500 * 1024) {
     return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
   }
 
+  // Etapa 7 — Zod schema validation (defense-in-depth before business rules).
+  const parsed = FormUpdateSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Payload inválido', issues: formatZodIssues(parsed.error) },
+      { status: 400 }
+    )
+  }
+  const body = parsed.data
   const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url } = body
 
   // P1-C: Ignore 'plan' field — plan is managed exclusively via billing/admin endpoints
   // Prevents users from escalating their own plan via PATCH
-
-  // Validate slug if provided: min 3 chars, starts with alphanumeric
-  if (slug && !/^[a-z0-9][a-z0-9-]{2,60}$/.test(slug)) {
-    return NextResponse.json(
-      { error: 'slug deve ter entre 3 e 61 caracteres, começar com letra ou número, e conter apenas letras minúsculas, números e hífens' },
-      { status: 400 }
-    )
-  }
 
   // Validate meta_pixel_id if pixels object is provided
   if (pixels !== undefined && pixels !== null && typeof pixels === 'object') {
@@ -282,19 +285,24 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     connectedSheetsId = undefined
   }
 
+  // P0-FB1: server-side sanitize content_block bodies before persisting.
+  const sanitizedQuestions = questions !== undefined
+    ? (sanitizeContentBlocks(questions) as FormUpdate['questions'])
+    : undefined
+
   const update: FormUpdate = {
     ...(title !== undefined && { title }),
     ...(description !== undefined && { description }),
     ...(slug !== undefined && { slug }),
     ...(status !== undefined && { status }),
     ...(theme !== undefined && { theme }),
-    ...(questions !== undefined && { questions }),
+    ...(sanitizedQuestions !== undefined && { questions: sanitizedQuestions }),
     ...(thank_you_message !== undefined && { thank_you_message }),
     ...(thank_you_title !== undefined && { thank_you_title }),
     ...(thank_you_description !== undefined && { thank_you_description }),
     ...(thank_you_button_text !== undefined && { thank_you_button_text }),
     ...(thank_you_button_url !== undefined && { thank_you_button_url: ensureHttps(thank_you_button_url) }),
-    ...(pixels !== undefined && { pixels }),
+    ...(pixels !== undefined && { pixels: pixels as FormUpdate['pixels'] }),
     ...(redirect_url !== undefined && { redirect_url: ensureHttps(redirect_url) }),
     ...(webhook_url !== undefined && { webhook_url }),
     ...(pixel_event_on_start !== undefined && { pixel_event_on_start }),

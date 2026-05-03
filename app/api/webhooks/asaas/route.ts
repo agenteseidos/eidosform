@@ -163,9 +163,29 @@ interface AsaasSubscription {
 }
 
 interface AsaasWebhookBody {
+  id?: string
   event: string
   payment?: AsaasPayment
   subscription?: AsaasSubscription
+}
+
+/**
+ * Check idempotency: returns true if this event_id was already processed.
+ * Inserts a record atomically — duplicate inserts fail the unique constraint.
+ */
+async function checkAndMarkIdempotent(eventId: string, event: string): Promise<boolean> {
+  const supabase = getSupabase()
+  const { error } = await supabase
+    .from('asaas_webhook_events')
+    .insert({ event_id: eventId, event })
+
+  if (error) {
+    // Unique constraint violation means already processed
+    if (error.code === '23505') return true
+    // Other errors: log but allow processing (fail open to avoid missing payments)
+    logWarn('[asaas-webhook] Idempotency check error (allowing through)', { eventId, error: error.message })
+  }
+  return false
 }
 
 export async function POST(req: NextRequest) {
@@ -177,9 +197,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to read body' }, { status: 400 })
   }
 
-  // P2-C: Only accept token via header (asaas-access-token or access_token), not query param
   const webhookToken = (process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN)?.trim()
-  const accessTokenHeader = req.headers.get('asaas-access-token') ?? req.headers.get('access_token')
   const hmacHeader = req.headers.get('asaas-signature')
 
   if (!webhookToken) {
@@ -187,12 +205,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  const tokenMatch = accessTokenHeader === webhookToken
+  // Only HMAC — token fallback removed (P1-INT3)
   const hmacMatch = !!(hmacHeader && verifyAsaasSignature(rawBody, hmacHeader, webhookToken))
 
-  if (!tokenMatch && !hmacMatch) {
-    logWarn('[asaas-webhook] Auth failed', {
-      hasHeader: !!accessTokenHeader,
+  if (!hmacMatch) {
+    logWarn('[asaas-webhook] HMAC auth failed', {
+      hasHmacHeader: !!hmacHeader,
       tokenPrefix: webhookToken.slice(0, 8),
     })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -206,10 +224,20 @@ export async function POST(req: NextRequest) {
   }
 
   const { event, payment, subscription } = body
+
+  // Idempotency: use body.id if present, else hash of (event + customerId + subscriptionId)
+  const eventId = body.id ?? `${event}:${payment?.customer ?? subscription?.customer ?? ''}:${payment?.subscription ?? subscription?.id ?? ''}`
+
+  const alreadyProcessed = await checkAndMarkIdempotent(eventId, event)
+  if (alreadyProcessed) {
+    log('[asaas-webhook] Duplicate event ignored (idempotent)', { eventId, event })
+    return NextResponse.json({ received: true, duplicate: true })
+  }
+
   const supabase = getSupabase()
 
-  log('[asaas-webhook] Event received', { event })
-  await logWebhookEvent({ event, status: 'received', payload: body })
+  log('[asaas-webhook] Event received', { event, eventId })
+  await logWebhookEvent({ event, status: 'received', profile_id: undefined })
 
   try {
     switch (event) {
@@ -277,7 +305,6 @@ export async function POST(req: NextRequest) {
         })
 
         // Cancel old subscription if user had a different one (upgrade scenario)
-        // The new subscription is already confirmed, so it's safe to cancel the old one.
         try {
           const { data: existingProfile } = await supabase
             .from('profiles')
@@ -305,7 +332,7 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        const { user, checkoutLink } = await resolveBillingContext({
+        const { user } = await resolveBillingContext({
           customerId,
           subscriptionId: payment?.subscription ?? null,
         })
@@ -317,7 +344,7 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        // Guard: only apply downgrade if the event belongs to the profile's active subscription
+        // Guard: compare payment.subscription with profile's active subscription BEFORE downgrade
         const overdueSubId = payment?.subscription ?? null
         const { data: overdueProfile } = await supabase
           .from('profiles')
@@ -436,6 +463,7 @@ export async function POST(req: NextRequest) {
       }
 
       default:
+        logWarn('[asaas-webhook] Unknown event type — ignoring', { event })
         break
     }
   } catch (err) {
@@ -443,12 +471,11 @@ export async function POST(req: NextRequest) {
     await logWebhookEvent({
       event,
       status: 'error',
-      payload: body,
       error: err instanceof Error ? err.message : String(err),
     })
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 
-  await logWebhookEvent({ event, status: 'processed', payload: body })
+  await logWebhookEvent({ event, status: 'processed' })
   return NextResponse.json({ received: true })
 }

@@ -39,18 +39,29 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) {
-      // Return generic error to avoid leaking auth details
+      // P1 / F2-E2-01: Return generic error to avoid leaking auth details
       return NextResponse.json(
-        { error: 'Invalid email or password' },
+        { error: 'E-mail ou senha incorretos' },
         { status: 401 }
       )
     }
 
-    // Login successful
+    // P0-3 / F2-E2-01: Block sign-in for unconfirmed emails so the session is
+    // never established before the email is verified.
+    if (!data.user?.email_confirmed_at) {
+      // Drop the partial session that signInWithPassword may have created.
+      await supabase.auth.signOut().catch(() => {})
+      return NextResponse.json(
+        { error: 'Confirme seu email antes de entrar.', code: 'EMAIL_NOT_CONFIRMED' },
+        { status: 403 }
+      )
+    }
+
+    // Slim response: do not leak the full user object.
     return NextResponse.json(
       {
         success: true,
-        user: data.user,
+        redirectTo: '/forms',
       },
       { status: 200 }
     )

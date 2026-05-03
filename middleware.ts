@@ -119,9 +119,9 @@ export async function middleware(request: NextRequest) {
 
   // P1-13: CSRF protection — verify Origin header on write requests to /api/*
   if (isWriteRequest(request) && request.nextUrl.pathname.startsWith('/api/')) {
-    // Skip public endpoints that are meant to be called from any domain,
-    // plus verified custom domains (auth cookies are domain-scoped, so CSRF risk is nil)
-    const publicWritePaths = ['/api/responses', '/api/auth/']
+    // F2-E5-02: Only /api/responses is intentionally CORS-open (forms embed
+    // anywhere). /api/auth/* must enforce CSRF since it sets the session cookie.
+    const publicWritePaths = ['/api/responses']
     const isPublic = publicWritePaths.some(p => request.nextUrl.pathname.startsWith(p)) || isVerifiedCustomDomain
 
     if (!isPublic) {

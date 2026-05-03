@@ -90,13 +90,7 @@ function RegisterForm() {
     const json = await res.json().catch(() => ({}))
 
     if (!res.ok) {
-      if (json.code === 'EMAIL_ALREADY_REGISTERED') {
-        toast.error('Este e-mail já está cadastrado. Faça login.')
-      } else if (json.code === 'EMAIL_ALREADY_PENDING') {
-        toast.error('Este e-mail já foi cadastrado, mas ainda não confirmou o cadastro.')
-      } else {
-        toast.error(json.error || 'Falha ao criar conta. Tente novamente.')
-      }
+      toast.error(json.error || 'Falha ao criar conta. Tente novamente.')
       setIsLoading(false)
     } else {
       if (json.autoConfirmed) {

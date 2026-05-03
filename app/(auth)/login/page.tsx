@@ -59,6 +59,14 @@ function LoginForm() {
       if (!res.ok) {
         if (res.status === 429) {
           toast.error(`Muitas tentativas. Aguarde ${data.retryAfter || 60}s antes de tentar novamente.`)
+        } else if (data.code === 'EMAIL_NOT_CONFIRMED') {
+          toast.error('Confirme seu email antes de entrar. Reenviamos o link para sua caixa de entrada.')
+          // Fire-and-forget: ask Supabase to resend the confirmation email
+          fetch('/api/auth/resend-verification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+          }).catch(() => {})
         } else {
           toast.error('E-mail ou senha incorretos')
         }
@@ -68,7 +76,7 @@ function LoginForm() {
 
       // Session is set by the API via cookies — refresh supabase client
       await supabase.auth.getSession()
-      router.push('/forms')
+      router.push(data.redirectTo || '/forms')
     } catch {
       toast.error('Falha ao entrar. Tente novamente.')
       setIsLoading(false)

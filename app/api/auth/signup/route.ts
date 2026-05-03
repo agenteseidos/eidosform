@@ -40,8 +40,10 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedEmail = email.toLowerCase().trim()
-    // P0-1: Use signUp directly — it already returns a clear error for duplicate emails.
-    // Previously used admin.listUsers() which was O(n), leaked all user metadata, and could OOM.
+    // F2-E5-01: Avoid email enumeration. Always return the same generic body
+    // regardless of whether the email is new, already registered, or pending
+    // confirmation. Real errors (e.g. invalid format, weak password) are still
+    // surfaced because they apply equally to any caller.
     const supabase = await createClient()
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
@@ -53,30 +55,34 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) {
-      // P0-1: Map common Supabase auth errors to user-friendly messages
-      const msg = error.message ?? 'Signup failed'
-      let userMessage = 'Erro ao criar conta. Tente novamente.'
-      if (msg.includes('already registered') || msg.includes('already been registered')) {
-        userMessage = 'Este e-mail já está cadastrado. Faça login.'
-      } else if (msg.includes('Email not confirmed')) {
-        userMessage = 'Este e-mail já foi cadastrado, mas ainda não foi confirmado.'
+      const msg = error.message ?? ''
+      // Treat duplicate-email errors as success to prevent enumeration; Supabase
+      // sends a re-confirmation email instead of creating a duplicate account.
+      const isDuplicate =
+        msg.includes('already registered') ||
+        msg.includes('already been registered') ||
+        msg.includes('Email not confirmed')
+      if (isDuplicate) {
+        return NextResponse.json(
+          { success: true, message: 'Verifique seu email para confirmar a conta.' },
+          { status: 201 }
+        )
       }
+      console.error('Signup error:', error)
       return NextResponse.json(
-        { error: userMessage, code: msg.includes('already') ? 'EMAIL_ALREADY_REGISTERED' : 'SIGNUP_ERROR' },
+        { error: 'Erro ao criar conta. Tente novamente.', code: 'SIGNUP_ERROR' },
         { status: 400 }
       )
     }
 
-    // If Supabase returns a session, email autoconfirm is ON — user is already authenticated
     const autoConfirmed = !!data.session
     return NextResponse.json(
       {
         success: true,
-        user: data.user,
         autoConfirmed,
         message: autoConfirmed
-          ? 'Signup successful. Welcome!'
-          : 'Signup successful. Please verify your email.',
+          ? 'Cadastro concluído.'
+          : 'Verifique seu email para confirmar a conta.',
       },
       { status: 201 }
     )

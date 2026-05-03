@@ -73,15 +73,11 @@ export async function checkRateLimitAsync(
 
   try {
     const supabase = createPublicClient()
-    const rpc = supabase.rpc as unknown as (
-      fn: string,
-      args: Record<string, unknown>
-    ) => Promise<{ data: unknown; error: { message?: string } | null }>
-    const { data, error } = await rpc('check_rate_limit', {
+    const { data, error } = await supabase.rpc('check_rate_limit', {
       p_key: `api:${key}`,
       p_window_ms: windowMs,
       p_max_requests: maxAttempts,
-    })
+    }) as { data: unknown; error: { message?: string } | null }
 
     if (error || !data || !Array.isArray(data) || data.length === 0) {
       // Fallback to memory with custom window

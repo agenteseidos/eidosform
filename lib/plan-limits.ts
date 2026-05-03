@@ -92,34 +92,35 @@ export async function checkAndIncrementResponseCount(userId: string): Promise<{
 }> {
   const supabase = createPublicClient()
 
-  const rpc = supabase.rpc as unknown as (
-    fn: string,
-    args: Record<string, unknown>
-  ) => {
-    single: () => Promise<{
-      data: {
-        allowed: boolean
-        usage: number
-        limit_val: number
-        plan: PlanName
-        near_limit: boolean
-      } | null
-      error: unknown
-    }>
-  }
+  try {
+    const { data, error } = await supabase
+      .rpc('check_and_increment_response', { p_user_id: userId })
+      .single() as {
+        data: {
+          allowed: boolean
+          usage: number
+          limit_val: number
+          plan: PlanName
+          near_limit: boolean
+        } | null
+        error: unknown
+      }
 
-  const { data, error } = await rpc('check_and_increment_response', { p_user_id: userId }).single()
+    if (error || !data) {
+      logError('checkAndIncrementResponseCount: RPC failed, fail-open', error, { userId })
+      return { allowed: true, usage: 0, limit: 0, plan: 'free', nearLimit: false }
+    }
 
-  if (error || !data) {
-    return { allowed: false, usage: 0, limit: 0, plan: 'free', nearLimit: false }
-  }
-
-  return {
-    allowed: data.allowed,
-    usage: data.usage,
-    limit: data.limit_val,
-    plan: data.plan ?? 'free',
-    nearLimit: data.near_limit,
+    return {
+      allowed: data.allowed,
+      usage: data.usage,
+      limit: data.limit_val,
+      plan: data.plan ?? 'free',
+      nearLimit: data.near_limit,
+    }
+  } catch (err) {
+    logError('checkAndIncrementResponseCount: threw, fail-open', err, { userId })
+    return { allowed: true, usage: 0, limit: 0, plan: 'free', nearLimit: false }
   }
 }
 

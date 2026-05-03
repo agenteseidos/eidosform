@@ -127,6 +127,24 @@ export interface Database {
         Args: { p_user_id: string }
         Returns: void
       }
+      check_rate_limit: {
+        Args: { p_key: string; p_window_ms: number; p_max_requests: number }
+        Returns: Array<{ allowed: boolean; current_count: number; reset_in_ms: number }>
+      }
+      check_and_increment_response: {
+        Args: { p_user_id: string }
+        Returns: {
+          allowed: boolean
+          usage: number
+          limit_val: number
+          plan: PlanId
+          near_limit: boolean
+        }
+      }
+      get_response_counts_by_forms: {
+        Args: { p_form_ids: string[] }
+        Returns: Array<{ form_id: string; response_count: number }>
+      }
     }
     Enums: {
       form_status: 'draft' | 'published' | 'closed'

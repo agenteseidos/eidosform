@@ -61,15 +61,11 @@ function checkMemoryFallback(ip: string): { allowed: boolean; remaining: number;
 export async function checkResponseRateLimitAsync(ip: string): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
   try {
     const supabase = createPublicClient()
-    const rpc = supabase.rpc as unknown as (
-      fn: string,
-      args: Record<string, unknown>
-    ) => Promise<{ data: unknown; error: { message?: string } | null }>
-    const { data, error } = await rpc('check_rate_limit', {
+    const { data, error } = await supabase.rpc('check_rate_limit', {
       p_key: `resp:${ip}`,
       p_window_ms: WINDOW_MS,
       p_max_requests: MAX_REQUESTS,
-    })
+    }) as { data: unknown; error: { message?: string } | null }
 
     if (error || !data || !Array.isArray(data) || data.length === 0) {
       // Fallback to in-memory if Supabase function doesn't exist yet

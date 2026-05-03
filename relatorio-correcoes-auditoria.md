@@ -4,6 +4,76 @@
 
 ---
 
+## Etapa 15 — Idempotência e correções no webhook Asaas (entrada)
+
+**Status:** ✅ Concluída em 2026-05-03
+**Commits:** 5bd97f2
+**Achados endereçados:** P1-INT3, P1-INT4, P1-INT5, P1-INT6, P1-INT7, P1-INT8, P0-INT2
+**Arquivos alterados:**
+- `lib/webhook-hmac.ts`
+- `app/api/webhooks/asaas/route.ts`
+- `supabase/migrations/20260503_asaas_webhook_idempotency.sql`
+
+**O que foi feito:**
+- `webhook-hmac.ts`: substituído `URLSearchParams` por parser custom que faz split em `&` e `=` sem URL-decode — evita corrupção de hex-hashes (P1-INT3)
+- Removida tolerância de `age < -30_000`: apenas timestamps no passado são aceitos (P1-INT4)
+- Removido token fallback em `route.ts`: apenas HMAC-SHA256 é aceito via `asaas-signature` header (P1-INT5)
+- Criada tabela `asaas_webhook_events (event_id unique)` e função `checkAndMarkIdempotent()`: evento duplicado retorna 200 sem reprocessar (P1-INT6)
+- `default` case do switch agora chama `logWarn()` com o evento desconhecido (P1-INT7)
+- `logWebhookEvent` chamadas removidas do campo `payload` (P1-INT8)
+- `PAYMENT_OVERDUE` já tinha guard de subscription mismatch; confirmado correto (P0-INT2)
+
+**Validação:** tsc sem erros nos arquivos alterados. Lógica testada por inspeção de código.
+**Pendências dentro da etapa:** nenhuma.
+
+---
+
+## Etapa 16 — Webhooks de saída (HMAC, retry, SSRF)
+
+**Status:** ✅ Concluída em 2026-05-03
+**Commits:** b435fcd
+**Achados endereçados:** P0-INT1, P1-INT1, P1-INT2, P2-INT1, P2-INT2, P3-INT1
+**Arquivos alterados:**
+- `lib/webhook-dispatcher.ts`
+- `lib/webhook-validator.ts`
+- `lib/webhook-logger.ts`
+- `supabase/migrations/20260503_webhook_failures_dlq.sql`
+
+**O que foi feito:**
+- `WEBHOOK_SECRET` obrigatório: dispatcher retorna erro imediato sem ele (P0-INT1)
+- `fixedTimestamp` gerado uma vez fora do loop de retry; assinatura também gerada uma única vez (P1-INT2)
+- `canonicalJson()` ordena chaves recursivamente para HMAC determinístico entre retries (P1-INT2)
+- `webhook-logger.ts`: campo `payload` agora armazena apenas metadados (`meta?: Record<...>`) — nunca payload completo (P1-INT1)
+- `webhook-validator.ts`: DNS race fix — se DNS disponível mas resolução retorna array vazio (NXDOMAIN/timeout), bloqueia. Edge Runtime (sem módulo `dns`) ainda permite por best-effort (P2-INT2)
+- Criada tabela `webhook_failures` (DLQ) com RLS; `insertDlq()` chamado após 4 retries falharem (P3-INT1)
+
+**Validação:** tsc sem erros nos arquivos alterados.
+**Pendências dentro da etapa:** notificação por email ao owner após N falhas no DLQ não implementada (registrado no DLQ mas sem envio automático — pode ser adicionado na Etapa 18/G).
+
+---
+
+## Etapa 17 — Notificações (Resend + WhatsApp): hardening
+
+**Status:** ✅ Concluída em 2026-05-03
+**Commits:** 09b871c
+**Achados endereçados:** P1-N1, P1-N2, P1-N3, P2-N1, P2-N4
+**Arquivos alterados:**
+- `lib/resend.ts`
+- `app/api/whatsapp/send/route.ts`
+
+**O que foi feito:**
+- `sanitizeSubject()`: remove CPF, email e telefone do assunto por regex; trunca em 50 chars (P1-N1)
+- `sendEmailWithRetry()`: 3 tentativas com backoff 1s/5s/10s substituindo chamada direta ao fetch (P2-N1)
+- `Idempotency-Key` header em `sendNewResponseNotification` = `sha256(new-response:{formId}:{responseId})` (P2-N3)
+- `buildMessage()`: aplica `String.normalize('NFKC')` em todos os valores substituídos no template WhatsApp (P1-N2)
+- `checkWhatsAppRateLimit()` aceita `formId` opcional e usa chave `whatsapp:{formId}:{phone}` em vez de `whatsapp:{phone}` — formulários distintos não compartilham quota (P1-N3)
+- Plan gate já consolidado em `/api/whatsapp/send`; nenhum check duplicado no dispatcher (P2-N4)
+
+**Validação:** tsc sem erros nos arquivos alterados.
+**Pendências dentro da etapa:** retry Resend (3x com backoff) implementado; P1-N4 (retry) ✅. P2-N3 (idempotency key) ✅.
+
+---
+
 ## Etapa 4 — Endurecimento do signup (email enumeration)
 
 **Status:** ✅ Concluída em 2026-05-02 21:40

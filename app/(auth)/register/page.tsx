@@ -93,11 +93,7 @@ function RegisterForm() {
       toast.error(json.error || 'Falha ao criar conta. Tente novamente.')
       setIsLoading(false)
     } else {
-      if (json.autoConfirmed) {
-        router.push(callbackNext || '/dashboard')
-      } else {
-        router.push(`/verify-email?email=${encodeURIComponent(email)}${callbackNext ? `&next=${encodeURIComponent(callbackNext)}` : ''}`)
-      }
+      router.push(`/verify-email?email=${encodeURIComponent(email)}${callbackNext ? `&next=${encodeURIComponent(callbackNext)}` : ''}`)
     }
   }
 

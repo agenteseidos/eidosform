@@ -75,15 +75,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const autoConfirmed = !!data.session
     return NextResponse.json(
-      {
-        success: true,
-        autoConfirmed,
-        message: autoConfirmed
-          ? 'Cadastro concluído.'
-          : 'Verifique seu email para confirmar a conta.',
-      },
+      { success: true, message: 'Verifique seu email para confirmar.' },
       { status: 201 }
     )
   } catch (error) {

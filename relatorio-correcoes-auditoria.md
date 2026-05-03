@@ -44,6 +44,7 @@
 
 ## Etapa 6 — Remover CSRF skip de `/api/auth/*`
 
+
 **Status:** ✅ Concluída em 2026-05-02 (commit 66fc225)
 **Achados endereçados:** F2-E5-02, P2-6 (Fase 1)
 **Arquivos alterados:**
@@ -55,5 +56,68 @@
 - Domínios customizados verificados (`isVerifiedCustomDomain`) mantêm bypass apenas para `/api/responses` (necessário para embeds de forms).
 
 **Validação:** `curl -X POST -H 'Origin: https://attacker.example.com' .../api/auth/login` retorna `403`.
+
+**Pendências dentro da etapa:** nenhuma.
+
+---
+
+## Etapa 7 — Validação Zod em forms (POST + PATCH)
+
+**Status:** ✅ Concluída em 2026-05-02 (commit e9f6c4d)
+**Achados endereçados:** P1-A (Fase 1), P0-FB1 (routes)
+**Arquivos alterados:**
+- `lib/schemas/form-schema.ts` (novo)
+- `app/api/forms/route.ts`
+- `app/api/forms/[id]/route.ts`
+
+**O que foi feito:**
+- Criado `lib/schemas/form-schema.ts` com `QuestionSchema` (discriminated union por tipo, 18 tipos), `FormCreateSchema`, `FormUpdateSchema` e `formatZodIssues`.
+- Campos URL validados por `optionalSafeUrl` (bloqueia `javascript:`, `data:`, `blob:`, `ws:`, `wss:`, `file:`).
+- POST `/api/forms` e PATCH `/api/forms/[id]` chamam `safeParse()` antes das regras de negócio. Erros retornam `400 { error: 'Payload inválido', issues: [...] }`.
+- Payload com `type: "evil_type"` retorna 400.
+
+**Validação:** payloads inválidos rejeitados com 400 + issues detalhados; payloads válidos seguem normalmente.
+
+**Pendências dentro da etapa:** nenhuma.
+
+---
+
+## Etapa 8 — Endurecer validators server-side
+
+**Status:** ✅ Concluída em 2026-05-02 (commit 23676e5)
+**Achados endereçados:** P0-FP1 (Fase 1), P2-FB3, P2-FB4, P2-FB6, P2-FB7 (Fase 1), P1-FP3
+**Arquivos alterados:**
+- `lib/field-validators.ts`
+
+**O que foi feito:**
+- `validateDropdown` / `validateCheckboxes`: rejeitam quando `options.length < 2` (pergunta mal configurada).
+- `validateRating` / `validateOpinionScale`: guarda explícita `min >= max` antes de chamar `validateRange`.
+- `validateNumber`: cap em `±Number.MAX_SAFE_INTEGER`.
+- `validateFileUpload`: recebe `question.maxFileSize`; cap hard em 25 MB; mensagem de erro com o limite exato.
+- `validateCalendly`: rejeita quando `required: true` e `calendlyUrl` não configurado.
+
+**Validação:** cada edge case gera `{ valid: false, error: '...' }` com mensagem clara.
+
+**Pendências dentro da etapa:** nenhuma.
+
+---
+
+## Etapa 9 — Sanitização HTML server-side em content_block
+
+**Status:** ✅ Concluída em 2026-05-02 (commit 64c51b7)
+**Achados endereçados:** P0-FB1 (Fase 1), P1-FB1, P1-FB2
+**Arquivos alterados:**
+- `lib/html.ts`
+- `app/api/forms/route.ts` (via Etapa 7 commit)
+- `app/api/forms/[id]/route.ts` (via Etapa 7 commit)
+
+**O que foi feito:**
+- `lib/html.ts` substituído por pipeline DOMPurify + jsdom no server. Whitelist conservadora: `p, br, strong, em, b, i, u, s, a, ul, ol, li, h1-h3, blockquote, pre, code, span`.
+- `isSafeUrl` bloqueia `blob:`, `ws:`, `wss:`, `file:` além dos esquemas já bloqueados.
+- Belt-and-braces: `href` de âncoras re-validado por regex pós-sanitização.
+- `sanitizeContentBlocks()` aplicado em POST e PATCH antes de persistir.
+- Player mantém DOMPurify client-side como defense-in-depth.
+
+**Validação:** payload com `<script>alert(1)</script>` em `contentBody` é sanitizado para string vazia; `javascript:` em href vira `href="#"`.
 
 **Pendências dentro da etapa:** nenhuma.

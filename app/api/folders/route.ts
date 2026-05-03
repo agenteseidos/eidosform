@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const user = await getRequestUser(req)
 
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   // P2-04 FIX: Avoid select('*') — specify needed columns for folders
@@ -40,14 +40,14 @@ export async function POST(req: NextRequest) {
   const user = await getRequestUser(req)
 
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   const body = await req.json()
   const name = normalizeFolderName(body?.name)
 
   if (!name) {
-    return NextResponse.json({ error: 'name is required' }, { status: 400 })
+    return NextResponse.json({ error: 'Nome é obrigatório' }, { status: 400 })
   }
 
   const insert: FolderInsert = {

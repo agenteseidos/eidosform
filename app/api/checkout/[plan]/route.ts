@@ -33,7 +33,7 @@ export async function POST(
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   // Rate limit checkout creation (10 req/min per user)
@@ -43,7 +43,7 @@ export async function POST(
   })
   if (!checkoutLimit.allowed) {
     return NextResponse.json(
-      { error: 'Too many checkout attempts', retryAfter: Math.ceil(checkoutLimit.resetIn / 1000) },
+      { error: 'Muitas tentativas de checkout. Tente novamente mais tarde.', retryAfter: Math.ceil(checkoutLimit.resetIn / 1000) },
       { status: 429, headers: { 'Retry-After': Math.ceil(checkoutLimit.resetIn / 1000).toString() } }
     )
   }

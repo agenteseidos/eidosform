@@ -21,7 +21,7 @@ export async function GET() {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   // Rate limit checkout status polling (30 req/min per user to protect Asaas API)
@@ -31,7 +31,7 @@ export async function GET() {
   })
   if (!statusLimit.allowed) {
     return NextResponse.json(
-      { error: 'Too many requests', retryAfter: Math.ceil(statusLimit.resetIn / 1000) },
+      { error: 'Muitas requisições. Tente novamente mais tarde.', retryAfter: Math.ceil(statusLimit.resetIn / 1000) },
       { status: 429, headers: { 'Retry-After': Math.ceil(statusLimit.resetIn / 1000).toString() } }
     )
   }

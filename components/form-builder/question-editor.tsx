@@ -57,6 +57,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
             <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
               <p className="text-xs text-slate-500 font-medium">Mostrar esta pergunta se:</p>
               <select
+                aria-label="Pergunta da condição"
                 value={question.conditionalLogic.questionId || ''}
                 onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
                 className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
@@ -67,6 +68,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
                 ))}
               </select>
               <select
+                aria-label="Operador da condição"
                 value={question.conditionalLogic.operator || 'equals'}
                 onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
                 className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
@@ -79,6 +81,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
               </select>
               {!['not_empty', 'is_empty'].includes(question.conditionalLogic.operator) && (
                 <Input
+                  aria-label="Valor da condição"
                   value={question.conditionalLogic.value || ''}
                   onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, value: e.target.value } })}
                   placeholder="Valor esperado"
@@ -168,14 +171,16 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
           </div>
           <Separator />
           <div>
-            <Label className="text-sm font-medium text-slate-700 mb-1.5 block">Texto do botão</Label>
+            <Label htmlFor="content-button-text" className="text-sm font-medium text-slate-700 mb-1.5 block">Texto do botão</Label>
             <Input
+              id="content-button-text"
               value={question.contentButtonText || ''}
               onChange={(e) => onUpdate({ contentButtonText: e.target.value })}
               placeholder="Continuar"
               className="text-sm mb-2"
             />
             <Input
+              aria-label="URL do botão (opcional)"
               value={question.contentButtonUrl || ''}
               onChange={(e) => onUpdate({ contentButtonUrl: e.target.value })}
               placeholder="URL opcional (se quiser abrir link externo)"
@@ -260,8 +265,9 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
       )}
       {question.type === 'phone' && (
         <div>
-          <Label className="text-sm font-medium text-slate-700 mb-2 block">País padrão</Label>
+          <Label htmlFor="phone-default-country" className="text-sm font-medium text-slate-700 mb-2 block">País padrão</Label>
           <select
+            id="phone-default-country"
             value={question.defaultCountry || 'BR'}
             onChange={(e) => onUpdate({ defaultCountry: e.target.value })}
             className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
@@ -303,10 +309,11 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
       {!hideTypeAndRequired && (
       <div className="flex items-center justify-between">
         <div>
-          <Label className="text-sm font-medium text-slate-700">Obrigatório</Label>
+          <Label htmlFor="required-toggle" className="text-sm font-medium text-slate-700">Obrigatório</Label>
           <p className="text-xs text-slate-500">Respondentes devem responder esta pergunta</p>
         </div>
         <Switch
+          id="required-toggle"
           checked={question.required}
           onCheckedChange={(checked) => onUpdate({ required: checked })}
         />
@@ -343,6 +350,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
           <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
             <p className="text-xs text-slate-500 font-medium">Mostrar esta pergunta se:</p>
             <select
+              aria-label="Pergunta da condição"
               value={question.conditionalLogic.questionId || ''}
               onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
               className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
@@ -353,6 +361,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
               ))}
             </select>
             <select
+              aria-label="Operador da condição"
               value={question.conditionalLogic.operator || 'equals'}
               onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
               className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
@@ -365,6 +374,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
             </select>
             {!['not_empty', 'is_empty'].includes(question.conditionalLogic.operator) && (
               <Input
+                aria-label="Valor da condição"
                 value={question.conditionalLogic.value || ''}
                 onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, value: e.target.value } })}
                 placeholder="Valor esperado"

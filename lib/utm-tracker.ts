@@ -43,7 +43,8 @@ function readSessionUtms(): UtmPayload {
 
   try {
     return sanitizeUtms(JSON.parse(window.sessionStorage.getItem(SESSION_STORAGE_KEY) || 'null'))
-  } catch {
+  } catch (e) {
+    console.warn('[utm-tracker] Failed to parse session UTMs', e)
     return {}
   }
 }
@@ -67,7 +68,8 @@ function readLocalUtms(): UtmPayload {
     }
 
     return sanitizeUtms(parsed)
-  } catch {
+  } catch (e) {
+    console.warn('[utm-tracker] Failed to parse local UTMs', e)
     return {}
   }
 }

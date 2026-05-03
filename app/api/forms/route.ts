@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const user = await getRequestUser(req)
 
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   const { searchParams } = new URL(req.url)
@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
     .select('id, title, description, slug, status, theme, plan, redirect_url, webhook_url, pixels, created_at, updated_at', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
     .range(offset, offset + limit - 1)
 
   if (status) {
@@ -125,7 +126,7 @@ export async function POST(req: NextRequest) {
   if (webhook_url) {
     const webhookCheck = validateWebhookUrl(webhook_url)
     if (!webhookCheck.safe) {
-      return NextResponse.json({ error: `Invalid webhook_url: ${webhookCheck.reason}` }, { status: 400 })
+      return NextResponse.json({ error: `URL de webhook inválida: ${webhookCheck.reason}` }, { status: 400 })
     }
   }
 
@@ -166,7 +167,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     if (error.code === '23505') {
-      return NextResponse.json({ error: 'Slug already in use' }, { status: 409 })
+      return NextResponse.json({ error: 'Este slug já está em uso' }, { status: 409 })
     }
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }

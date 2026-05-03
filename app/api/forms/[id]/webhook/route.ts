@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   // P1 FIX: Feature gate — webhooks require Plus plan
   const { data: profile } = await supabase
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     .eq('user_id', user.id)
     .single()
 
-  if (error || !form) return NextResponse.json({ error: 'Form not found' }, { status: 404 })
+  if (error || !form) return NextResponse.json({ error: 'Formulário não encontrado' }, { status: 404 })
 
   return NextResponse.json({ webhook_url: form.webhook_url })
 }
@@ -48,7 +48,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   // Feature gate: webhooks
   const { data: profile } = await supabase
@@ -94,7 +94,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   // P1 FIX: Feature gate — webhooks require Plus plan
   const { data: profile } = await supabase

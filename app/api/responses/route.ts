@@ -423,7 +423,7 @@ export async function GET(req: NextRequest) {
   const user = await getRequestUser(req)
 
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   // P1-5: Rate limit GET responses (60 req/min per user)
@@ -449,7 +449,7 @@ export async function GET(req: NextRequest) {
       .single()
 
     if (!form) {
-      return NextResponse.json({ error: 'Form not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Formulário não encontrado' }, { status: 404 })
     }
   }
 
@@ -457,6 +457,7 @@ export async function GET(req: NextRequest) {
     .from('responses')
     .select('id, form_id, answers, meta_events, completed, submitted_at, last_question_answered, utm_source, utm_medium, utm_campaign, utm_term, utm_content', { count: 'exact' })
     .order('submitted_at', { ascending: false })
+    .order('id', { ascending: false })
     .range(offset, offset + limit - 1)
 
   if (formId) {

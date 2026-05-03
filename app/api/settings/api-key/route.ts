@@ -10,7 +10,7 @@ export async function POST() {
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   // Verificar plano Professional
@@ -22,7 +22,7 @@ export async function POST() {
 
   if (!profile || (profile.plan !== 'professional' && profile.plan !== 'enterprise')) {
     return NextResponse.json(
-      { error: 'API key access requires Professional or Enterprise plan' },
+      { error: 'Acesso à API key requer plano Professional ou Enterprise' },
       { status: 403 }
     )
   }
@@ -34,7 +34,7 @@ export async function POST() {
   })
   if (!keyLimit.allowed) {
     return NextResponse.json(
-      { error: 'Too many API key operations', retryAfter: Math.ceil(keyLimit.resetIn / 1000) },
+      { error: 'Muitas operações de API key. Tente novamente mais tarde.', retryAfter: Math.ceil(keyLimit.resetIn / 1000) },
       { status: 429, headers: { 'Retry-After': Math.ceil(keyLimit.resetIn / 1000).toString() } }
     )
   }
@@ -59,7 +59,7 @@ export async function POST() {
     .eq('id', user.id)
 
   if (updateError) {
-    return NextResponse.json({ error: 'Failed to generate API key' }, { status: 500 })
+    return NextResponse.json({ error: 'Falha ao gerar API key' }, { status: 500 })
   }
 
   return NextResponse.json({ api_key: newKey })
@@ -71,7 +71,7 @@ export async function GET() {
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   const { data: profile } = await supabase
@@ -120,7 +120,7 @@ export async function DELETE() {
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   // P1 FIX: Verify plan before allowing revocation
@@ -132,7 +132,7 @@ export async function DELETE() {
 
   if (!profile || (profile.plan !== 'professional' && profile.plan !== 'enterprise')) {
     return NextResponse.json(
-      { error: 'API key access requires Professional or Enterprise plan' },
+      { error: 'Acesso à API key requer plano Professional ou Enterprise' },
       { status: 403 }
     )
   }
@@ -143,8 +143,8 @@ export async function DELETE() {
     .eq('id', user.id)
 
   if (updateError) {
-    return NextResponse.json({ error: 'Failed to revoke API key' }, { status: 500 })
+    return NextResponse.json({ error: 'Falha ao revogar API key' }, { status: 500 })
   }
 
-  return NextResponse.json({ message: 'API key revoked' })
+  return NextResponse.json({ message: 'API key revogada' })
 }

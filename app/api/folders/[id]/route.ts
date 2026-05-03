@@ -18,14 +18,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const { id } = await params
 
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   const body = await req.json()
   const name = normalizeFolderName(body?.name)
 
   if (!name) {
-    return NextResponse.json({ error: 'name is required' }, { status: 400 })
+    return NextResponse.json({ error: 'Nome é obrigatório' }, { status: 400 })
   }
 
   const { data: existing } = await supabase
@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .single()
 
   if (!existing) {
-    return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Pasta não encontrada' }, { status: 404 })
   }
 
   const { data, error } = await supabase
@@ -62,7 +62,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const { id } = await params
 
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
   const { data: existing } = await supabase
@@ -73,7 +73,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     .single()
 
   if (!existing) {
-    return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Pasta não encontrada' }, { status: 404 })
   }
 
   const { error } = await supabase

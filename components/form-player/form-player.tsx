@@ -116,6 +116,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const partialSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSubmittedRef = useRef(false)
   const isAuthenticatedRef = useRef(false)
+  const errorRef = useRef<HTMLParagraphElement>(null)
 
   // Lista de perguntas visíveis com base nas respostas atuais
   const visibleQuestions = getVisibleQuestions(questions, answers) as QuestionConfig[]
@@ -147,11 +148,21 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
   const currentQuestion = visibleQuestions[currentIndex]
   const isContentStep = currentQuestion?.type === 'content_block'
+
+  useEffect(() => {
+    if (currentQuestion?.id && errors[currentQuestion.id] && errorRef.current) {
+      errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errors, currentQuestion?.id])
   const isLastQuestion = currentIndex === visibleQuestions.length - 1
   const isFirstQuestion = form.welcome_enabled ? currentIndex === -1 : currentIndex === 0
   // Progresso baseado em total original de perguntas (não visíveis) para evitar saltos com conditional logic
   const answeredCount = questions.filter(q => q.type !== 'content_block' && answers[q.id] !== undefined && answers[q.id] !== '' && !(Array.isArray(answers[q.id]) && (answers[q.id] as unknown[]).length === 0)).length
   const questionCount = questions.filter(q => q.type !== 'content_block').length
+  // Counter display: exclude content_blocks from both position and total
+  const visibleNonContentCount = visibleQuestions.filter(q => q.type !== 'content_block').length
+  const currentQuestionNumber = visibleQuestions.slice(0, currentIndex + 1).filter(q => q.type !== 'content_block').length
   const positionProgress = questionCount > 0 ? ((answeredCount + 1) / questionCount) * 100 : 0
   const answeredProgress = questionCount > 0 ? (answeredCount / questionCount) * 100 : 0
   const progressFull = Math.max(positionProgress, answeredProgress)
@@ -848,13 +859,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                     className="mb-5 flex items-center gap-2"
                   >
                     <span className="text-sm font-bold tabular-nums" style={{ color: theme.primaryColor }}>
-                      Pergunta {currentIndex + 1} de {visibleQuestions.length}
+                      Pergunta {currentQuestionNumber} de {visibleNonContentCount}
                     </span>
-                    {visibleQuestions.length !== questionCount && (
-                      <span className="text-xs opacity-50" style={{ color: theme.textColor }}>
-                        ({questionCount} total)
-                      </span>
-                    )}
                   </motion.div>
 
                   {/* Title */}
@@ -917,6 +923,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
               <AnimatePresence>
                 {errors[currentQuestion.id] && (
                   <motion.p
+                    ref={errorRef}
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
@@ -959,7 +966,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                   </Button>
 
                   <span className="hidden sm:inline text-sm opacity-40" style={{ color: theme.textColor }}>
-                    Pressione <kbd className="font-mono font-semibold">Enter ↵</kbd>
+                    {currentQuestion?.type === 'long_text'
+                      ? <>Pressione <kbd className="font-mono font-semibold">Ctrl+Enter ↵</kbd></>
+                      : <>Pressione <kbd className="font-mono font-semibold">Enter ↵</kbd></>}
                   </span>
                 </motion.div>
               )}

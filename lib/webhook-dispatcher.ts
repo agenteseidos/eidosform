@@ -134,12 +134,13 @@ export async function dispatchWebhook(params: {
   const signature = await generateWebhookSignature(bodyStr, webhookSecret)
   const fixedTimestamp = new Date().toISOString()
 
-  const delays = [0, 1000, 2000, 4000]
+  const MAX_RETRIES = 3
+  const retryDelays = [1000, 2000, 4000]
   let lastError: string | undefined
 
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      await new Promise(r => setTimeout(r, delays[attempt]))
+      await new Promise(r => setTimeout(r, retryDelays[attempt - 1]))
     }
 
     const controller = new AbortController()
@@ -170,7 +171,7 @@ export async function dispatchWebhook(params: {
     }
   }
 
-  logError('[webhook-dispatcher] FAILED after 4 attempts', { formId, responseId, error: lastError })
+  logError('[webhook-dispatcher] FAILED after 3 retries (4 total attempts)', { formId, responseId, error: lastError })
 
   // DLQ: persist failure for dead-letter queue processing
   await insertDlq({ formId, responseId, webhookUrl, error: lastError ?? 'unknown', ownerEmail })

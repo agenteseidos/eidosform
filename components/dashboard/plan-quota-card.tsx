@@ -1,17 +1,81 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { PLANS, type PlanName } from '@/lib/plan-definitions'
-import { Zap } from 'lucide-react'
+import { Zap, Loader2, AlertCircle } from 'lucide-react'
 
 interface PlanQuotaCardProps {
-  planName: PlanName
-  responsesUsed: number
-  responsesLimit: number
   formsUsed: number
 }
 
-export function PlanQuotaCard({ planName, responsesUsed, responsesLimit, formsUsed }: PlanQuotaCardProps) {
+interface PlanFeaturesResponse {
+  plan: PlanName
+  quota?: {
+    responsesUsed: number
+    responsesLimit: number
+  }
+  features?: {
+    maxForms: number
+  }
+}
+
+export function PlanQuotaCard({ formsUsed }: PlanQuotaCardProps) {
+  const [data, setData] = useState<{
+    planName: PlanName
+    responsesUsed: number
+    responsesLimit: number
+    maxForms: number
+  } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/user/plan-features', { cache: 'no-store' })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((body: PlanFeaturesResponse) => {
+        setData({
+          planName: body.plan ?? 'free',
+          responsesUsed: body.quota?.responsesUsed ?? 0,
+          responsesLimit: body.quota?.responsesLimit ?? 100,
+          maxForms: body.features?.maxForms ?? PLANS.free.maxForms,
+        })
+      })
+      .catch(err => {
+        console.error('[PlanQuotaCard] Error fetching plan-features:', err)
+        setError('Erro ao carregar informações do plano')
+      })
+  }, [])
+
+  if (error) {
+    return (
+      <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-center gap-3">
+        <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+        <span className="text-sm text-red-700">{error}</span>
+        <button
+          onClick={() => window.location.reload()}
+          className="ml-auto text-xs font-medium text-red-600 underline hover:text-red-800"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    )
+  }
+
+  if (!data) {
+    return (
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white px-5 py-4 flex items-center justify-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+        <span className="text-sm text-slate-400">Carregando…</span>
+      </div>
+    )
+  }
+
+  const { planName, responsesUsed, responsesLimit, maxForms } = data
   const plan = PLANS[planName] ?? PLANS.free
-  const formsLimit = plan.maxForms
+  const formsLimit = plan.maxForms ?? maxForms
   const unlimited = responsesLimit === -1
 
   const responsePct = unlimited ? 0 : Math.min(100, Math.round((responsesUsed / responsesLimit) * 100))

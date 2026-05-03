@@ -9,7 +9,6 @@ import { OnboardingWrapper } from '@/components/dashboard/onboarding-wrapper'
 import { ErrorToast } from '@/components/dashboard/error-toast'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { PlanQuotaCard } from '@/components/dashboard/plan-quota-card'
-import { type PlanName } from '@/lib/plan-definitions'
 import { Suspense } from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -48,15 +47,9 @@ export default async function DashboardPage() {
     }
   }
 
-  const { data: profileQuota } = await supabase
-    .from('profiles')
-    .select('plan, responses_used, responses_limit')
-    .eq('id', user!.id)
-    .single()
-
-  const planName = (profileQuota?.plan ?? 'free') as PlanName
-  const responsesUsed = profileQuota?.responses_used ?? 0
-  const responsesLimit = profileQuota?.responses_limit ?? 100
+  // Fetch quota via plan-features endpoint using server-side auth cookie
+  // PlanQuotaCard fetches its own data from /api/user/plan-features (client-side)
+  // This ensures plan expiry/downgrade logic runs on every dashboard load
 
   const isNewUser = forms.length === 0
   const pausedForms = forms.filter(f => (f as { paused?: boolean }).paused).length
@@ -64,12 +57,7 @@ export default async function DashboardPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <Suspense><ErrorToast /></Suspense>
-      <PlanQuotaCard
-        planName={planName}
-        responsesUsed={responsesUsed}
-        responsesLimit={responsesLimit}
-        formsUsed={forms.length}
-      />
+      <PlanQuotaCard formsUsed={forms.length} />
       <OnboardingWrapper isNewUser={isNewUser} />
       {pausedForms > 0 && (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">

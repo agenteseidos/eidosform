@@ -7,6 +7,7 @@ import { checkFormLimit } from '@/lib/plan-limits'
 import { PLANS } from '@/lib/plan-limits'
 import { normalizePlan } from '@/lib/plans'
 import { logError } from '@/lib/logger'
+import { isSafeUrl } from '@/lib/html'
 import { FormCreateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
 import { sanitizeContentBlocks } from '@/lib/html'
 
@@ -131,10 +132,15 @@ export async function POST(req: NextRequest) {
   }
 
   // P1 FIX: Strip pixels for free/starter users on form creation
-  let sanitizedPixels = pixels || null
-  if (sanitizedPixels && typeof sanitizedPixels === 'object') {
-    if (!planConfig?.pixels) {
-      sanitizedPixels = null
+  let sanitizedPixels: Record<string, unknown> | null = null
+  if (pixels && typeof pixels === 'object') {
+    if (planConfig?.pixels) {
+      // Remove null entries to match PixelConfig (optional string fields, never null)
+      const cleaned: Record<string, string> = {}
+      for (const [k, v] of Object.entries(pixels as Record<string, unknown>)) {
+        if (v != null && v !== '') cleaned[k] = String(v)
+      }
+      sanitizedPixels = Object.keys(cleaned).length > 0 ? cleaned : null
     }
   }
 
@@ -173,20 +179,6 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ form: data }, { status: 201 })
-}
-
-// Validate URLs inside question objects to prevent XSS (javascript:, data:, vbscript: URIs)
-function isSafeUrl(url: unknown): boolean {
-  if (!url || typeof url !== 'string') return true
-  const trimmed = url.trim().toLowerCase()
-  if (!trimmed) return true
-  if (/^(javascript|data|vbscript|mhtml|x-javascript):/i.test(trimmed)) return false
-  try {
-    const parsed = new URL(trimmed)
-    return ['https:', 'http:', 'mailto:', 'tel:'].includes(parsed.protocol)
-  } catch {
-    return !trimmed.includes(':')
-  }
 }
 
 function validateQuestionUrls(questions: unknown[]): string | null {

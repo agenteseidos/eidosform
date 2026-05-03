@@ -19,7 +19,7 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at, plan_status')
+    .select('plan, plan_expires_at, plan_status, responses_used, responses_limit')
     .eq('id', user.id)
     .single()
 
@@ -75,6 +75,10 @@ export async function GET() {
 
   return NextResponse.json({
     plan: planName,
+    quota: {
+      responsesUsed: profile?.responses_used ?? 0,
+      responsesLimit: profile?.responses_limit ?? PLANS.free.maxResponses,
+    },
     features: {
       maxResponses: planConfig.maxResponses,
       maxForms: planConfig.maxForms,

@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
 import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink } from 'lucide-react'
 import { renderContentBlockHtml } from '@/lib/content-block'
-import { sanitizeHtml } from '@/lib/html'
+import { sanitizeHtml, isSafeUrl } from '@/lib/html'
 import { renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
 
 interface FileUploadValue {
@@ -524,19 +524,6 @@ interface QuestionRendererProps {
   formId: string
 }
 
-/** Block dangerous URL schemes (javascript:, data:, vbscript:) for XSS prevention */
-function isSafeUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') return false
-  const trimmed = url.trim().toLowerCase()
-  if (!trimmed) return false
-  if (/^(javascript|data|vbscript|mhtml|x-javascript):/i.test(trimmed)) return false
-  try {
-    const parsed = new URL(trimmed)
-    return ['https:', 'http:', 'mailto:', 'tel:'].includes(parsed.protocol)
-  } catch {
-    return !trimmed.includes(':')
-  }
-}
 
 export const QuestionRenderer = React.memo(function QuestionRenderer({ 
   question, 

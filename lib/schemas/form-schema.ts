@@ -29,20 +29,9 @@ const QUESTION_TYPES = [
   'content_block',
 ] as const satisfies readonly QuestionType[]
 
-const SAFE_PROTOCOLS = ['https:', 'http:', 'mailto:', 'tel:', 'sms:'] as const
+import { isSafeUrl } from '@/lib/html'
 
-function isSafeUrl(value: string): boolean {
-  if (!value) return true
-  const trimmed = value.trim().toLowerCase()
-  if (!trimmed) return true
-  if (/^(javascript|data|vbscript|mhtml|x-javascript|file|blob|ws|wss):/i.test(trimmed)) return false
-  try {
-    const parsed = new URL(trimmed)
-    return SAFE_PROTOCOLS.includes(parsed.protocol as (typeof SAFE_PROTOCOLS)[number])
-  } catch {
-    return !trimmed.includes(':')
-  }
-}
+const SAFE_PROTOCOLS = ['https:', 'http:', 'mailto:', 'tel:', 'sms:'] as const
 
 const safeUrl = z
   .string()

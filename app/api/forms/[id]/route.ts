@@ -9,6 +9,7 @@ import { extractSpreadsheetId, connectSpreadsheet } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { FormUpdateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
 import { sanitizeContentBlocks } from '@/lib/html'
+import { isSafeUrl } from '@/lib/html'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string | null | undefined): string | null {
@@ -33,22 +34,22 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const FORM_COLUMNS = 'id, user_id, folder_id, title, description, slug, status, is_public, is_published, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, redirect_delay, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, created_at, updated_at'
+
   const { data, error } = await supabase
     .from('forms')
-    .select('*')
+    .select(FORM_COLUMNS)
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
 
-  if (error) {
-    if (error.code === 'PGRST116') {
+  if (error || !data) {
+    const code = error?.code
+    if (code === 'PGRST116' || code === 'PGRST116' || !data) {
       return NextResponse.json({ error: 'Form not found' }, { status: 404 })
     }
     logError('GET /api/forms/[id] DB error', error, { id })
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
-  }
-  if (!data) {
-    return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
   return NextResponse.json({ form: data })
@@ -397,31 +398,13 @@ function hasPixelEventRules(questions: unknown): boolean {
   return questions.some((q: { pixelEvents?: unknown[] }) => q.pixelEvents && q.pixelEvents.length > 0)
 }
 
-// Validate URLs inside question objects to prevent XSS (javascript:, data:, vbscript: URIs)
-function isSafeUrl(url: unknown): boolean {
-  if (!url || typeof url !== 'string') return true // null/undefined is fine
-  const trimmed = url.trim().toLowerCase()
-  if (!trimmed) return true
-  // Block dangerous schemes
-  if (/^(javascript|data|vbscript|mhtml|x-javascript):/i.test(trimmed)) return false
-  try {
-    const parsed = new URL(trimmed)
-    return ['https:', 'http:', 'mailto:', 'tel:'].includes(parsed.protocol)
-  } catch {
-    // Relative URLs are allowed (handled by the browser)
-    return !trimmed.includes(':')
-  }
-}
-
 function validateQuestionUrls(questions: unknown[]): string | null {
   for (const q of questions) {
     if (!q || typeof q !== 'object') continue
     const question = q as Record<string, unknown>
-    // Check contentButtonUrl
     if (!isSafeUrl(question.contentButtonUrl)) {
       return 'URL inválida em contentButtonUrl: protocolo não permitido'
     }
-    // Check any other URL fields that could be XSS vectors
     if (!isSafeUrl(question.imageUrl)) {
       return 'URL inválida em imageUrl: protocolo não permitido'
     }

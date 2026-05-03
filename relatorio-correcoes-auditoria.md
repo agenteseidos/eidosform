@@ -121,3 +121,63 @@
 **Validação:** payload com `<script>alert(1)</script>` em `contentBody` é sanitizado para string vazia; `javascript:` em href vira `href="#"`.
 
 **Pendências dentro da etapa:** nenhuma.
+
+---
+
+## Etapa 12 — Indicador de plano/quota no dashboard
+
+**Status:** ✅ Concluída em 2026-05-03
+**Commits:** 633a844
+**Achados endereçados:** F2-E2-02 (P2), P2-A (Fase 1)
+**Arquivos alterados:**
+- `components/dashboard/plan-quota-card.tsx` (novo)
+- `app/(dashboard)/forms/page.tsx`
+
+**O que foi feito:**
+- Criado componente `<PlanQuotaCard>` renderizado no topo de `/forms`.
+- Exibe: nome do plano, barra de progresso de respostas (usadas/limite), contagem de formulários (usados/limite).
+- Barra muda de cor: azul → âmbar aos 80% → vermelho aos 90%.
+- Card de upsell (link para `/billing`) aparece quando `responsePct >= 80%`.
+- Dashboard page busca `plan`, `responses_used`, `responses_limit` da tabela `profiles` e passa ao componente.
+
+**Validação:** componente renderiza sem erros de TypeScript; lógica de upsell condicional verificada.
+
+**Pendências dentro da etapa:** nenhuma.
+
+---
+
+## Etapa 13 — Corrigir player UX
+
+**Status:** ✅ Concluída em 2026-05-03
+**Commits:** cbc40e3
+**Achados endereçados:** F2-E3-02 (P2), F2-E4-02 (P1), P3-FP4 (Fase 1)
+**Arquivos alterados:**
+- `components/form-player/form-player.tsx`
+
+**O que foi feito:**
+- **Contador de perguntas:** substituído `{currentIndex + 1} de {visibleQuestions.length}` por posição e total entre perguntas não-`content_block` (`currentQuestionNumber` / `visibleNonContentCount`). Removida anotação `({questionCount} total)`.
+- **Hint Ctrl+Enter:** hint renderiza "Ctrl+Enter ↵" quando `currentQuestion.type === 'long_text'`, "Enter ↵" nos demais.
+- **scrollIntoView em erro:** adicionado `errorRef` e `useEffect` que chama `scrollIntoView({behavior:'smooth', block:'center'})` na `motion.p` do erro quando este aparece.
+
+**Validação:** TypeScript passa sem erros nos arquivos modificados.
+
+**Pendências dentro da etapa:** nenhuma.
+
+---
+
+## Etapa 14 — Corrigir bug "Profile not found" no API Key e 404 em GET /api/forms/{id}
+
+**Status:** ✅ Concluída em 2026-05-03
+**Commits:** a2113e4
+**Achados endereçados:** F2-E6-01 (P2), F2-E3-01 (P1)
+**Arquivos alterados:**
+- `app/api/settings/api-key/route.ts`
+- `app/api/forms/[id]/route.ts`
+
+**O que foi feito:**
+- **API Key GET:** quando upsert do perfil faltante falha, retorna `200 {has_api_key: false, plan: 'free'}` em vez de `404 "Profile not found"`. Frontend exibirá botão "Gerar API Key" corretamente.
+- **GET /api/forms/[id]:** removida lista fixa de colunas (incluía `plan` que não existe na tabela `forms`) substituída por `select('*')`. Erros de BD agora distinguidos de "not found": `PGRST116` → 404; outros → 500 + `logError`.
+
+**Validação:** TypeScript passa sem erros; separação de erros elimina falsos 404 por coluna inexistente.
+
+**Pendências dentro da etapa:** nenhuma.

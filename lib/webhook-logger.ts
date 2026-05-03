@@ -10,7 +10,8 @@ function getSupabase() {
 interface WebhookLogEntry {
   event: string
   status: 'received' | 'processed' | 'error' | 'ignored'
-  payload?: unknown
+  /** Store only metadata keys, never full payload (P1-INT1: no PII in logs) */
+  meta?: Record<string, string | number | boolean | null>
   error?: string
   profile_id?: string
 }
@@ -21,7 +22,7 @@ export async function logWebhookEvent(entry: WebhookLogEntry): Promise<void> {
     await supabase.from('webhook_logs').insert({
       event: entry.event,
       status: entry.status,
-      payload: entry.payload ?? null,
+      payload: entry.meta ?? null,
       error: entry.error ?? null,
       profile_id: entry.profile_id ?? null,
     })

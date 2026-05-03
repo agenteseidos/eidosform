@@ -1,37 +1,42 @@
 /**
  * lib/webhook-validator.ts — SSRF protection for webhook URLs
  * Shared between form webhook endpoint and webhook dispatcher.
- * P1-F: Hardened against DNS rebinding by pre-resolving hostname.
+ * Hardened against DNS rebinding by pre-resolving hostname.
  */
 
 // Simple cache to avoid repeated DNS lookups for the same hostname
 const dnsCache = new Map<string, { ips: string[]; expiresAt: number }>()
 const DNS_CACHE_TTL_MS = 60_000
 
+type DnsResult =
+  | { available: false }           // dns module unavailable (Edge Runtime) — allow best-effort
+  | { available: true; ips: string[] } // resolution result (empty = failed or NXDOMAIN)
+
 /**
- * Attempt to resolve hostname to IP addresses using Node.js dns module.
- * Falls back to empty array in Edge Runtime or if dns is unavailable.
+ * Attempt to resolve hostname to IPv4 addresses using Node.js dns module.
+ * Returns { available: false } in Edge Runtime where the dns module is absent.
+ * Returns { available: true, ips: [] } when resolution fails (NXDOMAIN, timeout, etc.).
  */
-async function resolveHostname(hostname: string): Promise<string[]> {
+async function resolveHostname(hostname: string): Promise<DnsResult> {
   // Check cache first
   const cached = dnsCache.get(hostname)
   if (cached && cached.expiresAt > Date.now()) {
-    return cached.ips
+    return { available: true, ips: cached.ips }
   }
 
   try {
-    // Dynamic import to avoid issues in Edge Runtime
+    // Dynamic import to handle Edge Runtime gracefully
     const dns = await import('dns').catch(() => null)
     if (!dns || !dns.promises || typeof dns.promises.resolve4 !== 'function') {
-      return []
+      return { available: false }
     }
 
     const addresses = await dns.promises.resolve4(hostname)
     dnsCache.set(hostname, { ips: addresses, expiresAt: Date.now() + DNS_CACHE_TTL_MS })
-    return addresses
+    return { available: true, ips: addresses }
   } catch {
-    // DNS resolution failed — allow the request through, the fetch itself will fail if invalid
-    return []
+    // DNS available but resolution failed (NXDOMAIN, timeout, etc.) — return empty to trigger block
+    return { available: true, ips: [] }
   }
 }
 
@@ -107,15 +112,15 @@ export function validateWebhookUrl(urlString: string): { safe: boolean; reason?:
 }
 
 /**
- * P1-F: Async validation that also checks DNS resolution for private IPs.
- * Call this in addition to validateWebhookUrl for full protection against DNS rebinding.
+ * Async validation that also checks DNS resolution for private IPs and DNS rebinding.
+ * DNS failure (module unavailable) → allow best-effort (Edge Runtime).
+ * DNS failure (resolution error / empty result) → block (cannot confirm host is public).
  */
 export async function validateWebhookUrlAsync(urlString: string): Promise<{ safe: boolean; reason?: string }> {
   // First do synchronous checks
   const syncCheck = validateWebhookUrl(urlString)
   if (!syncCheck.safe) return syncCheck
 
-  // If hostname is already an IP, we already validated it above
   let url: URL
   try {
     url = new URL(urlString)
@@ -124,12 +129,24 @@ export async function validateWebhookUrlAsync(urlString: string): Promise<{ safe
   }
 
   const hostname = url.hostname.toLowerCase()
+  // If hostname is already a numeric IP, it was validated in the sync check
   const ipMatch = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  if (ipMatch) return { safe: true } // Already validated in sync check
+  if (ipMatch) return { safe: true }
 
-  // Resolve hostname to check for DNS rebinding (hostname → private IP)
-  const resolvedIPs = await resolveHostname(hostname)
-  if (resolvedIPs.length > 0 && resolvedIPs.every(ip => isPrivateIP(ip))) {
+  // Resolve hostname to detect DNS rebinding (hostname → private IP)
+  const result = await resolveHostname(hostname)
+
+  if (!result.available) {
+    // dns module not available (Edge Runtime) — allow best-effort
+    return { safe: true }
+  }
+
+  // DNS available but resolution returned no records — block (P2-INT2: DNS race fix)
+  if (result.ips.length === 0) {
+    return { safe: false, reason: 'Hostname could not be resolved — refusing for safety' }
+  }
+
+  if (result.ips.every(ip => isPrivateIP(ip))) {
     return { safe: false, reason: 'Hostname resolves to private IP addresses' }
   }
 

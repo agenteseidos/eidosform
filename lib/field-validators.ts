@@ -47,11 +47,23 @@ export function validateFieldValue(
     case 'url':
       return validateUrl(value)
 
-    case 'rating':
-      return validateRange(value, question.minValue ?? 1, question.maxValue ?? 5, 'Avaliação')
+    case 'rating': {
+      const min = question.minValue ?? 1
+      const max = question.maxValue ?? 5
+      if (min >= max) {
+        return { valid: false, error: 'Configuração inválida: mínimo deve ser menor que máximo' }
+      }
+      return validateRange(value, min, max, 'Avaliação')
+    }
 
-    case 'opinion_scale':
-      return validateRange(value, question.minValue ?? 1, question.maxValue ?? 10, 'Escala')
+    case 'opinion_scale': {
+      const min = question.minValue ?? 1
+      const max = question.maxValue ?? 10
+      if (min >= max) {
+        return { valid: false, error: 'Configuração inválida: mínimo deve ser menor que máximo' }
+      }
+      return validateRange(value, min, max, 'Escala')
+    }
 
     case 'nps':
       return validateRange(value, 0, 10, 'NPS')
@@ -66,7 +78,7 @@ export function validateFieldValue(
       return validateCheckboxes(value, question.options ?? [])
 
     case 'file_upload':
-      return validateFileUpload(value)
+      return validateFileUpload(value, question.maxFileSize)
 
     case 'address':
       return validateAddress(value)
@@ -78,7 +90,7 @@ export function validateFieldValue(
       return validateContentBlock(value)
 
     case 'calendly':
-      return validateCalendly(value)
+      return validateCalendly(value, question.calendlyUrl, question.required)
 
     default:
       // Tipo desconhecido — aceitar para forward-compatibility
@@ -160,6 +172,9 @@ function validateNumber(value: unknown): FieldValidationResult {
   if (!isFinite(num)) {
     return { valid: false, error: 'Valor numérico inválido' }
   }
+  if (num > Number.MAX_SAFE_INTEGER || num < -Number.MAX_SAFE_INTEGER) {
+    return { valid: false, error: 'Valor numérico fora do intervalo permitido' }
+  }
   return { valid: true, sanitized: num }
 }
 
@@ -223,32 +238,36 @@ function validateYesNo(value: unknown): FieldValidationResult {
 }
 
 function validateDropdown(value: unknown, options: string[]): FieldValidationResult {
+  if (options.length < 2) {
+    return { valid: false, error: 'Dropdown deve ter ao menos 2 opções configuradas' }
+  }
   if (typeof value !== 'string') {
     return { valid: false, error: 'Seleção deve ser texto' }
   }
-  if (options.length > 0 && !options.includes(value)) {
+  if (!options.includes(value)) {
     return { valid: false, error: 'Opção selecionada não é válida' }
   }
   return { valid: true }
 }
 
 function validateCheckboxes(value: unknown, options: string[]): FieldValidationResult {
+  if (options.length < 2) {
+    return { valid: false, error: 'Checkboxes deve ter ao menos 2 opções configuradas' }
+  }
   if (!Array.isArray(value)) {
     return { valid: false, error: 'Seleções devem ser uma lista' }
   }
   if (!value.every(v => typeof v === 'string')) {
     return { valid: false, error: 'Cada seleção deve ser texto' }
   }
-  if (options.length > 0) {
-    const invalid = value.filter(v => !options.includes(v as string))
-    if (invalid.length > 0) {
-      return { valid: false, error: `Opções inválidas: ${invalid.join(', ')}` }
-    }
+  const invalid = value.filter(v => !options.includes(v as string))
+  if (invalid.length > 0) {
+    return { valid: false, error: `Opções inválidas: ${invalid.join(', ')}` }
   }
   return { valid: true }
 }
 
-function validateFileUpload(value: unknown): FieldValidationResult {
+function validateFileUpload(value: unknown, maxFileSizeMb?: number): FieldValidationResult {
   if (typeof value !== 'object' || value === null) {
     return { valid: false, error: 'Upload deve ser um objeto com name e url' }
   }
@@ -256,18 +275,19 @@ function validateFileUpload(value: unknown): FieldValidationResult {
   if (typeof obj.name !== 'string' || typeof obj.url !== 'string') {
     return { valid: false, error: 'Upload deve ter name (string) e url (string)' }
   }
-  // URL must be from Supabase Storage (no base64)
- const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const allowedPrefix = supabaseUrl
     ? `${supabaseUrl}/storage/v1/object/public/form-uploads/`
     : '/storage/v1/object/public/form-uploads/'
   if (!obj.url.startsWith(allowedPrefix) && !obj.url.startsWith('https://') && !obj.url.startsWith('http://')) {
     return { valid: false, error: 'URL do arquivo inválida' }
   }
-  // Validate size if present
   if (obj.size !== undefined) {
-    if (typeof obj.size !== 'number' || obj.size <= 0 || obj.size > 10 * 1024 * 1024) {
-      return { valid: false, error: 'Tamanho do arquivo inválido' }
+    // Cap configured maxFileSize at 25 MB
+    const limitMb = Math.min(maxFileSizeMb ?? 10, 25)
+    const limitBytes = limitMb * 1024 * 1024
+    if (typeof obj.size !== 'number' || obj.size <= 0 || obj.size > limitBytes) {
+      return { valid: false, error: `Tamanho do arquivo excede o limite de ${limitMb}MB` }
     }
   }
   return { valid: true }
@@ -319,11 +339,13 @@ function validateContentBlock(value: unknown): FieldValidationResult {
   return { valid: true }
 }
 
-function validateCalendly(value: unknown): FieldValidationResult {
+function validateCalendly(value: unknown, calendlyUrl?: string, required?: boolean): FieldValidationResult {
+  if (required && !calendlyUrl) {
+    return { valid: false, error: 'Campo Calendly obrigatório não possui URL de agendamento configurada' }
+  }
   if (typeof value !== 'string') {
     return { valid: false, error: 'Agendamento Calendly deve ser texto' }
   }
-  // Aceita URI do evento Calendly ou string "scheduled"
   if (value !== 'scheduled' && !value.startsWith('https://')) {
     return { valid: false, error: 'Valor do agendamento Calendly inválido' }
   }

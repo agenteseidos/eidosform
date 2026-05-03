@@ -94,7 +94,7 @@ export async function GET() {
       .single() as { data: { api_key_hash: string | null; plan: string } | null, error: unknown }
 
     if (upsertError || !upserted) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+      return NextResponse.json({ has_api_key: false, api_key_preview: null, plan: 'free' })
     }
 
     return NextResponse.json({

@@ -33,15 +33,21 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // P2-03 FIX: Avoid select('*') — specify needed columns for GET
   const { data, error } = await supabase
     .from('forms')
-    .select('id, title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url, created_at, updated_at')
+    .select('*')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
 
-  if (error || !data) {
+  if (error) {
+    if (error.code === 'PGRST116') {
+      return NextResponse.json({ error: 'Form not found' }, { status: 404 })
+    }
+    logError('GET /api/forms/[id] DB error', error, { id })
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
+  }
+  if (!data) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 

@@ -1,46 +1,84 @@
 /**
  * lib/resend.ts — Emails transacionais via Resend
- * Sprint Dia 4-5 — EidosForm
  * Graceful degradation: não crasha se RESEND_API_KEY ausente
  */
 
 import { escapeHtml } from '@/lib/html'
 import { logWarn, logError } from '@/lib/logger'
+import { createHash } from 'crypto'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
 
-async function sendEmail(payload: {
+/** PII patterns to strip from email subjects (P1-N1) */
+const PII_PATTERNS = [
+  /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g,          // CPF
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, // email
+  /\b(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}[-.\s]?\d{4}\b/g, // phone BR
+]
+
+/**
+ * Sanitize email subject: truncate to 50 chars and strip PII patterns.
+ */
+function sanitizeSubject(subject: string): string {
+  let s = subject
+  for (const pattern of PII_PATTERNS) {
+    s = s.replace(pattern, '***')
+  }
+  return s.length > 50 ? s.slice(0, 47) + '...' : s
+}
+
+async function sendEmailWithRetry(payload: {
   to: string
   subject: string
   html: string
+  idempotencyKey?: string
 }): Promise<{ id?: string; error?: string }> {
   if (!RESEND_API_KEY) {
     logWarn('[resend] RESEND_API_KEY not configured')
     return { error: 'RESEND_API_KEY not configured' }
   }
 
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
+  const safeSubject = sanitizeSubject(payload.subject)
+  const body = JSON.stringify({
+    from: FROM_EMAIL,
+    to: payload.to,
+    subject: safeSubject,
+    html: payload.html,
+  })
+
+  const delays = [0, 1000, 5000, 10000]
+  let lastError: string | undefined
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise(r => setTimeout(r, delays[attempt]))
+    }
+
+    try {
+      const headers: Record<string, string> = {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: payload.to,
-        subject: payload.subject,
-        html: payload.html,
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) return { error: JSON.stringify(data) }
-    return { id: data.id }
-  } catch (err) {
-    logError('[resend] Error sending email:', err)
-    return { error: String(err) }
+      }
+      if (payload.idempotencyKey) {
+        headers['Idempotency-Key'] = payload.idempotencyKey
+      }
+
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers,
+        body,
+      })
+      const data = await res.json()
+      if (res.ok) return { id: data.id }
+      lastError = JSON.stringify(data)
+    } catch (err) {
+      logError('[resend] Error sending email:', err)
+      lastError = String(err)
+    }
   }
+
+  return { error: lastError }
 }
 
 /** Nova resposta recebida em um formulário */
@@ -53,9 +91,15 @@ export async function sendNewResponseNotification(params: {
   const { to, formTitle, responseId, formId } = params
   const safeFormTitle = escapeHtml(formTitle)
 
-  return sendEmail({
+  // Idempotency key = hash(formId + responseId) to avoid duplicate emails on retry
+  const idempotencyKey = createHash('sha256')
+    .update(`new-response:${formId}:${responseId}`)
+    .digest('hex')
+
+  return sendEmailWithRetry({
     to,
     subject: `Nova resposta em "${safeFormTitle}"`,
+    idempotencyKey,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
         <h2 style="color:#6366f1">Nova resposta recebida! 🎉</h2>
@@ -81,7 +125,7 @@ export async function sendLimitAlert(params: {
   const { to, name, usage, limit, plan } = params
   const pct = Math.round((usage / limit) * 100)
   const safeName = escapeHtml(name)
-  return sendEmail({
+  return sendEmailWithRetry({
     to,
     subject: `Atenção: você usou ${pct}% do seu limite de respostas`,
     html: `
@@ -108,7 +152,7 @@ export async function sendPlanActivated(params: {
 }) {
   const { to, name, plan } = params
   const safeName = escapeHtml(name)
-  return sendEmail({
+  return sendEmailWithRetry({
     to,
     subject: `Plano ${plan} ativado! 🚀`,
     html: `
@@ -134,7 +178,7 @@ export async function sendPlanCancelled(params: {
 }) {
   const { to, name, plan } = params
   const safeName = escapeHtml(name)
-  return sendEmail({
+  return sendEmailWithRetry({
     to,
     subject: `Assinatura ${plan} cancelada`,
     html: `

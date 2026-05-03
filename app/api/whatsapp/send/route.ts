@@ -8,9 +8,17 @@ import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 const MAX_SENDS_PER_HOUR = 100
 
-async function checkWhatsAppRateLimit(phone: string, maxAttempts = MAX_SENDS_PER_HOUR): Promise<boolean> {
-  const cleanPhone = phone.replace(/\D/g, '')
-  const { allowed } = await checkRateLimitAsync(`whatsapp:${cleanPhone}`, {
+/**
+ * Rate limit keyed by both form and phone to isolate noisy forms (P1-N3).
+ * Direct-send path uses phone only (no formId available).
+ */
+async function checkWhatsAppRateLimit(
+  cleanPhone: string,
+  maxAttempts = MAX_SENDS_PER_HOUR,
+  formId?: string
+): Promise<boolean> {
+  const key = formId ? `whatsapp:${formId}:${cleanPhone}` : `whatsapp:${cleanPhone}`
+  const { allowed } = await checkRateLimitAsync(key, {
     maxAttempts,
     windowMs: 3_600_000,
   })
@@ -38,23 +46,32 @@ function isValidPhoneNumber(phone: string): boolean {
 }
 
 /**
- * Build message from template and lead data
+ * Normalize and sanitize a template value before substitution.
+ * NFKC normalization prevents Unicode homoglyph injection (P1-N2).
+ */
+function normalizeValue(value: string): string {
+  return value.normalize('NFKC')
+}
+
+/**
+ * Build message from template and lead data.
+ * Normalizes Unicode (NFKC) on all substituted values to prevent homoglyph attacks (P1-N2).
  */
 function buildMessage(template: string, leadData: FormAwareRequest['leadData']): string {
-  let msg = template
+  let msg = template.normalize('NFKC')
 
   // Named variables (higher priority)
-  msg = msg.replace(/\{form_name\}/g, String(leadData.form_name || 'Formulário'))
-  msg = msg.replace(/\{nome\}/g, String(leadData.name || leadData.nome || 'Lead'))
-  msg = msg.replace(/\{email\}/g, String(leadData.email || 'N/A'))
-  msg = msg.replace(/\{phone\}/g, String(leadData.phone || leadData.telefone || 'N/A'))
-  msg = msg.replace(/\{response_id\}/g, String(leadData.response_id || 'N/A'))
-  msg = msg.replace(/\{response_link\}/g, String(leadData.response_link || 'N/A'))
-  msg = msg.replace(/\{meta_events\}/g, String(leadData.meta_events || ''))
+  msg = msg.replace(/\{form_name\}/g, normalizeValue(String(leadData.form_name || 'Formulário')))
+  msg = msg.replace(/\{nome\}/g, normalizeValue(String(leadData.name || leadData.nome || 'Lead')))
+  msg = msg.replace(/\{email\}/g, normalizeValue(String(leadData.email || 'N/A')))
+  msg = msg.replace(/\{phone\}/g, normalizeValue(String(leadData.phone || leadData.telefone || 'N/A')))
+  msg = msg.replace(/\{response_id\}/g, normalizeValue(String(leadData.response_id || 'N/A')))
+  msg = msg.replace(/\{response_link\}/g, normalizeValue(String(leadData.response_link || 'N/A')))
+  msg = msg.replace(/\{meta_events\}/g, normalizeValue(String(leadData.meta_events || '')))
 
   // Replace any remaining {key} with leadData values
   msg = msg.replace(/\{(\w+)\}/g, (_, key) => {
-    return String(leadData[key] ?? '')
+    return normalizeValue(String(leadData[key] ?? ''))
   })
 
   return msg
@@ -200,7 +217,7 @@ async function handleFormAwareSend(
     )
   }
 
-  // 1b. Plan check — verify form owner has Plus or Professional
+  // 1b. Plan check — verify form owner has Plus or Professional (P1-N4: consolidated here)
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -226,15 +243,16 @@ async function handleFormAwareSend(
     }
   }
 
-  // 2. Rate limit check
-  if (!(await checkWhatsAppRateLimit(settings.owner_phone, settings.rate_limit_per_hour ?? MAX_SENDS_PER_HOUR))) {
+  // 2. Rate limit check — keyed by form + phone to isolate noisy forms (P1-N3)
+  const cleanPhone = settings.owner_phone.replace(/\D/g, '')
+  if (!(await checkWhatsAppRateLimit(cleanPhone, settings.rate_limit_per_hour ?? MAX_SENDS_PER_HOUR, data.formId))) {
     return NextResponse.json(
       { success: false, error: 'Rate limit exceeded. Try again later.' },
       { status: 429 }
     )
   }
 
-  // 3. Build message from template
+  // 3. Build message from template (Unicode normalized)
   const message = buildMessage(settings.message_template, data.leadData)
 
   // 4. Validate phone
@@ -268,8 +286,7 @@ async function handleFormAwareSend(
 }
 
 async function handleDirectSend(data: DirectSendRequest): Promise<NextResponse> {
-  // NOTE: Direct send bypasses plan gate. Only internal services with INTERNAL_API_SECRET
-  // can reach this point. For user-facing sends, always use the form-aware path.
+  // Direct send bypasses plan gate. Only internal services with INTERNAL_API_SECRET reach here.
   logWarn('[whatsapp/send] Direct send used — no plan gate applied')
 
   const cleanPhone = data.to.replace(/\D/g, '')

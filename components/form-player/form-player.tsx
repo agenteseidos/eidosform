@@ -304,7 +304,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         if (res.ok) {
           const data = await res.json()
           if (data.response_id) setResponseId(data.response_id)
-          toast.success('Progresso salvo', { duration: 2000, description: 'Seu preenchimento foi salvo automaticamente.' })
+          // Auto-save progress silently (no toast)
         }
       } catch {
         toast.error('Falha ao salvar progresso', { duration: 3000, description: 'Verifique sua conexão.' })

@@ -54,24 +54,52 @@ const ConditionalRuleSchema = z
 // Pixel event rule (one entry inside QuestionConfig.pixelEvents)
 const PixelEventRuleSchema = z
   .object({
-    id: z.string().optional(),
-    eventName: z.string().max(120).optional(),
-    pixelType: z.string().max(40).optional(),
-    when: z.string().max(40).optional(),
-    operator: z.string().max(40).optional(),
-    value: z.unknown().optional(),
+    id: z.string().min(1).max(120),
+    condition: z
+      .object({
+        operator: z.enum([
+          'equals',
+          'not_equals',
+          'contains',
+          'not_contains',
+          'greater_than',
+          'less_than',
+          'is_empty',
+          'is_not_empty',
+        ]),
+        value: z.string().max(2000),
+      })
+      .strip(),
+    event: z
+      .object({
+        type: z.enum(['standard', 'custom']),
+        name: z.string().min(1).max(120),
+        value: z.number().finite().optional(),
+        currency: z.string().trim().min(3).max(3).optional(),
+      })
+      .strip(),
   })
-  .passthrough()
+  .strip()
 
 // Jump rule (one entry inside QuestionConfig.jumpRules)
 const JumpRuleSchema = z
   .object({
-    id: z.string().optional(),
-    operator: z.string().max(40).optional(),
-    value: z.unknown().optional(),
-    targetQuestionId: z.string().nullable().optional(),
+    id: z.string().min(1).max(120),
+    condition: z
+      .object({
+        questionId: z.string().min(1).max(120),
+        operator: z.enum(['equals', 'not_equals', 'contains', 'greater_than', 'less_than', 'not_empty', 'is_empty']),
+        value: z.string().max(2000),
+      })
+      .strip(),
+    action: z
+      .object({
+        type: z.enum(['jump', 'submit']),
+        targetQuestionId: z.string().min(1).max(120).optional(),
+      })
+      .strip(),
   })
-  .passthrough()
+  .strip()
 
 const QuestionBaseShape = {
   id: z.string().min(1).max(120),
@@ -94,67 +122,67 @@ const stringOptionList = z
 
 // Discriminated union by `type` so each question only accepts its valid fields.
 export const QuestionSchema = z.discriminatedUnion('type', [
-  z.object({ ...QuestionBaseShape, type: z.literal('short_text') }),
-  z.object({ ...QuestionBaseShape, type: z.literal('long_text') }),
+  z.object({ ...QuestionBaseShape, type: z.literal('short_text') }).strip(),
+  z.object({ ...QuestionBaseShape, type: z.literal('long_text') }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('dropdown'),
     options: stringOptionList.optional(),
-  }),
+  }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('checkboxes'),
     options: stringOptionList.optional(),
-  }),
-  z.object({ ...QuestionBaseShape, type: z.literal('email') }),
-  z.object({ ...QuestionBaseShape, type: z.literal('phone') }),
+  }).strip(),
+  z.object({ ...QuestionBaseShape, type: z.literal('email') }).strip(),
+  z.object({ ...QuestionBaseShape, type: z.literal('phone') }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('number'),
     minValue: z.number().finite().optional(),
     maxValue: z.number().finite().optional(),
-  }),
-  z.object({ ...QuestionBaseShape, type: z.literal('date') }),
+  }).strip(),
+  z.object({ ...QuestionBaseShape, type: z.literal('date') }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('rating'),
     minValue: z.number().int().min(0).max(20).optional(),
     maxValue: z.number().int().min(1).max(20).optional(),
-  }),
+  }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('opinion_scale'),
     minValue: z.number().int().min(0).max(20).optional(),
     maxValue: z.number().int().min(1).max(20).optional(),
-  }),
-  z.object({ ...QuestionBaseShape, type: z.literal('yes_no') }),
+  }).strip(),
+  z.object({ ...QuestionBaseShape, type: z.literal('yes_no') }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('file_upload'),
     allowedFileTypes: z.array(z.string().max(80)).max(20).optional(),
     maxFileSize: z.number().int().min(1).max(25).optional(),
-  }),
+  }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('nps'),
     minValue: z.number().int().min(0).max(20).optional(),
     maxValue: z.number().int().min(1).max(20).optional(),
-  }),
-  z.object({ ...QuestionBaseShape, type: z.literal('url') }),
-  z.object({ ...QuestionBaseShape, type: z.literal('address') }),
-  z.object({ ...QuestionBaseShape, type: z.literal('cpf') }),
+  }).strip(),
+  z.object({ ...QuestionBaseShape, type: z.literal('url') }).strip(),
+  z.object({ ...QuestionBaseShape, type: z.literal('address') }).strip(),
+  z.object({ ...QuestionBaseShape, type: z.literal('cpf') }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('calendly'),
     calendlyUrl: optionalSafeUrl.optional(),
-  }),
+  }).strip(),
   z.object({
     ...QuestionBaseShape,
     type: z.literal('content_block'),
     contentBody: z.string().max(50_000).optional().nullable(),
     contentButtonText: z.string().max(120).optional().nullable(),
     contentButtonUrl: optionalSafeUrl.optional(),
-  }),
+  }).strip(),
 ])
 
 export type QuestionPayload = z.infer<typeof QuestionSchema>

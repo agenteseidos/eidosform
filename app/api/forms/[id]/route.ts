@@ -86,10 +86,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   // Etapa 7 — Zod schema validation (defense-in-depth before business rules).
-  console.log('[PATCH] questions:', rawBody.questions?.length, 'types:', rawBody.questions?.map((q: any) => q.type))
   const parsed = FormUpdateSchema.safeParse(rawBody)
   if (!parsed.success) {
-    console.error('[PATCH] Zod errors:', JSON.stringify(formatZodIssues(parsed.error)))
     return NextResponse.json(
       { error: 'Payload inválido', issues: formatZodIssues(parsed.error) },
       { status: 400 }

@@ -1,36 +1,56 @@
-import createDOMPurify from 'dompurify'
-import { JSDOM } from 'jsdom'
 import { isSafeUrl, ALLOWED_TAGS, ALLOWED_ATTR } from './html'
 
 /**
- * Server-only HTML sanitization using jsdom + DOMPurify.
- * DO NOT import from client components — jsdom requires Node.js 'fs'.
+ * Server-only HTML sanitization — NO jsdom dependency.
+ * Uses a lightweight tag-stripping + attribute-filtering approach
+ * that works in Vercel serverless functions.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let purifier: any = null
+const ALLOWED_TAGS_SET = new Set(ALLOWED_TAGS)
+const ALLOWED_ATTR_SET = new Set(ALLOWED_ATTR)
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getPurifier(): any {
-  if (purifier) return purifier
-  const window = new JSDOM('').window
-  purifier = createDOMPurify(window as any)
-  return purifier
-}
-
+/**
+ * Strip all HTML tags except allowed ones, and remove all attributes
+ * except allowed ones. Sanitizes href values with isSafeUrl.
+ */
 export function sanitizeHtmlServer(dirty: unknown): string {
   if (typeof dirty !== 'string' || !dirty) return ''
-  const p = getPurifier()
-  const cleaned = p.sanitize(dirty, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    ALLOW_DATA_ATTR: false,
-    FORBID_ATTR: ['style', 'srcset', 'onerror', 'onclick', 'onload'],
+  
+  // Replace all tags — keep allowed, strip others
+  return dirty.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
+    const tag = tagName.toLowerCase()
+    
+    // Closing tag for allowed element
+    if (match.startsWith('</')) {
+      return ALLOWED_TAGS_SET.has(tag) ? `</${tag}>` : ''
+    }
+    
+    // Not allowed — strip entirely
+    if (!ALLOWED_TAGS_SET.has(tag)) return ''
+    
+    // Allowed tag — filter attributes
+    const attrRegex = /\s+([a-zA-Z][a-zA-Z0-9-]*)=(?:"[^"]*"|'[^']*')/g
+    let filteredAttrs = ''
+    let attrMatch
+    while ((attrMatch = attrRegex.exec(match)) !== null) {
+      const attrName = attrMatch[1].toLowerCase()
+      if (!ALLOWED_ATTR_SET.has(attrName)) continue
+      
+      let attrValue = attrMatch[0].trim()
+      
+      // Sanitize href
+      if (attrName === 'href') {
+        const hrefMatch = attrValue.match(/="([^"]*)"/)
+        if (hrefMatch && !isSafeUrl(hrefMatch[1])) {
+          attrValue = ' href="#"'
+        }
+      }
+      
+      filteredAttrs += attrValue
+    }
+    
+    return `<${tag}${filteredAttrs}>`
   })
-  if (typeof cleaned !== 'string') return ''
-  return cleaned.replace(/href="([^"]*)"/g, (full, href) =>
-    isSafeUrl(href) ? full : 'href="#"'
-  )
 }
 
 export function sanitizeContentBlocksServer<T>(questions: T): T {

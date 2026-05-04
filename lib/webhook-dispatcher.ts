@@ -7,6 +7,7 @@
 import { validateWebhookUrlAsync } from './webhook-validator'
 import { logError, logWarn } from '@/lib/logger'
 import { createClient } from '@supabase/supabase-js'
+import { sendWebhookFailureAlert } from '@/lib/resend'
 
 export interface WebhookFieldMeta {
   question_id: string
@@ -81,8 +82,76 @@ async function insertDlq(params: {
       last_error: params.error,
       owner_email: params.ownerEmail ?? null,
     })
+
+    if (params.ownerEmail) {
+      await maybeNotifyOwnerOfWebhookFailures({
+        formId: params.formId,
+        ownerEmail: params.ownerEmail,
+      })
+    }
   } catch {
     // DLQ insert failure must never crash the response flow
+  }
+}
+
+/**
+ * Notify the form owner once per 24h when ≥3 webhook failures happened in the
+ * past 7 days. Reads webhook_failures + writes webhook_failure_notifications.
+ */
+async function maybeNotifyOwnerOfWebhookFailures(params: {
+  formId: string
+  ownerEmail: string
+}): Promise<void> {
+  try {
+    const supabase = getSupabase()
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    const { data: failures, error: failuresError } = await supabase
+      .from('webhook_failures')
+      .select('webhook_url, last_error, created_at')
+      .eq('form_id', params.formId)
+      .gte('created_at', sevenDaysAgo)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    if (failuresError || !failures || failures.length < 3) return
+
+    const { data: lastNotification } = await supabase
+      .from('webhook_failure_notifications')
+      .select('last_notified_at')
+      .eq('form_id', params.formId)
+      .maybeSingle()
+
+    if (lastNotification?.last_notified_at) {
+      const ageMs = Date.now() - new Date(lastNotification.last_notified_at).getTime()
+      if (ageMs < 24 * 60 * 60 * 1000) return
+    }
+
+    const { data: form } = await supabase
+      .from('forms')
+      .select('title')
+      .eq('id', params.formId)
+      .maybeSingle()
+
+    await sendWebhookFailureAlert({
+      to: params.ownerEmail,
+      formTitle: form?.title ?? 'Formulário',
+      formId: params.formId,
+      failures: failures.slice(0, 3).map((f) => ({
+        webhook_url: String(f.webhook_url ?? ''),
+        last_error: String(f.last_error ?? ''),
+        created_at: String(f.created_at ?? ''),
+      })),
+    })
+
+    await supabase
+      .from('webhook_failure_notifications')
+      .upsert({
+        form_id: params.formId,
+        last_notified_at: new Date().toISOString(),
+        failure_count_window: failures.length,
+      })
+  } catch (err) {
+    logWarn('[webhook-dispatcher] Owner notification failed', { error: err instanceof Error ? err.message : String(err) })
   }
 }
 

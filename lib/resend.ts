@@ -8,7 +8,8 @@ import { logWarn, logError } from '@/lib/logger'
 import { createHash } from 'crypto'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
+// Keep fallback on the verified Resend sending subdomain.
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@send.eidosform.com.br>'
 
 /** PII patterns to strip from email subjects (P1-N1) */
 const PII_PATTERNS = [

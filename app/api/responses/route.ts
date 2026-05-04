@@ -14,6 +14,7 @@ import { appendSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { sendNewResponseNotification } from '@/lib/resend'
 
 // Maximum payload size (1MB — covers long text forms with URLs; file uploads go to R2)
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -310,14 +311,31 @@ export async function POST(req: NextRequest) {
     // Fetch form owner's plan for feature gating
     const { data: ownerProfile } = await supabase
       .from('profiles')
-      .select('plan')
+      .select('plan, email')
       .eq('id', form.user_id)
-      .single()
+      .single() as { data: { plan: string | null; email: string | null } | null; error: unknown }
     const ownerPlan = normalizePlan(ownerProfile?.plan)
     const ownerPlanConfig = PLANS[ownerPlan]
 
-    // Notificação por email configurada no form — feature gated
-    if (form.notify_email_enabled && form.notify_email && ownerPlanConfig?.emailNotifications) {
+    // Notificação principal para o dono do formulário.
+    // Isso já existia antes do gate por integrações e não deve depender do campo notify_email do form.
+    if (ownerProfile?.email) {
+      sendNewResponseNotification({
+        to: ownerProfile.email,
+        formTitle: form.title ?? 'Formulário',
+        formId: form_id as string,
+        responseId,
+      }).catch((err) => logError('Failed to send owner response email', err))
+    }
+
+    // Notificação por email configurada no form — feature gated.
+    // Evita duplicidade se o email configurado for o mesmo do dono.
+    if (
+      form.notify_email_enabled &&
+      form.notify_email &&
+      ownerPlanConfig?.emailNotifications &&
+      form.notify_email !== ownerProfile?.email
+    ) {
       sendEmailNotification({
         toEmail: form.notify_email,
         formTitle: form.title ?? 'Formulário',

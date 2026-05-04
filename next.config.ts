@@ -64,6 +64,7 @@ const embeddableFormHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ['jsdom'],
   async headers() {
     return [
       {

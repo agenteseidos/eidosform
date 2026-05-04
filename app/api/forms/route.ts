@@ -9,7 +9,7 @@ import { normalizePlan } from '@/lib/plans'
 import { logError } from '@/lib/logger'
 import { isSafeUrl } from '@/lib/html'
 import { FormCreateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
-import { sanitizeContentBlocks } from '@/lib/html'
+import { sanitizeContentBlocksServer as sanitizeContentBlocks } from '@/lib/html-server'
 
 // T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string): string {

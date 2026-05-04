@@ -8,7 +8,7 @@ import { validateFormIntegrations } from '@/lib/form-integrations'
 import { extractSpreadsheetId, connectSpreadsheet } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { FormUpdateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
-import { sanitizeContentBlocks } from '@/lib/html'
+import { sanitizeContentBlocksServer as sanitizeContentBlocks } from '@/lib/html-server'
 import { isSafeUrl } from '@/lib/html'
 
 // T1/T2: Ensure URLs have protocol before persisting

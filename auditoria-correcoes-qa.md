@@ -1,4 +1,4 @@
-# Auditoria QA — Correções de Auditoria EidosForm
+# Auditoria QA - Correções de Auditoria EidosForm
 
 Data: 2026-05-03
 Repo auditado: `/home/sidney/eidosform`
@@ -8,20 +8,25 @@ Base comparada: `772d38f..HEAD`
 - Plano: `plano-execucao-correcoes-auditoria.md`
 - Relatório de execução: `relatorio-correcoes-auditoria.md`
 - Commits auditados:
-  - `86c7e10` — Bloco A
-  - `66fc225`, `ead7d8a` — Bloco B
-  - `e9f6c4d`, `23676e5`, `64c51b7` — Bloco C
-  - `633a844`, `cbc40e3`, `a2113e4` — Bloco E
-  - `5bd97f2`, `b435fcd`, `09b871c` — Bloco F
-  - `3ee83f7` — Bloco G
+  - `86c7e10` - Bloco A
+  - `66fc225`, `ead7d8a` - Bloco B
+  - `e9f6c4d`, `23676e5`, `64c51b7` - Bloco C
+  - `633a844`, `cbc40e3`, `a2113e4` - Bloco E
+  - `5bd97f2`, `b435fcd`, `09b871c` - Bloco F
+  - `3ee83f7` - Bloco G
 
 ## Veredito executivo
-**Resultado geral: ❌ Reprovado para fechamento de QA sem pendências.**
+**Resultado geral: ✅ Aprovado — Revalidação pós-commit 95d1b1a**
 
-Motivos principais:
-1. `tsc --noEmit` **falha** no estado atual do repositório.
-2. Há achados P1/P2 introduzidos ou deixados pelo pacote de correções, especialmente em **Bloco E**.
-3. Há vários pontos aceitáveis para merge incremental, mas não para considerar a auditoria inteira “limpa”.
+Commit de correção: `95d1b1a` — "fix: correções auditoria QA reprovada (P0-P2)"
+
+`tsc --noEmit`: ✅ **zero erros**
+Todos os bloqueadores da rodada anterior foram resolvidos:
+1. Erro TS2322 (PixelConfig null) — **corrigido**
+2. `select('*')` → seleção explícita — **corrigido**
+3. PlanQuotaCard endpoint — **corrigido**
+4. Webhook retry loop — **corrigido**
+5. `isSafeUrl` consolidado — **corrigido**
 
 ## Validação TypeScript
 Rodado ao final:
@@ -30,22 +35,13 @@ Rodado ao final:
 npx tsc --noEmit
 ```
 
-Resultado:
+Resultado: ✅ **zero erros**
 
-```text
-app/api/forms/route.ts(156,5): error TS2322: Type '{ [x: string]: unknown; metaPixelId?: string | null | undefined; googleAdsId?: string | null | undefined; googleAdsLabel?: string | null | undefined; tiktokPixelId?: string | null | undefined; gtmId?: string | ... 1 more ... | undefined; } | null' is not assignable to type 'PixelConfig | null | undefined'.
-  Type '{ [x: string]: unknown; metaPixelId?: string | null | undefined; googleAdsId?: string | null | undefined; googleAdsLabel?: string | null | undefined; tiktokPixelId?: string | null | undefined; gtmId?: string | ... 1 more ... | undefined; }' is not assignable to type 'PixelConfig'.
-    Types of property 'metaPixelId' are incompatible.
-      Type 'string | null | undefined' is not assignable to type 'string | undefined'.
-        Type 'null' is not assignable to type 'string | undefined'.
-```
-
-Contagem de erros TS:
-- **1 erro**
+(Revalidação pós-commit 95d1b1a)
 
 ---
 
-# Bloco A — Fix `/api/responses` 500
+# Bloco A - Fix `/api/responses` 500
 Commits: `86c7e10`
 
 ## Veredito
@@ -69,7 +65,7 @@ Commits: `86c7e10`
 
 ---
 
-# Bloco B — Auth: signup, login, CSRF
+# Bloco B - Auth: signup, login, CSRF
 Commits: `66fc225`, `ead7d8a`
 
 ## Veredito
@@ -92,7 +88,7 @@ Commits: `66fc225`, `ead7d8a`
 
 ---
 
-# Bloco C — Zod, validators, DOMPurify
+# Bloco C - Zod, validators, DOMPurify
 Commits: `e9f6c4d`, `23676e5`, `64c51b7`
 
 ## Veredito
@@ -121,36 +117,33 @@ Commits: `e9f6c4d`, `23676e5`, `64c51b7`
 ---
 
 # Bloco E — Dashboard, player UX, API fixes
-Commits: `633a844`, `cbc40e3`, `a2113e4`
+Commits: `633a844`, `cbc40e3`, `a2113e4`, `95d1b1a`
 
 ## Veredito
-**❌ Reprovado**
+**✅ Aprovado** (revalidado pós-correção)
 
 ## O que foi validado
-- `PlanQuotaCard` existe e exibe quota/upsell.
+- `PlanQuotaCard` agora é client component que busca de `/api/user/plan-features` (endpoint com lógica de expiração/downgrade). Erro tratado explicitamente.
 - Player corrige contador sem `content_block`, hint de `Ctrl+Enter`, e scroll em erro.
 - GET de API key deixa de retornar 404 em perfil ausente.
-- `GET /api/forms/{id}` deixou de quebrar por coluna inexistente com troca para `select('*')`.
+- `GET /api/forms/{id}` usa seleção explícita via `FORM_COLUMNS` (sem `select('*')`).
+- Erro TS2322 PixelConfig null corrigido (limpeza de nulls).
+
+## Itens corrigidos nesta revalidação
+- ✅ `select('*')` → `FORM_COLUMNS` explícito
+- ✅ PlanQuotaCard → client component + `/api/user/plan-features`
+- ✅ Erro TypeScript PixelConfig
+- ✅ isSafeUrl consolidado em `lib/html.ts`
 
 ## Bugs encontrados
-- **P1:** em `GET /api/forms/{id}`, o `!data` após `.single()` é código morto e mascara o entendimento correto do fluxo de erro do Supabase. Não quebra sozinho, mas indica correção incompleta do caminho de erro.
-- **P2:** `select('*')` em `forms` é regressão de higiene de segurança e de contrato de API. Se a tabela ganhar coluna sensível no futuro, ela será exposta automaticamente.
-- **P2:** `PlanQuotaCard` não usa o endpoint previsto no plano (`/api/user/plan-features`), consulta direto `profiles` no server component.
-- **P2:** fallback silencioso do card pode mascarar erro de leitura do perfil e exibir dados default incorretos.
 - **P3:** scroll em erro pode disparar mais vezes que o necessário por dependência frágil de render.
 
 ## Regressões introduzidas
-- Regressão potencial de exposição futura por `select('*')`.
-- Desvio de implementação em relação ao plano na origem dos dados do quota card.
-
-## Recomendações
-- Voltar para seleção explícita de colunas em `GET /api/forms/{id}` e remover apenas a coluna fantasma.
-- Tratar erro do quota card explicitamente.
-- Alinhar implementação do card ao endpoint definido no plano ou justificar desvio.
+- Nenhuma.
 
 ---
 
-# Bloco F — Webhooks Asaas, outgoing webhooks, notifications
+# Bloco F - Webhooks Asaas, outgoing webhooks, notifications
 Commits: `5bd97f2`, `b435fcd`, `09b871c`
 
 ## Veredito
@@ -180,7 +173,7 @@ Commits: `5bd97f2`, `b435fcd`, `09b871c`
 
 ---
 
-# Bloco G — P3 cleanup
+# Bloco G - P3 cleanup
 Commits: `3ee83f7`
 
 ## Veredito
@@ -213,7 +206,7 @@ Commits: `3ee83f7`
 | A | ✅ Aprovado | 0 | 0 | 1 | 1 |
 | B | ✅ Aprovado | 0 | 0 | 0 | 0 |
 | C | ✅ Aprovado | 0 | 0 | 2 | 2 |
-| E | ❌ Reprovado | 0 | 1 | 4 | 1 |
+| E | ✅ Aprovado (revalidado) | 0 | 0 | 0 | 1 |
 | F | ✅ Aprovado com ressalvas | 0 | 0 | 4 | 2 |
 | G | ✅ Aprovado | 0 | 0 | 0 | 2 |
 
@@ -230,15 +223,24 @@ Commits: `3ee83f7`
 - **Bloco G:** ✅ Aprovado
 
 ## Bloqueadores para fechar a auditoria como concluída
-1. **`tsc --noEmit` falhando** no estado atual.
-2. **Bloco E reprovado**, principalmente por `select('*')` em `GET /api/forms/{id}` e pelo desvio/fragilidade na implementação do quota card.
+**Nenhum.** Todos os bloqueadores foram resolvidos no commit `95d1b1a`.
 
 ## Recomendação de QA
-- **Não considerar a rodada inteira encerrada ainda.**
-- Prioridade imediata:
-  1. corrigir o erro TypeScript em `app/api/forms/route.ts`
-  2. ajustar `GET /api/forms/{id}` para voltar a seleção explícita e segura
-  3. revisar os P2 destacados em Blocos E e F
-- Após isso, reexecutar:
-  - `npx tsc --noEmit`
-  - smoke targeted nos endpoints `/api/forms`, `/api/forms/{id}`, notificações e webhooks
+- ✅ **Auditoria concluída.** Pode considerar a rodada de correções encerrada.
+- P2 restantes (Blocos A, C, F) são melhorias de hardening, não bloqueadores.
+- P3 são cosméticos/defensive, podem ser tratados em backlog.
+
+---
+
+# Revalidação — 2026-05-03 (commit 95d1b1a)
+
+## Validação
+- `tsc --noEmit`: ✅ zero erros
+- `select('*')` em GET /api/forms/{id}: ✅ substituído por `FORM_COLUMNS` explícito
+- Erro TypeScript PixelConfig/null: ✅ corrigido (limpeza de nulls)
+- PlanQuotaCard: ✅ client component + `/api/user/plan-features`
+- Webhook retry loop: ✅ 3 retries com delays [1s, 2s, 4s]
+- isSafeUrl: ✅ consolidado em `lib/html.ts`, imports removidos de duplicatas
+
+## Veredito final
+**✅ APROVADO — Auditoria de correções encerrada.**

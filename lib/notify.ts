@@ -7,10 +7,7 @@ import { escapeHtml } from '@/lib/html'
 import { logWarn, logError } from '@/lib/logger'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-// Keep fallback on the verified Resend sending subdomain.
-// Apex-domain addresses may exist in DNS but still fail if the verified sender
-// in Resend is the subdomain setup (historically `send.eidosform.com.br`).
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@send.eidosform.com.br>'
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
 
 export async function sendEmailNotification({
   toEmail,

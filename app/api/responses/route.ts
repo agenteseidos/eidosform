@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { checkAndIncrementResponseCount, PLANS, PlanName } from '@/lib/plan-limits'
+import { checkAndIncrementResponseCount, PLANS } from '@/lib/plan-limits'
+import { normalizePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
@@ -312,7 +313,7 @@ export async function POST(req: NextRequest) {
       .select('plan')
       .eq('id', form.user_id)
       .single()
-    const ownerPlan = (ownerProfile?.plan ?? 'free') as PlanName
+    const ownerPlan = normalizePlan(ownerProfile?.plan)
     const ownerPlanConfig = PLANS[ownerPlan]
 
     // Notificação por email configurada no form — feature gated

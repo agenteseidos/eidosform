@@ -320,12 +320,19 @@ export async function POST(req: NextRequest) {
     // Notificação principal para o dono do formulário.
     // Isso já existia antes do gate por integrações e não deve depender do campo notify_email do form.
     if (ownerProfile?.email) {
+      console.log('[responses] sending owner email notification', { formId: form_id, responseId, ownerPlan, hasOwnerEmail: true })
       sendNewResponseNotification({
         to: ownerProfile.email,
         formTitle: form.title ?? 'Formulário',
         formId: form_id as string,
         responseId,
+      }).then((result) => {
+        if (result?.error) {
+          logError('Owner response email rejected', undefined, { formId: form_id, responseId, ownerPlan, error: result.error })
+        }
       }).catch((err) => logError('Failed to send owner response email', err))
+    } else {
+      logError('Owner response email skipped: profile has no email', undefined, { formId: form_id, responseId, ownerPlan })
     }
 
     // Notificação por email configurada no form — feature gated.
@@ -336,12 +343,23 @@ export async function POST(req: NextRequest) {
       ownerPlanConfig?.emailNotifications &&
       form.notify_email !== ownerProfile?.email
     ) {
+      console.log('[responses] sending integration email notification', { formId: form_id, responseId, ownerPlan, notifyEmailEnabled: true })
       sendEmailNotification({
         toEmail: form.notify_email,
         formTitle: form.title ?? 'Formulário',
         formId: form_id as string,
         answersCount: Object.keys(answers as Record<string, unknown>).length,
       }).catch((err) => logError('Failed to send email notification', err))
+    } else {
+      console.log('[responses] integration email notification skipped', {
+        formId: form_id,
+        responseId,
+        ownerPlan,
+        notifyEmailEnabled: form.notify_email_enabled,
+        hasNotifyEmail: Boolean(form.notify_email),
+        planAllowsEmailNotifications: Boolean(ownerPlanConfig?.emailNotifications),
+        sameAsOwnerEmail: form.notify_email === ownerProfile?.email,
+      })
     }
 
     // WhatsApp notification — delegated to sendWhatsAppOnFormResponse which checks form_whatsapp_settings

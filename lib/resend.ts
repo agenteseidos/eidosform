@@ -71,8 +71,12 @@ async function sendEmailWithRetry(payload: {
         body,
       })
       const data = await res.json()
-      if (res.ok) return { id: data.id }
+      if (res.ok) {
+        console.log('[resend] email sent', { id: data.id, from: FROM_EMAIL, to: payload.to, subject: safeSubject })
+        return { id: data.id }
+      }
       lastError = JSON.stringify(data)
+      console.error('[resend] API rejected email', { from: FROM_EMAIL, to: payload.to, subject: safeSubject, status: res.status, data })
     } catch (err) {
       logError('[resend] Error sending email:', err)
       lastError = String(err)

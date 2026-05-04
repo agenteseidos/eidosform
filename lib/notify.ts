@@ -60,7 +60,10 @@ export async function sendEmailNotification({
     if (!res.ok) {
       const error = await res.text()
       logError('[notify] Resend API error', { status: res.status, from: FROM_EMAIL, body: error })
+      return
     }
+
+    console.log('[notify] email sent', { from: FROM_EMAIL, toEmail, formId, status: res.status })
   } catch (e) {
     // Silencioso — não quebrar o fluxo principal
     logError('Email notification failed:', e)

@@ -1,4 +1,4 @@
-import { logWarn, logError } from '@/lib/logger'
+import { log, logWarn, logError } from '@/lib/logger'
 import { createPublicClient } from '@/lib/supabase/public'
 
 /**
@@ -76,7 +76,7 @@ export async function sendWhatsAppOnFormResponse(params: {
     }
 
     const result = await sendResponse.json() as { success?: boolean; messageId?: string }
-    logWarn(`[WhatsApp] ✅ Sent for form ${formId}, response ${responseId}, msgId: ${result.messageId || 'N/A'}`)
+    log('[WhatsApp] Sent', { formId, responseId, msgId: result.messageId ?? null })
 
     // P1 FIX: Log to form_whatsapp_logs table for auditing
     logWhatsAppSend(formId, responseId, 'sent', result.messageId || null, null, leadData.phone).catch(() => {})

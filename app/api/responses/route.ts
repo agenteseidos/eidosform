@@ -320,9 +320,8 @@ export async function POST(req: NextRequest) {
     const ownerPlan = normalizePlan(ownerProfile?.plan)
     const ownerPlanConfig = PLANS[ownerPlan]
 
-    // Notificação principal para o dono do formulário.
-    // Isso já existia antes do gate por integrações e não deve depender do campo notify_email do form.
-    if (ownerProfile?.email) {
+    // Notificação principal para o dono do formulário — feature gated em Plus+.
+    if (ownerProfile?.email && ownerPlanConfig?.emailNotifications) {
       console.log('[responses] sending owner email notification', { formId: form_id, responseId, ownerPlan, hasOwnerEmail: true })
       postSubmitTasks.push(
         sendNewResponseNotification({
@@ -337,7 +336,13 @@ export async function POST(req: NextRequest) {
         }).catch((err) => logError('Failed to send owner response email', err))
       )
     } else {
-      logError('Owner response email skipped: profile has no email', undefined, { formId: form_id, responseId, ownerPlan })
+      console.log('[responses] owner email notification skipped', {
+        formId: form_id,
+        responseId,
+        ownerPlan,
+        hasOwnerEmail: Boolean(ownerProfile?.email),
+        planAllowsEmailNotifications: Boolean(ownerPlanConfig?.emailNotifications),
+      })
     }
 
     // Notificação por email configurada no form — feature gated.

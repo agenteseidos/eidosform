@@ -1411,7 +1411,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                             <span className="ml-2 text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Plus+</span>
                           )}
                         </p>
-                        <p className="text-xs text-slate-500">Você receberá um e-mail automaticamente a cada nova resposta enviada no formulário.</p>
+                        <p className="text-xs text-slate-500">A cada nova resposta, você recebe um e-mail no endereço da sua conta. Opcionalmente, encaminhe também para um e-mail adicional (equipe, CRM, parceiro).</p>
                       </div>
                       {(userPlan === 'plus' || userPlan === 'professional') && (
                         <Switch
@@ -1430,7 +1430,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       </p>
                     ) : form.notify_email_enabled ? (
                       <div>
-                        <Label className="text-xs text-slate-600">E-mail de destino</Label>
+                        <Label className="text-xs text-slate-600">E-mail adicional para encaminhamento (opcional)</Label>
                         <Input
                           value={form.notify_email ?? ""}
                           onChange={(e) => {
@@ -1438,7 +1438,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                             setHasUnsavedChanges(true)
                           }}
                           className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
-                          placeholder="seu@email.com"
+                          placeholder="equipe@empresa.com"
                           type="email"
                         />
                       </div>

@@ -1,0 +1,11 @@
+.env
+*.log
+latest-qr.*
+status.json
+node_modules/
+node_modules/
+.env
+server.log
+latest-qr.*
+status.json
+logs/

@@ -3,10 +3,7 @@ module.exports = {
     name: 'eidosform-whatsapp',
     script: 'server.js',
     cwd: '/home/sidney/eidosform/services/whatsapp',
-    env: {
-      WHATSAPP_API_KEY: 'd740b16263d6e361d169d5a9b0a7c714054160f069756eff60456ee20b8d6d76',
-      PORT: '3457',
-    },
+    env_file: '/home/sidney/eidosform/services/whatsapp/.env',
     autorestart: true,
     watch: false,
     max_memory_restart: '200M',

@@ -3,9 +3,13 @@ const { spawn, execFile } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
 const { Jimp } = require('jimp');
 
 const execFileAsync = promisify(execFile);
+
+// Hash phone for logging — first 8 hex chars of SHA-256 (PII safe)
+const hashPhone = (p) => p ? crypto.createHash('sha256').update(String(p)).digest('hex').slice(0, 8) : 'null';
 
 const WACLI = '/home/linuxbrew/.linuxbrew/bin/wacli';
 const LOG_FILE = '/home/sidney/eidosform-whatsapp/server.log';
@@ -203,7 +207,7 @@ async function refreshStatus() {
     status.connected = d.connected || d.authenticated || false;
     status.phoneNumber = d.phoneNumber || getPhoneFromDb();
     writeStatus();
-    log(`[status] Refreshed: ${JSON.stringify(status)}`);
+    log(`[status] Refreshed: authenticated=${status.authenticated} connected=${status.connected} phone=${hashPhone(status.phoneNumber)}`);
   } catch (err) {
     log(`[status] Refresh error: ${err.message}`);
   }
@@ -273,7 +277,7 @@ async function sendWithFallback(phone, message) {
     const num9 = cleaned.substring(4);
     const num8 = num9.substring(1);
     const phone8 = '55' + ddd + num8;
-    log(`[send] Trying 8-digit fallback: ${phone8}`);
+    log(`[send] Trying 8-digit fallback: ${hashPhone(phone8)}`);
     const result2 = await tryWacliSend(phone8, message);
     if (result2.success) return result2;
   }
@@ -282,7 +286,7 @@ async function sendWithFallback(phone, message) {
     const ddd = cleaned.substring(2, 4);
     const num8 = cleaned.substring(4);
     const phone9 = '55' + ddd + '9' + num8;
-    log(`[send] Trying 9-digit fallback: ${phone9}`);
+    log(`[send] Trying 9-digit fallback: ${hashPhone(phone9)}`);
     const result2 = await tryWacliSend(phone9, message);
     if (result2.success) return result2;
   }
@@ -334,7 +338,7 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply
     return reply.code(500).send({ error: 'Failed to send message', details: result.error });
   }
 
-  log(`[send] Success: ${to} (msgId: ${result.messageId})`);
+  log(`[send] Success: ${hashPhone(to)} (msgId: ${result.messageId})`);
   return reply.send({ success: true, messageId: result.messageId });
 });
 

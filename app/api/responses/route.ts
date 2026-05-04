@@ -306,7 +306,10 @@ export async function POST(req: NextRequest) {
     if (itemsError) logError('Failed to insert answer_items:', itemsError)
   }
 
-  // Notificar por email e disparar webhook se resposta completa
+  // Notificar por email e disparar integrações se resposta completa.
+  // Importante: em serverless, side-effects fire-and-forget podem ser abortados
+  // quando a resposta HTTP termina. Por isso acumulamos promises e aguardamos.
+  const postSubmitTasks: Promise<unknown>[] = []
   if (completed) {
     // Fetch form owner's plan for feature gating
     const { data: ownerProfile } = await supabase
@@ -321,16 +324,18 @@ export async function POST(req: NextRequest) {
     // Isso já existia antes do gate por integrações e não deve depender do campo notify_email do form.
     if (ownerProfile?.email) {
       console.log('[responses] sending owner email notification', { formId: form_id, responseId, ownerPlan, hasOwnerEmail: true })
-      sendNewResponseNotification({
-        to: ownerProfile.email,
-        formTitle: form.title ?? 'Formulário',
-        formId: form_id as string,
-        responseId,
-      }).then((result) => {
-        if (result?.error) {
-          logError('Owner response email rejected', undefined, { formId: form_id, responseId, ownerPlan, error: result.error })
-        }
-      }).catch((err) => logError('Failed to send owner response email', err))
+      postSubmitTasks.push(
+        sendNewResponseNotification({
+          to: ownerProfile.email,
+          formTitle: form.title ?? 'Formulário',
+          formId: form_id as string,
+          responseId,
+        }).then((result) => {
+          if (result?.error) {
+            logError('Owner response email rejected', undefined, { formId: form_id, responseId, ownerPlan, error: result.error })
+          }
+        }).catch((err) => logError('Failed to send owner response email', err))
+      )
     } else {
       logError('Owner response email skipped: profile has no email', undefined, { formId: form_id, responseId, ownerPlan })
     }
@@ -344,12 +349,14 @@ export async function POST(req: NextRequest) {
       form.notify_email !== ownerProfile?.email
     ) {
       console.log('[responses] sending integration email notification', { formId: form_id, responseId, ownerPlan, notifyEmailEnabled: true })
-      sendEmailNotification({
-        toEmail: form.notify_email,
-        formTitle: form.title ?? 'Formulário',
-        formId: form_id as string,
-        answersCount: Object.keys(answers as Record<string, unknown>).length,
-      }).catch((err) => logError('Failed to send email notification', err))
+      postSubmitTasks.push(
+        sendEmailNotification({
+          toEmail: form.notify_email,
+          formTitle: form.title ?? 'Formulário',
+          formId: form_id as string,
+          answersCount: Object.keys(answers as Record<string, unknown>).length,
+        }).catch((err) => logError('Failed to send email notification', err))
+      )
     } else {
       console.log('[responses] integration email notification skipped', {
         formId: form_id,
@@ -369,19 +376,21 @@ export async function POST(req: NextRequest) {
       const planLevel = PLAN_ORDER.indexOf(ownerPlan as typeof PLAN_ORDER[number])
       if (planLevel >= 2) {
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-        sendWhatsAppOnFormResponse({
-          formId: form_id as string,
-          responseId,
-          responseData: answers as Record<string, unknown>,
-          meta_events: responseMetaEvents,
-          form: {
-            id: form.id,
-            title: form.title,
-            user_id: form.user_id,
-            questions: form.questions as Array<{ id: string; title?: string; type?: string }>,
-          },
-          appUrl,
-        }).catch((err) => logError('Failed to send WhatsApp notification', err))
+        postSubmitTasks.push(
+          sendWhatsAppOnFormResponse({
+            formId: form_id as string,
+            responseId,
+            responseData: answers as Record<string, unknown>,
+            meta_events: responseMetaEvents,
+            form: {
+              id: form.id,
+              title: form.title,
+              user_id: form.user_id,
+              questions: form.questions as Array<{ id: string; title?: string; type?: string }>,
+            },
+            appUrl,
+          }).catch((err) => logError('Failed to send WhatsApp notification', err))
+        )
       }
     }
 
@@ -392,13 +401,15 @@ export async function POST(req: NextRequest) {
       for (const q of formQuestions) {
         questionIdToLabel[q.id] = q.title || 'Sem título'
       }
-      appendSubmission(
-        form.google_sheets_id,
-        fieldLabels,
-        answers as Record<string, unknown>,
-        questionIdToLabel,
-        utmData,
-      ).catch((e) => logError('Google Sheets sync failed:', e))
+      postSubmitTasks.push(
+        appendSubmission(
+          form.google_sheets_id,
+          fieldLabels,
+          answers as Record<string, unknown>,
+          questionIdToLabel,
+          utmData,
+        ).catch((e) => logError('Google Sheets sync failed:', e))
+      )
     }
 
     // Meta Conversions API (CAPI) — server-side Lead event (Plus+ only)
@@ -409,13 +420,15 @@ export async function POST(req: NextRequest) {
       )
       const userAgent = req.headers.get('user-agent') ?? undefined
       for (const eventId of metaEvents) {
-        sendMetaCAPIEvent({
-          ...pii,
-          ip,
-          userAgent,
-          eventId,
-          formTitle: form.title ?? undefined,
-        }).catch((err) => logError('Failed to send Meta CAPI event', err))
+        postSubmitTasks.push(
+          sendMetaCAPIEvent({
+            ...pii,
+            ip,
+            userAgent,
+            eventId,
+            formTitle: form.title ?? undefined,
+          }).catch((err) => logError('Failed to send Meta CAPI event', err))
+        )
       }
     }
 
@@ -428,14 +441,20 @@ export async function POST(req: NextRequest) {
         type: q.type,
         title: q.title,
       }))
-      dispatchWebhook({
-        webhookUrl: form.webhook_url,
-        formId: form_id as string,
-        responseId,
-        responseData: answers as Record<string, unknown>,
-        fields,
-      }).catch((err) => logError('Failed to dispatch webhook', err)) // fire-and-forget, não bloqueia resposta
+      postSubmitTasks.push(
+        dispatchWebhook({
+          webhookUrl: form.webhook_url,
+          formId: form_id as string,
+          responseId,
+          responseData: answers as Record<string, unknown>,
+          fields,
+        }).catch((err) => logError('Failed to dispatch webhook', err))
+      )
     }
+  }
+
+  if (postSubmitTasks.length > 0) {
+    await Promise.allSettled(postSubmitTasks)
   }
 
   return NextResponse.json({ response_id: responseId, completed }, {

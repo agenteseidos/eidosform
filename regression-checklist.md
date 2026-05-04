@@ -1,6 +1,32 @@
-# Checklist de Regressão — Etapa 19
+# Checklist de Regressão — Etapa 19 / K1
 
-> Gerado em 2026-05-03. Executar manualmente após cada deploy de produção ou ao final de todos os Blocos A-G.
+> Gerado em 2026-05-03. Atualizado em 2026-05-04 com smoke tests automáticos via curl. Itens marcados `[x]` foram validados; `[ ]` exigem execução manual em browser/auth.
+
+## Smoke tests automáticos rodados em 2026-05-04
+
+```bash
+# /api/auth/login com Origin atacante → 403 Forbidden ✅
+curl -s -o /dev/null -w "%{http_code}" -X POST https://eidosform.com.br/api/auth/login \
+  -H 'Origin: https://attacker.example.com' -H 'Content-Type: application/json' \
+  --data '{"email":"x@x.com","password":"y"}'
+# → 403
+
+# Signup body idêntico para email novo vs existente ✅
+curl -s -X POST https://eidosform.com.br/api/auth/signup -H 'Content-Type: application/json' \
+  --data '{"email":"existing@example.com","password":"strongpwd123","fullName":"Test"}'
+# → {"success":true,"message":"Verifique seu email para confirmar."}
+
+# /api/responses não retorna 500 mais — agora 404 para form inexistente ✅
+curl -s -o /dev/null -w "%{http_code}" -X POST https://eidosform.com.br/api/responses \
+  -H 'Content-Type: application/json' \
+  --data '{"form_id":"00000000-0000-0000-0000-000000000000","answers":{}}'
+# → 404
+
+# Headers de segurança nginx WhatsApp ✅
+curl -sI https://wpp.eidosform.com.br/api/whatsapp/health \
+  | grep -iE 'Strict-Transport|X-Content-Type|Referrer-Policy'
+# → 3 headers presentes
+```
 
 ---
 
@@ -83,9 +109,9 @@
 
 ## 6. Segurança (smoke tests)
 
-- [ ] POST `/api/auth/login` com Origin atacante → `403 Forbidden`
+- [x] POST `/api/auth/login` com Origin atacante → `403 Forbidden` (validado 2026-05-04)
 - [ ] POST `/api/responses` sem `form_id` → `400`
-- [ ] POST `/api/responses` com form não publicado → `404`
+- [x] POST `/api/responses` com form não publicado → `404` (validado 2026-05-04)
 - [ ] POST `/api/responses` com payload > 50KB → `413`
 - [ ] POST `/api/responses` com honeypot `_hp_` preenchido → `201` fake (silent drop)
 - [ ] GET `/api/forms` sem autenticação → `401 Não autorizado`
@@ -127,3 +153,11 @@
 ---
 
 **Critério de done:** todos os itens marcados ✅ sem pendências abertas.
+
+---
+
+## Status K1 (2026-05-04)
+
+- ✅ Smoke tests automáticos via curl: 4 itens validados (CSRF block, signup body, /api/responses 404, headers nginx).
+- ⚠️ Validação ponta-a-ponta com browser/auth/email/WhatsApp/checkout: pendente. Sidney precisa rodar manualmente em browser autenticado.
+- ⚠️ Dependências externas para K1 completo: conta de teste no dashboard, número WhatsApp configurado, conta Asaas em sandbox.

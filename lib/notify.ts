@@ -42,7 +42,7 @@ export async function sendEmailNotification({
           <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
             <h2 style="color: #1E3A5F;">Nova resposta recebida!</h2>
             <p>O formulário <strong>${safeFormTitle}</strong> acaba de receber uma nova resposta com ${answersCount} campo(s) preenchido(s).</p>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'}/dashboard/forms/${formId}/responses"
+            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'}/forms/${formId}/responses"
                style="display: inline-block; background: #F5B731; color: #000; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 16px;">
               Ver resposta
             </a>

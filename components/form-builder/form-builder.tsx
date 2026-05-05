@@ -608,7 +608,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 key={tab.id}
                 onClick={() => {
                   if (tab.id === 'results') {
-                    router.push(`/dashboard/forms/${form.id}/responses`)
+                    router.push(`/forms/${form.id}/responses`)
                   } else {
                     setActiveTab(tab.defaultTab!)
                   }

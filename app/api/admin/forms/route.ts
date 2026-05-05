@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logError } from '@/lib/logger'
 
 type FormRow = {
   id: string
@@ -37,7 +38,11 @@ export async function GET(request: NextRequest) {
   const { data: forms, error: formsError, count } = await formsQuery.range(from, to)
 
   if (formsError) {
-    return NextResponse.json({ error: 'Failed to load admin forms' }, { status: 500 })
+    logError('[admin/forms] query failed', formsError, { search, ownerFilter, page, limit })
+    return NextResponse.json(
+      { error: 'Failed to load admin forms', detail: formsError.message },
+      { status: 500 },
+    )
   }
 
   const userIds = Array.from(new Set((forms ?? []).map((form: FormRow) => form.user_id).filter(Boolean)))

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Activity, BarChart3, FileText, MessageSquare, Shield, Users } from 'lucide-react'
+import { Activity, ArrowLeft, BarChart3, FileText, MessageSquare, Shield, Users } from 'lucide-react'
 import { requireAdminUser } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
@@ -64,6 +64,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               )
             })}
           </nav>
+
+          <div className="mt-auto border-t border-slate-200 p-4">
+            <Link
+              href="/forms"
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Voltar ao app
+            </Link>
+          </div>
         </aside>
 
         <div className="flex min-h-screen flex-1 flex-col">
@@ -74,9 +84,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 <p className="text-sm text-slate-500">Acesso restrito para administradores</p>
               </div>
 
-              <div className="text-right">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Admin logado</p>
-                <p className="text-sm font-medium text-slate-700">{user.email}</p>
+              <div className="flex items-center gap-4">
+                <Link
+                  href="/forms"
+                  className="hidden sm:inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  aria-label="Voltar ao app"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Voltar ao app
+                </Link>
+                <div className="text-right">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Admin logado</p>
+                  <p className="text-sm font-medium text-slate-700">{user.email}</p>
+                </div>
               </div>
             </div>
 

@@ -60,7 +60,10 @@ export function AdminFormsTable({ initialOwner = '' }: { initialOwner?: string }
         params.set('limit', '20')
 
         const response = await fetch(`/api/admin/forms?${params.toString()}`, { cache: 'no-store' })
-        if (!response.ok) throw new Error('Falha ao carregar formulários')
+        if (!response.ok) {
+          const body = await response.json().catch(() => null)
+          throw new Error(body?.detail || body?.error || 'Falha ao carregar formulários')
+        }
 
         const json = await response.json() as { forms: AdminForm[]; total: number }
         if (active) {

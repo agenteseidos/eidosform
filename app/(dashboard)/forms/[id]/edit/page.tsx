@@ -1,5 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { isAdminEmail } from '@/lib/admin-auth'
 import { FormBuilder } from '@/components/form-builder/form-builder'
 import { Form } from '@/lib/database.types'
 
@@ -18,12 +20,14 @@ export default async function EditFormPage({ params }: EditFormPageProps) {
     redirect('/login')
   }
 
-  const { data, error } = await supabase
-    .from('forms')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+  // Admins can edit any form (impersonate via service-role); regular users only their own.
+  const isAdmin = isAdminEmail(user.email)
+  const dbClient = isAdmin ? createAdminClient() : supabase
+
+  const baseQuery = dbClient.from('forms').select('*').eq('id', id)
+  const { data, error } = await (
+    isAdmin ? baseQuery.single() : baseQuery.eq('user_id', user.id).single()
+  )
 
   const form = data as Form | null
 
@@ -31,10 +35,13 @@ export default async function EditFormPage({ params }: EditFormPageProps) {
     notFound()
   }
 
-  const { data: profile } = await supabase
+  // For admin viewing/editing someone else's form, fetch the form owner's plan
+  // so the builder shows feature gates from the dono's perspective, not the admin's.
+  const profileUserId = isAdmin ? form.user_id : user.id
+  const { data: profile } = await dbClient
     .from('profiles')
     .select('plan')
-    .eq('id', user.id)
+    .eq('id', profileUserId)
     .single()
 
   const userPlan = (profile?.plan as string) || 'free'

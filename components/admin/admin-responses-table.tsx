@@ -38,7 +38,10 @@ export function AdminResponsesTable({ initialForm = '' }: { initialForm?: string
         params.set('limit', '20')
 
         const response = await fetch(`/api/admin/responses?${params.toString()}`, { cache: 'no-store' })
-        if (!response.ok) throw new Error('Falha ao carregar respostas')
+        if (!response.ok) {
+          const body = await response.json().catch(() => null)
+          throw new Error(body?.detail || body?.error || 'Falha ao carregar respostas')
+        }
 
         const json = await response.json() as { responses: AdminResponse[]; total: number }
         if (active) {

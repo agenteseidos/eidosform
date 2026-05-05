@@ -1,5 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { isAdminEmail } from '@/lib/admin-auth'
 import { ResponsesDashboard } from '@/components/responses/responses-dashboard'
 import { Form, Response } from '@/lib/database.types'
 
@@ -18,12 +20,14 @@ export default async function ResponsesPage({ params }: ResponsesPageProps) {
     redirect('/login')
   }
 
-  const { data: formData, error: formError } = await supabase
-    .from('forms')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+  // Admins can view any form (impersonate via service-role); regular users only their own.
+  const isAdmin = isAdminEmail(user.email)
+  const dbClient = isAdmin ? createAdminClient() : supabase
+
+  const formQuery = dbClient.from('forms').select('*').eq('id', id)
+  const { data: formData, error: formError } = await (
+    isAdmin ? formQuery.single() : formQuery.eq('user_id', user.id).single()
+  )
 
   const form = formData as Form | null
 
@@ -32,17 +36,19 @@ export default async function ResponsesPage({ params }: ResponsesPageProps) {
   }
 
   // P1-G1: Server-side pagination — load first 500 responses max to prevent memory issues
+  // For admin viewing someone else's form, fetch the form owner's plan (not the admin's).
+  const profileUserId = isAdmin ? form.user_id : user.id
   const [{ data: responsesData, count: totalCount }, { data: profile }] = await Promise.all([
-    supabase
+    dbClient
       .from('responses')
       .select('*', { count: 'exact' })
       .eq('form_id', id)
       .order('submitted_at', { ascending: false })
       .range(0, 499),
-    supabase
+    dbClient
       .from('profiles')
       .select('plan')
-      .eq('id', user.id)
+      .eq('id', profileUserId)
       .single(),
   ])
 

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logError } from '@/lib/logger'
 
 type ResponseRow = {
   id: string
   form_id: string
   completed: boolean | null
   respondent_id: string | null
+  submitted_at: string
   created_at: string
 }
 
@@ -23,8 +25,8 @@ export async function GET(request: NextRequest) {
 
   let responsesQuery = supabase
     .from('responses')
-    .select('id, form_id, completed, respondent_id, created_at', { count: 'exact' })
-    .order('created_at', { ascending: false })
+    .select('id, form_id, completed, respondent_id, submitted_at, created_at', { count: 'exact' })
+    .order('submitted_at', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false })
 
   if (formFilter) responsesQuery = responsesQuery.eq('form_id', formFilter)
@@ -32,7 +34,11 @@ export async function GET(request: NextRequest) {
   const { data: responseRows, error: responsesError, count } = await responsesQuery.range(from, to)
 
   if (responsesError) {
-    return NextResponse.json({ error: 'Failed to load admin responses' }, { status: 500 })
+    logError('[admin/responses] query failed', responsesError, { formFilter, page, limit })
+    return NextResponse.json(
+      { error: 'Failed to load admin responses', detail: responsesError.message },
+      { status: 500 },
+    )
   }
 
   const formIds = Array.from(new Set((responseRows ?? []).map((r: ResponseRow) => r.form_id).filter(Boolean)))
@@ -71,7 +77,7 @@ export async function GET(request: NextRequest) {
       ownerId: form?.user_id ?? null,
       ownerEmail: form?.user_id ? ownerById.get(form.user_id) ?? null : null,
       completed: row.completed ?? false,
-      createdAt: row.created_at,
+      createdAt: row.submitted_at ?? row.created_at,
     }
   })
 

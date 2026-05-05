@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
   let profilesQuery = supabase
     .from('profiles')
-    .select('id, email, plan, created_at', { count: 'exact' })
+    .select('id, email, plan, plan_expires_at, plan_status, created_at', { count: 'exact' })
     .order('created_at', { ascending: false })
 
   if (search) {
@@ -56,6 +56,8 @@ export async function GET(request: NextRequest) {
       id: profile.id,
       email: profile.email,
       plan: normalizePlan(profile.plan),
+      planExpiresAt: profile.plan_expires_at ?? null,
+      planStatus: profile.plan_status ?? null,
       createdAt: profile.created_at,
       formsCount: formsCountByUser.get(profile.id) ?? 0,
     }))

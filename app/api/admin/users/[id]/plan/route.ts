@@ -8,6 +8,35 @@ function isValidPlan(value: unknown): value is PlanId {
   return typeof value === 'string' && (PLAN_ORDER as readonly string[]).includes(value)
 }
 
+/**
+ * Validates and normalises the optional expiresAt input.
+ * Returns either:
+ *  - { ok: true, value: ISO string | null }
+ *  - { ok: false, error: human-readable message }
+ *
+ * Accepted values:
+ *  - undefined → no change to current expiration (we preserve it)
+ *  - null      → clear the expiration (plan never expires)
+ *  - ISO string in the future → set expiration to that date
+ */
+function parseExpiresAt(input: unknown):
+  | { ok: true; value: string | null | undefined }
+  | { ok: false; error: string } {
+  if (input === undefined) return { ok: true, value: undefined }
+  if (input === null) return { ok: true, value: null }
+  if (typeof input !== 'string') {
+    return { ok: false, error: 'expiresAt must be an ISO 8601 string or null' }
+  }
+  const date = new Date(input)
+  if (Number.isNaN(date.getTime())) {
+    return { ok: false, error: 'expiresAt is not a valid date' }
+  }
+  if (date.getTime() <= Date.now()) {
+    return { ok: false, error: 'expiresAt must be in the future' }
+  }
+  return { ok: true, value: date.toISOString() }
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -17,7 +46,7 @@ export async function PATCH(
 
   const { id } = await params
 
-  let body: { plan?: unknown }
+  let body: { plan?: unknown; expiresAt?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -26,6 +55,11 @@ export async function PATCH(
 
   if (!isValidPlan(body.plan)) {
     return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
+  }
+
+  const expiresAtParsed = parseExpiresAt(body.expiresAt)
+  if (!expiresAtParsed.ok) {
+    return NextResponse.json({ error: expiresAtParsed.error }, { status: 400 })
   }
 
   const supabase = getAdminSupabase()
@@ -43,6 +77,17 @@ export async function PATCH(
     const planConfig = PLANS[newPlan]
     const isDowngrade = PLAN_ORDER.indexOf(newPlan) < PLAN_ORDER.indexOf(currentPlan)
 
+    // Build plan_expires_at update logic:
+    // - new plan === 'free': always force null (free has no expiration)
+    // - new plan !== 'free' + expiresAt explicitly provided (ISO or null): use it
+    // - new plan !== 'free' + expiresAt undefined: preserve current value
+    const expiresAtUpdate: { plan_expires_at?: string | null } =
+      newPlan === 'free'
+        ? { plan_expires_at: null }
+        : expiresAtParsed.value !== undefined
+          ? { plan_expires_at: expiresAtParsed.value }
+          : {}
+
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -51,8 +96,9 @@ export async function PATCH(
         responses_used: 0,
         limit_alert_sent: false,
         ...(newPlan === 'free'
-          ? { plan_status: 'cancelled', plan_cycle: null, plan_expires_at: null, asaas_subscription_id: null }
+          ? { plan_status: 'cancelled', plan_cycle: null, asaas_subscription_id: null }
           : { plan_status: 'active' }),
+        ...expiresAtUpdate,
       })
       .eq('id', id)
 

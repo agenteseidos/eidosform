@@ -15,15 +15,16 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { User } from '@supabase/supabase-js'
-import { LogOut, Settings, User as UserIcon, CreditCard, Menu, X } from 'lucide-react'
+import { LogOut, Settings, User as UserIcon, CreditCard, Menu, X, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface DashboardNavProps {
   user: User
   showUpgradeButton?: boolean
+  isAdmin?: boolean
 }
 
-export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavProps) {
+export function DashboardNav({ user, showUpgradeButton = false, isAdmin = false }: DashboardNavProps) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -73,6 +74,15 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
               </Link>
             )}
 
+            {isAdmin && (
+              <Link href="/admin" className="hidden md:block" aria-label="Admin Panel">
+                <Button variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-2">
+                  <Shield className="w-4 h-4" />
+                  Admin
+                </Button>
+              </Link>
+            )}
+
             <Button variant="ghost" size="sm" className="md:hidden h-11 w-11 p-0 flex items-center justify-center" onClick={() => setMobileOpen(!mobileOpen)}>
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
@@ -118,6 +128,14 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
                     Configurações
                   </Link>
                 </DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin" className="cursor-pointer">
+                      <Shield className="mr-2 h-4 w-4" />
+                      Admin Panel
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-red-600">
                   <LogOut className="mr-2 h-4 w-4" />
@@ -145,6 +163,12 @@ export function DashboardNav({ user, showUpgradeButton = false }: DashboardNavPr
           <Link href="/settings" className="text-sm font-medium text-slate-700 hover:text-slate-900 rounded-lg px-3 py-3 min-h-[44px] flex items-center" onClick={() => setMobileOpen(false)}>
             Configurações
           </Link>
+          {isAdmin && (
+            <Link href="/admin" className="text-sm font-medium text-slate-700 hover:text-slate-900 rounded-lg px-3 py-3 min-h-[44px] flex items-center gap-2" onClick={() => setMobileOpen(false)}>
+              <Shield className="w-4 h-4" />
+              Admin Panel
+            </Link>
+          )}
           <button onClick={() => { setMobileOpen(false); handleSignOut() }} className="text-sm font-medium text-red-600 hover:text-red-700 text-left rounded-lg px-3 py-3 min-h-[44px] flex items-center">
             Sair
           </button>

@@ -330,10 +330,13 @@ async function refreshStatus() {
     const data = JSON.parse(stdout);
     const d = data.data || data;
     status.authenticated = d.authenticated || false;
-    // `connected` must reflect the real websocket state — falling back to
-    // `authenticated` masks dead connections and hides "Aguardando mensagem"
-    // bugs when wacli is auth'd but offline.
-    status.connected = d.connected || false;
+    // `connected` reflects whether we have a live websocket. We can't trust
+    // `wacli doctor`'s `connected` field while the sync daemon holds the
+    // SQLite lock — doctor opens its own short-lived session and reports
+    // false even though the daemon's socket is fine. So treat the daemon
+    // process being alive as authoritative for "connected"; fall back to
+    // doctor's value when the daemon isn't running.
+    status.connected = (status.authenticated && daemonChild !== null) || d.connected || false;
     status.phoneNumber = d.phoneNumber || getPhoneFromDb();
     writeStatus();
     log(`[status] Refreshed: authenticated=${status.authenticated} connected=${status.connected} phone=${hashPhone(status.phoneNumber)}`);

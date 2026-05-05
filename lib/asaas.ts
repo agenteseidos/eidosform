@@ -3,12 +3,19 @@
  * Sprint Dia 4-5 — EidosForm
  */
 
-const ASAAS_BASE_URL =
-  process.env.ASAAS_ENVIRONMENT === 'production'
+function getAsaasBaseUrl() {
+  return process.env.ASAAS_ENVIRONMENT === 'production'
     ? 'https://api.asaas.com/v3'
     : 'https://sandbox.asaas.com/api/v3'
+}
 
-const ASAAS_API_KEY = process.env.ASAAS_API_KEY ?? ''
+function getAsaasCheckoutOrigin() {
+  return process.env.ASAAS_ENVIRONMENT === 'production'
+    ? 'https://asaas.com'
+    : 'https://sandbox.asaas.com'
+}
+
+const CHECKOUT_MINUTES_TO_EXPIRE = Number(process.env.ASAAS_CHECKOUT_MINUTES_TO_EXPIRE ?? 120)
 
 // Planos e preços — yearly = preço anual real (sem desconto)
 // Fonte de verdade: lib/plan-limits.ts
@@ -39,24 +46,16 @@ export interface AsaasCustomerPayload {
   state?: string
 }
 
-interface AsaasSubscriptionPayload {
-  customer: string
-  billingType: 'BOLETO' | 'CREDIT_CARD' | 'PIX'
-  value: number
-  nextDueDate: string
-  cycle: BillingCycle
-  description: string
-}
-
 async function asaasFetch(path: string, options: RequestInit = {}) {
-  if (!ASAAS_API_KEY) {
+  const apiKey = (process.env.ASAAS_API_KEY ?? '').trim()
+  if (!apiKey) {
     throw new Error('ASAAS_API_KEY não configurada')
   }
-  const res = await fetch(`${ASAAS_BASE_URL}${path}`, {
+  const res = await fetch(`${getAsaasBaseUrl()}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      access_token: ASAAS_API_KEY,
+      access_token: apiKey,
       ...(options.headers ?? {}),
     },
   })
@@ -81,28 +80,6 @@ export async function createCustomer(payload: AsaasCustomerPayload): Promise<{ i
   const existing = await asaasFetch(`/customers?email=${encodeURIComponent(payload.email)}`)
   if (existing.totalCount > 0) return existing.data[0]
   return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(payload) })
-}
-
-/** Cria assinatura recorrente */
-export async function createSubscription(params: {
-  customerId: string
-  plan: Exclude<PlanName, 'free'>
-  cycle: BillingCycle
-  billingType?: 'BOLETO' | 'CREDIT_CARD' | 'PIX'
-}): Promise<{ id: string; status: string; value: number }> {
-  const { customerId, plan, cycle, billingType = 'PIX' } = params
-  const price = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
-  const nextDueDate = new Date()
-  nextDueDate.setDate(nextDueDate.getDate() + 1)
-  const payload: AsaasSubscriptionPayload = {
-    customer: customerId,
-    billingType,
-    value: price,
-    nextDueDate: nextDueDate.toISOString().split('T')[0],
-    cycle,
-    description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
-  }
-  return asaasFetch('/subscriptions', { method: 'POST', body: JSON.stringify(payload) })
 }
 
 /** Cria checkout hospedado — retorna URL para redirecionamento */
@@ -146,13 +123,11 @@ export async function createCheckout(params: {
       cancelUrl,
       expiredUrl,
     },
-    minutesToExpire: 120,
+    minutesToExpire: CHECKOUT_MINUTES_TO_EXPIRE,
   }
 
   const data = await asaasFetch('/checkouts', { method: 'POST', body: JSON.stringify(payload) })
-  const checkoutUrl = process.env.ASAAS_ENVIRONMENT === 'production'
-    ? `https://asaas.com/checkoutSession/show?id=${data.id}`
-    : `https://sandbox.asaas.com/checkoutSession/show?id=${data.id}`
+  const checkoutUrl = `${getAsaasCheckoutOrigin()}/checkoutSession/show?id=${data.id}`
   return { id: data.id, url: checkoutUrl }
 }
 

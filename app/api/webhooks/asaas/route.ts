@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { PLAN_PRICES, cancelSubscription } from '@/lib/asaas'
+import { PLAN_PRICES, cancelSubscription, getSubscription } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -25,6 +25,35 @@ function detectPlanAndCycle(value: number): { plan: string; cycle: 'MONTHLY' | '
     if (value === prices.monthly) return { plan, cycle: 'MONTHLY' }
   }
   return null
+}
+
+/**
+ * Fallback for prorated payments where the value doesn't match PLAN_PRICES.
+ * Queries the subscription on Asaas and parses plan/cycle from its description
+ * or value. Format produced by createCheckout: "EidosForm — Plano <plan> (Mensal|Anual)".
+ */
+async function resolvePlanFromAsaasSubscription(subscriptionId: string): Promise<{ plan: string; cycle: 'MONTHLY' | 'YEARLY' } | null> {
+  try {
+    const sub = await getSubscription(subscriptionId)
+    const desc = String(sub?.description ?? '')
+    const cycleRaw = String(sub?.cycle ?? '').toUpperCase()
+    const cycle: 'MONTHLY' | 'YEARLY' = cycleRaw === 'YEARLY' ? 'YEARLY' : 'MONTHLY'
+
+    const match = desc.match(/Plano\s+([a-zA-Z]+)/)
+    const planFromDesc = match?.[1]?.toLowerCase()
+    if (planFromDesc && planFromDesc in PLAN_PRICES) {
+      return { plan: planFromDesc, cycle }
+    }
+
+    if (typeof sub?.value === 'number') {
+      const detected = detectPlanAndCycle(sub.value)
+      if (detected) return detected
+    }
+    return null
+  } catch (err) {
+    logWarn('[asaas-webhook] resolvePlanFromAsaasSubscription failed', { subscriptionId, error: err instanceof Error ? err.message : String(err) })
+    return null
+  }
 }
 
 function calculateExpiryDate(cycle: 'MONTHLY' | 'YEARLY'): string {
@@ -169,23 +198,25 @@ interface AsaasWebhookBody {
   subscription?: AsaasSubscription
 }
 
+type IdempotencyResult = 'fresh' | 'duplicate' | 'error'
+
 /**
- * Check idempotency: returns true if this event_id was already processed.
- * Inserts a record atomically — duplicate inserts fail the unique constraint.
+ * Check idempotency atomically — duplicate inserts fail the unique constraint.
+ * Returns:
+ *  - 'fresh'     → first time we see this event, proceed
+ *  - 'duplicate' → unique violation, already processed
+ *  - 'error'     → unexpected DB error; caller should fail closed (5xx) so Asaas retries
  */
-async function checkAndMarkIdempotent(eventId: string, event: string): Promise<boolean> {
+async function checkAndMarkIdempotent(eventId: string, event: string): Promise<IdempotencyResult> {
   const supabase = getSupabase()
   const { error } = await supabase
     .from('asaas_webhook_events')
     .insert({ event_id: eventId, event })
 
-  if (error) {
-    // Unique constraint violation means already processed
-    if (error.code === '23505') return true
-    // Other errors: log but allow processing (fail open to avoid missing payments)
-    logWarn('[asaas-webhook] Idempotency check error (allowing through)', { eventId, error: error.message })
-  }
-  return false
+  if (!error) return 'fresh'
+  if (error.code === '23505') return 'duplicate'
+  logError('[asaas-webhook] Idempotency check DB error (failing closed)', { eventId, error: error.message })
+  return 'error'
 }
 
 export async function POST(req: NextRequest) {
@@ -197,12 +228,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to read body' }, { status: 400 })
   }
 
+  // ASAAS_WEBHOOK_TOKEN remains as legacy fallback; prefer ASAAS_WEBHOOK_SECRET going forward.
   const webhookToken = (process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN)?.trim()
+  if (process.env.ASAAS_WEBHOOK_TOKEN && !process.env.ASAAS_WEBHOOK_SECRET) {
+    logWarn('[asaas-webhook] Using deprecated ASAAS_WEBHOOK_TOKEN — migrate to ASAAS_WEBHOOK_SECRET')
+  }
   const hmacHeader = req.headers.get('asaas-signature')
 
   if (!webhookToken) {
+    // Critical config issue, but respond 401 (not 500) so Asaas does not enter
+    // an exponential retry storm against an endpoint that will never succeed.
     logError('[asaas-webhook] ASAAS_WEBHOOK_SECRET or ASAAS_WEBHOOK_TOKEN not configured')
-    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   // Only HMAC — token fallback removed (P1-INT3)
@@ -228,10 +265,13 @@ export async function POST(req: NextRequest) {
   // Idempotency: use body.id if present, else hash of (event + customerId + subscriptionId)
   const eventId = body.id ?? `${event}:${payment?.customer ?? subscription?.customer ?? ''}:${payment?.subscription ?? subscription?.id ?? ''}`
 
-  const alreadyProcessed = await checkAndMarkIdempotent(eventId, event)
-  if (alreadyProcessed) {
+  const idempotencyResult = await checkAndMarkIdempotent(eventId, event)
+  if (idempotencyResult === 'duplicate') {
     log('[asaas-webhook] Duplicate event ignored (idempotent)', { eventId, event })
     return NextResponse.json({ received: true, duplicate: true })
+  }
+  if (idempotencyResult === 'error') {
+    return NextResponse.json({ error: 'Idempotency store unavailable' }, { status: 503 })
   }
 
   const supabase = getSupabase()
@@ -267,17 +307,34 @@ export async function POST(req: NextRequest) {
           log('[asaas-webhook] Using plan/cycle from checkout record', { plan, cycle })
         } else {
           const detected = detectPlanAndCycle(payment.value)
-          if (!detected) {
+          if (detected) {
+            plan = detected.plan
+            cycle = detected.cycle
+          } else if (payment?.subscription) {
+            const fromAsaas = await resolvePlanFromAsaasSubscription(payment.subscription)
+            if (!fromAsaas) {
+              logError('[asaas-webhook] Unmapped payment value and no Asaas resolution, no plan activated', { value: payment.value, customerId, subscriptionId: payment.subscription })
+              break
+            }
+            plan = fromAsaas.plan
+            cycle = fromAsaas.cycle
+            log('[asaas-webhook] Plan resolved from Asaas subscription metadata', { plan, cycle, subscriptionId: payment.subscription })
+          } else {
             logError('[asaas-webhook] Unmapped payment value, no plan activated', { value: payment.value, customerId })
             break
           }
-          plan = detected.plan
-          cycle = detected.cycle
         }
         const planConfig = PLANS[plan as PlanName]
         const planExpiresAt = calculateExpiryDate(cycle)
 
         log('[asaas-webhook] Activating plan', { userId: user.id, plan, cycle, expiresAt: planExpiresAt })
+
+        // Read previous subscription BEFORE the update so we can cancel it after.
+        const { data: previousProfile } = await supabase
+          .from('profiles')
+          .select('asaas_subscription_id, plan')
+          .eq('id', user.id)
+          .single()
 
         await supabase
           .from('profiles')
@@ -306,14 +363,8 @@ export async function POST(req: NextRequest) {
 
         // Cancel old subscription if user had a different one (upgrade scenario)
         try {
-          const { data: existingProfile } = await supabase
-            .from('profiles')
-            .select('asaas_subscription_id, plan')
-            .eq('id', user.id)
-            .single()
-
-          const oldSubId = existingProfile?.asaas_subscription_id
-          if (oldSubId && oldSubId !== payment.subscription && existingProfile?.plan !== 'free') {
+          const oldSubId = previousProfile?.asaas_subscription_id
+          if (oldSubId && oldSubId !== payment.subscription && previousProfile?.plan !== 'free') {
             await cancelSubscription(oldSubId)
             log('[asaas-webhook] Old subscription cancelled after upgrade confirmation', { oldSubscriptionId: oldSubId, newSubscriptionId: payment.subscription })
           }
@@ -461,6 +512,81 @@ export async function POST(req: NextRequest) {
         await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan }).catch((err) => logError('Failed to send plan cancellation email', err))
         break
       }
+
+      case 'PAYMENT_REFUNDED':
+      case 'PAYMENT_DELETED':
+      case 'PAYMENT_CHARGEBACK_REQUESTED':
+      case 'PAYMENT_CHARGEBACK_DISPUTE':
+      case 'SUBSCRIPTION_INACTIVATED': {
+        const customerId = payment?.customer ?? subscription?.customer
+        const subscriptionId = payment?.subscription ?? subscription?.id ?? null
+        if (!customerId) break
+
+        const { user } = await resolveBillingContext({ customerId, subscriptionId })
+        if (!user) {
+          logWarn('[asaas-webhook] User not found for refund/chargeback context', { customerId, subscriptionId, event })
+          break
+        }
+
+        // Guard: only act if event is for the user's active subscription
+        const { data: refundProfile } = await supabase
+          .from('profiles')
+          .select('asaas_subscription_id, plan')
+          .eq('id', user.id)
+          .single()
+
+        if (refundProfile?.plan === 'free') {
+          log('[asaas-webhook] Refund/chargeback ignored — user already on free', { userId: user.id, event })
+          break
+        }
+
+        if (subscriptionId && refundProfile?.asaas_subscription_id && subscriptionId !== refundProfile.asaas_subscription_id) {
+          log('[asaas-webhook] Refund/chargeback ignored — subscription mismatch', {
+            userId: user.id,
+            eventSubscriptionId: subscriptionId,
+            activeSubscriptionId: refundProfile.asaas_subscription_id,
+            event,
+          })
+          break
+        }
+
+        const newStatus = event === 'PAYMENT_CHARGEBACK_REQUESTED' || event === 'PAYMENT_CHARGEBACK_DISPUTE' ? 'chargeback' : 'refunded'
+        const oldPlan = user.plan ?? 'starter'
+
+        log('[asaas-webhook] Refund/chargeback — reverting to free', { userId: user.id, customerId, event, newStatus })
+
+        await supabase
+          .from('profiles')
+          .update({
+            plan: 'free',
+            plan_status: newStatus,
+            plan_expires_at: null,
+            asaas_subscription_id: null,
+            limit_alert_sent: false,
+            responses_limit: PLANS.free.maxResponses,
+            responses_used: 0,
+          })
+          .eq('id', user.id)
+
+        await updateCheckoutLink({
+          customerId,
+          subscriptionId,
+          event,
+          status: newStatus,
+        })
+
+        const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+        log('[asaas-webhook] Downgrade processed (refund/chargeback)', { userId: user.id, pausedForms: downgrade.pausedCount, event })
+
+        await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan })
+          .catch((err) => logError('Failed to send refund/chargeback notification email', err))
+        break
+      }
+
+      case 'PAYMENT_UPDATED':
+        // Informational — Asaas notifies value/dueDate changes. No action required.
+        log('[asaas-webhook] PAYMENT_UPDATED received (informational)', { eventId })
+        break
 
       default:
         logWarn('[asaas-webhook] Unknown event type — ignoring', { event })

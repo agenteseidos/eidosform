@@ -4,6 +4,7 @@
  * Cria/obtém customer e salva asaas_customer_id no profile.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { createCheckout, createCustomer, cancelSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
@@ -11,6 +12,11 @@ import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { calculateUpgradePrice, isUpgrade } from '@/lib/proration'
 import { log, logError } from '@/lib/logger'
+
+function hashCustomerPayload(payload: Record<string, unknown>): string {
+  const normalized = JSON.stringify(payload, Object.keys(payload).sort())
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 32)
+}
 
 const VALID_PLANS = new Set<string>(PLAN_ORDER.filter((p) => p !== 'free'))
 const VALID_CYCLES = new Set<string>(['MONTHLY', 'YEARLY'])
@@ -207,21 +213,37 @@ export async function POST(
     // Ver P0 #1 — handoff de auditoria Zéfa.
 
     // Criar ou obter customer no Asaas sempre alinhado ao perfil logado
+    const customerPayload = toAsaasCustomerPayload(profile)
+    const customerPayloadHash = hashCustomerPayload(customerPayload as unknown as Record<string, unknown>)
     let customerId = profile.asaasCustomerId
     if (!customerId) {
       log('[checkout] Criando customer no Asaas', { email: profile.email, profileId: profile.profileId })
-      const customer = await createCustomer(toAsaasCustomerPayload(profile))
+      const customer = await createCustomer(customerPayload)
       customerId = customer.id
 
       await supabase
         .from('profiles')
-        .update({ asaas_customer_id: customerId })
+        .update({ asaas_customer_id: customerId, asaas_customer_payload_hash: customerPayloadHash } as never)
         .eq('id', profile.profileId)
 
       log('[checkout] asaas_customer_id salvo no profile', { userId: profile.profileId, customerId })
     } else {
-      await updateCustomer(customerId, toAsaasCustomerPayload(profile))
-      log('[checkout] Customer do Asaas atualizado a partir da conta logada', { userId: profile.profileId, customerId })
+      const { data: hashRow } = await supabase
+        .from('profiles')
+        .select('asaas_customer_payload_hash' as never)
+        .eq('id', profile.profileId)
+        .single<{ asaas_customer_payload_hash: string | null }>()
+
+      if (hashRow?.asaas_customer_payload_hash !== customerPayloadHash) {
+        await updateCustomer(customerId, customerPayload)
+        await supabase
+          .from('profiles')
+          .update({ asaas_customer_payload_hash: customerPayloadHash } as never)
+          .eq('id', profile.profileId)
+        log('[checkout] Customer do Asaas atualizado (dados mudaram)', { userId: profile.profileId, customerId })
+      } else {
+        log('[checkout] Customer do Asaas — payload inalterado, skip updateCustomer', { userId: profile.profileId, customerId })
+      }
     }
 
     const basePrice = cycle === 'MONTHLY'

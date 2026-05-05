@@ -173,17 +173,32 @@ export async function GET() {
   }
 
   // 2. Try by customer ID — covers hosted checkout where subscription ID
-  //    is only populated by the webhook (which may not have arrived yet)
+  //    is only populated by the webhook (which may not have arrived yet).
+  //    Filter by the plan we expect (from billing_checkouts) to avoid picking
+  //    up unrelated active subscriptions.
   if (asaasCustomerId) {
     try {
-      const subs = await getCustomerSubscriptions(asaasCustomerId)
-      const active = subs?.find?.((s: { status: string }) =>
-        (s.status as string)?.toUpperCase() === 'ACTIVE'
-      )
+      const subs = await getCustomerSubscriptions(asaasCustomerId) as Array<{ id: string; status: string; description?: string; dateCreated?: string }>
+      const activeSubs = (subs ?? []).filter((s) => (s.status as string)?.toUpperCase() === 'ACTIVE')
+
+      const expectedPlan = checkoutPlan?.toLowerCase()
+      const matchByDescription = expectedPlan
+        ? activeSubs.find((s) => (s.description ?? '').toLowerCase().includes(`plano ${expectedPlan}`))
+        : undefined
+
+      const sortedByDate = [...activeSubs].sort((a, b) => {
+        const ta = a.dateCreated ? new Date(a.dateCreated).getTime() : 0
+        const tb = b.dateCreated ? new Date(b.dateCreated).getTime() : 0
+        return tb - ta
+      })
+
+      const active = matchByDescription ?? sortedByDate[0]
+
       if (active) {
         log('[checkout/status] Asaas customer fallback: found ACTIVE subscription', {
           customerId: asaasCustomerId,
           subId: active.id,
+          matchStrategy: matchByDescription ? 'description' : 'most_recent',
         })
         await persistPlanFromAsaas(active.id)
         return NextResponse.json({ status: 'success' })

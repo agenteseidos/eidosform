@@ -7,6 +7,9 @@ import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 
 export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
+// Fixed at 30/365 to match Asaas's billing cycle (MONTHLY = 30 days, YEARLY = 365).
+// Calendar variations (28-31 day months, leap years) cause cents-level rounding
+// differences — accepted trade-off for predictable proration matching the provider.
 const DAYS_IN_MONTH = 30
 const DAYS_IN_YEAR = 365
 

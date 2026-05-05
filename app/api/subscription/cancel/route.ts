@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { cancelSubscription } from '@/lib/asaas'
-import { logError } from '@/lib/logger'
+import { cancelSubscription, getSubscription } from '@/lib/asaas'
+import { logError, logWarn } from '@/lib/logger'
 
 export async function POST() {
   const supabase = await createClient()
@@ -47,5 +47,21 @@ export async function POST() {
     return NextResponse.json({ error: 'Erro ao cancelar assinatura no provedor de pagamento' }, { status: 502 })
   }
 
-  return NextResponse.json({ success: true, expiresAt: profile.plan_expires_at })
+  // Resolve final expiration from Asaas (endDate / nextDueDate). Falls back to local value.
+  let resolvedExpiresAt = profile.plan_expires_at as string | null
+  try {
+    const sub = await getSubscription(profile.asaas_subscription_id)
+    const candidate = (sub?.endDate as string | undefined) ?? (sub?.nextDueDate as string | undefined)
+    if (candidate) {
+      resolvedExpiresAt = new Date(candidate).toISOString()
+      await supabase
+        .from('profiles')
+        .update({ plan_expires_at: resolvedExpiresAt })
+        .eq('id', user.id)
+    }
+  } catch (err) {
+    logWarn('[subscription/cancel] Could not resolve endDate from Asaas (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
+  }
+
+  return NextResponse.json({ success: true, expiresAt: resolvedExpiresAt })
 }

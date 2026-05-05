@@ -38,9 +38,11 @@ export default async function DashboardPage() {
   const formIds = forms.map(f => f.id)
   let responseCountsByForm: Record<string, number> = {}
   if (formIds.length > 0) {
-    const { data: counts } = await (supabase as any)
+    const { data: counts, error: countsError } = await (supabase as any)
       .rpc('get_response_counts_by_forms', { p_form_ids: formIds })
-    if (counts) {
+    if (countsError) {
+      console.error('[forms/page] get_response_counts_by_forms failed:', countsError)
+    } else if (counts) {
       for (const c of counts) {
         responseCountsByForm[c.form_id] = c.response_count
       }

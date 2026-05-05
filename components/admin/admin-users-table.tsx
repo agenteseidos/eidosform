@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import Link from 'next/link'
+import { Eye, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -245,9 +246,16 @@ export function AdminUsersTable() {
                         <TableCell className="whitespace-nowrap">{new Date(user.createdAt).toLocaleDateString('pt-BR')}</TableCell>
                         <TableCell className="hidden sm:table-cell">{user.formsCount}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => openPlanDialog(user)}>
-                            Alterar plano
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Link href={`/admin/users/${user.id}/view-as`}>
+                              <Button variant="outline" size="sm" className="min-h-[44px]" title="Ver como dono" aria-label="Ver como dono">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => openPlanDialog(user)}>
+                              Alterar plano
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )

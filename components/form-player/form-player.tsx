@@ -393,6 +393,17 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         } catch { /* ignore */ }
       }
 
+      // Disparar pixel_event_on_complete ANTES do POST pra que o nome do evento
+      // entre no buffer __eidosCapturedFbqEvents e seja salvo junto com a response.
+      const completeEventPre = form.pixel_event_on_complete
+      if (completeEventPre) fireNamedPixelEvent(completeEventPre)
+
+      // Combinar metaEvents (state) com o buffer global, garantindo eventos disparados
+      // entre o último tick do hook (500ms) e o submit — incluindo o on_complete acima.
+      const STANDARD = new Set(['PageView','ViewContent','Search','AddToCart','AddToWishlist','InitiateCheckout','AddPaymentInfo','Purchase','Lead','CompleteRegistration'])
+      const buffered = (typeof window !== 'undefined' && window.__eidosCapturedFbqEvents) || []
+      const allMetaEvents = Array.from(new Set([...metaEvents, ...buffered.filter(n => !STANDARD.has(n))]))
+
       const res = await fetch('/api/responses', {
         method: 'POST',
         headers,
@@ -403,7 +414,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           last_question_answered: currentQuestion?.id ?? null,
           respondent_id: respondentId,
           ...utms,
-          meta_events: metaEvents,
+          meta_events: allMetaEvents,
         }),
       })
 
@@ -420,9 +431,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       }
 
       triggerPixelSubmitRef.current?.()
-      // Pixel event global de conclusão
-      const completeEvent = form.pixel_event_on_complete
-      if (completeEvent) fireNamedPixelEvent(completeEvent)
+      // pixel_event_on_complete já foi disparado antes do POST (linha ~410) pra entrar
+      // no buffer meta_events da response. Não disparar novamente aqui pra evitar dupla
+      // contagem no Events Manager.
       setIsSubmitted(true)
       if (form.redirect_url) {
         const redirectDelay = form.redirect_delay != null ? Number(form.redirect_delay) : 2800

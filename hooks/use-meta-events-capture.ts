@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const STANDARD_META_EVENTS = new Set([
   'PageView',
@@ -18,52 +18,44 @@ const STANDARD_META_EVENTS = new Set([
 declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void
+    __eidosCapturedFbqEvents?: string[]
   }
 }
 
+/**
+ * Captura nomes de eventos custom enviados via fbq (para telemetria no submit).
+ *
+ * Implementação: lib/pixel-events.ts (firePixelEvent / fireNamedPixelEvent) empurra
+ * o nome do evento custom em `window.__eidosCapturedFbqEvents` antes de chamar fbq.
+ * Este hook lê esse array em intervalo e expõe os nomes únicos.
+ *
+ * Por que NÃO monkey-patcheamos `window.fbq`: substituir o fbq mesmo preservando
+ * propriedades internas faz o Meta detectar "Multiple pixels with conflicting versions"
+ * e suprimir silenciosamente o envio de eventos pro /tr (zero requests, zero erros).
+ */
 export function useMetaEventsCapture(enabled: boolean) {
   const [capturedEvents, setCapturedEvents] = useState<string[]>([])
-  const originalFbqRef = useRef<((...args: unknown[]) => void) | null>(null)
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return
 
-    if (window.fbq && !originalFbqRef.current) {
-      const originalFbq = window.fbq
-      originalFbqRef.current = originalFbq
-
-      // Replica a lógica interna do stub original do Meta Pixel: se fbevents.js já carregou
-      // (callMethod presente), delega; senão, empurra pra queue. Isso é CRÍTICO porque
-      // o fbevents.js atualiza `callMethod` em `window.fbq` (que será o patchedFbq),
-      // não em `originalFbq`. Se o patched delegasse pra originalFbq, os events ficariam
-      // presos na queue do stub eternamente e nunca chegariam ao /tr do Facebook.
-      const patchedFbq = function (this: unknown, ...args: unknown[]) {
-        const [command, eventName] = args
-
-        if (command === 'track' && typeof eventName === 'string' && !STANDARD_META_EVENTS.has(eventName)) {
-          setCapturedEvents(prev => (prev.includes(eventName) ? prev : [...prev, eventName]))
-        }
-
-        const self = patchedFbq as unknown as { callMethod?: (...a: unknown[]) => unknown; queue: unknown[] }
-        if (self.callMethod) {
-          return self.callMethod.apply(self, args)
-        }
-        self.queue.push(args)
-      } as unknown as typeof window.fbq
-
-      // Copia propriedades internas (queue, loaded, version, callMethod se já existir, push, _fbq)
-      // do fbq original pro patched. fbevents.js, quando rodar, vai atualizar callMethod
-      // em window.fbq (= patchedFbq), e o nosso wrapper vai delegar via self.callMethod.
-      Object.assign(patchedFbq as object, originalFbq)
-
-      window.fbq = patchedFbq
+    if (!window.__eidosCapturedFbqEvents) {
+      window.__eidosCapturedFbqEvents = []
     }
 
-    return () => {
-      if (originalFbqRef.current && window.fbq) {
-        window.fbq = originalFbqRef.current
-      }
-    }
+    const interval = setInterval(() => {
+      const buf = window.__eidosCapturedFbqEvents ?? []
+      if (buf.length === 0) return
+      setCapturedEvents(prev => {
+        const merged = new Set(prev)
+        for (const name of buf) {
+          if (!STANDARD_META_EVENTS.has(name)) merged.add(name)
+        }
+        return merged.size === prev.length ? prev : Array.from(merged)
+      })
+    }, 500)
+
+    return () => clearInterval(interval)
   }, [enabled])
 
   return capturedEvents

@@ -8,7 +8,14 @@ import { PixelEventRule, PixelEventCondition, PixelEventConfig } from '@/types/p
 declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void
+    __eidosCapturedFbqEvents?: string[]
   }
+}
+
+function recordCapturedEvent(name: string) {
+  if (typeof window === 'undefined' || !name) return
+  if (!window.__eidosCapturedFbqEvents) window.__eidosCapturedFbqEvents = []
+  window.__eidosCapturedFbqEvents.push(name)
 }
 
 function normalizeAnswer(answer: unknown): string {
@@ -54,6 +61,7 @@ export function firePixelEvent(event: PixelEventConfig, retries = 10) {
     ? { value: event.value, currency: event.currency || 'BRL' }
     : undefined
 
+  recordCapturedEvent(event.name)
   if (event.type === 'standard') {
     fbq('track', event.name, params)
   } else {
@@ -71,6 +79,7 @@ export function fireNamedPixelEvent(name: string, retries = 10) {
     }
     return
   }
+  recordCapturedEvent(name)
   const standardEvents = ['Lead', 'Purchase', 'CompleteRegistration', 'Contact', 'InitiateCheckout', 'ViewContent', 'AddToCart', 'AddPaymentInfo', 'Subscribe']
   if (standardEvents.includes(name)) {
     fbq('track', name)

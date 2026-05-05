@@ -438,6 +438,29 @@ const API_KEY = process.env.INTERNAL_API_SECRET || process.env.WHATSAPP_API_KEY 
 
 const fastify = Fastify({ logger: false });
 
+// --- P1: Rate limiting (in-memory, no external deps) ---
+const rateLimitStore = new Map(); // ip -> { count, windowStart }
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+function rateLimitByIp(ip) {
+  const now = Date.now();
+  let entry = rateLimitStore.get(ip);
+  if (!entry || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    entry = { count: 0, windowStart: now };
+    rateLimitStore.set(ip, entry);
+  }
+  entry.count++;
+  // Lazy cleanup: evict old entries when store grows
+  if (rateLimitStore.size > 1000) {
+    for (const [k, v] of rateLimitStore) {
+      if (now - v.windowStart >= RATE_LIMIT_WINDOW_MS) rateLimitStore.delete(k);
+    }
+  }
+  if (entry.count > RATE_LIMIT_MAX) return false;
+  return true;
+}
+
 fastify.get('/health', async () => ({ status: 'ok' }));
 
 async function requireAuth(req, reply) {
@@ -471,17 +494,25 @@ async function doWacliSend(phone, message) {
       { timeout: 15000 }
     );
     const output = (stdout + stderr + '').trim();
-    const jsonMatch = output.match(/\{.*\}/s);
-    if (!jsonMatch) {
+    // P2: Parse last valid JSON line instead of greedy regex
+    let result;
+    const lines = output.split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const trimmed = lines[i].trim();
+      if (trimmed.startsWith('{')) {
+        try { result = JSON.parse(trimmed); break; } catch {}
+      }
+    }
+    if (!result) {
       return { success: false, error: 'No JSON in wacli output' };
     }
-    const result = JSON.parse(jsonMatch[0]);
     // wacli may return success:true without actually delivering
     // Check messages_stored when available to detect false positives
     const stored = result.data?.messages_stored ?? result.messages_stored ?? 0;
     const hasStoredField = ('messages_stored' in (result.data || {})) || ('messages_stored' in result);
     const success = hasStoredField ? (stored > 0) : (result.success === true);
-    const messageId = result.data?.id;
+    // P2: Chained fallbacks for messageId extraction
+    const messageId = result.data?.id ?? result.id ?? result.messageId ?? null;
     if (success && messageId) {
       // Cache so we can redeliver if the daemon receives a retry receipt
       // (recipient device couldn't decrypt and asked for resend).
@@ -489,7 +520,7 @@ async function doWacliSend(phone, message) {
     }
     return {
       success,
-      messageId,
+      messageId: messageId || null,
       error: result.error
     };
   } catch (err) {
@@ -557,6 +588,13 @@ fastify.post('/api/whatsapp/qr', { onRequest: requireAuth }, async (req, reply) 
 });
 
 fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply) => {
+  // P1: Rate limit check by IP
+  const clientIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
+  if (!rateLimitByIp(clientIp)) {
+    log(`[send] Rate limited: ${clientIp}`);
+    return reply.code(429).send({ error: 'Too many requests' });
+  }
+
   const { to, message } = req.body;
   if (!to || !message) {
     return reply.code(400).send({ error: 'Missing to or message' });
@@ -570,7 +608,8 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply
   }
 
   log(`[send] Success: ${hashPhone(to)} (msgId: ${result.messageId})`);
-  return reply.send({ success: true, messageId: result.messageId });
+  // P2: Ensure messageId is always present in response
+  return reply.send({ success: true, messageId: result.messageId || `vps-${Date.now()}` });
 });
 
 fastify.post('/api/whatsapp/disconnect', { onRequest: requireAuth }, async (req, reply) => {

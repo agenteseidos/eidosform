@@ -173,7 +173,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (!isInternal) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
       }
-      return await handleDirectSend(body as unknown as DirectSendRequest)
+      return await handleDirectSend(body as unknown as DirectSendRequest & { formId?: string })
     }
 
     return NextResponse.json(
@@ -275,11 +275,38 @@ async function handleFormAwareSend(
   }
 }
 
-async function handleDirectSend(data: DirectSendRequest): Promise<NextResponse> {
-  // Direct send bypasses plan gate. Only internal services with INTERNAL_API_SECRET reach here.
-  logWarn('[whatsapp/send] Direct send used — no plan gate applied')
-
+async function handleDirectSend(data: DirectSendRequest & { formId?: string }): Promise<NextResponse> {
   const cleanPhone = data.to.replace(/\D/g, '')
+
+  // P2: Plan gate when formId is present
+  if (data.formId) {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { cookies: { getAll: () => [], setAll: () => {} } }
+    )
+    const { data: formData } = await supabase
+      .from('forms')
+      .select('user_id')
+      .eq('id', data.formId)
+      .single()
+    if (formData?.user_id) {
+      const { data: ownerProfile } = await supabase
+        .from('profiles')
+        .select('plan')
+        .eq('id', formData.user_id)
+        .single()
+      const plan = (ownerProfile?.plan ?? 'free') as PlanId
+      if (!PLANS[plan]?.whatsappNotifications) {
+        return NextResponse.json(
+          { success: false, error: 'WhatsApp requires Plus or Professional plan' },
+          { status: 403 }
+        )
+      }
+    }
+  } else {
+    logWarn('[whatsapp/send] Direct send without formId — no plan gate applied')
+  }
 
   if (!isValidPhoneNumber(cleanPhone)) {
     return NextResponse.json(

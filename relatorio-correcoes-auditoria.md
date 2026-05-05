@@ -1,7 +1,7 @@
 # Relatório de Correções — Auditoria EidosForm
 
 > Gerado em 2026-05-02. Atualizado continuamente por etapa.
-> **Última atualização:** 2026-05-04 — fechamento (Blocos H, I, J, K).
+> **Última atualização:** 2026-05-04 23:55 — pós Demandas D1-D4 + N5/N6 + bugs admin + I1 DNS confirmado.
 
 ---
 
@@ -9,10 +9,9 @@
 
 **Origem:** [auditoria-uso-fase1.md](auditoria-uso-fase1.md) (107 achados) + [auditoria-uso-fase2.md](auditoria-uso-fase2.md) (20 achados) + 1 achado extra (BUG-EXTRA-1) = **128 achados**.
 
-**Resultado (atualizado 2026-05-04 após Blocos H/I/J/K):**
-- ✅ **~115 resolvidos (90%)**
-- ⏳ **1 em propagação DNS** — I1 (exclusão de MX aplicada, aguardando ~1h)
-- ⚠️ **~12 pendentes** — todos P1/P2/P3 UX/cosméticos não-bloqueantes + K1 manual
+**Resultado (atualizado 2026-05-04 23:55 após Blocos H/I/J/K + Demandas D1-D4 + N5/N6):**
+- ✅ **~118 resolvidos (~92%)**
+- ⚠️ **~9 pendentes** — todos P1/P2/P3 UX/cosméticos não-bloqueantes + K1 manual
 - ❌ **1 recusado** — multi-user Professional (feature paga em hold)
 - ✅ **2 aceitos por decisão de produto** — I2 (DMARC rua via inbox monitorada por agente), J2 form de teste (mantido como referência)
 
@@ -25,13 +24,20 @@
 - **F — Integrações** (Etapas 15-17): ✅ `5bd97f2`, `b435fcd`, `09b871c`
 - **G — P3 cleanup + regressão** (Etapas 18-19): ✅ `3ee83f7` (P3) + `regression-checklist.md` (smoke parcial)
 - **H — VPS hardening final** (Etapas H1, H2): ✅ `87feca0`, `ee511aa`
-- **I — DNS** (Etapas I1, I2): ⏳ I1 em execução (Sidney excluindo MX do apex em 2026-05-04); I2 ✅ aceito por decisão de produto (rua monitorado pelo Zé/OpenClaw)
+- **I — DNS** (Etapas I1, I2): ✅ I1 propagado (`dig MX eidosform.com.br` vazio), I2 ✅ aceito por decisão de produto
 - **J — Backlog** (Etapas J1-J3): ✅ J1 (`2a1da80` + migration aplicada), J2 ✅ (form mantido por decisão; contas já deletadas), J3 ✅
 - **K — Encerramento** (K1-K3): ✅ smoke automático + tabelas finais nas auditorias + este sumário
 
+### Backlog 2026-05-04 (Demandas D1-D4 + bugs pós-deploy)
+- **D1 — Tempo de plano** (`0c3bf08`): ✅ admin define expiração via date picker + atalhos +7/+30/+90 dias.
+- **D2 — Botão Admin no nav** (`aaed8c5`): ✅ `Shield` icon visível só p/ admins (desktop + dropdown + mobile).
+- **D3 — Cards/drill-down/view-as** (`06bbc4a` + bugfix `02808d0`): ✅ /admin/forms, /admin/responses, /admin/users/[id]/view-as. Bugs descobertos pós-deploy (admin 404 + /admin/responses falha + voltar ao app) corrigidos em `02808d0`.
+- **D4 — WhatsApp**: ✅ auditoria + plano (`d025229`); ✅ N1-N4 (`2144731`); ✅ N5 cleanup (149MB → lixeira); ✅ N6 rotação `WHATSAPP_API_KEY` (chave nova em prod, antiga 403); ✅ bug bônus PM2 `env_file` no-op corrigido com `dotenv` (`26a9a85`); ✅ migration `20260504_normalize_whatsapp_unknown_phones.sql` aplicada por Sidney.
+
 **Riscos remanescentes:**
-1. **K1 manual**: smoke test ponta-a-ponta com browser+auth+email+WhatsApp+checkout não foi rodado por agente (sem credenciais interativas) — Sidney deve percorrer `regression-checklist.md` em sessão browser autenticada.
-2. **DNS I1**: aguardando propagação após exclusão do MX do apex (2026-05-04). Validar em ~1h via `dig +short MX eidosform.com.br` (esperado: vazio).
+1. **K1 manual**: smoke test ponta-a-ponta com browser+auth+email+WhatsApp+checkout não foi rodado por agente (sem credenciais interativas) — Sidney deve percorrer `regression-checklist.md` / `smoke-test-manual-guia.md` em sessão browser autenticada.
+2. **Lixeira VPS**: `/home/sidney/eidosform-whatsapp/` (149 MB) movido pra lixeira em 2026-05-04. Esvaziar com `trash-empty 30` quando confiante (ex: 30 dias).
+3. **Vercel preview/development**: `WHATSAPP_API_KEY` ainda com chave **antiga** nesses ambientes (rotação N6 só foi em production). Pode ser rotacionada depois — não afeta produção.
 
 **Próxima auditoria sugerida:** Fase 3 ponta-a-ponta com conta de teste secundária (não-admin) cobrindo o fluxo Free → Plus → Professional + integração Asaas em sandbox + recebimento real de email/WhatsApp/webhook.
 

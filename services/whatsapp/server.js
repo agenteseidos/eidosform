@@ -164,6 +164,13 @@ async function startWacli() {
     // lock on the SQLite store, which blocks every `wacli send` we make
     // from tryWacliSend. After auth completes the wacli process must die so
     // sends can grab the lock.
+    //
+    // If the auth flow ended with a successful pairing, kick off the sync
+    // daemon so we keep the websocket alive going forward.
+    if (status.authenticated) {
+      log('[wacli] Auth completed — scheduling daemon start');
+      scheduleDaemonRestart(1500);
+    }
   });
 
   wacliChild.on('error', (err) => {
@@ -330,6 +337,13 @@ async function refreshStatus() {
     status.phoneNumber = d.phoneNumber || getPhoneFromDb();
     writeStatus();
     log(`[status] Refreshed: authenticated=${status.authenticated} connected=${status.connected} phone=${hashPhone(status.phoneNumber)}`);
+    // Watchdog: if we're authenticated but the daemon isn't running and no
+    // restart is scheduled, kick one off. Covers the case where wacli was
+    // re-paired out-of-band or the daemon died silently.
+    if (status.authenticated && !daemonChild && !daemonRestartTimer && !wacliChild) {
+      log('[status] Authenticated without daemon — scheduling start');
+      scheduleDaemonRestart(1000);
+    }
   } catch (err) {
     log(`[status] Refresh error: ${err.message}`);
   }

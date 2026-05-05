@@ -190,8 +190,15 @@ export function AdminWhatsAppPanel() {
                 Autenticando...
               </div>
               <div className="text-sm text-gray-600">
-                Aguarde a conexão ser estabelecida.
+                Aguarde a conexão ser estabelecida. Se ficar preso aqui por mais de 1 minuto, force o re-pareamento abaixo.
               </div>
+              <button
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+                className="min-h-[44px] px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+              >
+                {disconnecting ? 'Desconectando...' : 'Desconectar e gerar novo QR'}
+              </button>
             </div>
           ) : (
             <div className="space-y-4">

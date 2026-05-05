@@ -425,6 +425,7 @@ export async function POST(req: NextRequest) {
         form.questions as Array<{ id: string; type?: string; title?: string; fields?: Array<{ id: string; ref?: string }> }>
       )
       const userAgent = req.headers.get('user-agent') ?? undefined
+      const referer = req.headers.get('referer') ?? undefined
       for (const eventId of metaEvents) {
         postSubmitTasks.push(
           sendMetaCAPIEvent({
@@ -433,6 +434,7 @@ export async function POST(req: NextRequest) {
             userAgent,
             eventId,
             formTitle: form.title ?? undefined,
+            eventSourceUrl: referer,
           }).catch((err) => logError('Failed to send Meta CAPI event', err))
         )
       }

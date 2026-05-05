@@ -27,17 +27,20 @@ async function sha256Normalize(data: string): Promise<string> {
 }
 
 interface MetaCAPIPayload {
-  eventName: string
-  eventId: string
-  userData: {
+  event_name: string
+  event_time: number
+  event_id: string
+  action_source: 'website' | 'email' | 'app' | 'phone_call' | 'chat' | 'physical_store' | 'system_generated' | 'other'
+  event_source_url?: string
+  user_data: {
     em?: string[]       // hashed email
     ph?: string[]       // hashed phone
     fn?: string[]       // hashed first name
     ln?: string[]       // hashed last name
-    ip?: string
+    client_ip_address?: string
     client_user_agent?: string
   }
-  customData?: Record<string, unknown>
+  custom_data?: Record<string, unknown>
 }
 
 export interface MetaCAPIOptions {
@@ -49,6 +52,7 @@ export interface MetaCAPIOptions {
   userAgent?: string
   eventId: string
   formTitle?: string
+  eventSourceUrl?: string
 }
 
 /**
@@ -64,14 +68,13 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
   }
 
   try {
-    // Build hashed user_data
-    const userData: MetaCAPIPayload['userData'] = {}
+    // Build hashed user_data (snake_case keys per Meta CAPI spec)
+    const userData: MetaCAPIPayload['user_data'] = {}
 
     if (options.email) {
       userData.em = [await sha256Normalize(options.email)]
     }
     if (options.phone) {
-      // Strip non-digits for phone normalization
       const digitsOnly = options.phone.replace(/\D/g, '')
       if (digitsOnly.length >= 6) {
         userData.ph = [await sha256Normalize(digitsOnly)]
@@ -84,17 +87,20 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
       userData.ln = [await sha256Normalize(options.lastName)]
     }
     if (options.ip) {
-      userData.ip = options.ip
+      userData.client_ip_address = options.ip
     }
     if (options.userAgent) {
       userData.client_user_agent = options.userAgent
     }
 
     const payload: MetaCAPIPayload = {
-      eventName: 'Lead',
-      eventId: options.eventId,
-      userData,
-      customData: options.formTitle ? { form_title: options.formTitle } : undefined,
+      event_name: 'Lead',
+      event_time: Math.floor(Date.now() / 1000),
+      event_id: options.eventId,
+      action_source: 'website',
+      ...(options.eventSourceUrl && { event_source_url: options.eventSourceUrl }),
+      user_data: userData,
+      ...(options.formTitle && { custom_data: { form_title: options.formTitle } }),
     }
 
     const url = `${META_API_URL}/${pixelId}/events?access_token=${accessToken}`

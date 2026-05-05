@@ -229,8 +229,12 @@ let sendQueue = Promise.resolve();
 // ----------------------------------------------------------------------------
 
 const RECENT_TTL_MS = 5 * 60 * 1000; // keep msgs 5 min — long enough for retry
-const MAX_REDELIVERIES = 2;          // cap to avoid loops
+const MAX_REDELIVERIES = 1;          // cap to avoid loops
+const DEDUP_WINDOW_MS = 60 * 1000;   // suppress redelivery if same (phone, message) was redelivered within this window
 const recentSends = new Map();       // msgId -> { to, message, sentAt, redeliveries }
+const recentRedeliveries = new Map(); // dedupKey -> timestamp of last redelivery
+
+const dedupKey = (to, message) => `${to}|${crypto.createHash('sha256').update(String(message)).digest('hex').slice(0, 16)}`;
 
 function rememberSend(msgId, to, message, redeliveries = 0) {
   if (!msgId) return;
@@ -239,6 +243,11 @@ function rememberSend(msgId, to, message, redeliveries = 0) {
   const cutoff = Date.now() - RECENT_TTL_MS;
   for (const [k, v] of recentSends) {
     if (v.sentAt < cutoff) recentSends.delete(k);
+  }
+  // Cleanup dedup map too
+  const dedupCutoff = Date.now() - DEDUP_WINDOW_MS;
+  for (const [k, ts] of recentRedeliveries) {
+    if (ts < dedupCutoff) recentRedeliveries.delete(k);
   }
 }
 
@@ -253,8 +262,18 @@ async function handleRetryReceipt(msgId) {
     recentSends.delete(msgId);
     return;
   }
+  // Dedup: if the same (phone, message) was already redelivered within the window,
+  // assume the recipient got at least one copy and suppress further redeliveries.
+  const key = dedupKey(entry.to, entry.message);
+  const lastRedeliveredAt = recentRedeliveries.get(key);
+  if (lastRedeliveredAt && (Date.now() - lastRedeliveredAt) < DEDUP_WINDOW_MS) {
+    log(`[retry] ${msgId} suppressed by dedup window (same content sent ${Date.now() - lastRedeliveredAt}ms ago)`);
+    recentSends.delete(msgId);
+    return;
+  }
   const nextCount = entry.redeliveries + 1;
   log(`[retry] redelivering ${msgId} to ${hashPhone(entry.to)} (attempt ${nextCount}/${MAX_REDELIVERIES})`);
+  recentRedeliveries.set(key, Date.now());
   // Mark the old msgId as exhausted *before* sending so a duplicate retry
   // receipt for the same id (sent by the recipient device while we redeliver)
   // does not trigger another redelivery.

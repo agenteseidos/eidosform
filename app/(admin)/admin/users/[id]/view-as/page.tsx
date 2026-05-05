@@ -51,13 +51,19 @@ export default async function AdminViewAsUserPage({ params }: { params: Promise<
 
   const formIds = (forms ?? []).map((f) => f.id)
 
+  // Aggregate response counts per form so each row can show its own number
+  // (and the summary card adds them up).
+  const responseCountByForm = new Map<string, number>()
   let responsesCount = 0
   if (formIds.length > 0) {
-    const { count } = await supabase
+    const { data: responseRows } = await supabase
       .from('responses')
-      .select('id', { count: 'exact', head: true })
+      .select('form_id')
       .in('form_id', formIds)
-    responsesCount = count ?? 0
+    for (const row of responseRows ?? []) {
+      responseCountByForm.set(row.form_id, (responseCountByForm.get(row.form_id) ?? 0) + 1)
+    }
+    responsesCount = responseRows?.length ?? 0
   }
 
   const planExpiresAt = profile.plan_expires_at ? new Date(profile.plan_expires_at) : null
@@ -139,6 +145,7 @@ export default async function AdminViewAsUserPage({ params }: { params: Promise<
               <TableRow>
                 <TableHead>Título</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Respostas</TableHead>
                 <TableHead>Criado em</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -152,12 +159,14 @@ export default async function AdminViewAsUserPage({ params }: { params: Promise<
                     : form.paused
                       ? 'Pausado'
                       : (form.status && STATUS_LABELS[form.status]) || form.status || '—'
+                  const formResponses = responseCountByForm.get(form.id) ?? 0
                   return (
                     <TableRow key={form.id}>
                       <TableCell className="max-w-[260px] truncate font-medium text-slate-900">{title}</TableCell>
                       <TableCell>
                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{statusLabel}</span>
                       </TableCell>
+                      <TableCell className="tabular-nums">{formResponses.toLocaleString('pt-BR')}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm">{new Date(form.created_at).toLocaleDateString('pt-BR')}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -178,7 +187,7 @@ export default async function AdminViewAsUserPage({ params }: { params: Promise<
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-10 text-center text-sm text-slate-500">
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">
                     Esse usuário ainda não criou formulários.
                   </TableCell>
                 </TableRow>

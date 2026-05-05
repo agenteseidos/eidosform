@@ -9,7 +9,6 @@ type ResponseRow = {
   completed: boolean | null
   respondent_id: string | null
   submitted_at: string
-  created_at: string
 }
 
 export async function GET(request: NextRequest) {
@@ -25,7 +24,7 @@ export async function GET(request: NextRequest) {
 
   let responsesQuery = supabase
     .from('responses')
-    .select('id, form_id, completed, respondent_id, submitted_at, created_at', { count: 'exact' })
+    .select('id, form_id, completed, respondent_id, submitted_at', { count: 'exact' })
     .order('submitted_at', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false })
 
@@ -77,7 +76,7 @@ export async function GET(request: NextRequest) {
       ownerId: form?.user_id ?? null,
       ownerEmail: form?.user_id ? ownerById.get(form.user_id) ?? null : null,
       completed: row.completed ?? false,
-      createdAt: row.submitted_at ?? row.created_at,
+      createdAt: row.submitted_at,
     }
   })
 

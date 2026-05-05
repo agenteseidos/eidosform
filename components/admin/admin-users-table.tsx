@@ -14,6 +14,8 @@ type AdminUser = {
   id: string
   email: string
   plan: PlanId
+  planExpiresAt: string | null
+  planStatus: string | null
   createdAt: string
   formsCount: number
 }
@@ -23,6 +25,47 @@ const PLAN_LABELS: Record<PlanId, string> = {
   starter: 'Starter',
   plus: 'Plus',
   professional: 'Professional',
+}
+
+/**
+ * Formats an ISO timestamp into a HTML <input type="date"> compatible
+ * value (YYYY-MM-DD), respecting the current local timezone.
+ */
+function isoToDateInput(iso: string | null): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Returns YYYY-MM-DD for `today + days` in local time, suitable for
+ * the date input shortcuts (+7, +30, +90).
+ */
+function dateInputPlusDays(days: number): string {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return isoToDateInput(date.toISOString())
+}
+
+/**
+ * Converts a YYYY-MM-DD value from a date input into a UTC ISO string.
+ * Anchored at end-of-day local time so that the plan stays valid through
+ * the entire selected day before flipping to expired.
+ */
+function dateInputToIso(value: string): string | null {
+  if (!value) return null
+  const [yearStr, monthStr, dayStr] = value.split('-')
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const day = Number(dayStr)
+  if (!year || !month || !day) return null
+  const date = new Date(year, month - 1, day, 23, 59, 59, 999)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toISOString()
 }
 
 export function AdminUsersTable() {
@@ -35,6 +78,7 @@ export function AdminUsersTable() {
   const [total, setTotal] = useState(0)
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null)
   const [nextPlan, setNextPlan] = useState<PlanId>('free')
+  const [nextExpiresAt, setNextExpiresAt] = useState<string>('') // YYYY-MM-DD or '' for no expiration
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -94,6 +138,7 @@ export function AdminUsersTable() {
   function openPlanDialog(user: AdminUser) {
     setSelectedUser(user)
     setNextPlan(user.plan)
+    setNextExpiresAt(isoToDateInput(user.planExpiresAt))
   }
 
   async function handleSavePlan() {
@@ -103,6 +148,15 @@ export function AdminUsersTable() {
       setSaving(true)
       setError(null)
 
+      // For Free plan, expiration is always cleared server-side.
+      // For other plans: '' => null (no expiration), date => ISO string.
+      const expiresAtPayload =
+        nextPlan === 'free'
+          ? null
+          : nextExpiresAt
+            ? dateInputToIso(nextExpiresAt)
+            : null
+
       const response = await fetch(`/api/admin/users/${selectedUser.id}/plan`, {
         method: 'PATCH',
         headers: {
@@ -110,13 +164,19 @@ export function AdminUsersTable() {
         },
         body: JSON.stringify({
           plan: nextPlan,
+          expiresAt: expiresAtPayload,
         }),
       })
 
-      if (!response.ok) throw new Error('Falha ao atualizar plano')
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.error || 'Falha ao atualizar plano')
+      }
 
       setUsers((current) => current.map((user) => (
-        user.id === selectedUser.id ? { ...user, plan: nextPlan } : user
+        user.id === selectedUser.id
+          ? { ...user, plan: nextPlan, planExpiresAt: expiresAtPayload }
+          : user
       )))
       setSelectedUser(null)
     } catch (err) {
@@ -152,6 +212,7 @@ export function AdminUsersTable() {
                 <TableRow>
                   <TableHead>E-mail</TableHead>
                   <TableHead>Plano atual</TableHead>
+                  <TableHead>Expiração</TableHead>
                   <TableHead>Criação</TableHead>
                   <TableHead className="hidden sm:table-cell">Nº de forms</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -159,26 +220,41 @@ export function AdminUsersTable() {
               </TableHeader>
               <TableBody>
                 {users.length > 0 ? (
-                  users.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell className="max-w-[200px] sm:max-w-[280px] truncate font-medium text-slate-900">{user.email}</TableCell>
-                      <TableCell>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {PLAN_LABELS[user.plan]}
-                        </span>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">{new Date(user.createdAt).toLocaleDateString('pt-BR')}</TableCell>
-                      <TableCell className="hidden sm:table-cell">{user.formsCount}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => openPlanDialog(user)}>
-                          Alterar plano
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  users.map((user) => {
+                    const expiresAt = user.planExpiresAt ? new Date(user.planExpiresAt) : null
+                    const isExpired = expiresAt ? expiresAt.getTime() <= Date.now() : false
+                    return (
+                      <TableRow key={user.id}>
+                        <TableCell className="max-w-[200px] sm:max-w-[280px] truncate font-medium text-slate-900">{user.email}</TableCell>
+                        <TableCell>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                            {PLAN_LABELS[user.plan]}
+                          </span>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {user.plan === 'free' ? (
+                            <span className="text-slate-400">—</span>
+                          ) : expiresAt ? (
+                            <span className={isExpired ? 'text-red-600' : 'text-slate-700'}>
+                              {expiresAt.toLocaleDateString('pt-BR')}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">Sem expiração</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{new Date(user.createdAt).toLocaleDateString('pt-BR')}</TableCell>
+                        <TableCell className="hidden sm:table-cell">{user.formsCount}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => openPlanDialog(user)}>
+                            Alterar plano
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">
+                    <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-500">
                       {emptyMessage}
                     </TableCell>
                   </TableRow>
@@ -225,6 +301,44 @@ export function AdminUsersTable() {
               </SelectContent>
             </Select>
           </div>
+
+          {nextPlan !== 'free' && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Expiração do plano</label>
+              <Input
+                type="date"
+                value={nextExpiresAt}
+                onChange={(event) => setNextExpiresAt(event.target.value)}
+                min={dateInputPlusDays(1)}
+                className="bg-white"
+              />
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => setNextExpiresAt(dateInputPlusDays(7))}>
+                  +7 dias
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setNextExpiresAt(dateInputPlusDays(30))}>
+                  +30 dias
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setNextExpiresAt(dateInputPlusDays(90))}>
+                  +90 dias
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setNextExpiresAt('')}>
+                  Sem expiração
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500">
+                {nextExpiresAt
+                  ? `Plano expirará em ${new Date(dateInputToIso(nextExpiresAt) ?? Date.now()).toLocaleDateString('pt-BR')} (revertendo para Free).`
+                  : 'Plano não expirará automaticamente.'}
+              </p>
+            </div>
+          )}
+
+          {nextPlan === 'free' && (
+            <p className="text-xs text-slate-500">
+              Planos Free não têm expiração. A data atual será removida ao salvar.
+            </p>
+          )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelectedUser(null)} disabled={saving}>

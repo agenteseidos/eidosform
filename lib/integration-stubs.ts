@@ -50,9 +50,21 @@ export async function sendWhatsAppOnFormResponse(params: {
       return ''
     }
 
+    // Find by canonical question type — more robust than scanning titles
+    const findByType = (...types: string[]): string => {
+      if (!params.form.questions) return ''
+      for (const t of types) {
+        const q = params.form.questions.find(q => q.type === t)
+        if (q && q.id && responseData[q.id] != null) {
+          return String(responseData[q.id])
+        }
+      }
+      return ''
+    }
+
     const nameValue = findByLabel('nome', 'name', 'nome completo') || 'Lead'
-    const emailValue = findByLabel('email', 'e-mail') || 'N/A'
-    const phoneValue = findByLabel('telefone', 'phone', 'celular', 'whatsapp') || ''
+    const emailValue = findByType('email') || findByLabel('email', 'e-mail') || 'N/A'
+    const phoneValue = findByType('phone') || findByLabel('telefone', 'phone', 'celular', 'whatsapp') || ''
 
     const leadData = {
       name: nameValue,

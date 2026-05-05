@@ -9,10 +9,12 @@
 
 **Origem:** [auditoria-uso-fase1.md](auditoria-uso-fase1.md) (107 achados) + [auditoria-uso-fase2.md](auditoria-uso-fase2.md) (20 achados) + 1 achado extra (BUG-EXTRA-1) = **128 achados**.
 
-**Resultado:**
-- ✅ **~113 resolvidos (88%)**
-- ⚠️ **~14 pendentes** — majoritariamente P1/P2/P3 UX/cosméticos não-bloqueantes; mais 2 itens DNS críticos (I1, I2) que exigem painel manual.
-- ❌ **1 recusado** — multi-user Professional (feature paga em hold por decisão de produto).
+**Resultado (atualizado 2026-05-04 após Blocos H/I/J/K):**
+- ✅ **~115 resolvidos (90%)**
+- ⏳ **1 em propagação DNS** — I1 (exclusão de MX aplicada, aguardando ~1h)
+- ⚠️ **~12 pendentes** — todos P1/P2/P3 UX/cosméticos não-bloqueantes + K1 manual
+- ❌ **1 recusado** — multi-user Professional (feature paga em hold)
+- ✅ **2 aceitos por decisão de produto** — I2 (DMARC rua via inbox monitorada por agente), J2 form de teste (mantido como referência)
 
 **Blocos completos:**
 - **A — Fogo no telhado** (Etapas 1-3): ✅ código (1 fix `86c7e10`); DNS deslocado para Bloco I
@@ -23,14 +25,13 @@
 - **F — Integrações** (Etapas 15-17): ✅ `5bd97f2`, `b435fcd`, `09b871c`
 - **G — P3 cleanup + regressão** (Etapas 18-19): ✅ `3ee83f7` (P3) + `regression-checklist.md` (smoke parcial)
 - **H — VPS hardening final** (Etapas H1, H2): ✅ `87feca0`, `ee511aa`
-- **I — DNS** (Etapas I1, I2): ⚠️ pendente — `dns-changes-pending.md`
-- **J — Backlog** (Etapas J1-J3): ✅ `2a1da80`, J3; J2 documentado em `cleanup-test-artifacts-pending.md`
+- **I — DNS** (Etapas I1, I2): ⏳ I1 em execução (Sidney excluindo MX do apex em 2026-05-04); I2 ✅ aceito por decisão de produto (rua monitorado pelo Zé/OpenClaw)
+- **J — Backlog** (Etapas J1-J3): ✅ J1 (`2a1da80` + migration aplicada), J2 ✅ (form mantido por decisão; contas já deletadas), J3 ✅
 - **K — Encerramento** (K1-K3): ✅ smoke automático + tabelas finais nas auditorias + este sumário
 
 **Riscos remanescentes:**
-1. **DNS** (I1/I2): null MX (`0 .`) e DMARC `rua` em inbox dedicada. Sem isso, incoming email continua quebrado e relatórios DMARC vão para Gmail pessoal. Sidney deve aplicar no painel Registro.br.
-2. **Cleanup Supabase** (J2): form de teste e duas contas de teste continuam em produção até deleção via Supabase Studio.
-3. **K1 manual**: smoke test ponta-a-ponta com browser+auth+email+WhatsApp+checkout não foi rodado por agente (sem credenciais interativas) — Sidney deve percorrer `regression-checklist.md` em sessão browser autenticada.
+1. **K1 manual**: smoke test ponta-a-ponta com browser+auth+email+WhatsApp+checkout não foi rodado por agente (sem credenciais interativas) — Sidney deve percorrer `regression-checklist.md` em sessão browser autenticada.
+2. **DNS I1**: aguardando propagação após exclusão do MX do apex (2026-05-04). Validar em ~1h via `dig +short MX eidosform.com.br` (esperado: vazio).
 
 **Próxima auditoria sugerida:** Fase 3 ponta-a-ponta com conta de teste secundária (não-admin) cobrindo o fluxo Free → Plus → Professional + integração Asaas em sandbox + recebimento real de email/WhatsApp/webhook.
 
@@ -116,31 +117,33 @@
 
 ### Etapa I1 — Null MX no apex
 
-**Status:** ⚠️ Pendente (exige painel DNS — Sidney)
+**Status:** ⏳ Em execução (Sidney aplicando no painel DNS em 2026-05-04). Painel não aceitou destino `.` literal — decisão: **excluir** o registro MX do apex (efeito prático equivalente ao null MX). Aguardando propagação para validação via `dig`.
 **Achado:** F2-E1-02
 **Doc:** [dns-changes-pending.md](dns-changes-pending.md)
 
 ### Etapa I2 — DMARC `rua` em inbox dedicada
 
-**Status:** ⚠️ Pendente (exige painel DNS — Sidney)
+**Status:** ✅ Aceito por decisão de produto em 2026-05-04 — `rua` permanece em `agenteseidos@gmail.com`.
 **Achado:** F2-E1-03
-**Doc:** [dns-changes-pending.md](dns-changes-pending.md)
+**Justificativa:** a inbox `agenteseidos@gmail.com` é monitorada pelo agente Zé (OpenClaw), que processa relatórios DMARC automaticamente e dispara alertas relevantes ao Sidney via WhatsApp/Telegram. Não é uma inbox "pessoal solta" — é uma inbox de operação assistida por agente. Risco residual aceitável (relatórios contêm apenas metadados de envio, e o domínio é não-receptivo após I1).
 
 ### Etapa J1 — Notificação DLQ por email
 
-**Status:** ✅ Concluída em 2026-05-04 (migration aguarda deploy)
+**Status:** ✅ Concluída em 2026-05-04 (migration aplicada em produção)
 **Commits:** `2a1da80`
 **Achado:** P3-INT1 (pendência declarada da Etapa 16)
 **Arquivos alterados:** [lib/resend.ts](lib/resend.ts), [lib/webhook-dispatcher.ts](lib/webhook-dispatcher.ts), [supabase/migrations/20260504_webhook_failure_notifications.sql](supabase/migrations/20260504_webhook_failure_notifications.sql)
 **O que foi feito:** após `insertDlq`, se ≥3 falhas em 7d para o `formId`, `maybeNotifyOwnerOfWebhookFailures` envia email único via `sendWebhookFailureAlert` (Resend + Idempotency-Key). Antispam: tabela `webhook_failure_notifications` com `last_notified_at` (1x/24h).
-**Validação:** `npx tsc --noEmit` sem erros. Migration será aplicada no próximo `supabase db push` ou via dashboard.
+**Validação:** `npx tsc --noEmit` sem erros. Migration aplicada via SQL Editor do Supabase em 2026-05-04 — tabela `webhook_failure_notifications` criada com 2 políticas RLS confirmadas.
 
 ### Etapa J2 — Deletar artefatos de teste
 
-**Status:** ⚠️ Pendente (exige Supabase Studio)
-**Doc:** [cleanup-test-artifacts-pending.md](cleanup-test-artifacts-pending.md)
-**Confirmado:** `/tmp/eidos-audit/` na VPS já não existe.
-**Pendente:** form `af8ea379-cea0-4471-b1ee-d63e2daffc19` + 2 contas de teste no Supabase.
+**Status:** ✅ Concluída em 2026-05-04
+**Confirmado em produção:**
+- ✅ `/tmp/eidos-audit/` já não existe na VPS.
+- ✅ Conta `eb2d9c6d-6119-47a2-9c5f-f9bbe95a89ec` (`naoexiste-1777754994294@audittestxyz.com`): já estava deletada (busca por email no Authentication panel não retornou nada).
+- ✅ Conta `a4066c51-3c0c-43f3-85f0-7298d2091482`: já estava deletada (query SQL retornou 0 linhas).
+- 🟡 Form `af8ea379-cea0-4471-b1ee-d63e2daffc19` (`[TESTE-AUDITORIA-2026-05-02]`): **mantido por decisão de produto** — Sidney optou por preservar como referência. Sem impacto: form está pausado no banco e não recebe tráfego.
 
 ### Etapa J3 — Atualizar `achados-extras.md`
 

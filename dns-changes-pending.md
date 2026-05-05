@@ -1,67 +1,35 @@
-# Mudanças DNS Pendentes (Bloco I — Etapas I1 e I2)
+# Status do Bloco I — DNS
 
-> **Status:** ⚠️ Pendente — exige ação manual de Sidney no painel DNS de `eidosform.com.br`
 > **Branch:** `fix/auditoria-fechamento`
-> **Data:** 2026-05-04
+> **Última atualização:** 2026-05-04
 
-## Estado atual (verificado via `dig`)
+## Etapa I1 — MX do apex
 
-```
-$ dig +short MX eidosform.com.br
-0 eidosform.com.br.
+**Status:** ⏳ Em propagação (Sidney aplicou em 2026-05-04)
 
-$ dig +short TXT _dmarc.eidosform.com.br
-"v=DMARC1; p=none; rua=mailto:agenteseidos@gmail.com"
-```
+**Decisão técnica:** o painel DNS do registrador não aceitou destino `.` literal (null MX da RFC 7505). Adotada solução equivalente: **excluir** o registro MX do apex inteiro. Servidores tratam ausência de MX como "domínio não recebe email", mesmo efeito prático do null MX.
 
-## Mudanças exigidas
-
-### Etapa I1 — Null MX (RFC 7505)
-
-**Onde:** painel DNS de `eidosform.com.br` (Registro.br ou provedor atual).
-
-**Trocar:**
-```
-MX  eidosform.com.br.  →  0 eidosform.com.br.
-```
-**Por:**
-```
-MX  eidosform.com.br.  →  0 .
-```
-
-**Validação após propagação (~1h):**
+**Validar após ~1h de propagação:**
 ```bash
 dig +short MX eidosform.com.br
-# Esperado: 0 .
+# Esperado: vazio (sem retorno)
+
+dig +short MX send.eidosform.com.br
+# Esperado: 10 feedback-smtp.sa-east-1.amazonses.com.   (não tocar — Resend)
 ```
 
 ---
 
-### Etapa I2 — DMARC `rua` em inbox dedicada
+## Etapa I2 — DMARC `rua`
 
-**Onde:** mesmo painel DNS, registro TXT em `_dmarc.eidosform.com.br`.
+**Status:** ✅ Aceito por decisão de produto em 2026-05-04
 
-**Trocar valor de:**
-```
-v=DMARC1; p=none; rua=mailto:agenteseidos@gmail.com
-```
-**Por:**
-```
-v=DMARC1; p=none; rua=mailto:dmarc-reports@institutoeidos.com.br
-```
+**Decisão:** manter `rua=mailto:agenteseidos@gmail.com`. A inbox é monitorada pelo agente Zé (OpenClaw), que processa relatórios DMARC automaticamente e dispara alertas relevantes ao Sidney via WhatsApp/Telegram. Não é uma inbox "pessoal solta" — é uma inbox de operação assistida por agente.
 
-> Pré-requisito: confirmar que `dmarc-reports@institutoeidos.com.br` existe (criar caso contrário no Google Workspace do Instituto Eidos). Se preferir outro endereço institucional (não-Gmail-pessoal), substituir.
-
-**Validação após propagação:**
-```bash
-dig +short TXT _dmarc.eidosform.com.br
-# Esperado: "v=DMARC1; p=none; rua=mailto:<endereço-dedicado>"
-```
+**Risco residual aceitável:** relatórios DMARC contêm apenas metadados de envio (IPs, contagens, alinhamento SPF/DKIM). Sem dados de clientes ou conteúdo de mensagens.
 
 ---
 
-## Lembrete pós-mudança
+## Lembrete pós-propagação I1
 
-Em ~14 dias após I2, evoluir DMARC para `p=quarantine` se relatórios em `dmarc-reports@institutoeidos.com.br` não acusarem falsos positivos. Em ~30 dias, evoluir para `p=reject`.
-
-**Após executar:** marcar I1 e I2 como ✅ no `relatorio-correcoes-auditoria.md` (Etapa K3) e remover este arquivo.
+Em ~14 dias após I1 propagar, evoluir DMARC para `p=quarantine` se os relatórios não acusarem falsos positivos. Em ~30 dias, evoluir para `p=reject`. Esse próximo passo é parte da hardening progressiva do antifraude — não é parte deste plano.

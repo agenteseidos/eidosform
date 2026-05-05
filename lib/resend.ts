@@ -207,10 +207,11 @@ export async function sendWebhookFailureAlert(params: {
         <p>O webhook configurado no formulário <strong>${safeTitle}</strong> falhou ao menos 3 vezes nos últimos 7 dias.</p>
         <p>Últimas falhas:</p>
         <ul style="padding-left:20px">${items}</ul>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/forms/${formId}/integrations"
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/forms/${formId}/edit"
            style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
-          Ver integrações
+          Abrir formulário
         </a>
+        <p style="color:#888;font-size:12px;margin-top:8px">Acesse a aba "Integrações" para revisar a URL do webhook.</p>
         <p style="color:#888;font-size:12px;margin-top:24px">EidosForm — Formulários inteligentes</p>
       </div>
     `,

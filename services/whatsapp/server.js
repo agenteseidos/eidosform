@@ -1,8 +1,12 @@
+const path = require('path');
+// PM2's `env_file` config is silently ignored — load the .env manually so
+// WHATSAPP_API_KEY / PORT actually reach the process at boot time.
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
 const Fastify = require('fastify');
 const { spawn, execFile } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs/promises');
-const path = require('path');
 const crypto = require('crypto');
 const { Jimp } = require('jimp');
 

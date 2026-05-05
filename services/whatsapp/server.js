@@ -156,10 +156,10 @@ async function startWacli() {
     wacliChild = null;
     qrBase64 = null;
     qrGeneratedAt = null;
-    if (status.authenticated) {
-      log('[wacli] Was authenticated, restarting in 5s...');
-      setTimeout(() => startWacli(), 5000);
-    }
+    // Do NOT auto-respawn: a long-running `wacli auth` holds an exclusive
+    // lock on the SQLite store, which blocks every `wacli send` we make
+    // from tryWacliSend. After auth completes the wacli process must die so
+    // sends can grab the lock.
   });
 
   wacliChild.on('error', (err) => {

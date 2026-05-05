@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
 const hashPhone = (p) => p ? crypto.createHash('sha256').update(String(p)).digest('hex').slice(0, 8) : 'null';
 
 const WACLI = '/home/linuxbrew/.linuxbrew/bin/wacli';
-const LOG_FILE = '/home/sidney/eidosform-whatsapp/server.log';
+const LOG_FILE = path.join(__dirname, 'server.log');
 const QR_FILE = path.join(__dirname, 'latest-qr.txt');
 const QR_PNG_FILE = path.join(__dirname, 'latest-qr.png');
 const STATUS_FILE = path.join(__dirname, 'status.json');

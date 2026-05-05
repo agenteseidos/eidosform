@@ -49,13 +49,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to load WhatsApp logs' }, { status: 500 })
     }
 
-    formsById = new Map((forms ?? []).map((form) => [form.id, form.title || 'Formulário sem título']))
+    formsById = new Map(
+      (forms ?? []).map((form) => [
+        form.id,
+        form.title?.trim() ? form.title : `Form #${form.id.slice(0, 8)}`,
+      ])
+    )
   }
 
   return NextResponse.json({
     logs: (logs ?? []).map((log) => ({
       id: log.id,
-      recipient: log.phone_number,
+      recipient: log.phone_number || '(sem telefone)',
       form: formsById.get(log.form_id) || 'Formulário removido',
       date: log.timestamp,
       status: log.status === 'sent' ? 'enviado' : 'erro',

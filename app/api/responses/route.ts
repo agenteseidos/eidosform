@@ -6,6 +6,7 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkAndIncrementResponseCount, PLANS } from '@/lib/plan-limits'
 import { normalizePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
+import { extractLead } from '@/lib/lead-extraction'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers } from '@/lib/field-validators'
@@ -439,13 +440,17 @@ export async function POST(req: NextRequest) {
 
     // Webhook externo configurado pelo usuário — feature gated
     if (form.webhook_url && ownerPlanConfig?.webhooks) {
-      // Enriquecer payload com metadata dos campos
+      // Enriquecer payload com metadata dos campos + lead canônico
       const questions = (form.questions ?? []) as QuestionConfig[]
       const fields = questions.map(q => ({
         question_id: q.id,
         type: q.type,
         title: q.title,
       }))
+      const lead = extractLead({
+        responseData: answers as Record<string, unknown>,
+        questions: questions.map(q => ({ id: q.id, title: q.title, type: q.type })),
+      })
       postSubmitTasks.push(
         dispatchWebhook({
           webhookUrl: form.webhook_url,
@@ -453,6 +458,7 @@ export async function POST(req: NextRequest) {
           responseId,
           responseData: answers as Record<string, unknown>,
           fields,
+          lead,
         }).catch((err) => logError('Failed to dispatch webhook', err))
       )
     }

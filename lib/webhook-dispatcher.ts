@@ -8,6 +8,7 @@ import { validateWebhookUrlAsync } from './webhook-validator'
 import { logError, logWarn } from '@/lib/logger'
 import { createClient } from '@supabase/supabase-js'
 import { sendWebhookFailureAlert } from '@/lib/resend'
+import type { ExtractedLead } from '@/lib/lead-extraction'
 
 export interface WebhookFieldMeta {
   question_id: string
@@ -20,6 +21,7 @@ export interface WebhookPayload {
   form_id: string
   response_id: string
   created_at: string
+  lead?: ExtractedLead
   data: Record<string, unknown>
   fields?: WebhookFieldMeta[]
 }
@@ -168,10 +170,12 @@ export async function dispatchWebhook(params: {
   responseId: string
   responseData: Record<string, unknown>
   fields?: WebhookFieldMeta[]
+  /** Canonical lead fields (name/email/phone) extracted from response */
+  lead?: ExtractedLead
   /** Owner email for DLQ notification after all retries fail */
   ownerEmail?: string
 }): Promise<{ success: boolean; statusCode?: number; error?: string }> {
-  const { webhookUrl, formId, responseId, responseData, fields, ownerEmail } = params
+  const { webhookUrl, formId, responseId, responseData, fields, lead, ownerEmail } = params
 
   // WEBHOOK_SECRET is mandatory — abort without it (P0-INT1)
   const webhookSecret = process.env.WEBHOOK_SECRET
@@ -192,6 +196,7 @@ export async function dispatchWebhook(params: {
     form_id: formId,
     response_id: responseId,
     created_at: new Date().toISOString(),
+    ...(lead ? { lead } : {}),
     data: responseData,
     ...(fields && fields.length > 0 ? { fields } : {}),
   }

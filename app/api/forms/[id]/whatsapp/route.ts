@@ -136,8 +136,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Validação do owner_phone
+    // Some prod tables also have a NOT NULL `user_id` column added outside
+    // the original migration — set it from auth so the upsert doesn't 23502.
     const updateData: Record<string, unknown> = {
       form_id: id,
+      user_id: user.id,
       created_by: user.id,
       enabled,
       updated_at: new Date().toISOString(),

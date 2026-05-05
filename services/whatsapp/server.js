@@ -232,9 +232,9 @@ const RECENT_TTL_MS = 5 * 60 * 1000; // keep msgs 5 min — long enough for retr
 const MAX_REDELIVERIES = 2;          // cap to avoid loops
 const recentSends = new Map();       // msgId -> { to, message, sentAt, redeliveries }
 
-function rememberSend(msgId, to, message) {
+function rememberSend(msgId, to, message, redeliveries = 0) {
   if (!msgId) return;
-  recentSends.set(msgId, { to, message, sentAt: Date.now(), redeliveries: 0 });
+  recentSends.set(msgId, { to, message, sentAt: Date.now(), redeliveries });
   // Lazy cleanup: drop entries older than TTL
   const cutoff = Date.now() - RECENT_TTL_MS;
   for (const [k, v] of recentSends) {
@@ -253,18 +253,21 @@ async function handleRetryReceipt(msgId) {
     recentSends.delete(msgId);
     return;
   }
-  entry.redeliveries++;
-  log(`[retry] redelivering ${msgId} to ${hashPhone(entry.to)} (attempt ${entry.redeliveries}/${MAX_REDELIVERIES})`);
+  const nextCount = entry.redeliveries + 1;
+  log(`[retry] redelivering ${msgId} to ${hashPhone(entry.to)} (attempt ${nextCount}/${MAX_REDELIVERIES})`);
+  // Mark the old msgId as exhausted *before* sending so a duplicate retry
+  // receipt for the same id (sent by the recipient device while we redeliver)
+  // does not trigger another redelivery.
+  recentSends.delete(msgId);
   try {
     const result = await tryWacliSend(entry.to, entry.message);
-    if (result.success) {
+    if (result.success && result.messageId) {
       log(`[retry] redelivery success: ${msgId} → new msgId ${result.messageId}`);
-      // Re-register the new msgId so we can redeliver again if needed.
-      if (result.messageId) {
-        rememberSend(result.messageId, entry.to, entry.message);
-      }
+      // Carry the counter forward so the chain stops at MAX_REDELIVERIES
+      // overall, not per-msgId.
+      rememberSend(result.messageId, entry.to, entry.message, nextCount);
     } else {
-      log(`[retry] redelivery failed: ${result.error}`);
+      log(`[retry] redelivery failed: ${result.error || 'no msgId'}`);
     }
   } catch (err) {
     log(`[retry] redelivery exception: ${err.message}`);

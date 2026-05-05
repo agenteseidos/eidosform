@@ -32,20 +32,28 @@ export function useMetaEventsCapture(enabled: boolean) {
       const originalFbq = window.fbq
       originalFbqRef.current = originalFbq
 
-      const patchedFbq = ((...args: unknown[]) => {
+      // Replica a lógica interna do stub original do Meta Pixel: se fbevents.js já carregou
+      // (callMethod presente), delega; senão, empurra pra queue. Isso é CRÍTICO porque
+      // o fbevents.js atualiza `callMethod` em `window.fbq` (que será o patchedFbq),
+      // não em `originalFbq`. Se o patched delegasse pra originalFbq, os events ficariam
+      // presos na queue do stub eternamente e nunca chegariam ao /tr do Facebook.
+      const patchedFbq = function (this: unknown, ...args: unknown[]) {
         const [command, eventName] = args
 
         if (command === 'track' && typeof eventName === 'string' && !STANDARD_META_EVENTS.has(eventName)) {
           setCapturedEvents(prev => (prev.includes(eventName) ? prev : [...prev, eventName]))
         }
 
-        return originalFbq(...args)
-      }) as unknown as typeof window.fbq
+        const self = patchedFbq as unknown as { callMethod?: (...a: unknown[]) => unknown; queue: unknown[] }
+        if (self.callMethod) {
+          return self.callMethod.apply(self, args)
+        }
+        self.queue.push(args)
+      } as unknown as typeof window.fbq
 
-      // Preservar propriedades internas do fbq (queue, loaded, version, callMethod, push, _fbq)
-      // que o fbevents.js precisa pra processar a fila. Sem isso, fbevents.js tenta iterar
-      // fbq.queue e quebra com "undefined is not iterable", impedindo o envio de QUALQUER
-      // evento ao Facebook (inclusive PageView).
+      // Copia propriedades internas (queue, loaded, version, callMethod se já existir, push, _fbq)
+      // do fbq original pro patched. fbevents.js, quando rodar, vai atualizar callMethod
+      // em window.fbq (= patchedFbq), e o nosso wrapper vai delegar via self.callMethod.
       Object.assign(patchedFbq as object, originalFbq)
 
       window.fbq = patchedFbq

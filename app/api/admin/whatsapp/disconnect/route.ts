@@ -1,21 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { logError } from '@/lib/logger'
-
-function getWhatsappUrl(path: string): string {
-  const base = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br'
-  return `${base}${path}`
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const key = process.env.WHATSAPP_API_KEY
-  if (!key) {
-    throw new Error('WHATSAPP_API_KEY environment variable is not set')
-  }
-  return {
-    'Authorization': `Bearer ${key}`,
-  }
-}
+import { getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
 
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin(request)
@@ -24,7 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     const response = await fetch(getWhatsappUrl('/api/whatsapp/disconnect'), {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getWhatsappAuthHeaders(),
       signal: AbortSignal.timeout(15_000),
     })
 

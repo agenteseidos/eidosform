@@ -58,6 +58,12 @@ export async function sendWhatsAppOnFormResponse(params: {
     ...mappedAnswers,
   }
 
+  // Skip when no phone was captured — there is no recipient to send to (P1-W3)
+  if (!leadData.phone || leadData.phone.trim().length === 0) {
+    log('[WhatsApp] No phone captured in response, skipping send', { formId, responseId })
+    return
+  }
+
   try {
     // Delegate everything to the send endpoint (settings fetch + template build + delivery)
     const sendResponse = await fetch(`${appUrl}/api/whatsapp/send`, {
@@ -106,7 +112,7 @@ async function logWhatsAppSend(
     await (supabase as unknown as { from: (t: string) => { insert: (d: Record<string, unknown>) => Promise<unknown> } }).from('form_whatsapp_logs').insert({
       form_id: formId,
       response_id: responseId,
-      phone_number: phoneNumber || 'unknown',
+      phone_number: phoneNumber && phoneNumber.trim().length > 0 ? phoneNumber : null,
       message_sent: '',
       status,
       wacli_message_id: messageId,

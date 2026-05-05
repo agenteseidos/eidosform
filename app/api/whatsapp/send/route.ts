@@ -5,6 +5,7 @@ import { createServerClient } from '@supabase/ssr'
 import { PLANS } from '@/lib/plan-limits'
 import { PlanId } from '@/lib/plans'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
 
 const MAX_SENDS_PER_HOUR = 100
 
@@ -77,17 +78,6 @@ function buildMessage(template: string, leadData: FormAwareRequest['leadData']):
   return msg
 }
 
-function getWhatsappUrl(path: string): string {
-  const base = process.env.WHATSAPP_API_URL || 'http://localhost:3456'
-  return `${base}${path}`
-}
-
-function getAuthHeaders(): Record<string, string> {
-  return {
-    'Authorization': `Bearer ${process.env.WHATSAPP_API_KEY || ''}`,
-  }
-}
-
 /**
  * Send message via WhatsApp VPS server
  */
@@ -98,7 +88,7 @@ async function sendViaVps(phone: string, message: string): Promise<{ messageId: 
     const response = await fetch(getWhatsappUrl('/api/whatsapp/send'), {
       method: 'POST',
       headers: {
-        ...getAuthHeaders(),
+        ...getWhatsappAuthHeaders(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

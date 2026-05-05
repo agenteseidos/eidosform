@@ -2,26 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { log, logWarn, logError } from '@/lib/logger'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { getWhatsappBase, getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
 
 const RATE_LIMIT_MS = 30_000
 
-function getWhatsappUrl(path: string): string {
-  const base = process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br'
-  return `${base}${path}`
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const key = process.env.WHATSAPP_API_KEY
-  if (!key) {
-    throw new Error('WHATSAPP_API_KEY environment variable is not set')
-  }
-  return {
-    'Authorization': `Bearer ${key}`,
-  }
-}
-
 export async function POST(request: NextRequest) {
-  log('[QR] API called', { whatsappUrl: process.env.WHATSAPP_API_URL || 'https://wpp.eidosform.com.br' });
+  log('[QR] API called', { whatsappUrl: getWhatsappBase() });
 
   const auth = await requireAdmin(request)
   if (!auth.ok) {
@@ -51,7 +37,7 @@ export async function POST(request: NextRequest) {
     const fetchStart = Date.now();
     const response = await fetch(fetchUrl, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getWhatsappAuthHeaders(),
       signal: AbortSignal.timeout(15_000),
     })
     const fetchTime = Date.now() - fetchStart;

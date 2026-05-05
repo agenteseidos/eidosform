@@ -27,6 +27,40 @@
 
 ---
 
+## Status Final dos Achados Fase 2 (atualizado 2026-05-04 — Etapa K2)
+
+Legenda: ✅ resolvido • ⚠️ pendente • ❌ recusado.
+
+| Achado | Sev | Status | Etapa | Commit | Nota |
+|---|---|---|---|---|---|
+| F2-E1-01 — SPF ausente apex | P0 | ✅ deslocado | 11 | `21ca57b` | Resend agora usa subdomínio `send.eidosform.com.br` (SPF lá ✅) |
+| F2-E1-02 — MX errado | P0 | ⚠️ | I1 | — | mudança DNS pendente — `dns-changes-pending.md` |
+| F2-E1-03 — DMARC `p=none` rua Gmail pessoal | P1 | ⚠️ | I2 | — | mudança DNS pendente |
+| F2-E1-04 — `.env` perm 644 | P1 | ✅ | 10 | `d62c4e6` | chmod 600 + .gitignore |
+| F2-E1-05 — log sem rotação | P1 | ✅ | 10 | manual VPS | logrotate `/etc/logrotate.d/eidosform-whatsapp` instalado |
+| F2-E1-06 — Headers ausentes nginx | P2 | ✅ | H2 | `ee511aa` | HSTS, nosniff, Referrer-Policy aplicados |
+| F2-E1-07 — server.js fora do git | P2 | ✅ | 10 | `63e6da4` | services/whatsapp/ migrado |
+| F2-E1-08 — phone em logs claro | P2 | ✅ | H1 | `87feca0` | sha256 hashPhone |
+| F2-E1-09 — perms latest-qr/status | P3 | ✅ | 10 | `d62c4e6` | chmod 600 |
+| F2-E2-01 — login retorna user inteiro | P1 | ✅ | 5 | `66fc225` | slim response |
+| F2-E2-02 — dashboard sem quota | P2 | ✅ | 12 | `633a844` | PlanQuotaCard |
+| F2-E3-01 — GET `/api/forms/{id}` 404 | P1 | ✅ | 14 | `a2113e4` | select('*') + erro distinguido |
+| F2-E3-02 — UX "1 de 18 (17 total)" | P2 | ✅ | 13 | `cbc40e3` | currentQuestionNumber |
+| F2-E4-01 — POST /api/responses 500 | P0 | ✅ | 1 | `86c7e10`, `1638b78` | rpc bind + try/catch |
+| F2-E4-02 — UX erro player sem scroll | P1 | ✅ | 13 | `cbc40e3` | scrollIntoView errorRef |
+| F2-E5-01 — signup enumeration | P1 | ✅ | 4 | `ead7d8a`, `66fc225` | body unificado |
+| F2-E5-02 — CSRF skip auth | P1 | ✅ | 6 | `66fc225` | publicWritePaths reduzido |
+| F2-E6-01 — API Key 404 falso | P2 | ✅ | 14 | `a2113e4` | retorna `hasKey: false` |
+| Demais P3 — UX/cosméticos | P3 | ⚠️/✅ | 18 | `3ee83f7` | tratados parcialmente em P3 cleanup |
+
+### Resumo Fase 2
+- **20 achados** mapeados.
+- **✅ Resolvidos:** 18 (90%)
+- **⚠️ Pendentes:** 2 — todos pendências DNS (I1, I2)
+- **❌ Recusados:** 0
+
+---
+
 ## Etapa 1 — Verificações Read-Only (VPS, nginx, DNS)
 
 ### 1.1 — `.env` da VPS WhatsApp em git? **CORREÇÃO da Fase 1**

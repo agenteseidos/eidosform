@@ -10,6 +10,101 @@
 
 ---
 
+## Status Final dos Achados (atualizado 2026-05-04 — Etapa K2)
+
+Legenda: ✅ resolvido • ⚠️ pendente • ❌ recusado/wontfix.
+Mapeamento `achado → etapa que tratou → commit principal`. Auditoria cruzada com [relatorio-correcoes-auditoria.md](relatorio-correcoes-auditoria.md).
+
+### Autenticação
+| Achado | Status | Etapa | Commit | Nota |
+|---|---|---|---|---|
+| P0-1 — Email enumeration signup | ✅ | 4 | `ead7d8a`, `66fc225` | body unificado |
+| P0-2 — Open redirect callback | ✅ | 6 | `0f8e851` | whitelist de rotas |
+| P0-3 — Login sem email confirmado | ✅ | 5 | `66fc225` | 403 + signOut |
+| P0-4 — Duplo fluxo signup | ✅ | 4 | `ead7d8a` | client só chama API server |
+| P1-1 — Race forgot-password | ⚠️ | — | — | UX baixo impacto, não tratado |
+| P1-2 — Rate limit baixo login | ⚠️ | — | — | aceito (sem CAPTCHA por enquanto) |
+| P1-3 — Mensagens inconsistentes | ✅ | 4-5 | `66fc225` | resolvido junto com P0-1 |
+| P1-4 — Email length cap | ⚠️ | — | — | não tratado, P3 cosmético |
+| P1-5 — Inactivity em inglês | ✅ | 18 | `3ee83f7` | strings pt-BR |
+| P1-6 — Timing reset-password | ⚠️ | — | — | não tratado |
+| P2-1 — `parseInt` NaN inactivity | ⚠️ | — | — | não tratado |
+| P2-2 — Timing resend-verification | ⚠️ | — | — | não tratado |
+| P2-3 — Reset sem validar força server | ⚠️ | — | — | não tratado |
+| P2-4 — XSS `?message=` | ⚠️ | — | — | confirmar com K1 manual |
+| P2-5 — Callback código expirado vago | ⚠️ | — | — | UX P3 |
+| P2-6 — CSRF skip `/api/auth/*` | ✅ | 6 | `66fc225` | publicWritePaths reduzido |
+| P3-1..P3-4 — itens UX | ⚠️ | — | — | tratados parcialmente em 18 |
+
+### Dashboard / Forms
+| Achado | Status | Etapa | Commit | Nota |
+|---|---|---|---|---|
+| P1-A — Sem Zod em forms POST/PATCH | ✅ | 7 | `e9f6c4d` | discriminated union 18 tipos |
+| P1-B — Multi-user Professional não implementado | ❌ | — | — | recusado: feature paga em hold (não-bug) |
+| P2-A — Quota não visível | ✅ | 12 | `633a844` | PlanQuotaCard |
+| P2-resíduos — paginação tiebreaker | ✅ | 18 | `3ee83f7` | order id desc |
+| P3 — folders/cache/CORS | ✅ | 18 | `0f8e851`, `3ee83f7` | resolvido |
+
+### Form Builder e 18 tipos
+| Achado | Status | Etapa | Commit | Nota |
+|---|---|---|---|---|
+| P0-FB1 — XSS content_block | ✅ | 9 | `64c51b7`, `ea22276` | DOMPurify + regex fallback |
+| P0-FP1 — validators server fracos | ✅ | 8 | `23676e5` | options.length<2, MAX_SAFE_INTEGER |
+| P1-FB1, P1-FB2 — sanitize HTML | ✅ | 9 | `64c51b7` | belt-and-braces |
+| P1-FP3 — file_upload size cap | ✅ | 8 | `23676e5` | cap 25MB |
+| P2-FB3, P2-FB4, P2-FB6, P2-FB7 — edge cases | ✅ | 8 | `23676e5` | min>=max, calendly required |
+| P3-FP4 — UX player (Ctrl+Enter, scroll erro) | ✅ | 13 | `cbc40e3` | scrollIntoView |
+| Demais P3 — pt-BR, htmlFor, aria-label | ✅ | 18 | `3ee83f7` | acessibilidade do builder |
+
+### Form Player e Submissão
+| Achado | Status | Etapa | Commit | Nota |
+|---|---|---|---|---|
+| P0 (responses 500 — descoberto pós-Fase 2) | ✅ | 1 | `86c7e10`, `1638b78` | rpc bind + try/catch |
+| Bug-Extra-1 (upload 413) | ✅ | extra | `5d26ff3`, `2ee2ead` | signed URL bucket |
+
+### Integrações (webhooks/Sheets/Asaas/pixels/API)
+| Achado | Status | Etapa | Commit | Nota |
+|---|---|---|---|---|
+| P0-INT1 — WEBHOOK_SECRET opcional | ✅ | 16 | `b435fcd` | mandatory + abort |
+| P0-INT2 — PAYMENT_OVERDUE sem subscription guard | ✅ | 15 | `5bd97f2` | guard mantido |
+| P1-INT1 — payload completo em logs | ✅ | 16 | `b435fcd` | só metadados |
+| P1-INT2 — HMAC não-determinístico | ✅ | 16 | `b435fcd` | canonicalJson + fixedTimestamp |
+| P1-INT3 — HMAC parsing URLSearchParams | ✅ | 15 | `5bd97f2` | parser custom |
+| P1-INT4 — timestamp tolerância futura | ✅ | 15 | `5bd97f2` | só passado |
+| P1-INT5 — token fallback Asaas | ✅ | 15 | `5bd97f2` | só HMAC |
+| P1-INT6 — sem idempotência Asaas | ✅ | 15 | `5bd97f2` + migration `20260503` |
+| P1-INT7 — eventos desconhecidos silenciosos | ✅ | 15 | `5bd97f2` | logWarn |
+| P1-INT8 — payload em webhook_logs | ✅ | 15 | `5bd97f2` | metadados only |
+| P2-INT1 — sem DLQ saída | ✅ | 16 | `b435fcd` + migration `20260503` |
+| P2-INT2 — DNS race SSRF | ✅ | 16 | `b435fcd` | block on empty array |
+| P3-INT1 — sem notificação owner DLQ | ✅ | J1 | `2a1da80` + migration `20260504` |
+
+### Notificações (Email + WhatsApp)
+| Achado | Status | Etapa | Commit | Nota |
+|---|---|---|---|---|
+| P0-N4 — perms VPS WhatsApp | ✅ | 10 | `d62c4e6`, `63e6da4` | chmod 600, .gitignore |
+| P1-N1 — PII em subject | ✅ | 17 | `09b871c` | sanitizeSubject regex |
+| P1-N2 — Unicode em template WhatsApp | ✅ | 17 | `09b871c` | NFKC normalize |
+| P1-N3 — rate limit por phone só | ✅ | 17 | `09b871c` | chave `formId:phone` |
+| P1-N4 — sem retry Resend | ✅ | 17 | `09b871c` | 3x backoff |
+| P2-N1 — subject longo | ✅ | 17 | `09b871c` | trunca 50 chars |
+| P2-N3 — sem Idempotency-Key | ✅ | 17 | `09b871c` | sha256 hash |
+| P2-N4 — plan gate duplicado | ✅ | 17 | `09b871c` | consolidado em `/api/whatsapp/send` |
+| F2-E1-04, F2-E1-05, F2-E1-06 — VPS hardening | ✅ parcial | 10 + H1/H2 | `d62c4e6`, `87feca0`, `ee511aa` | logs PII hash + nginx headers (H1/H2) |
+| F2-E1-08 — phone em logs claro | ✅ | H1 | `87feca0` | sha256 hashPhone |
+| F2-E1-01 — SPF ausente apex | ✅ deslocado | 11 | — | Resend agora usa subdomínio `send.eidosform.com.br` (commit `21ca57b`) |
+| F2-E1-02 — MX errado | ⚠️ | I1 | — | mudança DNS pendente, ver `dns-changes-pending.md` |
+| F2-E1-03 — DMARC `rua` em Gmail pessoal | ⚠️ | I2 | — | mudança DNS pendente |
+
+### Resumo
+- **127 achados** mapeados.
+- **✅ Resolvidos:** ≈ 95 (74%)
+- **⚠️ Pendentes:** ≈ 28 (22%) — maioria P1/P2/P3 não-bloqueante
+- **❌ Recusados:** 1 (multi-user — feature paga em hold)
+- **Bloqueadores ainda em aberto:** apenas dois (I1 e I2 — alterações DNS manuais).
+
+---
+
 ## Sumário Executivo
 
 | Severidade | Total |

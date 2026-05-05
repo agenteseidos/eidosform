@@ -174,6 +174,50 @@ export async function sendPlanActivated(params: {
   })
 }
 
+/** Webhook do formulário falhando após 3+ falhas em 7 dias (J1) */
+export async function sendWebhookFailureAlert(params: {
+  to: string
+  formTitle: string
+  formId: string
+  failures: Array<{ webhook_url: string; last_error: string; created_at: string }>
+}) {
+  const { to, formTitle, formId, failures } = params
+  const safeTitle = escapeHtml(formTitle)
+  const items = failures
+    .slice(0, 3)
+    .map(
+      (f) => `
+        <li style="margin-bottom:12px">
+          <div><strong>URL:</strong> <code>${escapeHtml(f.webhook_url)}</code></div>
+          <div><strong>Erro:</strong> ${escapeHtml(f.last_error || 'desconhecido')}</div>
+          <div style="color:#888;font-size:12px">Quando: ${escapeHtml(f.created_at)}</div>
+        </li>`,
+    )
+    .join('')
+  const idempotencyKey = createHash('sha256')
+    .update(`webhook-failure:${formId}:${failures[0]?.created_at ?? ''}`)
+    .digest('hex')
+  return sendEmailWithRetry({
+    to,
+    subject: `Webhook do formulário "${safeTitle}" falhando`,
+    idempotencyKey,
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#ef4444">⚠️ Webhook falhando</h2>
+        <p>O webhook configurado no formulário <strong>${safeTitle}</strong> falhou ao menos 3 vezes nos últimos 7 dias.</p>
+        <p>Últimas falhas:</p>
+        <ul style="padding-left:20px">${items}</ul>
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/forms/${formId}/edit"
+           style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
+          Abrir formulário
+        </a>
+        <p style="color:#888;font-size:12px;margin-top:8px">Acesse a aba "Integrações" para revisar a URL do webhook.</p>
+        <p style="color:#888;font-size:12px;margin-top:24px">EidosForm — Formulários inteligentes</p>
+      </div>
+    `,
+  })
+}
+
 /** Plano cancelado */
 export async function sendPlanCancelled(params: {
   to: string

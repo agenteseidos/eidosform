@@ -212,6 +212,83 @@ let daemonChild = null;
 let daemonRestartTimer = null;
 let sendQueue = Promise.resolve();
 
+// ----------------------------------------------------------------------------
+// Recent-sends cache for retry-receipt redelivery
+// ----------------------------------------------------------------------------
+// `wacli send` is single-shot: after the message is sent, the process dies and
+// the message is no longer in memory. If the recipient's device fails to
+// decrypt (typical on the first message after a re-pair) it sends a "retry
+// receipt" asking the sender to resend. The retry arrives at the daemon (the
+// active websocket) which logs:
+//   "Failed to handle retry receipt for ... <msgId>: couldn't find message"
+//
+// We keep a small in-memory cache of recent sends keyed by msgId; when we see
+// that error in daemon stdout we redeliver the message from cache. The
+// redelivery rebuilds the e2e session, which usually unsticks "Aguardando
+// mensagem" on the recipient.
+// ----------------------------------------------------------------------------
+
+const RECENT_TTL_MS = 5 * 60 * 1000; // keep msgs 5 min — long enough for retry
+const MAX_REDELIVERIES = 2;          // cap to avoid loops
+const recentSends = new Map();       // msgId -> { to, message, sentAt, redeliveries }
+
+function rememberSend(msgId, to, message) {
+  if (!msgId) return;
+  recentSends.set(msgId, { to, message, sentAt: Date.now(), redeliveries: 0 });
+  // Lazy cleanup: drop entries older than TTL
+  const cutoff = Date.now() - RECENT_TTL_MS;
+  for (const [k, v] of recentSends) {
+    if (v.sentAt < cutoff) recentSends.delete(k);
+  }
+}
+
+async function handleRetryReceipt(msgId) {
+  const entry = recentSends.get(msgId);
+  if (!entry) {
+    log(`[retry] no cache entry for ${msgId} — cannot redeliver`);
+    return;
+  }
+  if (entry.redeliveries >= MAX_REDELIVERIES) {
+    log(`[retry] ${msgId} reached max redeliveries (${MAX_REDELIVERIES}), giving up`);
+    recentSends.delete(msgId);
+    return;
+  }
+  entry.redeliveries++;
+  log(`[retry] redelivering ${msgId} to ${hashPhone(entry.to)} (attempt ${entry.redeliveries}/${MAX_REDELIVERIES})`);
+  try {
+    const result = await tryWacliSend(entry.to, entry.message);
+    if (result.success) {
+      log(`[retry] redelivery success: ${msgId} → new msgId ${result.messageId}`);
+      // Re-register the new msgId so we can redeliver again if needed.
+      if (result.messageId) {
+        rememberSend(result.messageId, entry.to, entry.message);
+      }
+    } else {
+      log(`[retry] redelivery failed: ${result.error}`);
+    }
+  } catch (err) {
+    log(`[retry] redelivery exception: ${err.message}`);
+  }
+}
+
+// Match: "Failed to handle retry receipt for <jid>/<msgId> from <jid>: couldn't find message"
+const RETRY_RECEIPT_RE = /Failed to handle retry receipt for [^/]+\/([A-F0-9]+)/i;
+
+function scanForRetryReceipts(text) {
+  if (!text) return;
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const m = line.match(RETRY_RECEIPT_RE);
+    if (m) {
+      const msgId = m[1];
+      log(`[retry] detected retry receipt for ${msgId}`);
+      // Fire-and-forget; redelivery is queued via withDaemonPaused so it
+      // serializes with any in-flight sends.
+      handleRetryReceipt(msgId).catch((err) => log(`[retry] handler error: ${err.message}`));
+    }
+  }
+}
+
 function spawnDaemon() {
   if (daemonChild) return;
   if (!status.authenticated) {
@@ -229,10 +306,12 @@ function spawnDaemon() {
   daemonChild.stdout.on('data', (chunk) => {
     const data = chunk.toString().trim();
     if (data) log(`[daemon] stdout: ${data.substring(0, 200)}`);
+    scanForRetryReceipts(data);
   });
   daemonChild.stderr.on('data', (chunk) => {
     const data = chunk.toString().trim();
     if (data) log(`[daemon] stderr: ${data.substring(0, 200)}`);
+    scanForRetryReceipts(data);
   });
   daemonChild.on('close', (code) => {
     log(`[daemon] exited: ${code}`);
@@ -399,9 +478,15 @@ async function doWacliSend(phone, message) {
     const stored = result.data?.messages_stored ?? result.messages_stored ?? 0;
     const hasStoredField = ('messages_stored' in (result.data || {})) || ('messages_stored' in result);
     const success = hasStoredField ? (stored > 0) : (result.success === true);
+    const messageId = result.data?.id;
+    if (success && messageId) {
+      // Cache so we can redeliver if the daemon receives a retry receipt
+      // (recipient device couldn't decrypt and asked for resend).
+      rememberSend(messageId, phone, cleanMessage);
+    }
     return {
       success,
-      messageId: result.data?.id,
+      messageId,
       error: result.error
     };
   } catch (err) {

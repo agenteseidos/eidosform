@@ -95,7 +95,7 @@ const JumpRuleSchema = z
     action: z
       .object({
         type: z.enum(['jump', 'submit']),
-        targetQuestionId: z.string().min(1).max(120).optional(),
+        targetQuestionId: z.union([z.string().min(1).max(120), z.literal('')]).transform(v => v === '' ? undefined : v).optional(),
       })
       .strip(),
   })

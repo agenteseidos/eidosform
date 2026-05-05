@@ -81,7 +81,9 @@ export function AdminWhatsAppPanel() {
     const checkExpiry = () => {
       if (Date.now() - qrGeneratedAt >= QR_EXPIRY_MS) {
         setQrExpired(true)
-        stopPolling()
+        // Don't stop polling here — if the user already scanned the code we
+        // still need to flip the UI to "Conectado" once the daemon's socket
+        // comes up (which can take a few seconds past the 60 s mark).
         if (qrTimerRef.current) clearInterval(qrTimerRef.current)
       }
     }
@@ -91,6 +93,15 @@ export function AdminWhatsAppPanel() {
       if (qrTimerRef.current) clearInterval(qrTimerRef.current)
     }
   }, [qrGeneratedAt])
+
+  // Always poll while we're authenticated but not yet connected. Covers the
+  // case where the QR-driven polling already stopped (e.g. user navigated
+  // back to the page) but the websocket is still negotiating.
+  useEffect(() => {
+    if (!status?.authenticated || status?.connected) return
+    const id = setInterval(() => { fetchStatus() }, 3000)
+    return () => clearInterval(id)
+  }, [status?.authenticated, status?.connected, fetchStatus])
 
   const startPolling = useCallback(() => {
     stopPolling()

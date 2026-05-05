@@ -172,7 +172,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (upsertError) {
       console.error('[forms/whatsapp] upsert error:', upsertError)
-      return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'Failed to save settings', detail: upsertError.message, code: upsertError.code },
+        { status: 500 },
+      )
     }
 
     return NextResponse.json({ settings }, { status: 200 })

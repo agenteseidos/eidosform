@@ -208,7 +208,10 @@ async function refreshStatus() {
     const data = JSON.parse(stdout);
     const d = data.data || data;
     status.authenticated = d.authenticated || false;
-    status.connected = d.connected || d.authenticated || false;
+    // `connected` must reflect the real websocket state — falling back to
+    // `authenticated` masks dead connections and hides "Aguardando mensagem"
+    // bugs when wacli is auth'd but offline.
+    status.connected = d.connected || false;
     status.phoneNumber = d.phoneNumber || getPhoneFromDb();
     writeStatus();
     log(`[status] Refreshed: authenticated=${status.authenticated} connected=${status.connected} phone=${hashPhone(status.phoneNumber)}`);

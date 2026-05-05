@@ -103,6 +103,11 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
       ...(options.formTitle && { custom_data: { form_title: options.formTitle } }),
     }
 
+    // test_event_code: quando setado em env (META_TEST_EVENT_CODE), o evento aparece
+    // em tempo real na aba "Eventos de teste" do Events Manager. REMOVER em produção
+    // após validar — eventos com test_event_code não contam pra otimização de campanhas.
+    const testEventCode = process.env.META_TEST_EVENT_CODE
+
     const url = `${META_API_URL}/${pixelId}/events?access_token=${accessToken}`
     const response = await fetch(url, {
       method: 'POST',
@@ -110,6 +115,7 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
       body: JSON.stringify({
         data: [payload],
         access_token: accessToken,
+        ...(testEventCode && { test_event_code: testEventCode }),
       }),
     })
 

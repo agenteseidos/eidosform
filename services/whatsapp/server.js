@@ -103,6 +103,10 @@ async function startWacli() {
     return;
   }
 
+  // QR/auth flow needs exclusive lock — pause the daemon and don't auto-restart
+  // until auth completes (the close handler schedules a restart explicitly).
+  await stopDaemon();
+
   log('[wacli] Starting persistent process...');
   wacliChild = spawn(WACLI, ['auth', '--json']);
   let rawAscii = '';
@@ -179,6 +183,117 @@ function stopWacli() {
   status = { authenticated: false, connected: false, phoneNumber: null };
 }
 
+// ============================================================================
+// Daemon + send queue
+// ----------------------------------------------------------------------------
+// `wacli` is single-shot by design: each `wacli send` opens the SQLite store,
+// connects, sends, and closes. That's why the WhatsApp ratchet keys go out of
+// sync and the recipient ends up seeing "Aguardando mensagem" placeholders.
+//
+// To keep the websocket alive between sends, we run `wacli sync --follow` as a
+// background daemon. It holds an exclusive lock on the store, which conflicts
+// with `wacli send`, so before each send we:
+//   1. Stop the daemon (releases the lock)
+//   2. Run the send
+//   3. Schedule a 1s-delayed daemon restart
+//
+// Sends are serialized through `sendQueue` to avoid two concurrent sends both
+// trying to stop/restart the daemon.
+// ============================================================================
+
+let daemonChild = null;
+let daemonRestartTimer = null;
+let sendQueue = Promise.resolve();
+
+function spawnDaemon() {
+  if (daemonChild) return;
+  if (!status.authenticated) {
+    log('[daemon] not authenticated, skipping daemon start');
+    return;
+  }
+  log('[daemon] starting wacli sync --follow');
+  try {
+    daemonChild = spawn(WACLI, ['sync', '--follow', '--json']);
+  } catch (err) {
+    log(`[daemon] spawn failed: ${err.message}`);
+    daemonChild = null;
+    return;
+  }
+  daemonChild.stdout.on('data', (chunk) => {
+    const data = chunk.toString().trim();
+    if (data) log(`[daemon] stdout: ${data.substring(0, 200)}`);
+  });
+  daemonChild.stderr.on('data', (chunk) => {
+    const data = chunk.toString().trim();
+    if (data) log(`[daemon] stderr: ${data.substring(0, 200)}`);
+  });
+  daemonChild.on('close', (code) => {
+    log(`[daemon] exited: ${code}`);
+    daemonChild = null;
+  });
+  daemonChild.on('error', (err) => {
+    log(`[daemon] error: ${err.message}`);
+    daemonChild = null;
+  });
+}
+
+async function stopDaemon() {
+  if (daemonRestartTimer) {
+    clearTimeout(daemonRestartTimer);
+    daemonRestartTimer = null;
+  }
+  if (!daemonChild) return;
+  const child = daemonChild;
+  daemonChild = null;
+  log('[daemon] stopping');
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    try {
+      child.once('exit', finish);
+      child.kill('SIGTERM');
+    } catch {
+      finish();
+      return;
+    }
+    setTimeout(() => {
+      if (done) return;
+      try { child.kill('SIGKILL'); } catch {}
+    }, 2000);
+    setTimeout(finish, 3000);
+  });
+}
+
+function scheduleDaemonRestart(delayMs = 1000) {
+  if (daemonRestartTimer) clearTimeout(daemonRestartTimer);
+  daemonRestartTimer = setTimeout(() => {
+    daemonRestartTimer = null;
+    spawnDaemon();
+  }, delayMs);
+}
+
+/**
+ * Serializes work that needs the SQLite store unlocked: stops the daemon,
+ * runs `fn`, then schedules the daemon to come back online.
+ */
+async function withDaemonPaused(fn) {
+  const next = sendQueue.then(async () => {
+    await stopDaemon();
+    try {
+      return await fn();
+    } finally {
+      scheduleDaemonRestart(1000);
+    }
+  });
+  // Don't propagate one send's failure to others queued behind it.
+  sendQueue = next.catch(() => {});
+  return next;
+}
+
 async function writeStatus() {
   try {
     await fs.writeFile(STATUS_FILE, JSON.stringify(status));
@@ -238,6 +353,10 @@ async function requireAuth(req, reply) {
 }
 
 async function tryWacliSend(phone, message) {
+  return withDaemonPaused(() => doWacliSend(phone, message));
+}
+
+async function doWacliSend(phone, message) {
   try {
     const cleanMessage = message.replace(/\n/g, ' ').trim();
     // Converte 9 digitos para 8 se necessário (Brasil)
@@ -377,6 +496,13 @@ const start = async () => {
     await fastify.listen({ port, host: '0.0.0.0' });
     log(`WhatsApp API server running on port ${port}`);
     statusRefreshTimer = setInterval(refreshStatus, STATUS_REFRESH_S * 1000);
+    // On boot, check if wacli is already authenticated and start the sync daemon
+    // so ratchet keys stay fresh even after a PM2 restart.
+    await refreshStatus();
+    if (status.authenticated) {
+      log('[boot] Already authenticated — starting sync daemon');
+      spawnDaemon();
+    }
   } catch (err) {
     if (err.code === 'EADDRINUSE') {
       log(`FATAL: Port ${process.env.PORT || 3457} already in use. Another process is occupying it. Stopping to avoid restart loop.`);

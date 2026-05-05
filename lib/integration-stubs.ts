@@ -50,10 +50,18 @@ export async function sendWhatsAppOnFormResponse(params: {
       return ''
     }
 
+    const nameValue = findByLabel('nome', 'name', 'nome completo') || 'Lead'
+    const emailValue = findByLabel('email', 'e-mail') || 'N/A'
+    const phoneValue = findByLabel('telefone', 'phone', 'celular', 'whatsapp') || ''
+
     const leadData = {
-      name: findByLabel('nome', 'name', 'nome completo') || 'Lead',
-      email: findByLabel('email', 'e-mail') || 'N/A',
-      phone: findByLabel('telefone', 'phone', 'celular', 'whatsapp') || '',
+      name: nameValue,
+      nome: nameValue,
+      email: emailValue,
+      phone: phoneValue,
+      telefone: phoneValue,
+      celular: phoneValue,
+      whatsapp: phoneValue,
       form_name: params.form.title || 'Formulário',
       response_id: responseId,
       response_link: `${appUrl}/form/${formId}/responses/${responseId}`,

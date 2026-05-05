@@ -24,47 +24,20 @@ export async function sendWhatsAppOnFormResponse(params: {
 }): Promise<void> {
   const { formId, responseId, responseData, appUrl } = params
 
-  // Build lead data before try so it's available in catch for logging
-  const questionsMap = new Map<string, string>()
-  if (params.form.questions) {
-    for (const q of params.form.questions) {
-      if (q.id && q.title) questionsMap.set(q.id, q.title.toLowerCase().trim())
-    }
-  }
-
-  const mappedAnswers: Record<string, string> = {}
-  for (const [key, value] of Object.entries(responseData)) {
-    const label = questionsMap.get(key) || key
-    mappedAnswers[label] = String(value ?? '')
-  }
-
-  const findByLabel = (...labels: string[]): string => {
-    for (const label of labels) {
-      for (const [key, val] of Object.entries(mappedAnswers)) {
-        if (key.includes(label)) return val
-      }
-    }
-    return ''
-  }
-
-  const leadData = {
-    name: findByLabel('nome', 'name', 'nome completo') || 'Lead',
-    email: findByLabel('email', 'e-mail') || 'N/A',
-    phone: findByLabel('telefone', 'phone', 'celular', 'whatsapp') || '',
-    form_name: params.form.title || 'Formulário',
-    response_id: responseId,
-    response_link: `${appUrl}/form/${formId}/responses/${responseId}`,
-    meta_events: Array.isArray(params.meta_events) ? params.meta_events.join('; ') : '',
-    ...mappedAnswers,
-  }
-
-  // Skip when no phone was captured — there is no recipient to send to (P1-W3)
-  if (!leadData.phone || leadData.phone.trim().length === 0) {
-    log('[WhatsApp] No phone captured in response, skipping send', { formId, responseId })
-    return
-  }
-
   try {
+    // Build lead data from response answers — same format as the working version from April 8
+    const leadData = {
+      name: String(responseData.nome || responseData.name || 'Lead'),
+      email: String(responseData.email || 'N/A'),
+      phone: String(responseData.phone || responseData.telefone || ''),
+      form_name: params.form.title || 'Formulário',
+      response_id: responseId,
+      response_link: `${appUrl}/form/${formId}/responses/${responseId}`,
+      ...Object.fromEntries(
+        Object.entries(responseData).map(([k, v]) => [k, String(v)])
+      ),
+    }
+
     // Delegate everything to the send endpoint (settings fetch + template build + delivery)
     const sendResponse = await fetch(`${appUrl}/api/whatsapp/send`, {
       method: 'POST',
@@ -84,14 +57,14 @@ export async function sendWhatsAppOnFormResponse(params: {
     const result = await sendResponse.json() as { success?: boolean; messageId?: string }
     log('[WhatsApp] Sent', { formId, responseId, msgId: result.messageId ?? null })
 
-    // P1 FIX: Log to form_whatsapp_logs table for auditing
+    // Log to form_whatsapp_logs table for auditing
     logWhatsAppSend(formId, responseId, 'sent', result.messageId || null, null, leadData.phone).catch(() => {})
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
     logError(`[WhatsApp] Error for form ${formId}: ${errMsg}`)
 
-    // P1 FIX: Log failure to form_whatsapp_logs table
-    logWhatsAppSend(formId, responseId, 'failed', null, errMsg, leadData.phone).catch(() => {})
+    // Log failure to form_whatsapp_logs table
+    logWhatsAppSend(formId, responseId, 'failed', null, errMsg).catch(() => {})
     // Never throw — form response must succeed regardless
   }
 }

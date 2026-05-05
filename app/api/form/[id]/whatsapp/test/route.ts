@@ -128,6 +128,17 @@ export async function POST(
       )
     }
 
+    // Use form-aware send so the template gets variables replaced
+    const testLeadData = {
+      name: 'João Silva (Teste)',
+      email: 'joao@teste.com',
+      phone: '11999999999',
+      form_name: form.title || 'Formulário',
+      response_id: 'test-000',
+      response_link: `${process.env.NEXT_PUBLIC_APP_URL}/form/${id}/responses/test-000`,
+      meta_events: '',
+    }
+
     const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/whatsapp/send`, {
       method: 'POST',
       headers: {
@@ -135,8 +146,8 @@ export async function POST(
         Authorization: `Bearer ${internalApiSecret}`,
       },
       body: JSON.stringify({
-        to: owner_phone,
-        message: message_template,
+        formId: id,
+        leadData: testLeadData,
       }),
     })
 

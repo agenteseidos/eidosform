@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { DashboardNav } from '@/components/dashboard/nav'
 import { normalizePlan } from '@/lib/plans'
+import { isAdminEmail } from '@/lib/admin-auth'
 
 const MAX_PLAN = 'professional'
 
@@ -25,6 +26,7 @@ export default async function DashboardLayout({
 
   const currentPlan = normalizePlan(profile?.plan)
   const showUpgradeButton = currentPlan !== MAX_PLAN
+  const isAdmin = isAdminEmail(user.email)
 
   return (
     <div className="light min-h-screen relative" data-theme="light">
@@ -34,7 +36,7 @@ export default async function DashboardLayout({
           background: 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(37, 99, 235, 0.06) 0%, transparent 50%), radial-gradient(ellipse 50% 40% at 100% 50%, rgba(59, 130, 246, 0.04) 0%, transparent 50%), linear-gradient(to bottom, #f8faff 0%, #fafbff 100%)',
         }}
       />
-      <DashboardNav user={user} showUpgradeButton={showUpgradeButton} />
+      <DashboardNav user={user} showUpgradeButton={showUpgradeButton} isAdmin={isAdmin} />
       <main className="relative z-10 pt-16">
         {children}
       </main>

@@ -17,7 +17,6 @@ import { PLAN_ORDER } from '@/lib/plans'
 interface WhatsAppPanelProps {
   formId: string
   settings: FormWhatsAppSettings | null
-  questions?: Array<{ id: string; title: string }>
   userPlan?: string
   onUpdateForm?: (updates: Record<string, unknown>) => void
   isLoading?: boolean
@@ -37,14 +36,14 @@ function validatePhoneNumber(phone: string): boolean {
   return digits.length >= 10 && digits.length <= 15
 }
 
-// Available fixed template variables
-const FIXED_TEMPLATE_VARIABLES = [
+// Available template variables — fixed list, all guaranteed to resolve in buildMessage
+const TEMPLATE_VARIABLES = [
   { key: '{form_name}', description: 'Nome do formulário' },
-  { key: '{nome}', description: 'Campo "nome" da resposta (fallback: "Lead")' },
-  { key: '{email}', description: 'Campo "email" da resposta (fallback: "N/A")' },
-  { key: '{telefone}', description: 'Campo "telefone" da resposta (fallback: "")' },
+  { key: '{nome}', description: 'Nome do respondente (busca por título da pergunta; fallback: "Lead")' },
+  { key: '{email}', description: 'Email do respondente (busca por tipo "email" ou título; fallback: "N/A")' },
+  { key: '{telefone}', description: 'Telefone do respondente (busca por tipo "phone" ou título contendo telefone/celular/whatsapp)' },
   { key: '{response_id}', description: 'ID da resposta' },
-  { key: '{response_link}', description: 'Link para ver a resposta' },
+  { key: '{response_link}', description: 'Link para ver a resposta no painel' },
   { key: '{meta_events}', description: 'Eventos do Meta Pixel disparados pelo lead' },
 ]
 
@@ -63,7 +62,6 @@ function normalizeSettingsSnapshot(
 export function WhatsAppPanel({
   formId,
   settings: initialSettings,
-  questions = [],
   userPlan = 'free',
   isLoading = false,
 }: WhatsAppPanelProps) {
@@ -222,30 +220,7 @@ export function WhatsAppPanel({
   const charCount = messageTemplate.length
   const isCharCountWarning = charCount > 160
 
-  const dynamicQuestionVariables = questions
-    .map((question) => question?.title?.trim())
-    .filter((title): title is string => Boolean(title))
-    .map((title) => {
-      const normalized = title
-        .normalize('NFD')
-        .replace(/\p{Diacritic}/gu, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-      return normalized
-    })
-    .filter(Boolean)
-
-  const fixedVariableNames = new Set(['nome', 'email', 'telefone'])
-
-  const uniqueDynamicQuestionVariables = Array.from(
-    new Set(dynamicQuestionVariables.filter((key) => !fixedVariableNames.has(key)))
-  ).map((key) => ({
-    key: `{${key}}`,
-    description: `Campo "${key}" da resposta`,
-  }))
-
-  const templateVariables = [...FIXED_TEMPLATE_VARIABLES, ...uniqueDynamicQuestionVariables]
+  const templateVariables = TEMPLATE_VARIABLES
 
   // Show loading while fetching settings
   if (isLoadingSettings) {

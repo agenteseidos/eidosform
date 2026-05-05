@@ -1450,10 +1450,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     <WhatsAppPanel
                       formId={form.id}
                       settings={null}
-                      questions={questions.map((question) => ({
-                        id: question.id,
-                        title: question.title || '',
-                      }))}
                       userPlan={userPlan}
                       onUpdateForm={(updates) => {
                         setForm({ ...form, ...updates })

@@ -40,7 +40,13 @@ export function useMetaEventsCapture(enabled: boolean) {
         }
 
         return originalFbq(...args)
-      })
+      }) as unknown as typeof window.fbq
+
+      // Preservar propriedades internas do fbq (queue, loaded, version, callMethod, push, _fbq)
+      // que o fbevents.js precisa pra processar a fila. Sem isso, fbevents.js tenta iterar
+      // fbq.queue e quebra com "undefined is not iterable", impedindo o envio de QUALQUER
+      // evento ao Facebook (inclusive PageView).
+      Object.assign(patchedFbq as object, originalFbq)
 
       window.fbq = patchedFbq
     }

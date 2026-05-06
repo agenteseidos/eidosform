@@ -2,9 +2,11 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { PLAN_ORDER, normalizePlan } from '@/lib/plans'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
+import { BillingFieldsDialog } from '@/components/billing/billing-fields-dialog'
+import { createClient } from '@/lib/supabase/client'
 
 const PAID_PLANS = PLAN_ORDER.filter((p) => p !== 'free')
 
@@ -14,7 +16,28 @@ interface CheckoutResponse {
   error?: string
   code?: string
   settingsUrl?: string
+  missingFields?: string[]
   missingFieldLabels?: string[]
+}
+
+type ProfileFields = {
+  fullName: string
+  email: string
+  phone: string
+  cpfCnpj: string
+  address: string
+  addressNumber: string
+  complement: string
+  postalCode: string
+  province: string
+  city: string
+  state: string
+}
+
+const EMPTY_PROFILE: ProfileFields = {
+  fullName: '', email: '', phone: '', cpfCnpj: '',
+  address: '', addressNumber: '', complement: '',
+  postalCode: '', province: '', city: '', state: '',
 }
 
 function CheckoutContent() {
@@ -29,74 +52,86 @@ function CheckoutContent() {
   const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing'>('loading')
   const [errorMsg, setErrorMsg] = useState('')
   const [missingFields, setMissingFields] = useState<string[]>([])
-  const [settingsUrl, setSettingsUrl] = useState('/settings')
+  const [profileData, setProfileData] = useState<ProfileFields>(EMPTY_PROFILE)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const cancelRef = useRef(false)
+
+  const loadProfile = useCallback(async () => {
+    const supabase = createClient()
+    const { data: authData } = await supabase.auth.getUser()
+    const userId = authData.user?.id
+    if (!userId) return
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, email, phone, cpf_cnpj, address, address_number, complement, postal_code, province, city, state')
+      .eq('id', userId)
+      .single()
+    if (!profile) return
+    setProfileData({
+      fullName: profile.full_name ?? '',
+      email: profile.email ?? authData.user?.email ?? '',
+      phone: profile.phone ?? '',
+      cpfCnpj: profile.cpf_cnpj ?? '',
+      address: profile.address ?? '',
+      addressNumber: profile.address_number ?? '',
+      complement: (profile as Record<string, string | null>).complement ?? '',
+      postalCode: profile.postal_code ?? '',
+      province: profile.province ?? '',
+      city: profile.city ?? '',
+      state: profile.state ?? '',
+    })
+  }, [])
+
+  const startCheckout = useCallback(async () => {
+    if (cancelRef.current) return
+    setState('loading')
+    try {
+      const res = await fetch(`/api/checkout/${normalized}?cycle=${cycle}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json: CheckoutResponse = await res.json()
+      if (cancelRef.current) return
+
+      if (json.alreadySubscribed) {
+        setState('already')
+        return
+      }
+
+      if (json.code === 'MISSING_BILLING_FIELDS') {
+        setMissingFields(json.missingFields || [])
+        setErrorMsg(json.error || 'Complete seus dados de cobrança antes de continuar.')
+        await loadProfile()
+        setState('missing-billing')
+        setDialogOpen(true)
+        return
+      }
+
+      if (!res.ok || !json.checkoutUrl) {
+        setState('error')
+        setErrorMsg(json.error || 'Erro ao criar checkout. Tente novamente.')
+        return
+      }
+
+      window.location.href = json.checkoutUrl
+    } catch {
+      if (cancelRef.current) return
+      setState('error')
+      setErrorMsg('Falha de conexão. Tente novamente.')
+    }
+  }, [normalized, cycle, loadProfile])
 
   useEffect(() => {
     if (!isValid) return
-
-    let cancelled = false
-
-    async function startCheckout() {
-      try {
-        const res = await fetch(`/api/checkout/${normalized}?cycle=${cycle}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        })
-        const json: CheckoutResponse = await res.json()
-
-        if (cancelled) return
-
-        if (json.alreadySubscribed) {
-          setState('already')
-          return
-        }
-
-        if (json.code === 'MISSING_BILLING_FIELDS') {
-          setState('missing-billing')
-          setMissingFields(json.missingFieldLabels || [])
-          setSettingsUrl(json.settingsUrl || '/settings')
-          setErrorMsg(json.error || 'Complete seus dados de cobrança antes de continuar.')
-          return
-        }
-
-        if (!res.ok || !json.checkoutUrl) {
-          setState('error')
-          setErrorMsg(json.error || 'Erro ao criar checkout. Tente novamente.')
-          return
-        }
-
-        window.location.href = json.checkoutUrl
-      } catch {
-        if (cancelled) return
-        setState('error')
-        setErrorMsg('Falha de conexão. Tente novamente.')
-      }
-    }
-
-    startCheckout()
-    return () => { cancelled = true }
-  }, [isValid, normalized, cycle])
+    cancelRef.current = false
+    queueMicrotask(() => { startCheckout() })
+    return () => { cancelRef.current = true }
+  }, [isValid, startCheckout])
 
   if (!isValid) {
     router.replace('/billing')
     return null
-  }
-
-  if (state === 'loading') {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-6 max-w-md px-6">
-          <div className="flex justify-center">
-            <Loader2 className="h-12 w-12 animate-spin text-[#F5B731]" />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Processando checkout…
-          </h1>
-          <p className="text-slate-500">Redirecionando para o checkout. Aguarde.</p>
-        </div>
-      </div>
-    )
   }
 
   if (state === 'already') {
@@ -104,14 +139,9 @@ function CheckoutContent() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-6 max-w-md px-6">
           <div className="text-5xl">🟡</div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Você já tem este plano
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-900">Você já tem este plano</h1>
           <p className="text-slate-500">Você já possui uma assinatura ativa neste plano.</p>
-          <Button
-            onClick={() => router.push('/billing')}
-            className="bg-slate-900 hover:bg-slate-800 text-white"
-          >
+          <Button onClick={() => router.push('/billing')} className="bg-slate-900 hover:bg-slate-800 text-white">
             Voltar ao billing
           </Button>
         </div>
@@ -121,24 +151,43 @@ function CheckoutContent() {
 
   if (state === 'missing-billing') {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-6 max-w-xl px-6">
-          <div className="text-5xl">🧾</div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Complete seus dados de cobrança
-          </h1>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 text-left">
-            <p className="font-medium mb-2">Faltam informações obrigatórias para abrir o checkout:</p>
-            <ul className="list-disc pl-5 space-y-1">
-              {missingFields.map((field) => (
-                <li key={field}>{field}</li>
-              ))}
-            </ul>
+      <>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-4 max-w-md px-6">
+            <Loader2 className="h-10 w-10 animate-spin text-amber-500 mx-auto" />
+            <p className="text-slate-500">Aguardando seus dados de cobrança…</p>
+            <Button variant="outline" onClick={() => setDialogOpen(true)} className="text-slate-700">
+              Reabrir formulário
+            </Button>
           </div>
-          <p className="text-slate-500">{errorMsg}</p>
-          <div className="flex gap-3 justify-center flex-wrap">
-            <Button onClick={() => router.push(settingsUrl)} className="bg-slate-900 hover:bg-slate-800 text-white">
-              Ir para configurações
+        </div>
+        <BillingFieldsDialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open)
+            if (!open) router.push('/billing')
+          }}
+          initialData={profileData}
+          missingFields={missingFields}
+          onSaved={() => {
+            setDialogOpen(false)
+            startCheckout()
+          }}
+        />
+      </>
+    )
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-6 max-w-md px-6">
+          <div className="text-5xl">❌</div>
+          <h1 className="text-2xl font-bold text-slate-900">Erro no checkout</h1>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">{errorMsg}</div>
+          <div className="flex gap-3 justify-center">
+            <Button onClick={() => window.location.reload()} className="bg-slate-900 hover:bg-slate-800 text-white">
+              Tentar novamente
             </Button>
             <Button variant="outline" onClick={() => router.push('/billing')}>
               Voltar ao billing
@@ -152,27 +201,9 @@ function CheckoutContent() {
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center space-y-6 max-w-md px-6">
-        <div className="text-5xl">❌</div>
-        <h1 className="text-2xl font-bold text-slate-900">
-          Erro no checkout
-        </h1>
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-          {errorMsg}
-        </div>
-        <div className="flex gap-3 justify-center">
-          <Button
-            onClick={() => window.location.reload()}
-            className="bg-slate-900 hover:bg-slate-800 text-white"
-          >
-            Tentar novamente
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => router.push('/billing')}
-          >
-            Voltar ao billing
-          </Button>
-        </div>
+        <Loader2 className="h-12 w-12 animate-spin text-[#F5B731] mx-auto" />
+        <h1 className="text-2xl font-bold text-slate-900">Processando checkout…</h1>
+        <p className="text-slate-500">Redirecionando para o checkout. Aguarde.</p>
       </div>
     </div>
   )

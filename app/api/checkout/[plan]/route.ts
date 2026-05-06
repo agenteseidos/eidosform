@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { createCheckout, createCustomer, cancelSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
@@ -16,6 +17,20 @@ import { log, logError } from '@/lib/logger'
 function hashCustomerPayload(payload: Record<string, unknown>): string {
   const normalized = JSON.stringify(payload, Object.keys(payload).sort())
   return createHash('sha256').update(normalized).digest('hex').slice(0, 32)
+}
+
+/**
+ * Service-role client for writes that the user's RLS context cannot perform
+ * (e.g. updating profile.asaas_customer_id, inserting billing_checkouts).
+ * Falls back to null if SUPABASE_SERVICE_ROLE_KEY is missing — caller should
+ * check and log if so.
+ */
+function getServiceSupabase() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!key) return null
+  return createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
 }
 
 const VALID_PLANS = new Set<string>(PLAN_ORDER.filter((p) => p !== 'free'))
@@ -140,8 +155,9 @@ export async function POST(
 
         const planConfig = (await import('@/lib/plan-definitions')).PLANS[plan as PlanId]
 
-        // Atualizar profile com o novo plano
-        await supabase
+        // Atualizar profile com o novo plano (service_role — bypassa RLS de cookie)
+        const sSupa = getServiceSupabase() ?? supabase
+        await sSupa
           .from('profiles')
           .update({
             plan: plan as PlanId,
@@ -158,7 +174,7 @@ export async function POST(
           try {
             await cancelSubscription(profile.asaasSubscriptionId)
             log('[checkout] Assinatura anterior cancelada (proration credit)', { oldSubscriptionId: profile.asaasSubscriptionId })
-            await supabase
+            await sSupa
               .from('profiles')
               .update({ asaas_subscription_id: null })
               .eq('id', profile.profileId)
@@ -178,8 +194,8 @@ export async function POST(
           logError('[checkout] handleUpgrade falhou (proration credit)', err)
         }
 
-        // Registrar checkout como pago
-        await supabase
+        // Registrar checkout como pago (service_role)
+        await sSupa
           .from('billing_checkouts')
           .upsert({
             profile_id: profile.profileId,
@@ -212,23 +228,34 @@ export async function POST(
     // para evitar que o usuário perca o plano se abandonar o checkout.
     // Ver P0 #1 — handoff de auditoria Zéfa.
 
-    // Criar ou obter customer no Asaas sempre alinhado ao perfil logado
+    // Criar ou obter customer no Asaas sempre alinhado ao perfil logado.
+    // Escritas no profile (asaas_customer_id, asaas_customer_payload_hash) usam
+    // service_role porque RLS do user logado não cobre essas colunas.
     const customerPayload = toAsaasCustomerPayload(profile)
     const customerPayloadHash = hashCustomerPayload(customerPayload as unknown as Record<string, unknown>)
+    const serviceSupabase = getServiceSupabase()
+    if (!serviceSupabase) {
+      logError('[checkout] SUPABASE_SERVICE_ROLE_KEY não configurada — escritas server-side vão falhar')
+    }
+
     let customerId = profile.asaasCustomerId
     if (!customerId) {
       log('[checkout] Criando customer no Asaas', { email: profile.email, profileId: profile.profileId })
       const customer = await createCustomer(customerPayload)
       customerId = customer.id
 
-      await supabase
+      const { error: profileUpdateError } = await (serviceSupabase ?? supabase)
         .from('profiles')
         .update({ asaas_customer_id: customerId, asaas_customer_payload_hash: customerPayloadHash } as never)
         .eq('id', profile.profileId)
 
-      log('[checkout] asaas_customer_id salvo no profile', { userId: profile.profileId, customerId })
+      if (profileUpdateError) {
+        logError('[checkout] Falhou ao salvar asaas_customer_id no profile', profileUpdateError, { userId: profile.profileId, customerId })
+      } else {
+        log('[checkout] asaas_customer_id salvo no profile', { userId: profile.profileId, customerId })
+      }
     } else {
-      const { data: hashRow } = await supabase
+      const { data: hashRow } = await (serviceSupabase ?? supabase)
         .from('profiles')
         .select('asaas_customer_payload_hash' as never)
         .eq('id', profile.profileId)
@@ -236,10 +263,13 @@ export async function POST(
 
       if (hashRow?.asaas_customer_payload_hash !== customerPayloadHash) {
         await updateCustomer(customerId, customerPayload)
-        await supabase
+        const { error: hashUpdateError } = await (serviceSupabase ?? supabase)
           .from('profiles')
           .update({ asaas_customer_payload_hash: customerPayloadHash } as never)
           .eq('id', profile.profileId)
+        if (hashUpdateError) {
+          logError('[checkout] Falhou ao atualizar asaas_customer_payload_hash', hashUpdateError, { userId: profile.profileId })
+        }
         log('[checkout] Customer do Asaas atualizado (dados mudaram)', { userId: profile.profileId, customerId })
       } else {
         log('[checkout] Customer do Asaas — payload inalterado, skip updateCustomer', { userId: profile.profileId, customerId })
@@ -266,7 +296,9 @@ export async function POST(
     })
     log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: checkoutValue ? 'prorated_checkout' : 'checkout', checkoutId: checkout.id, profileId: profile.profileId })
 
-    await supabase
+    // Insert billing_checkouts via service_role (RLS de cookie do user não cobre).
+    const ckSupa = serviceSupabase ?? supabase
+    const { error: ckInsertError } = await ckSupa
       .from('billing_checkouts')
       .upsert({
         profile_id: profile.profileId,
@@ -283,6 +315,10 @@ export async function POST(
           final_price: proration.finalPrice,
         } : {}),
       }, { onConflict: 'checkout_id' })
+
+    if (ckInsertError) {
+      logError('[checkout] Falhou ao inserir billing_checkouts', ckInsertError, { checkoutId: checkout.id, profileId: profile.profileId })
+    }
 
     return NextResponse.json({
       checkoutId: checkout.id,

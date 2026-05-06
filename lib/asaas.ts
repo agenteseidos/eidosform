@@ -95,8 +95,10 @@ export async function createCheckout(params: {
   const { plan, cycle, successUrl, cancelUrl, expiredUrl, customerId, customValue } = params
   const basePrice = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
   const price = customValue !== undefined ? customValue : basePrice
+  // nextDueDate = hoje força o Asaas a processar a primeira cobrança imediatamente
+  // (FAQ oficial Asaas). Captura ainda não é síncrona <1s — webhook chega em segundos
+  // a poucos minutos. Polling em /api/checkout/status cobre o gap.
   const nextDueDate = new Date()
-  nextDueDate.setDate(nextDueDate.getDate() + 1)
 
   log('[asaas] createCheckout payload', { plan, cycle, value: price, customerId })
 

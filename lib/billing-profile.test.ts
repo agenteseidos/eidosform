@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isValidCpfOrCnpj } from './billing-profile'
+import { isValidCpfOrCnpj } from './cpf-cnpj'
 
 describe('isValidCpfOrCnpj', () => {
   it('rejects empty / null / undefined', () => {

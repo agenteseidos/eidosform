@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { isValidCpfOrCnpj } from '@/lib/billing-profile'
+import { isValidCpfOrCnpj } from '@/lib/cpf-cnpj'
 
 type FieldKey =
   | 'fullName'

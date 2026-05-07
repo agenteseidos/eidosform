@@ -29,6 +29,7 @@ export type QuestionType =
   | 'address'
   | 'cpf'
   | 'calendly'
+  | 'html_block'
   | 'content_block'
 
 // Conditional logic operators
@@ -90,6 +91,7 @@ export interface QuestionConfig {
   placeholder?: string
   defaultCountry?: string // Country code for phone type (default: BR)
   calendlyUrl?: string // Calendly embed URL for calendly type
+  htmlContent?: string // Raw HTML for html_block type (rendered as-is, no sanitization)
   conditionalLogic?: ConditionalRule
   pixelEvents?: PixelEventRule[]
   jumpRules?: JumpRule[]

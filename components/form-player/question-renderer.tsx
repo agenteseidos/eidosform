@@ -513,6 +513,31 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
   )
 })
 
+// ── HTML Block Question (purely presentational; no value capture) ──
+interface HtmlBlockQuestionProps {
+  question: QuestionConfig
+  theme: ThemeConfig
+}
+
+const HtmlBlockQuestion = React.memo(function HtmlBlockQuestion({ question, theme }: HtmlBlockQuestionProps) {
+  const html = question.htmlContent?.trim()
+
+  if (!html) {
+    return (
+      <div className="p-6 rounded-xl border-2 border-dashed text-center" style={{ borderColor: `${theme.textColor}30`, color: theme.textColor }}>
+        <p className="text-sm opacity-60">Nenhum HTML configurado</p>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="html-block-content"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+})
+
 interface QuestionRendererProps {
   question: QuestionConfig
   value: Json
@@ -982,6 +1007,11 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
           theme={theme}
           onSubmit={onSubmit}
         />
+      )
+
+    case 'html_block':
+      return (
+        <HtmlBlockQuestion question={question} theme={theme} />
       )
 
     case 'content_block': {

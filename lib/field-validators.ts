@@ -92,6 +92,10 @@ export function validateFieldValue(
     case 'calendly':
       return validateCalendly(value, question.calendlyUrl, question.required)
 
+    case 'html_block':
+      // Bloco HTML é puramente apresentacional, não captura valor.
+      return { valid: true }
+
     default:
       // Tipo desconhecido — aceitar para forward-compatibility
       return { valid: true }

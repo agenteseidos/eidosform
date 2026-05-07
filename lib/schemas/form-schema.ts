@@ -26,6 +26,7 @@ const QUESTION_TYPES = [
   'address',
   'cpf',
   'calendly',
+  'html_block',
   'content_block',
 ] as const satisfies readonly QuestionType[]
 
@@ -175,6 +176,11 @@ export const QuestionSchema = z.discriminatedUnion('type', [
     ...QuestionBaseShape,
     type: z.literal('calendly'),
     calendlyUrl: optionalSafeUrl.optional(),
+  }).strip(),
+  z.object({
+    ...QuestionBaseShape,
+    type: z.literal('html_block'),
+    htmlContent: z.string().max(50_000).optional().nullable(),
   }).strip(),
   z.object({
     ...QuestionBaseShape,

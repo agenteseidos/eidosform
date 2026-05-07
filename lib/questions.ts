@@ -17,6 +17,7 @@ import {
   MapPin,
   Fingerprint,
   CalendarClock,
+  Code,
   TextCursorInput,
 } from 'lucide-react'
 
@@ -180,6 +181,16 @@ export const questionTypes: QuestionTypeInfo[] = [
     icon: CalendarClock,
     defaultConfig: {
       calendlyUrl: '',
+    },
+  },
+  {
+    type: 'html_block',
+    label: 'Bloco HTML',
+    description: 'Cole HTML/embed (Google Calendar, YouTube, Maps, etc.)',
+    icon: Code,
+    defaultConfig: {
+      required: false,
+      htmlContent: '',
     },
   },
   {

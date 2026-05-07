@@ -5,7 +5,7 @@ import { QuestionConfig } from '@/lib/database.types'
 import { ThemeConfig } from '@/lib/database.types'
 import { motion, AnimatePresence } from 'framer-motion'
 import DOMPurify from 'dompurify'
-import { Star, CalendarClock, Plus, X } from 'lucide-react'
+import { Star, CalendarClock, Code, Plus, X } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 import { renderContentBlockHtml } from '@/lib/content-block'
 import { TiptapEditor, renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
@@ -504,6 +504,49 @@ export function FormPreview({
                   </div>
                   <p className="text-base font-medium">Widget Calendly será exibido aqui</p>
                   <p className="mt-2 text-sm opacity-60">Configure a URL do Calendly no painel direito para ativar a prévia.</p>
+                </div>
+              )
+            )}
+
+            {question.type === 'html_block' && (
+              question.htmlContent?.trim() ? (
+                <div
+                  className="overflow-hidden rounded-2xl border bg-white"
+                  style={{ borderColor: `${theme.primaryColor}30` }}
+                >
+                  <div
+                    className="flex items-center gap-2 border-b px-4 py-3 text-sm"
+                    style={{
+                      borderColor: `${theme.primaryColor}20`,
+                      color: theme.textColor,
+                      backgroundColor: `${theme.primaryColor}08`,
+                    }}
+                  >
+                    <Code className="w-4 h-4" style={{ color: theme.primaryColor }} />
+                    <span className="font-medium">Prévia do bloco HTML</span>
+                  </div>
+                  <div
+                    className="p-3"
+                    dangerouslySetInnerHTML={{ __html: question.htmlContent }}
+                  />
+                </div>
+              ) : (
+                <div
+                  className="rounded-2xl border-2 border-dashed px-6 py-10 text-center"
+                  style={{
+                    borderColor: `${theme.primaryColor}35`,
+                    backgroundColor: `${theme.primaryColor}08`,
+                    color: theme.textColor,
+                  }}
+                >
+                  <div
+                    className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
+                    style={{ backgroundColor: `${theme.primaryColor}16` }}
+                  >
+                    <Code className="w-7 h-7" style={{ color: theme.primaryColor }} />
+                  </div>
+                  <p className="text-base font-medium">Bloco HTML será exibido aqui</p>
+                  <p className="mt-2 text-sm opacity-60">Cole o código HTML/embed no painel direito para ativar a prévia.</p>
                 </div>
               )
             )}

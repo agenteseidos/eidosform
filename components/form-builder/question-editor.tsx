@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { X, GitBranch, CalendarClock, Plus } from 'lucide-react'
+import { X, GitBranch, CalendarClock, Code, Plus } from 'lucide-react'
 import { countries } from '@/lib/countries'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
 import { JumpRulesEditor } from './jump-rules-editor'
@@ -28,6 +28,7 @@ interface QuestionEditorProps {
 export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPlan = 'free', hideTypeAndRequired, hideLogic, onlyLogic }: QuestionEditorProps) {
   const typeInfo = getQuestionTypeInfo(question.type)
   const isCalendlyQuestion = question.type === 'calendly'
+  const isHtmlBlockQuestion = question.type === 'html_block'
 
   // If onlyLogic mode, render just the logic sections
   if (onlyLogic) {
@@ -158,6 +159,36 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
               className="mt-2"
             />
             <p className="text-xs text-slate-500 mt-1.5">Cole a URL do seu evento Calendly</p>
+          </div>
+        </div>
+      )}
+
+      {/* HTML Block config */}
+      {isHtmlBlockQuestion && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-slate-200 text-slate-700">
+              <Code className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-slate-900">Bloco HTML</h3>
+              <p className="text-xs text-slate-600 mt-1">
+                Cole o código de embed (Google Calendar, YouTube, Maps, etc.). Aceita iframe e HTML.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="htmlContent" className="text-sm font-medium text-slate-700">Código HTML / Embed</Label>
+            <textarea
+              id="htmlContent"
+              value={question.htmlContent || ''}
+              onChange={(e) => onUpdate({ htmlContent: e.target.value })}
+              placeholder='<iframe src="https://calendar.google.com/calendar/embed?src=..." style="border: 0" width="100%" height="600"></iframe>'
+              className="mt-2 w-full min-h-[160px] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-mono shadow-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              spellCheck={false}
+            />
+            <p className="text-xs text-slate-500 mt-1.5">Cole o código exatamente como recebeu — iframes HTTPS funcionam direto.</p>
           </div>
         </div>
       )}

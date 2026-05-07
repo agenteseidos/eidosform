@@ -100,6 +100,7 @@ const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> =
   address:       { icon: MapPin,      color: 'text-emerald-500' },
   cpf:           { icon: Fingerprint, color: 'text-violet-500' },
   calendly:      { icon: CalendarClock, color: 'text-cyan-500' },
+  html_block:    { icon: Code,        color: 'text-slate-500' },
   content_block: { icon: TextCursorInput, color: 'text-indigo-500' },
 }
 
@@ -1782,7 +1783,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               },
               {
                 label: 'Integração',
-                types: ['calendly'],
+                types: ['calendly', 'html_block'],
               },
             ].map((category) => {
               const categoryQuestionTypes = category.types

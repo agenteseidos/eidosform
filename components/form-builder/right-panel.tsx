@@ -410,7 +410,17 @@ export function RightPanel({
             </button>
             {!collapsed['config'] && (
               <div className="px-4 pb-4 space-y-4">
-                {/* ID técnico minimizado */}
+                {/* Type-specific technical config (without title/description/options/placeholder) */}
+                <QuestionEditor
+                  question={selectedQuestion}
+                  allQuestions={allQuestions}
+                  onUpdate={(updates) => onUpdateQuestion(selectedQuestion.id, updates)}
+                  ownerPlan={ownerPlan}
+                  hideTypeAndRequired
+                  hideLogic
+                />
+
+                {/* ID técnico — sempre por último (é raramente usado) */}
                 <div className="rounded-lg border border-slate-200 bg-slate-50/80">
                   <button
                     type="button"
@@ -440,16 +450,6 @@ export function RightPanel({
                     </div>
                   )}
                 </div>
-
-                {/* Type-specific technical config (without title/description/options/placeholder) */}
-                <QuestionEditor
-                  question={selectedQuestion}
-                  allQuestions={allQuestions}
-                  onUpdate={(updates) => onUpdateQuestion(selectedQuestion.id, updates)}
-                  ownerPlan={ownerPlan}
-                  hideTypeAndRequired
-                  hideLogic
-                />
               </div>
             )}
           </div>

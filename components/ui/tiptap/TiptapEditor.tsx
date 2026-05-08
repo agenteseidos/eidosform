@@ -398,6 +398,7 @@ export function renderTiptapHtml(
           code: false,
         }),
         TextStylePkg,
+        FontSize,
       ])
     } catch {
       return renderMarkdownFallback(contentBody)

@@ -535,7 +535,7 @@ export function FormPreview({
                     <div
                       className="html-block-note text-sm leading-relaxed"
                       style={{ color: theme.textColor }}
-                      dangerouslySetInnerHTML={{ __html: renderTiptapHtml(question.htmlBlockNote) }}
+                      dangerouslySetInnerHTML={{ __html: renderTiptapHtml(question.htmlBlockNote, renderContentBlockHtml) }}
                     />
                   )}
                 </div>

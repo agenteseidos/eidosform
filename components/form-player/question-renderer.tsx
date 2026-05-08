@@ -522,7 +522,7 @@ interface HtmlBlockQuestionProps {
 const HtmlBlockQuestion = React.memo(function HtmlBlockQuestion({ question, theme }: HtmlBlockQuestionProps) {
   const html = question.htmlContent?.trim()
   const note = question.htmlBlockNote?.trim()
-  const noteHtml = note ? renderTiptapHtml(note) : ''
+  const noteHtml = note ? renderTiptapHtml(note, renderContentBlockHtml) : ''
 
   if (!html) {
     return (

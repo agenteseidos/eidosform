@@ -521,6 +521,8 @@ interface HtmlBlockQuestionProps {
 
 const HtmlBlockQuestion = React.memo(function HtmlBlockQuestion({ question, theme }: HtmlBlockQuestionProps) {
   const html = question.htmlContent?.trim()
+  const note = question.htmlBlockNote?.trim()
+  const noteHtml = note ? renderTiptapHtml(note) : ''
 
   if (!html) {
     return (
@@ -531,10 +533,19 @@ const HtmlBlockQuestion = React.memo(function HtmlBlockQuestion({ question, them
   }
 
   return (
-    <div
-      className="html-block-content"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className="space-y-4">
+      <div
+        className="html-block-content"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {noteHtml && (
+        <div
+          className="html-block-note text-sm leading-relaxed"
+          style={{ color: theme.textColor }}
+          dangerouslySetInnerHTML={{ __html: noteHtml }}
+        />
+      )}
+    </div>
   )
 })
 

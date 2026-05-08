@@ -181,6 +181,7 @@ export const QuestionSchema = z.discriminatedUnion('type', [
     ...QuestionBaseShape,
     type: z.literal('html_block'),
     htmlContent: z.string().max(50_000).optional().nullable(),
+    htmlBlockNote: z.string().max(5_000).optional().nullable(),
   }).strip(),
   z.object({
     ...QuestionBaseShape,

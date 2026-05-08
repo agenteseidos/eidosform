@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { X, GitBranch, CalendarClock, Code, Plus } from 'lucide-react'
 import { countries } from '@/lib/countries'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
+import { TiptapEditor } from '@/components/ui/tiptap/TiptapEditor'
 import { JumpRulesEditor } from './jump-rules-editor'
 
 interface QuestionEditorProps {
@@ -189,6 +190,18 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
               spellCheck={false}
             />
             <p className="text-xs text-slate-500 mt-1.5">Cole o código exatamente como recebeu — iframes HTTPS funcionam direto.</p>
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium text-slate-700">Instrução para o respondente (opcional)</Label>
+            <div className="mt-2 rounded-md border border-slate-300 bg-white">
+              <TiptapEditor
+                value={question.htmlBlockNote || ''}
+                onChange={(v) => onUpdate({ htmlBlockNote: v })}
+                placeholder='Ex: Após agendar, clique em "Enviar" abaixo 👇'
+              />
+            </div>
+            <p className="text-xs text-slate-500 mt-1.5">Aparece abaixo do embed, sem caixa, formatável (negrito, itálico, emoji, link).</p>
           </div>
         </div>
       )}

@@ -510,25 +510,34 @@ export function FormPreview({
 
             {question.type === 'html_block' && (
               question.htmlContent?.trim() ? (
-                <div
-                  className="overflow-hidden rounded-2xl border bg-white"
-                  style={{ borderColor: `${theme.primaryColor}30` }}
-                >
+                <div className="space-y-4">
                   <div
-                    className="flex items-center gap-2 border-b px-4 py-3 text-sm"
-                    style={{
-                      borderColor: `${theme.primaryColor}20`,
-                      color: theme.textColor,
-                      backgroundColor: `${theme.primaryColor}08`,
-                    }}
+                    className="overflow-hidden rounded-2xl border bg-white"
+                    style={{ borderColor: `${theme.primaryColor}30` }}
                   >
-                    <Code className="w-4 h-4" style={{ color: theme.primaryColor }} />
-                    <span className="font-medium">Prévia do bloco HTML</span>
+                    <div
+                      className="flex items-center gap-2 border-b px-4 py-3 text-sm"
+                      style={{
+                        borderColor: `${theme.primaryColor}20`,
+                        color: theme.textColor,
+                        backgroundColor: `${theme.primaryColor}08`,
+                      }}
+                    >
+                      <Code className="w-4 h-4" style={{ color: theme.primaryColor }} />
+                      <span className="font-medium">Prévia do bloco HTML</span>
+                    </div>
+                    <div
+                      className="p-3"
+                      dangerouslySetInnerHTML={{ __html: question.htmlContent }}
+                    />
                   </div>
-                  <div
-                    className="p-3"
-                    dangerouslySetInnerHTML={{ __html: question.htmlContent }}
-                  />
+                  {question.htmlBlockNote?.trim() && (
+                    <div
+                      className="html-block-note text-sm leading-relaxed"
+                      style={{ color: theme.textColor }}
+                      dangerouslySetInnerHTML={{ __html: renderTiptapHtml(question.htmlBlockNote) }}
+                    />
+                  )}
                 </div>
               ) : (
                 <div

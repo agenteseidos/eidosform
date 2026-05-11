@@ -144,7 +144,28 @@ export async function cancelSubscription(subscriptionId: string): Promise<{ dele
   return asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' })
 }
 
-/** Busca assinatura */
+// Cache em memória do getSubscription pra mitigar consumo da cota do Asaas em
+// rajadas (polling de /api/checkout/status + retries de webhook que caem no mesmo
+// subscriptionId em poucos segundos). TTL curto (30s) garante que confirmações
+// pós-webhook ainda chegam rápido. Cache é POR INSTÂNCIA serverless da Vercel —
+// não é cache global, mas elimina o pior caso de N chamadas em sequência.
+const SUBSCRIPTION_CACHE_TTL_MS = 30_000
+const subscriptionCache = new Map<string, { data: unknown; expiresAt: number }>()
+
+/** Busca assinatura (com cache de 30s em memória) */
 export async function getSubscription(subscriptionId: string) {
-  return asaasFetch(`/subscriptions/${subscriptionId}`)
+  const now = Date.now()
+  const cached = subscriptionCache.get(subscriptionId)
+  if (cached && cached.expiresAt > now) {
+    return cached.data
+  }
+  const data = await asaasFetch(`/subscriptions/${subscriptionId}`)
+  subscriptionCache.set(subscriptionId, { data, expiresAt: now + SUBSCRIPTION_CACHE_TTL_MS })
+  // Limpeza oportunística pra evitar leak: remove entradas expiradas quando o cache cresce
+  if (subscriptionCache.size > 100) {
+    for (const [key, entry] of subscriptionCache) {
+      if (entry.expiresAt <= now) subscriptionCache.delete(key)
+    }
+  }
+  return data
 }

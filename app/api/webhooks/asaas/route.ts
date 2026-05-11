@@ -593,13 +593,20 @@ export async function POST(req: NextRequest) {
         break
     }
   } catch (err) {
-    logError('[asaas-webhook] Erro ao processar evento:', err)
+    // Retornamos 200 (não 500) intencionalmente: o evento já passou idempotency e
+    // foi gravado em asaas_webhook_events. Retornar 5xx fazia o Asaas retentar o
+    // evento dezenas/centenas de vezes, gerando retry storm (consumiu 30k requisições
+    // do sandbox em 05-11/05/2026 quando um payment OVERDUE ficou em loop).
+    // Erros de processamento são logados via logWebhookEvent pra reprocessamento manual,
+    // mas a entrega é confirmada pro Asaas. Falhas de infra de pré-processamento
+    // (idempotencyResult === 'error') seguem retornando 503 ANTES desse catch.
+    logError('[asaas-webhook] Erro ao processar (retornando 200 pra evitar retry storm):', err)
     await logWebhookEvent({
       event,
       status: 'error',
       error: err instanceof Error ? err.message : String(err),
     })
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return NextResponse.json({ received: true, processed: false, error: 'Logged for manual reprocess' })
   }
 
   await logWebhookEvent({ event, status: 'processed' })

@@ -40,8 +40,15 @@ export async function sendWhatsAppOnFormResponse(params: {
       mappedAnswers[label] = String(value ?? '')
     }
 
-    // Find name, email, phone by scanning question titles
+    // Find name, email, phone by scanning question titles.
+    // Tenta match exato primeiro (evita "nome da empresa" casar com "nome");
+    // só cai pro includes se nenhum título bater exatamente.
     const findByLabel = (...labels: string[]): string => {
+      for (const label of labels) {
+        for (const [key, val] of Object.entries(mappedAnswers)) {
+          if (key === label) return val
+        }
+      }
       for (const label of labels) {
         for (const [key, val] of Object.entries(mappedAnswers)) {
           if (key.includes(label)) return val

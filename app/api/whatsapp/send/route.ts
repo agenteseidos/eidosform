@@ -61,18 +61,30 @@ function normalizeValue(value: string): string {
 function buildMessage(template: string, leadData: FormAwareRequest['leadData']): string {
   let msg = template.normalize('NFKC')
 
-  // Named variables (higher priority)
-  msg = msg.replace(/\{form_name\}/g, normalizeValue(String(leadData.form_name || 'Formulário')))
-  msg = msg.replace(/\{nome\}/g, normalizeValue(String(leadData.name || leadData.nome || 'Lead')))
-  msg = msg.replace(/\{email\}/g, normalizeValue(String(leadData.email || 'N/A')))
-  msg = msg.replace(/\{phone\}/g, normalizeValue(String(leadData.phone || leadData.telefone || 'N/A')))
-  msg = msg.replace(/\{response_id\}/g, normalizeValue(String(leadData.response_id || 'N/A')))
-  msg = msg.replace(/\{response_link\}/g, normalizeValue(String(leadData.response_link || 'N/A')))
-  msg = msg.replace(/\{meta_events\}/g, normalizeValue(String(leadData.meta_events || '')))
+  // Named variables (higher priority). Aceita variantes com hífen (ex.: {e-mail}).
+  msg = msg.replace(/\{form_name\}/gi, normalizeValue(String(leadData.form_name || 'Formulário')))
+  msg = msg.replace(/\{nome\}/gi, normalizeValue(String(leadData.name || leadData.nome || 'Lead')))
+  msg = msg.replace(/\{e-?mail\}/gi, normalizeValue(String(leadData.email || 'N/A')))
+  msg = msg.replace(/\{phone\}/gi, normalizeValue(String(leadData.phone || leadData.telefone || 'N/A')))
+  msg = msg.replace(/\{response_id\}/gi, normalizeValue(String(leadData.response_id || 'N/A')))
+  msg = msg.replace(/\{response_link\}/gi, normalizeValue(String(leadData.response_link || 'N/A')))
+  msg = msg.replace(/\{meta_events\}/gi, normalizeValue(String(leadData.meta_events || '')))
 
-  // Replace any remaining {key} with leadData values
-  msg = msg.replace(/\{(\w+)\}/g, (_, key) => {
-    return normalizeValue(String(leadData[key] ?? ''))
+  // Catch-all: substitui {qualquer chave} restante.
+  // Aceita chaves com hífen, espaço e acento (ex.: {telefone_contato}, {telefone de contato}).
+  // A comparação é feita por chave normalizada (lowercase, sem acento, só alfanumérico)
+  // para casar o que o dono digita no template com o título real da pergunta.
+  const normKey = (k: string): string =>
+    k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
+  const normalizedLead = new Map<string, unknown>()
+  for (const [k, v] of Object.entries(leadData)) {
+    const nk = normKey(k)
+    if (nk && !normalizedLead.has(nk)) normalizedLead.set(nk, v)
+  }
+  msg = msg.replace(/\{([^{}\n]+)\}/g, (match, rawKey: string) => {
+    const nk = normKey(rawKey)
+    if (normalizedLead.has(nk)) return normalizeValue(String(normalizedLead.get(nk) ?? ''))
+    return match // chave desconhecida: mantém literal em vez de apagar
   })
 
   return msg
@@ -113,7 +125,10 @@ async function sendViaVps(phone: string, message: string): Promise<{ messageId: 
     }
 
     const data = await response.json()
-    return { messageId: data.messageId ?? `vps-${Date.now()}` }
+    // `||` (não `??`): a VPS pode devolver messageId como string vazia quando o
+    // wacli não expõe `data.id` — `??` deixaria passar o "" e a telemetria
+    // chegava como `msgId: N/A`. Ver briefing-whatsapp-msgid-perdido.md.
+    return { messageId: data.messageId || `vps-${Date.now()}` }
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error)
 

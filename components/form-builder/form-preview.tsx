@@ -329,7 +329,7 @@ export function FormPreview({
                 {(question.options || []).map((option, i) => (
                   <div
                     key={i}
-                    className="flex items-center gap-3 p-3 rounded-lg border-2 transition-colors hover:border-opacity-100"
+                    className="group flex items-center gap-3 p-3 rounded-lg border-2 transition-colors hover:border-opacity-100"
                     style={{
                       borderColor: `${theme.primaryColor}40`,
                       color: theme.textColor
@@ -375,6 +375,33 @@ export function FormPreview({
                     )}
                   </div>
                 ))}
+                {question.allowOther && (
+                  <div
+                    className="flex flex-col gap-2 p-3 rounded-lg border-2"
+                    style={{
+                      borderColor: `${theme.primaryColor}40`,
+                      color: theme.textColor
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-6 h-6 shrink-0 rounded-${question.type === 'dropdown' ? 'full' : 'md'} border-2 flex items-center justify-center`}
+                        style={{ borderColor: theme.primaryColor }}
+                      >
+                        <span className="text-xs font-medium" style={{ color: theme.primaryColor }}>
+                          {String.fromCharCode(65 + (question.options?.length || 0))}
+                        </span>
+                      </div>
+                      <span className="text-sm">Outro</span>
+                    </div>
+                    <div
+                      className="text-xs rounded-md border px-3 py-2 opacity-50"
+                      style={{ borderColor: `${theme.textColor}30` }}
+                    >
+                      Caixa de texto para o respondente descrever
+                    </div>
+                  </div>
+                )}
                 {onUpdateQuestion && (
                   <button
                     onClick={(e) => {

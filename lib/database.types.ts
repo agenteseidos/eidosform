@@ -84,6 +84,7 @@ export interface QuestionConfig {
   required: boolean
   // Type-specific options
   options?: string[] // For dropdown and checkboxes
+  allowOther?: boolean // For dropdown and checkboxes: adds a native "Outro" option with a free-text box
   minValue?: number // For rating (1-5 stars) or opinion_scale (1-10)
   maxValue?: number
   allowedFileTypes?: string[] // For file_upload

@@ -549,6 +549,203 @@ const HtmlBlockQuestion = React.memo(function HtmlBlockQuestion({ question, them
   )
 })
 
+// Shared props for the dropdown/checkboxes choice components
+interface ChoiceQuestionProps {
+  question: QuestionConfig
+  value: Json
+  onChange: (value: Json) => void
+  theme: ThemeConfig
+  error?: string
+  onSubmit: (skipValidation?: boolean, valueOverride?: Json) => void
+  onClearError?: () => void
+}
+
+const DropdownQuestion = React.memo(function DropdownQuestion({ question, value, onChange, theme, onSubmit, onClearError }: ChoiceQuestionProps) {
+  const options = question.options || []
+  const strValue = typeof value === 'string' ? value : ''
+  const [otherActive, setOtherActive] = useState(
+    () => !!question.allowOther && strValue !== '' && !options.includes(strValue)
+  )
+
+  const renderRow = (label: string, isSelected: boolean, shortcutKey: string, onClick: () => void) => (
+    <motion.button
+      type="button"
+      whileHover={{ scale: 1.01 }}
+      whileTap={{ scale: 0.99 }}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick() }}
+      className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
+      style={{
+        borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
+        backgroundColor: isSelected ? `${theme.primaryColor}10` : 'transparent',
+        color: theme.textColor,
+      }}
+    >
+      <div
+        className="w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors"
+        style={{
+          borderColor: isSelected ? theme.primaryColor : `${theme.textColor}40`,
+          backgroundColor: isSelected ? theme.primaryColor : 'transparent',
+        }}
+      >
+        {isSelected ? (
+          <Check className="w-4 h-4" style={{ color: theme.backgroundColor }} />
+        ) : (
+          <span className="text-sm font-medium" style={{ color: theme.textColor }}>{shortcutKey}</span>
+        )}
+      </div>
+      <span className="text-lg flex-1">{label}</span>
+      <kbd
+        className="hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold opacity-40"
+        style={{ backgroundColor: `${theme.textColor}10`, color: theme.textColor }}
+      >
+        {shortcutKey}
+      </kbd>
+    </motion.button>
+  )
+
+  return (
+    <div className="space-y-3">
+      {options.map((option, index) => (
+        <div key={index}>
+          {renderRow(option, !otherActive && strValue === option, String.fromCharCode(65 + index), () => {
+            setOtherActive(false)
+            onChange(option)
+            onClearError?.()
+            onSubmit(true, option)
+          })}
+        </div>
+      ))}
+      {question.allowOther && (
+        <div>
+          {renderRow('Outro', otherActive, String.fromCharCode(65 + options.length), () => {
+            setOtherActive(true)
+            onChange('')
+            onClearError?.()
+          })}
+          {otherActive && (
+            <input
+              autoFocus
+              type="text"
+              value={strValue}
+              placeholder="Descreva..."
+              onChange={(e) => { onChange(e.target.value); onClearError?.() }}
+              className="w-full mt-2 p-3 rounded-xl border-2 text-lg outline-none transition-colors"
+              style={{
+                borderColor: `${theme.primaryColor}80`,
+                backgroundColor: 'transparent',
+                color: theme.textColor,
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
+})
+
+const CheckboxesQuestion = React.memo(function CheckboxesQuestion({ question, value, onChange, theme, error, onClearError }: ChoiceQuestionProps) {
+  const options = question.options || []
+  const selectedValues = Array.isArray(value) ? (value as string[]) : []
+  const normalSelected = selectedValues.filter(v => options.includes(v))
+  const existingOther = selectedValues.find(v => !options.includes(v))
+  const [otherActive, setOtherActive] = useState(() => !!question.allowOther && existingOther !== undefined)
+  const [otherText, setOtherText] = useState(existingOther || '')
+
+  const commit = (normals: string[], active: boolean, text: string) => {
+    onChange([...normals, ...(active && text.trim() ? [text] : [])])
+  }
+
+  const renderRow = (label: string, isSelected: boolean, shortcutKey: string, rounded: 'lg' | 'full', onClick: () => void) => (
+    <motion.button
+      type="button"
+      whileHover={{ scale: 1.01 }}
+      whileTap={{ scale: 0.99 }}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick() }}
+      className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
+      style={{
+        borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
+        backgroundColor: isSelected ? `${theme.primaryColor}10` : 'transparent',
+        color: theme.textColor,
+      }}
+    >
+      <div
+        className={`w-8 h-8 rounded-${rounded} border-2 flex items-center justify-center shrink-0 transition-colors`}
+        style={{
+          borderColor: isSelected ? theme.primaryColor : `${theme.textColor}40`,
+          backgroundColor: isSelected ? theme.primaryColor : 'transparent',
+        }}
+      >
+        {isSelected ? (
+          <Check className="w-4 h-4" style={{ color: theme.backgroundColor }} />
+        ) : (
+          <span className="text-sm font-medium" style={{ color: theme.textColor }}>{shortcutKey}</span>
+        )}
+      </div>
+      <span className="text-lg flex-1">{label}</span>
+      <kbd
+        className="hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold opacity-40"
+        style={{ backgroundColor: `${theme.textColor}10`, color: theme.textColor }}
+      >
+        {shortcutKey}
+      </kbd>
+    </motion.button>
+  )
+
+  return (
+    <div className="space-y-3">
+      {options.map((option, index) => {
+        const isSelected = normalSelected.includes(option)
+        return (
+          <div key={index}>
+            {renderRow(option, isSelected, String.fromCharCode(65 + index), 'lg', () => {
+              const newNormals = isSelected
+                ? normalSelected.filter(v => v !== option)
+                : [...normalSelected, option]
+              commit(newNormals, otherActive, otherText)
+            })}
+          </div>
+        )
+      })}
+      {question.allowOther && (
+        <div>
+          {renderRow('Outro', otherActive, String.fromCharCode(65 + options.length), 'lg', () => {
+            const next = !otherActive
+            setOtherActive(next)
+            commit(normalSelected, next, otherText)
+          })}
+          {otherActive && (
+            <input
+              autoFocus
+              type="text"
+              value={otherText}
+              placeholder="Descreva..."
+              onChange={(e) => {
+                setOtherText(e.target.value)
+                commit(normalSelected, true, e.target.value)
+                onClearError?.()
+              }}
+              className="w-full mt-2 p-3 rounded-xl border-2 text-lg outline-none transition-colors"
+              style={{
+                borderColor: `${theme.primaryColor}80`,
+                backgroundColor: 'transparent',
+                color: theme.textColor,
+              }}
+            />
+          )}
+        </div>
+      )}
+      <p className="text-sm opacity-50 mt-2" style={{ color: theme.textColor }}>
+        Selecione todas que se aplicam
+      </p>
+      {error && (
+        <p className="text-sm font-medium mt-1" style={{ color: '#EF4444' }}>
+          {error}
+        </p>
+      )}
+    </div>
+  )
+})
+
 interface QuestionRendererProps {
   question: QuestionConfig
   value: Json
@@ -694,122 +891,29 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
 
     case 'dropdown':
       return (
-        <div className="space-y-3">
-          {(question.options || []).map((option, index) => {
-            const isSelected = value === option
-            const shortcutKey = String.fromCharCode(65 + index)
-            return (
-              <motion.button
-                key={index}
-                type="button"
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  onChange(option)
-                  onClearError?.()
-                  onSubmit(true, option)
-                }}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
-                style={{
-                  borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
-                  backgroundColor: isSelected ? `${theme.primaryColor}10` : 'transparent',
-                  color: theme.textColor,
-                }}
-              >
-                <div 
-                  className="w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors"
-                  style={{ 
-                    borderColor: isSelected ? theme.primaryColor : `${theme.textColor}40`,
-                    backgroundColor: isSelected ? theme.primaryColor : 'transparent',
-                  }}
-                >
-                  {isSelected ? (
-                    <Check className="w-4 h-4" style={{ color: theme.backgroundColor }} />
-                  ) : (
-                    <span className="text-sm font-medium" style={{ color: theme.textColor }}>
-                      {shortcutKey}
-                    </span>
-                  )}
-                </div>
-                <span className="text-lg flex-1">{option}</span>
-                {/* B15: Atalho de teclado */}
-                <kbd
-                  className="hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold opacity-40"
-                  style={{ backgroundColor: `${theme.textColor}10`, color: theme.textColor }}
-                >
-                  {shortcutKey}
-                </kbd>
-              </motion.button>
-            )
-          })}
-        </div>
+        <DropdownQuestion
+          question={question}
+          value={value}
+          onChange={onChange}
+          theme={theme}
+          error={error}
+          onSubmit={onSubmit}
+          onClearError={onClearError}
+        />
       )
 
-    case 'checkboxes': {
-      const selectedValues = Array.isArray(value) ? value : []
+    case 'checkboxes':
       return (
-        <div className="space-y-3">
-          {(question.options || []).map((option, index) => {
-            const isSelected = selectedValues.includes(option)
-            const shortcutKey = String.fromCharCode(65 + index)
-            return (
-              <motion.button
-                key={index}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                onClick={() => {
-                  const newValues = isSelected
-                    ? selectedValues.filter(v => v !== option)
-                    : [...selectedValues, option]
-                  onChange(newValues)
-                }}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
-                style={{
-                  borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
-                  backgroundColor: isSelected ? `${theme.primaryColor}10` : 'transparent',
-                  color: theme.textColor,
-                }}
-              >
-                <div 
-                  className="w-8 h-8 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors"
-                  style={{ 
-                    borderColor: isSelected ? theme.primaryColor : `${theme.textColor}40`,
-                    backgroundColor: isSelected ? theme.primaryColor : 'transparent',
-                  }}
-                >
-                  {isSelected ? (
-                    <Check className="w-4 h-4" style={{ color: theme.backgroundColor }} />
-                  ) : (
-                    <span className="text-sm font-medium" style={{ color: theme.textColor }}>
-                      {shortcutKey}
-                    </span>
-                  )}
-                </div>
-                <span className="text-lg flex-1">{option}</span>
-                {/* B15: Atalho de teclado */}
-                <kbd
-                  className="hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold opacity-40"
-                  style={{ backgroundColor: `${theme.textColor}10`, color: theme.textColor }}
-                >
-                  {shortcutKey}
-                </kbd>
-              </motion.button>
-            )
-          })}
-          <p className="text-sm opacity-50 mt-2" style={{ color: theme.textColor }}>
-            Selecione todas que se aplicam
-          </p>
-          {/* Inline error for checkboxes */}
-          {error && (
-            <p className="text-sm font-medium mt-1" style={{ color: '#EF4444' }}>
-              {error}
-            </p>
-          )}
-        </div>
+        <CheckboxesQuestion
+          question={question}
+          value={value}
+          onChange={onChange}
+          theme={theme}
+          error={error}
+          onSubmit={onSubmit}
+          onClearError={onClearError}
+        />
       )
-    }
 
     case 'yes_no':
       return (

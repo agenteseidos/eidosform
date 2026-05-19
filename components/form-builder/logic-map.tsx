@@ -27,7 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AlertTriangle, Flag, Play, Eye, Target, Plus, LayoutGrid, GitFork } from 'lucide-react'
+import { AlertTriangle, Flag, Play, Eye, Target, Plus, GitFork } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface LogicMapProps {
@@ -35,6 +35,7 @@ interface LogicMapProps {
   selectedQuestionId: string | null
   onSelectQuestion: (id: string) => void
   onUpdateQuestion: (id: string, updates: Partial<QuestionConfig>) => void
+  onReorderQuestions: (questions: QuestionConfig[]) => void
   onAddQuestion: () => void
   formPixelEvents: { onStart: string | null; onComplete: string | null }
   onUpdateFormPixel: (updates: { pixel_event_on_start?: string | null; pixel_event_on_complete?: string | null }) => void
@@ -164,7 +165,7 @@ function estimateHeight(d: LogicNodeData): number {
 
 export function LogicMap({
   questions, selectedQuestionId, onSelectQuestion, onUpdateQuestion,
-  onAddQuestion, formPixelEvents, onUpdateFormPixel, hasPixelPlan,
+  onReorderQuestions, onAddQuestion, formPixelEvents, onUpdateFormPixel, hasPixelPlan,
 }: LogicMapProps) {
   const nodeTypes = useMemo(() => ({ question: QuestionNode, terminal: TerminalNode }), [])
   const direction: LogicDirection = 'LR' // visualização horizontal (padrão fixo)
@@ -184,16 +185,11 @@ export function LogicMap({
     [questions, direction, formPixelEvents],
   )
 
-  // Chave estrutural: muda só quando a topologia muda (não em arrasto).
+  // Chave estrutural: muda quando a topologia OU a ordem das perguntas muda.
   const structureKey = useMemo(
     () => direction + '|' + graph.nodes.map(n => n.id).join(',') + '|'
       + graph.edges.map(e => `${e.source}>${e.target}#${e.sourceHandle}`).join(','),
     [graph, direction],
-  )
-  // Chave de posições manuais (mapX/mapY) salvas nas perguntas.
-  const posKey = useMemo(
-    () => questions.map(q => `${q.id}:${q.mapX ?? ''},${q.mapY ?? ''}`).join('|'),
-    [questions],
   )
 
   // ── Layout automático com ELK (assíncrono) ───────────────────────────────
@@ -207,31 +203,24 @@ export function LogicMap({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey])
 
-  // ── Sincroniza nós: posição manual (mapX/mapY) tem prioridade sobre o ELK ─
+  // ── Sincroniza nós com o layout do ELK (a ordem das perguntas manda) ─────
   useEffect(() => {
-    const qById = new Map(questions.map(q => [q.id, q]))
-    const next: FlowNode[] = graph.nodes.map(n => {
-      const q = n.data.questionId ? qById.get(n.data.questionId) : undefined
-      const manual = q && q.mapX != null && q.mapY != null
-      const elk = elkPos.get(n.id)
-      const position = manual ? { x: q!.mapX!, y: q!.mapY! } : (elk ?? { x: 0, y: 0 })
-      return {
-        id: n.id,
-        type: n.data.kind === 'question' ? 'question' : 'terminal',
-        position,
-        data: n.data,
-        draggable: n.data.kind === 'question',
-      }
-    })
+    const next: FlowNode[] = graph.nodes.map(n => ({
+      id: n.id,
+      type: n.data.kind === 'question' ? 'question' : 'terminal',
+      position: elkPos.get(n.id) ?? { x: 0, y: 0 },
+      data: n.data,
+      draggable: n.data.kind === 'question',
+    }))
     setRfNodes(next)
-    // Só enquadra uma vez (carga inicial ou após "Reorganizar"). Em edições
-    // normais a viewport do usuário é preservada.
+    // Só enquadra uma vez (carga inicial). Em edições normais — inclusive
+    // reordenar — a viewport do usuário é preservada.
     if (elkPos.size > 0 && !hasFittedRef.current) {
       hasFittedRef.current = true
       setTimeout(() => instRef.current?.fitView({ padding: 0.15, duration: 300 }), 60)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structureKey, posKey, elkPos])
+  }, [structureKey, elkPos])
 
   const edges: Edge[] = useMemo(
     () => graph.edges
@@ -261,26 +250,26 @@ export function LogicMap({
     if (data.kind === 'question' && data.questionId) onSelectQuestion(data.questionId)
   }, [onSelectQuestion])
 
-  // Arrasto: salva a posição final na pergunta (mapX/mapY).
+  // Arrasto de um bloco = REORDENAR a sequência do fluxo. A posição X onde o
+  // bloco foi solto define o novo índice na ordem das perguntas — isso reflete
+  // direto na aba de edição normal (mesma lista de perguntas).
   const onNodeDragStop = useCallback((_: unknown, node: Node) => {
     const data = node.data as LogicNodeData
-    if (data.kind === 'question' && data.questionId) {
-      onUpdateQuestion(data.questionId, { mapX: Math.round(node.position.x), mapY: Math.round(node.position.y) })
+    if (data.kind !== 'question' || !data.questionId) return
+    const draggedId = data.questionId
+    // Quantos outros blocos de pergunta ficaram à esquerda do ponto de soltura
+    const others = rfNodes.filter(n => (n.data as LogicNodeData).kind === 'question' && n.id !== draggedId)
+    const newIndex = others.filter(n => n.position.x < node.position.x).length
+    const without = questions.filter(q => q.id !== draggedId)
+    const dragged = questions.find(q => q.id === draggedId)
+    if (!dragged) return
+    const reordered = [...without.slice(0, newIndex), dragged, ...without.slice(newIndex)]
+    // Só aplica se a ordem realmente mudou
+    if (reordered.some((q, i) => q.id !== questions[i].id)) {
+      onReorderQuestions(reordered)
+      toast.success('Sequência do fluxo atualizada.')
     }
-  }, [onUpdateQuestion])
-
-  // Reorganizar: limpa as posições manuais → volta ao layout automático.
-  const reorganize = useCallback(() => {
-    let cleared = 0
-    for (const q of questions) {
-      if (q.mapX != null || q.mapY != null) {
-        onUpdateQuestion(q.id, { mapX: undefined, mapY: undefined })
-        cleared++
-      }
-    }
-    hasFittedRef.current = false // re-enquadra após reorganizar
-    toast.success(cleared > 0 ? 'Mapa reorganizado automaticamente.' : 'O mapa já está no layout automático.')
-  }, [questions, onUpdateQuestion])
+  }, [rfNodes, questions, onReorderQuestions])
 
   // Etapa 2: conectar dois blocos cria uma regra de salto.
   const onConnect = useCallback((conn: Connection) => {
@@ -331,9 +320,6 @@ export function LogicMap({
         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={onAddQuestion}>
           <Plus className="w-3.5 h-3.5 mr-1" /> Pergunta
         </Button>
-        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={reorganize}>
-          <LayoutGrid className="w-3.5 h-3.5 mr-1" /> Reorganizar
-        </Button>
         <Button
           size="sm" variant={showDefaultEdges ? 'outline' : 'secondary'} className="h-8 text-xs"
           onClick={() => setShowDefaultEdges(v => !v)}
@@ -342,7 +328,7 @@ export function LogicMap({
           {showDefaultEdges ? 'Ocultar caminho padrão' : 'Mostrar caminho padrão'}
         </Button>
         <span className="text-[11px] text-slate-400 ml-1 hidden lg:inline">
-          Arraste de um ponto de saída a outro bloco para criar um salto · arraste os blocos para organizar
+          Arraste um bloco para mudar a ordem do fluxo · arraste uma seta de saída para criar um salto condicional
         </span>
       </div>
 

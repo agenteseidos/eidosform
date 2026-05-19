@@ -115,9 +115,6 @@ const QuestionBaseShape = {
   jumpRules: z.array(JumpRuleSchema).max(40).optional(),
   imageUrl: optionalSafeUrl.optional(),
   videoUrl: optionalSafeUrl.optional(),
-  // Posição manual do bloco no Mapa da Lógica (quando o usuário arrasta).
-  mapX: z.number().optional(),
-  mapY: z.number().optional(),
 }
 
 const stringOptionList = z

@@ -738,6 +738,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               selectedQuestionId={selectedQuestionId}
               onSelectQuestion={(id) => { setSelectedQuestionId(id); setSidebarSection(null); setMobilePanel('editor') }}
               onUpdateQuestion={updateQuestion}
+              onReorderQuestions={(qs) => { setQuestions(qs); setHasUnsavedChanges(true) }}
               onAddQuestion={() => setShowAddQuestion(true)}
               formPixelEvents={{ onStart: form.pixel_event_on_start || null, onComplete: form.pixel_event_on_complete || null }}
               onUpdateFormPixel={(updates) => { setForm(prev => ({ ...prev, ...updates })); setHasUnsavedChanges(true) }}

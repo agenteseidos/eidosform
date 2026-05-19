@@ -243,7 +243,11 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
             return
           }
           if (jumpAction.type === 'jump' && jumpAction.targetQuestionId) {
-            const targetIdx = visibleQuestions.findIndex(q => q.id === jumpAction.targetQuestionId)
+            // Recalcular visibilidade com a resposta recém-dada: a pergunta-alvo
+            // do salto pode ter ficado visível por causa dessa resposta, e
+            // `visibleQuestions` ainda reflete o estado `answers` anterior.
+            const visibleAfterAnswer = getVisibleQuestions(questions, updatedAnswers)
+            const targetIdx = visibleAfterAnswer.findIndex(q => q.id === jumpAction.targetQuestionId)
             if (targetIdx !== -1) {
               setNavigationHistory(prev => [...prev, currentIndex])
               setDirection(1)

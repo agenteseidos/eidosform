@@ -32,11 +32,14 @@ export function JumpRulesEditor({ rules, questionId, allQuestions, onChange }: J
   const otherQuestions = allQuestions.filter(q => q.id !== questionId)
 
   const addRule = () => {
+    // Em checkboxes a resposta é a junção das opções ("a, b, c"); "igual a"
+    // quase nunca casa — o padrão sensato é "contém".
+    const baseType = allQuestions.find(q => q.id === questionId)?.type
     const newRule: JumpRule = {
       id: crypto.randomUUID(),
       condition: {
         questionId: questionId,
-        operator: 'equals',
+        operator: baseType === 'checkboxes' ? 'contains' : 'equals',
         value: '',
       },
       action: {

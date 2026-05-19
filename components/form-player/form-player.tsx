@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Image from 'next/image'
 import { Form, QuestionConfig, Json } from '@/lib/database.types'
 import { PixelEventRule } from '@/types/pixel-events'
@@ -34,11 +34,14 @@ function ensureHttps(url: string): string {
 }
 
 export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'free', allowEmbed = false }: FormPlayerProps) {
-  const questions = (form.questions as QuestionConfig[]) || []
+  const questions = useMemo<QuestionConfig[]>(() => (form.questions as QuestionConfig[]) || [], [form.questions])
   const theme = getTheme(form.theme)
   const themeStyles = getThemeCSSVariables(theme)
 
-  const [currentIndex, setCurrentIndex] = useState(form.welcome_enabled ? -1 : 0)
+  // Posição rastreada por ID da pergunta (null = tela de boas-vindas).
+  const [currentQuestionId, setCurrentQuestionId] = useState<string | null>(
+    () => (form.welcome_enabled ? null : (getVisibleQuestions(questions, {})[0]?.id ?? null)),
+  )
   const [answers, setAnswers] = useState<Record<string, Json>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
@@ -46,7 +49,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const [direction, setDirection] = useState(0)
   const [progressAnim, setProgressAnim] = useState(0)
   const [responseId, setResponseId] = useState<string | null>(null)
-  const [navigationHistory, setNavigationHistory] = useState<number[]>([])
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([])
   const metaEvents = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
   const partialResponsesEnabled = (ownerPlan === 'plus' || ownerPlan === 'professional')
   const [isEmbedded, setIsEmbedded] = useState<boolean | null>(null)
@@ -115,38 +118,47 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const skipNextValidationRef = useRef(false)
   const partialSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSubmittedRef = useRef(false)
+  const isSubmittingRef = useRef(false)
+  const lastIndexRef = useRef(0)
   const isAuthenticatedRef = useRef(false)
   const errorRef = useRef<HTMLParagraphElement>(null)
 
   // Lista de perguntas visíveis com base nas respostas atuais
-  const visibleQuestions = getVisibleQuestions(questions, answers) as QuestionConfig[]
+  const visibleQuestions = useMemo(
+    () => getVisibleQuestions(questions, answers) as QuestionConfig[],
+    [questions, answers],
+  )
 
-  // P0-5: Restore saved position after visibleQuestions is computed
+  // Índice derivado do ID. A lista de visíveis muda conforme a lógica
+  // condicional, então um índice numérico em estado ficaria obsoleto.
+  let currentIndex = currentQuestionId
+    ? visibleQuestions.findIndex(q => q.id === currentQuestionId)
+    : -1
+  // Pergunta atual foi ocultada por lógica condicional → cai na vizinha.
+  if (currentQuestionId !== null && currentIndex === -1 && visibleQuestions.length > 0) {
+    currentIndex = Math.min(lastIndexRef.current, visibleQuestions.length - 1)
+  }
+  if (currentIndex >= 0) lastIndexRef.current = currentIndex
+  const currentQuestion: QuestionConfig | undefined =
+    currentIndex >= 0 ? visibleQuestions[currentIndex] : undefined
+
+  // Restaura posição salva (resposta parcial) assim que as visíveis existem.
   useEffect(() => {
     if (pendingPositionRef.current && visibleQuestions.length > 0) {
-      const idx = visibleQuestions.findIndex(q => q.id === pendingPositionRef.current)
-      if (idx !== -1) setCurrentIndex(idx)
+      const exists = visibleQuestions.some(q => q.id === pendingPositionRef.current)
+      if (exists) setCurrentQuestionId(pendingPositionRef.current)
       pendingPositionRef.current = null
     }
   }, [visibleQuestions])
 
-  // P1-B5: Clamp currentIndex when visibleQuestions changes (conditional logic may hide/show questions)
+  // Reconcilia o estado quando a pergunta atual foi ocultada: o id em estado
+  // passa a apontar para a pergunta de fato exibida (o fallback acima).
   useEffect(() => {
-    if (pendingPositionRef.current) return // position restore handles this
-    if (visibleQuestions.length === 0) return
-    if (currentIndex >= 0 && currentIndex >= visibleQuestions.length) {
-      setCurrentIndex(visibleQuestions.length - 1)
+    if (currentQuestion && currentQuestion.id !== currentQuestionId) {
+      setCurrentQuestionId(currentQuestion.id)
     }
-    // If current question was hidden by conditional logic, find nearest visible question
-    const currentQ = visibleQuestions[currentIndex]
-    if (!currentQ && currentIndex >= 0) {
-      // Try to find a question that was previously visible at or near this index
-      const newIndex = Math.min(currentIndex, visibleQuestions.length - 1)
-      setCurrentIndex(newIndex)
-    }
-  }, [visibleQuestions, currentIndex])
+  }, [currentQuestion, currentQuestionId])
 
-  const currentQuestion = visibleQuestions[currentIndex]
   const isContentStep = currentQuestion?.type === 'content_block'
 
   useEffect(() => {
@@ -155,8 +167,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [errors, currentQuestion?.id])
-  const isLastQuestion = currentIndex === visibleQuestions.length - 1
-  const isFirstQuestion = form.welcome_enabled ? currentIndex === -1 : currentIndex === 0
+  const isLastQuestion = currentIndex >= 0 && currentIndex === visibleQuestions.length - 1
+  const isFirstQuestion = navigationHistory.length === 0 && !form.welcome_enabled
   // Progresso baseado em total original de perguntas (não visíveis) para evitar saltos com conditional logic
   const answeredCount = questions.filter(q => q.type !== 'content_block' && answers[q.id] !== undefined && answers[q.id] !== '' && !(Array.isArray(answers[q.id]) && (answers[q.id] as unknown[]).length === 0)).length
   const questionCount = questions.filter(q => q.type !== 'content_block').length
@@ -219,6 +231,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const goToNext = useCallback((skipValidation?: boolean, pendingAnswer?: PendingAnswerOverride) => {
     const shouldSkip = skipValidation || skipNextValidationRef.current
     skipNextValidationRef.current = false
+    if (!currentQuestion) return
 
     const updatedAnswers = pendingAnswer
       ? { ...answers, [pendingAnswer.questionId]: pendingAnswer.value }
@@ -226,60 +239,60 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
     if (!shouldSkip && !validateCurrentQuestion(updatedAnswers)) return
 
-    // Salvar progresso parcial antes de avançar
-    if (currentQuestion) {
-      savePartialResponseDebounced(updatedAnswers, currentQuestion.id)
-      // Avaliar pixel events condicionais da pergunta atual com a resposta recém-selecionada
-      if (currentQuestion.pixelEvents) {
-        evaluatePixelEvents(currentQuestion.pixelEvents as PixelEventRule[], updatedAnswers[currentQuestion.id])
-      }
+    // Salvar progresso parcial + pixel events da pergunta atual
+    savePartialResponseDebounced(updatedAnswers, currentQuestion.id)
+    if (currentQuestion.pixelEvents) {
+      evaluatePixelEvents(currentQuestion.pixelEvents as PixelEventRule[], updatedAnswers[currentQuestion.id])
+    }
 
-      // Avaliar jump rules com answers atualizadas
-      if (currentQuestion.jumpRules && currentQuestion.jumpRules.length > 0) {
-        const jumpAction = evaluateJumpRules(currentQuestion.jumpRules, updatedAnswers)
-        if (jumpAction) {
-          if (jumpAction.type === 'submit') {
-            handleSubmit(updatedAnswers)
+    // Visibilidade recalculada COM a resposta recém-dada: alvos de salto e a
+    // próxima pergunta sequencial precisam refletir o que a resposta revelou.
+    const visibleAfterAnswer = getVisibleQuestions(questions, updatedAnswers)
+
+    // Regras de salto
+    if (currentQuestion.jumpRules && currentQuestion.jumpRules.length > 0) {
+      const jumpAction = evaluateJumpRules(currentQuestion.jumpRules, updatedAnswers)
+      if (jumpAction) {
+        if (jumpAction.type === 'submit') {
+          handleSubmit(updatedAnswers)
+          return
+        }
+        if (jumpAction.type === 'jump' && jumpAction.targetQuestionId) {
+          const target = visibleAfterAnswer.find(q => q.id === jumpAction.targetQuestionId)
+          if (target) {
+            setNavigationHistory(prev => [...prev, currentQuestion.id])
+            setDirection(1)
+            setCurrentQuestionId(target.id)
             return
           }
-          if (jumpAction.type === 'jump' && jumpAction.targetQuestionId) {
-            // Recalcular visibilidade com a resposta recém-dada: a pergunta-alvo
-            // do salto pode ter ficado visível por causa dessa resposta, e
-            // `visibleQuestions` ainda reflete o estado `answers` anterior.
-            const visibleAfterAnswer = getVisibleQuestions(questions, updatedAnswers)
-            const targetIdx = visibleAfterAnswer.findIndex(q => q.id === jumpAction.targetQuestionId)
-            if (targetIdx !== -1) {
-              setNavigationHistory(prev => [...prev, currentIndex])
-              setDirection(1)
-              setCurrentIndex(targetIdx)
-              return
-            }
-          }
+          console.warn('[EidosForm] Salto ignorado: pergunta-destino oculta por lógica condicional.')
         }
       }
     }
 
-    if (isLastQuestion) {
-      handleSubmit(updatedAnswers)
-    } else {
-      setNavigationHistory(prev => [...prev, currentIndex])
+    // Sequencial — próxima pergunta visível depois da atual
+    const idxAfter = visibleAfterAnswer.findIndex(q => q.id === currentQuestion.id)
+    const next = idxAfter >= 0 ? visibleAfterAnswer[idxAfter + 1] : undefined
+    if (next) {
+      setNavigationHistory(prev => [...prev, currentQuestion.id])
       setDirection(1)
-      setCurrentIndex(prev => Math.min(prev + 1, visibleQuestions.length - 1))
+      setCurrentQuestionId(next.id)
+    } else {
+      handleSubmit(updatedAnswers)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLastQuestion, visibleQuestions, validateCurrentQuestion, answers, currentQuestion, currentIndex])
+  }, [questions, validateCurrentQuestion, answers, currentQuestion])
 
   const goToPrevious = useCallback(() => {
     setDirection(-1)
     if (navigationHistory.length > 0) {
-      const prevIndex = navigationHistory[navigationHistory.length - 1]
+      const prevId = navigationHistory[navigationHistory.length - 1]
       setNavigationHistory(prev => prev.slice(0, -1))
-      setCurrentIndex(prevIndex)
-    } else {
-      const minIndex = form.welcome_enabled ? -1 : 0
-      setCurrentIndex(prev => Math.max(prev - 1, minIndex))
+      setCurrentQuestionId(prevId)
+    } else if (form.welcome_enabled) {
+      setCurrentQuestionId(null)
     }
-  }, [form, navigationHistory])
+  }, [form.welcome_enabled, navigationHistory])
 
   // Salva resposta parcial com debounce (2s) — só se autenticado e plano permitir
   function savePartialResponseDebounced(currentAnswers: Record<string, Json>, lastQuestionId: string) {
@@ -353,38 +366,44 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
-      // Navigate to first question with error
+      // Navega para a primeira pergunta com erro
       const firstErrorId = Object.keys(newErrors)[0]
-      const errorIdx = visibleQuestions.findIndex(q => q.id === firstErrorId)
-      if (errorIdx !== -1 && errorIdx !== currentIndex) {
-        setNavigationHistory(prev => [...prev, currentIndex])
+      if (firstErrorId !== currentQuestionId && visibleQuestions.some(q => q.id === firstErrorId)) {
+        if (currentQuestionId) setNavigationHistory(prev => [...prev, currentQuestionId])
         setDirection(1)
-        setCurrentIndex(errorIdx)
+        setCurrentQuestionId(firstErrorId)
       }
     }
     return allValid
-  }, [visibleQuestions, questions, answers, currentIndex])
+  }, [visibleQuestions, questions, answers, currentQuestionId])
 
   const handleSubmit = async (submissionAnswers?: Record<string, Json>) => {
+    // Trava síncrona contra envio duplo (Enter + clique no botão, cliques
+    // rápidos, jump 'submit' + clique) — evitava gerar respostas duplicadas.
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
+
     // Limpar timer de partial save para evitar race condition
     if (partialSaveTimerRef.current) {
       clearTimeout(partialSaveTimerRef.current)
       partialSaveTimerRef.current = null
     }
-    isSubmittedRef.current = true
 
       // Honeypot check
       const honeypot = (document.querySelector('input[name="_hp_"]') as HTMLInputElement)?.value
       if (honeypot) {
         setIsSubmitting(false)
+        isSubmittingRef.current = false
         return
       }
 
       const finalAnswers = submissionAnswers ?? answers
 
-    if (!validateCurrentQuestion(finalAnswers)) return
-    if (!validateAllVisibleQuestions(finalAnswers)) { setIsSubmitting(false); return }
+    if (!validateCurrentQuestion(finalAnswers)) { isSubmittingRef.current = false; return }
+    if (!validateAllVisibleQuestions(finalAnswers)) { setIsSubmitting(false); isSubmittingRef.current = false; return }
     setIsSubmitting(true)
+    // Só agora o envio está confirmado: interrompe o auto-save de progresso.
+    isSubmittedRef.current = true
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -436,6 +455,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         console.error('[EidosForm] Submit failed:', res.status, errorMsg)
         toast.error(errorMsg)
         setIsSubmitting(false)
+        isSubmittedRef.current = false
+        isSubmittingRef.current = false
         return
       }
 
@@ -452,6 +473,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       console.error('[EidosForm] Submit error:', e)
       toast.error('Falha ao enviar resposta. Tente novamente.')
       setIsSubmitting(false)
+      isSubmittedRef.current = false
+      isSubmittingRef.current = false
     }
   }
 
@@ -476,9 +499,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
   const handleWelcomeStart = useCallback(() => {
     setDirection(1)
-    setCurrentIndex(0)
+    setCurrentQuestionId(visibleQuestions[0]?.id ?? null)
     if (form.pixel_event_on_start) fireNamedPixelEvent(form.pixel_event_on_start)
-  }, [form.pixel_event_on_start])
+  }, [form.pixel_event_on_start, visibleQuestions])
 
   // Keyboard navigation
   useEffect(() => {
@@ -740,7 +763,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   }
 
   // ─── Welcome screen ──────────────────────────────────────────────────────────
-  if (currentIndex === -1 && form.welcome_enabled) {
+  if (currentQuestionId === null && form.welcome_enabled) {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-6"
@@ -823,6 +846,16 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         style={{ backgroundColor: theme.backgroundColor, fontFamily: theme.fontFamily }}
       >
         <p style={{ color: theme.textColor }} className="opacity-50">Este formulário ainda não tem perguntas.</p>
+      </div>
+    )
+  }
+
+  // Guarda defensiva: nunca renderizar a tela de pergunta sem uma pergunta
+  // resolvida (o efeito de reconciliação corrige o estado no próximo tick).
+  if (!currentQuestion) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: theme.backgroundColor }}>
+        <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: `${theme.primaryColor}40`, borderTopColor: theme.primaryColor }} />
       </div>
     )
   }

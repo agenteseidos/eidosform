@@ -57,7 +57,12 @@ export function evaluateLogicRule(rule: EvaluatableRule, answers: LogicAnswersMa
 }
 
 export function isQuestionVisible(question: QuestionConfig, answers: LogicAnswersMap): boolean {
-  return question.conditionalLogic ? evaluateLogicRule(question.conditionalLogic, answers) : true
+  const rule = question.conditionalLogic
+  // Condição incompleta (pergunta-base não escolhida no editor) → ignora a
+  // condição e mantém a pergunta visível, em vez de fazê-la sumir/aparecer
+  // por uma comparação contra um id vazio.
+  if (!rule || !rule.questionId) return true
+  return evaluateLogicRule(rule, answers)
 }
 
 export function getVisibleQuestions(questions: QuestionConfig[], answers: LogicAnswersMap): QuestionConfig[] {
@@ -66,6 +71,10 @@ export function getVisibleQuestions(questions: QuestionConfig[], answers: LogicA
 
 export function evaluateJumpRules(rules: JumpRule[], answers: LogicAnswersMap): JumpRule['action'] | null {
   for (const rule of rules) {
+    // Ignora regras incompletas: sem pergunta-base na condição, ou salto sem
+    // destino escolhido. Avaliá-las consumiria o fluxo de forma imprevisível.
+    if (!rule.condition?.questionId) continue
+    if (rule.action?.type === 'jump' && !rule.action.targetQuestionId) continue
     if (evaluateLogicRule(rule.condition, answers)) {
       return rule.action
     }

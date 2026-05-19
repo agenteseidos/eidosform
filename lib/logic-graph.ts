@@ -4,10 +4,12 @@
 import dagre from '@dagrejs/dagre'
 import { QuestionConfig } from '@/lib/database.types'
 import { JUMP_OPERATORS } from '@/lib/jump-logic'
+import type { PixelEventRule } from '@/types/pixel-events'
 
 export type LogicNodeKind = 'start' | 'end' | 'question'
 export type LogicEdgeKind = 'sequential' | 'jump' | 'submit'
 export type WarningSeverity = 'error' | 'warning'
+export type LogicDirection = 'TB' | 'LR'
 
 // `type` (não `interface`): React Flow exige que o data do nó seja
 // atribuível a `Record<string, unknown>`, o que interfaces não satisfazem.
@@ -18,6 +20,11 @@ export type LogicNodeData = {
   typeLabel: string
   /** Texto da condição de exibição, se houver. */
   conditionLabel?: string
+  /** Rótulos dos eventos de pixel (conversões) disparados por esta pergunta. */
+  pixelEvents: string[]
+  /** Para nós terminais: nome do evento de início/conclusão do formulário. */
+  formEvent?: string
+  direction: LogicDirection
   warnings: { severity: WarningSeverity; message: string }[]
 }
 
@@ -33,6 +40,9 @@ export interface LogicEdge {
   target: string
   label?: string
   kind: LogicEdgeKind
+  /** Para arestas de salto: id da pergunta de origem e índice da regra. */
+  questionId?: string
+  ruleId?: string
 }
 
 export interface GraphWarning {
@@ -47,10 +57,15 @@ export interface LogicGraph {
   warnings: GraphWarning[]
 }
 
+export interface BuildLogicGraphOptions {
+  formPixel?: { onStart: string | null; onComplete: string | null }
+  direction?: LogicDirection
+}
+
 const START = '__start__'
 const END = '__end__'
 const NODE_W = 280
-const NODE_H = 104
+const NODE_H = 116
 
 const TYPE_LABELS: Record<string, string> = {
   short_text: 'Texto curto', long_text: 'Texto longo', email: 'E-mail',
@@ -59,6 +74,11 @@ const TYPE_LABELS: Record<string, string> = {
   rating: 'Avaliação', opinion_scale: 'Escala', nps: 'NPS', cpf: 'CPF',
   address: 'Endereço', file_upload: 'Arquivo', calendly: 'Calendly',
   content_block: 'Bloco de conteúdo', html_block: 'Bloco (embed)',
+}
+
+const PIXEL_OP: Record<string, string> = {
+  equals: '=', not_equals: '≠', contains: 'contém', not_contains: 'não contém',
+  greater_than: '>', less_than: '<', is_empty: 'vazio', is_not_empty: 'preenchido',
 }
 
 function opLabel(op: string): string {
@@ -80,10 +100,22 @@ function conditionText(
   return `${qName} ${base}`
 }
 
+/** Rótulo curto de uma regra de evento de pixel (conversão). */
+function pixelEventLabel(rule: PixelEventRule): string {
+  const c = rule.condition
+  const noVal = c.operator === 'is_empty' || c.operator === 'is_not_empty'
+  const cond = noVal ? PIXEL_OP[c.operator] : `${PIXEL_OP[c.operator] ?? c.operator} "${c.value ?? ''}"`
+  return `${rule.event?.name || 'evento'} — se ${cond}`
+}
+
 /**
  * Monta o grafo da lógica. Sem React/DOM — testável isoladamente.
  */
-export function buildLogicGraph(questions: QuestionConfig[]): LogicGraph {
+export function buildLogicGraph(
+  questions: QuestionConfig[],
+  options: BuildLogicGraphOptions = {},
+): LogicGraph {
+  const direction: LogicDirection = options.direction ?? 'TB'
   const byId = new Map(questions.map(q => [q.id, q]))
   const warnings: GraphWarning[] = []
   const addWarn = (nodeId: string, severity: WarningSeverity, message: string) => {
@@ -92,7 +124,11 @@ export function buildLogicGraph(questions: QuestionConfig[]): LogicGraph {
 
   // ── Nós ────────────────────────────────────────────────────────────────
   const nodes: LogicNode[] = []
-  nodes.push({ id: START, position: { x: 0, y: 0 }, data: { kind: 'start', title: 'Início', typeLabel: '', warnings: [] } })
+  nodes.push({
+    id: START, position: { x: 0, y: 0 },
+    data: { kind: 'start', title: 'Início', typeLabel: '', pixelEvents: [], direction,
+            formEvent: options.formPixel?.onStart ?? undefined, warnings: [] },
+  })
 
   questions.forEach((q) => {
     const nodeWarnings: { severity: WarningSeverity; message: string }[] = []
@@ -125,12 +161,18 @@ export function buildLogicGraph(questions: QuestionConfig[]): LogicGraph {
         title: q.title?.trim() || (q.type === 'content_block' ? 'Bloco de conteúdo' : 'Pergunta sem título'),
         typeLabel: TYPE_LABELS[q.type] ?? q.type,
         conditionLabel,
+        pixelEvents: (q.pixelEvents ?? []).map(pixelEventLabel),
+        direction,
         warnings: nodeWarnings,
       },
     })
   })
 
-  nodes.push({ id: END, position: { x: 0, y: 0 }, data: { kind: 'end', title: 'Página de obrigado', typeLabel: '', warnings: [] } })
+  nodes.push({
+    id: END, position: { x: 0, y: 0 },
+    data: { kind: 'end', title: 'Página de obrigado', typeLabel: '', pixelEvents: [], direction,
+            formEvent: options.formPixel?.onComplete ?? undefined, warnings: [] },
+  })
 
   // ── Arestas ────────────────────────────────────────────────────────────
   const edges: LogicEdge[] = []
@@ -146,10 +188,10 @@ export function buildLogicGraph(questions: QuestionConfig[]): LogicGraph {
     edges.push({ id: `seq-${q.id}`, source: q.id, target: seqTarget, kind: 'sequential', label: 'padrão' })
 
     // Arestas de salto
-    ;(q.jumpRules ?? []).forEach((rule, ri) => {
+    ;(q.jumpRules ?? []).forEach((rule) => {
       const condLabel = `Se ${conditionText(rule.condition, questions, false)}`
       if (rule.action?.type === 'submit') {
-        edges.push({ id: `jmp-${q.id}-${ri}`, source: q.id, target: END, kind: 'submit', label: condLabel })
+        edges.push({ id: `jmp-${rule.id}`, source: q.id, target: END, kind: 'submit', label: condLabel, questionId: q.id, ruleId: rule.id })
         return
       }
       const targetId = rule.action?.targetQuestionId
@@ -161,7 +203,7 @@ export function buildLogicGraph(questions: QuestionConfig[]): LogicGraph {
         addWarn(q.id, 'error', `Regra de salto (${condLabel}) aponta para uma pergunta que não existe mais.`)
         return
       }
-      edges.push({ id: `jmp-${q.id}-${ri}`, source: q.id, target: targetId, kind: 'jump', label: condLabel })
+      edges.push({ id: `jmp-${rule.id}`, source: q.id, target: targetId, kind: 'jump', label: condLabel, questionId: q.id, ruleId: rule.id })
     })
   })
 
@@ -192,10 +234,10 @@ export function buildLogicGraph(questions: QuestionConfig[]): LogicGraph {
     }
   }
 
-  // ── Layout automático (dagre, vertical) ─────────────────────────────────
+  // ── Layout automático (dagre) ───────────────────────────────────────────
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'TB', nodesep: 56, ranksep: 88, marginx: 24, marginy: 24 })
+  g.setGraph({ rankdir: direction, nodesep: direction === 'LR' ? 40 : 56, ranksep: direction === 'LR' ? 120 : 92, marginx: 24, marginy: 24 })
   for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: NODE_H })
   for (const e of edges) g.setEdge(e.source, e.target)
   dagre.layout(g)
@@ -204,7 +246,7 @@ export function buildLogicGraph(questions: QuestionConfig[]): LogicGraph {
     if (p) n.position = { x: p.x - NODE_W / 2, y: p.y - NODE_H / 2 }
   }
 
-  // Anexa warnings finais aos nós (becos/inalcançáveis vieram depois)
+  // Anexa warnings finais aos nós
   for (const n of nodes) {
     n.data.warnings = warnings
       .filter(w => w.nodeId === n.id)

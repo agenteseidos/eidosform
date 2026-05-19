@@ -75,6 +75,7 @@ import {
   Lock,
   TextCursorInput,
   Workflow,
+  Split,
 } from 'lucide-react'
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
@@ -179,6 +180,15 @@ function QuestionReorderItem({
               </span>
               {question.required && (
                 <span className="text-xs text-red-500">*</span>
+              )}
+              {(question.jumpRules?.length ?? 0) > 0 && (
+                <span
+                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5"
+                  title={`${question.jumpRules!.length} regra(s) de ramificação`}
+                >
+                  <Split className="w-2.5 h-2.5" />
+                  {question.jumpRules!.length} {question.jumpRules!.length === 1 ? 'caminho' : 'caminhos'}
+                </span>
               )}
             </div>
             <p className="text-sm font-medium text-slate-900 line-clamp-2">

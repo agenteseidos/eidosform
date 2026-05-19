@@ -21,7 +21,7 @@ import { QuestionConfig } from '@/lib/database.types'
 import { buildLogicGraph, type LogicNodeData, type LogicDirection } from '@/lib/logic-graph'
 import { elkLayout } from '@/lib/elk-layout'
 import { JumpRule } from '@/lib/jump-logic'
-import { JumpRulesEditor } from './jump-rules-editor'
+import { BranchingEditor } from './branching-editor'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -397,9 +397,8 @@ export function LogicMap({
             <DialogDescription>Defina para onde o formulário vai conforme a resposta.</DialogDescription>
           </DialogHeader>
           {jumpQuestion && (
-            <JumpRulesEditor
-              rules={jumpQuestion.jumpRules || []}
-              questionId={jumpQuestion.id}
+            <BranchingEditor
+              question={jumpQuestion}
               allQuestions={questions}
               onChange={(rules) => onUpdateQuestion(jumpQuestion.id, {
                 jumpRules: rules,

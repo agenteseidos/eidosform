@@ -11,7 +11,7 @@ import { X, GitBranch, CalendarClock, Code, Plus } from 'lucide-react'
 import { countries } from '@/lib/countries'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
 import { TiptapEditor } from '@/components/ui/tiptap/TiptapEditor'
-import { JumpRulesEditor } from './jump-rules-editor'
+import { BranchingEditor } from './branching-editor'
 
 interface QuestionEditorProps {
   question: QuestionConfig
@@ -37,9 +37,8 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
       <div className="space-y-6">
         {/* Jump Rules — prioritário: "se responder X → ir para Y / encerrar" */}
         <div>
-          <JumpRulesEditor
-            rules={question.jumpRules || []}
-            questionId={question.id}
+          <BranchingEditor
+            question={question}
             allQuestions={allQuestions}
             onChange={(jumpRules) => onUpdate({
               jumpRules,
@@ -59,7 +58,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <GitBranch className="w-4 h-4 text-slate-500" />
-              <Label className="text-sm font-medium text-slate-700">Exibição Condicional</Label>
+              <Label className="text-sm font-medium text-slate-700">Quando esta pergunta aparece</Label>
             </div>
           </div>
           {question.conditionalLogic ? (
@@ -396,11 +395,15 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
       <>
       {/* Navegação / Pular para — prioritário */}
       <div>
-        <JumpRulesEditor
-          rules={question.jumpRules || []}
-          questionId={question.id}
+        <BranchingEditor
+          question={question}
           allQuestions={allQuestions}
-          onChange={(jumpRules) => onUpdate({ jumpRules })}
+          onChange={(jumpRules) => onUpdate({
+            jumpRules,
+            ...(jumpRules.length > 0 && question.type !== 'content_block' && question.type !== 'html_block'
+              ? { required: true }
+              : {}),
+          })}
         />
       </div>
 

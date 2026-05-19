@@ -481,15 +481,20 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       if (isSubmitted || isSubmitting) return
 
       if (e.key === 'Enter' && !e.shiftKey) {
+        // stopPropagation na captura impede o Enter de descer até os botões
+        // de opção — senão o framer-motion marca/desmarca a opção em foco.
         if (currentQuestion?.type === 'content_block') {
           e.preventDefault()
+          e.stopPropagation()
           return
         }
         if (currentQuestion?.type === 'long_text') {
-          if (e.metaKey || e.ctrlKey) { e.preventDefault(); goToNext() }
+          // sem ctrl/cmd o Enter precisa chegar à textarea (quebra de linha)
+          if (e.metaKey || e.ctrlKey) { e.preventDefault(); e.stopPropagation(); goToNext() }
           return
         }
         e.preventDefault()
+        e.stopPropagation()
         goToNext()
       }
 

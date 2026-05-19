@@ -74,9 +74,11 @@ import {
   Unlink,
   Lock,
   TextCursorInput,
+  Workflow,
 } from 'lucide-react'
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
+import { LogicMap } from './logic-map'
 import { RightPanel } from './right-panel'
 import { WhatsAppPanel } from './whatsapp-panel'
 import { getContentBlockPreview } from '@/lib/content-block'
@@ -256,7 +258,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
-  const isMobileUtilityTab = activeTab === 'integrations' || activeTab === 'share'
+  const isMobileUtilityTab = activeTab === 'integrations' || activeTab === 'share' || activeTab === 'logic'
   const shouldShowMobileSidebar = mobilePanel === 'questions' || isMobileUtilityTab
   const shouldShowMobilePreview = !isMobileUtilityTab && (mobilePanel === 'preview' || mobilePanel === 'editor')
   const shouldShowMobileRightPanel = !isMobileUtilityTab && mobilePanel === 'editor'
@@ -288,7 +290,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   }, [previewMode, questions, stepPreviewIndex, selectedQuestionId])
 
   useEffect(() => {
-    if (activeTab === 'integrations' || activeTab === 'share') {
+    if (activeTab === 'integrations' || activeTab === 'share' || activeTab === 'logic') {
       setMobilePanel('questions')
     }
   }, [activeTab])
@@ -601,6 +603,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           <nav className="hidden md:flex items-center bg-slate-100 rounded-lg p-1 gap-0.5">
             {[
               { id: 'edit', label: 'Editar', icon: Pencil, activeTabs: ['questions', 'design', 'config'], defaultTab: 'questions' },
+              { id: 'logic', label: 'Lógica', icon: Workflow, activeTabs: ['logic'], defaultTab: 'logic' },
               { id: 'integrations', label: 'Integrações', icon: Zap, activeTabs: ['integrations'], defaultTab: 'integrations' },
               { id: 'share', label: 'Compartilhar', icon: Share2, activeTabs: ['share'], defaultTab: 'share' },
               { id: 'results', label: 'Resultados', icon: BarChart3, activeTabs: [] as string[], defaultTab: null as string | null },
@@ -727,6 +730,17 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden pb-14 md:pb-0">
+        {/* Mapa da Lógica — ocupa o lugar do editor + preview, mantém o painel de propriedades */}
+        {activeTab === 'logic' ? (
+          <div className="flex flex-1 min-w-0 bg-white overflow-hidden">
+            <LogicMap
+              questions={questions}
+              selectedQuestionId={selectedQuestionId}
+              onSelectQuestion={(id) => { setSelectedQuestionId(id); setSidebarSection(null); setMobilePanel('editor') }}
+            />
+          </div>
+        ) : (
+        <>
         {/* Sidebar */}
         <aside className={`${shouldShowMobileSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:min-w-[280px] bg-white border-r border-slate-200 flex-col shrink-0 overflow-hidden`}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
@@ -1696,6 +1710,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
             </div>
           </div>
         </div>
+        </>
+        )}
 
         {/* Right Panel - Fixed property editor */}
         <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} md:flex fixed md:relative inset-0 md:inset-auto z-40 md:z-auto w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col md:shrink-0 overflow-y-auto overflow-x-hidden pb-16 md:pb-0`}>

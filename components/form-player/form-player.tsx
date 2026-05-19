@@ -518,8 +518,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    // Fase de captura: o handler precisa ver o Enter antes de qualquer
+    // elemento da pergunta (ex.: gesto de tap do framer-motion nos botões
+    // de opção) interromper a propagação. Sem isso, o Enter não chegava
+    // ao handler global em telas de checkboxes e o formulário não avançava.
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [currentQuestion, goToNext, goToPrevious, isSubmitted, isSubmitting])
 
   // Wheel navigation removido — navegação apenas via botões ou resposta

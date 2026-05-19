@@ -65,7 +65,7 @@ function DestinationSelect({
 }
 
 // ── Selo da resposta (bolinha colorida) ─────────────────────────────────────
-function AnswerChip({ type, index, label }: { type: string; index: number; label: string }) {
+export function AnswerChip({ type, index, label }: { type: string; index: number; label: string }) {
   let bg = '#64748b', text = String.fromCharCode(65 + index)
   if (type === 'yes_no') {
     if (label === 'Sim') { bg = '#16a34a'; text = 'S' }

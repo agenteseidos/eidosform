@@ -1,15 +1,16 @@
 'use client'
 
-import { QuestionConfig, ConditionalOperator } from '@/lib/database.types'
+import { QuestionConfig } from '@/lib/database.types'
 import { getQuestionTypeInfo } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { X, GitBranch, CalendarClock, Code, Plus } from 'lucide-react'
+import { X, CalendarClock, Code, Plus } from 'lucide-react'
 import { countries } from '@/lib/countries'
-import { PixelEventRulesEditor } from './pixel-event-rules-editor'
+import { PixelBranchingEditor } from './pixel-branching-editor'
+import { ConditionalVisibilityEditor } from './conditional-visibility-editor'
 import { TiptapEditor } from '@/components/ui/tiptap/TiptapEditor'
 import { BranchingEditor } from './branching-editor'
 
@@ -53,77 +54,18 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
 
         <Separator />
 
-        {/* Conditional Logic */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <GitBranch className="w-4 h-4 text-slate-500" />
-              <Label className="text-sm font-medium text-slate-700">Quando esta pergunta aparece</Label>
-            </div>
-          </div>
-          {question.conditionalLogic ? (
-            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
-              <p className="text-xs text-slate-500 font-medium">Mostrar esta pergunta se:</p>
-              <select
-                aria-label="Pergunta da condição"
-                value={question.conditionalLogic.questionId || ''}
-                onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
-                className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
-              >
-                <option value="">Selecione uma pergunta</option>
-                {allQuestions.filter(q => q.id !== question.id).map(q => (
-                  <option key={q.id} value={q.id}>{q.title || 'Pergunta sem título'}</option>
-                ))}
-              </select>
-              <select
-                aria-label="Operador da condição"
-                value={question.conditionalLogic.operator || 'equals'}
-                onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
-                className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
-              >
-                <option value="equals">é igual a</option>
-                <option value="not_equals">é diferente de</option>
-                <option value="contains">contém</option>
-                <option value="not_empty">não está vazio</option>
-                <option value="is_empty">está vazio</option>
-              </select>
-              {!['not_empty', 'is_empty'].includes(question.conditionalLogic.operator) && (
-                <Input
-                  aria-label="Valor da condição"
-                  value={question.conditionalLogic.value || ''}
-                  onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, value: e.target.value } })}
-                  placeholder="Valor esperado"
-                  className="w-full max-w-full text-sm"
-                />
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onUpdate({ conditionalLogic: undefined })}
-                className="text-red-500 hover:text-red-600 text-xs w-full"
-              >
-                <X className="w-3 h-3 mr-1" />
-                Remover condição
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onUpdate({ conditionalLogic: { questionId: '', operator: 'equals', value: '' } })}
-              className="w-full text-xs text-slate-700"
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              Adicionar condição
-            </Button>
-          )}
-        </div>
+        {/* Exibição condicional */}
+        <ConditionalVisibilityEditor
+          question={question}
+          allQuestions={allQuestions}
+          onChange={(conditionalLogic) => onUpdate({ conditionalLogic })}
+        />
 
         <Separator />
 
-        {/* Pixel Events */}
-        <PixelEventRulesEditor
-          rules={question.pixelEvents || []}
+        {/* Conversões (Pixel) */}
+        <PixelBranchingEditor
+          question={question}
           onChange={(pixelEvents) => onUpdate({ pixelEvents })}
           hasPixelPlan={ownerPlan === 'plus' || ownerPlan === 'professional'}
         />
@@ -409,77 +351,18 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
 
       <Separator />
 
-      {/* Exibição Condicional */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-slate-500" />
-            <Label className="text-sm font-medium text-slate-700">Exibição Condicional</Label>
-          </div>
-        </div>
-        {question.conditionalLogic ? (
-          <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-3">
-            <p className="text-xs text-slate-500 font-medium">Mostrar esta pergunta se:</p>
-            <select
-              aria-label="Pergunta da condição"
-              value={question.conditionalLogic.questionId || ''}
-              onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, questionId: e.target.value } })}
-              className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
-            >
-              <option value="">Selecione uma pergunta</option>
-              {allQuestions.filter(q => q.id !== question.id).map(q => (
-                <option key={q.id} value={q.id}>{q.title || 'Pergunta sem título'}</option>
-              ))}
-            </select>
-            <select
-              aria-label="Operador da condição"
-              value={question.conditionalLogic.operator || 'equals'}
-              onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, operator: e.target.value as ConditionalOperator } })}
-              className="w-full max-w-full text-sm text-slate-900 border rounded-md px-2 py-1.5 bg-white"
-            >
-              <option value="equals">é igual a</option>
-              <option value="not_equals">é diferente de</option>
-              <option value="contains">contém</option>
-              <option value="not_empty">não está vazio</option>
-              <option value="is_empty">está vazio</option>
-            </select>
-            {!['not_empty', 'is_empty'].includes(question.conditionalLogic.operator) && (
-              <Input
-                aria-label="Valor da condição"
-                value={question.conditionalLogic.value || ''}
-                onChange={(e) => onUpdate({ conditionalLogic: { ...question.conditionalLogic!, value: e.target.value } })}
-                placeholder="Valor esperado"
-                className="text-sm"
-              />
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onUpdate({ conditionalLogic: undefined })}
-              className="text-red-500 hover:text-red-600 text-xs w-full"
-            >
-              <X className="w-3 h-3 mr-1" />
-              Remover condição
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onUpdate({ conditionalLogic: { questionId: '', operator: 'equals', value: '' } })}
-            className="w-full text-xs text-slate-700"
-          >
-            <Plus className="w-3 h-3 mr-1" />
-            Adicionar condição
-          </Button>
-        )}
-      </div>
+      {/* Exibição condicional */}
+      <ConditionalVisibilityEditor
+        question={question}
+        allQuestions={allQuestions}
+        onChange={(conditionalLogic) => onUpdate({ conditionalLogic })}
+      />
 
       <Separator />
 
-      {/* Pixel Events Condicionais */}
-      <PixelEventRulesEditor
-        rules={question.pixelEvents || []}
+      {/* Conversões (Pixel) */}
+      <PixelBranchingEditor
+        question={question}
         onChange={(pixelEvents) => onUpdate({ pixelEvents })}
         hasPixelPlan={ownerPlan === 'plus' || ownerPlan === 'professional'}
       />

@@ -22,7 +22,7 @@ import { buildLogicGraph, type LogicNodeData, type LogicDirection } from '@/lib/
 import { elkLayout } from '@/lib/elk-layout'
 import { JumpRule } from '@/lib/jump-logic'
 import { BranchingEditor } from './branching-editor'
-import { PixelEventRulesEditor } from './pixel-event-rules-editor'
+import { PixelBranchingEditor } from './pixel-branching-editor'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -418,8 +418,8 @@ export function LogicMap({
             <DialogDescription>Dispare um evento de pixel conforme a resposta desta pergunta.</DialogDescription>
           </DialogHeader>
           {pixelQuestion && (
-            <PixelEventRulesEditor
-              rules={pixelQuestion.pixelEvents || []}
+            <PixelBranchingEditor
+              question={pixelQuestion}
               onChange={(rules) => onUpdateQuestion(pixelQuestion.id, { pixelEvents: rules })}
               hasPixelPlan={hasPixelPlan}
             />

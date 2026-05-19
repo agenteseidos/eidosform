@@ -11,7 +11,7 @@ import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'l
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
 import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
-import { evaluateJumpRules, getVisibleQuestions } from '@/lib/form-logic-engine'
+import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
 import { createClient } from '@/lib/supabase/client'
@@ -321,8 +321,13 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     const answerSource = candidateAnswers ?? answers
     const newErrors: Record<string, string> = {}
     let allValid = true
+    // Validar apenas as perguntas no caminho efetivamente percorrido: as
+    // regras de salto podem ter pulado perguntas obrigatórias que o
+    // respondente nunca viu — exigi-las travaria o envio injustamente.
+    const pathIds = new Set(buildQuestionPath(questions, answerSource))
     for (const q of visibleQuestions) {
       if (q.type === 'content_block') continue
+      if (!pathIds.has(q.id)) continue
       if (q.required) {
         const val = answerSource[q.id]
         if (val === undefined || val === null || val === '') {
@@ -358,7 +363,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       }
     }
     return allValid
-  }, [visibleQuestions, answers, currentIndex])
+  }, [visibleQuestions, questions, answers, currentIndex])
 
   const handleSubmit = async (submissionAnswers?: Record<string, Json>) => {
     // Limpar timer de partial save para evitar race condition

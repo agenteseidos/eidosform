@@ -101,6 +101,9 @@ export interface QuestionConfig {
   contentBody?: string
   contentButtonText?: string
   contentButtonUrl?: string
+  // Posição manual no Mapa da Lógica (definida ao arrastar o bloco)
+  mapX?: number
+  mapY?: number
 }
 
 // Pixel tracking configuration

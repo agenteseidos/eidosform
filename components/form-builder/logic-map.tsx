@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useCallback, useState, createContext, useContext } from 'react'
+import { useMemo, useCallback, useState, useEffect, useRef, createContext, useContext } from 'react'
 import {
   ReactFlow,
   Background,
@@ -9,14 +9,17 @@ import {
   Handle,
   Position,
   MarkerType,
+  useNodesState,
   type Node,
   type Edge,
   type NodeProps,
   type Connection,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { QuestionConfig } from '@/lib/database.types'
 import { buildLogicGraph, type LogicNodeData, type LogicDirection } from '@/lib/logic-graph'
+import { elkLayout } from '@/lib/elk-layout'
 import { JumpRule } from '@/lib/jump-logic'
 import { JumpRulesEditor } from './jump-rules-editor'
 import { PixelEventRulesEditor } from './pixel-event-rules-editor'
@@ -24,7 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AlertTriangle, Flag, Play, Eye, Target, Plus, MoveHorizontal, MoveVertical } from 'lucide-react'
+import { AlertTriangle, Flag, Play, Eye, Target, Plus, MoveHorizontal, MoveVertical, LayoutGrid, GitFork } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface LogicMapProps {
@@ -38,19 +41,23 @@ interface LogicMapProps {
   hasPixelPlan: boolean
 }
 
-type FlowNode = Node<LogicNodeData & { selected?: boolean }>
+type FlowNode = Node<LogicNodeData>
 
-// Contexto para os nós customizados acessarem callbacks e estado do mapa.
 interface MapCtx {
   selectedQuestionId: string | null
   onEditPixel: (questionId: string) => void
   onEditTerminalPixel: (which: 'start' | 'complete') => void
 }
 const LogicMapContext = createContext<MapCtx>({
-  selectedQuestionId: null,
-  onEditPixel: () => {},
-  onEditTerminalPixel: () => {},
+  selectedQuestionId: null, onEditPixel: () => {}, onEditTerminalPixel: () => {},
 })
+
+const HANDLE_COLOR = { sequential: '#cbd5e1', jump: '#7c3aed', submit: '#16a34a' } as const
+
+/** Distribui os pontos de saída ao longo da borda do bloco. */
+function handleOffset(index: number, total: number): string {
+  return `${((index + 1) / (total + 1)) * 100}%`
+}
 
 // ── Nó de pergunta ──────────────────────────────────────────────────────────
 function QuestionNode({ data }: NodeProps<FlowNode>) {
@@ -60,17 +67,16 @@ function QuestionNode({ data }: NodeProps<FlowNode>) {
   const hasWarn = data.warnings.length > 0
   const borderColor = selected ? '#7c3aed' : hasError ? '#dc2626' : hasWarn ? '#d97706' : '#e2e8f0'
   const isLR = data.direction === 'LR'
+  const handles = data.outHandles
   return (
     <div
       className="rounded-xl border-2 bg-white shadow-sm px-3.5 py-3 transition-colors"
       style={{ width: 280, borderColor, boxShadow: selected ? '0 0 0 3px #7c3aed22' : undefined }}
     >
-      <Handle type="target" position={isLR ? Position.Left : Position.Top} style={{ background: '#94a3b8', width: 9, height: 9 }} />
+      <Handle type="target" id="in" position={isLR ? Position.Left : Position.Top} style={{ background: '#94a3b8', width: 9, height: 9 }} />
       <div className="flex items-center justify-between gap-2 mb-1">
         <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{data.typeLabel}</span>
-        {hasWarn && (
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: hasError ? '#dc2626' : '#d97706' }} />
-        )}
+        {hasWarn && <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: hasError ? '#dc2626' : '#d97706' }} />}
       </div>
       <p className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2">{data.title}</p>
       {data.conditionLabel && (
@@ -79,17 +85,12 @@ function QuestionNode({ data }: NodeProps<FlowNode>) {
           <span className="line-clamp-2">aparece se: {data.conditionLabel}</span>
         </div>
       )}
-      {data.pixelEvents.length > 0 && (
-        <div className="mt-1.5 flex flex-col gap-0.5">
-          {data.pixelEvents.map((p, i) => (
-            <div key={i} className="flex items-start gap-1 text-[10px] text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5 leading-snug">
-              <Target className="w-3 h-3 mt-px shrink-0" />
-              <span className="line-clamp-1">{p}</span>
-            </div>
-          ))}
+      {data.pixelEvents.map((p, i) => (
+        <div key={i} className="mt-1.5 flex items-start gap-1 text-[10px] text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5 leading-snug">
+          <Target className="w-3 h-3 mt-px shrink-0" />
+          <span className="line-clamp-1">{p}</span>
         </div>
-      )}
-      {/* Ação: editar conversões de pixel */}
+      ))}
       <button
         className="nodrag nopan mt-2 w-full text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 rounded py-1 border border-dashed border-emerald-200 flex items-center justify-center gap-1 transition-colors"
         onClick={(e) => { e.stopPropagation(); if (data.questionId) ctx.onEditPixel(data.questionId) }}
@@ -97,7 +98,20 @@ function QuestionNode({ data }: NodeProps<FlowNode>) {
         <Target className="w-3 h-3" />
         {data.pixelEvents.length > 0 ? 'Editar conversões' : '+ Conversão (pixel)'}
       </button>
-      <Handle type="source" position={isLR ? Position.Right : Position.Bottom} style={{ background: '#7c3aed', width: 11, height: 11 }} />
+      {/* Pontos de saída — um por aresta, espaçados para a bifurcação ficar clara */}
+      {handles.map((h, i) => (
+        <Handle
+          key={h.id}
+          type="source"
+          id={h.id}
+          position={isLR ? Position.Right : Position.Bottom}
+          style={{
+            background: HANDLE_COLOR[h.kind],
+            width: 11, height: 11,
+            ...(isLR ? { top: handleOffset(i, handles.length) } : { left: handleOffset(i, handles.length) }),
+          }}
+        />
+      ))}
     </div>
   )
 }
@@ -113,10 +127,10 @@ function TerminalNode({ data }: NodeProps<FlowNode>) {
         className="rounded-full px-5 py-2.5 flex items-center justify-center gap-2 text-sm font-semibold shadow-sm w-full"
         style={{ background: isStart ? '#16a34a' : '#475569', color: '#fff' }}
       >
-        {!isStart && <Handle type="target" position={isLR ? Position.Left : Position.Top} style={{ background: '#94a3b8', width: 9, height: 9 }} />}
+        {!isStart && <Handle type="target" id="in" position={isLR ? Position.Left : Position.Top} style={{ background: '#94a3b8', width: 9, height: 9 }} />}
         {isStart ? <Play className="w-4 h-4" /> : <Flag className="w-4 h-4" />}
         {data.title}
-        {isStart && <Handle type="source" position={isLR ? Position.Right : Position.Bottom} style={{ background: '#7c3aed', width: 11, height: 11 }} />}
+        {isStart && <Handle type="source" id="h-seq" position={isLR ? Position.Right : Position.Bottom} style={{ background: '#cbd5e1', width: 11, height: 11 }} />}
       </div>
       <button
         className="nodrag nopan text-[10px] font-medium rounded px-2 py-0.5 flex items-center gap-1 transition-colors"
@@ -139,49 +153,101 @@ const EDGE_STYLE = {
 const newId = () =>
   (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`
 
+function estimateHeight(d: LogicNodeData): number {
+  if (d.kind !== 'question') return 64
+  let h = 96
+  if (d.conditionLabel) h += 30
+  h += d.pixelEvents.length * 22
+  h += 30
+  return h
+}
+
 export function LogicMap({
   questions, selectedQuestionId, onSelectQuestion, onUpdateQuestion,
   onAddQuestion, formPixelEvents, onUpdateFormPixel, hasPixelPlan,
 }: LogicMapProps) {
   const nodeTypes = useMemo(() => ({ question: QuestionNode, terminal: TerminalNode }), [])
   const [direction, setDirection] = useState<LogicDirection>('TB')
+  const [showDefaultEdges, setShowDefaultEdges] = useState(true)
   const [jumpEditorFor, setJumpEditorFor] = useState<string | null>(null)
   const [pixelEditorFor, setPixelEditorFor] = useState<string | null>(null)
   const [terminalPixelFor, setTerminalPixelFor] = useState<'start' | 'complete' | null>(null)
+  const [elkPos, setElkPos] = useState<Map<string, { x: number; y: number }>>(new Map())
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<FlowNode>([])
+  const instRef = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null)
 
   const graph = useMemo(
     () => buildLogicGraph(questions, { direction, formPixel: formPixelEvents }),
     [questions, direction, formPixelEvents],
   )
 
-  const nodes: FlowNode[] = useMemo(
-    () => graph.nodes.map(n => ({
-      id: n.id,
-      type: n.data.kind === 'question' ? 'question' : 'terminal',
-      position: n.position,
-      data: n.data,
-      draggable: true,
-    })),
-    [graph],
+  // Chave estrutural: muda só quando a topologia muda (não em arrasto).
+  const structureKey = useMemo(
+    () => direction + '|' + graph.nodes.map(n => n.id).join(',') + '|'
+      + graph.edges.map(e => `${e.source}>${e.target}#${e.sourceHandle}`).join(','),
+    [graph, direction],
+  )
+  // Chave de posições manuais (mapX/mapY) salvas nas perguntas.
+  const posKey = useMemo(
+    () => questions.map(q => `${q.id}:${q.mapX ?? ''},${q.mapY ?? ''}`).join('|'),
+    [questions],
   )
 
+  // ── Layout automático com ELK (assíncrono) ───────────────────────────────
+  useEffect(() => {
+    let cancelled = false
+    const sizes = graph.nodes.map(n => ({ id: n.id, width: 280, height: estimateHeight(n.data) }))
+    elkLayout(sizes, graph.edges, direction)
+      .then(pos => { if (!cancelled) setElkPos(pos) })
+      .catch(() => { /* layout falhou — mantém posições atuais */ })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureKey])
+
+  // ── Sincroniza nós: posição manual (mapX/mapY) tem prioridade sobre o ELK ─
+  useEffect(() => {
+    const qById = new Map(questions.map(q => [q.id, q]))
+    const next: FlowNode[] = graph.nodes.map(n => {
+      const q = n.data.questionId ? qById.get(n.data.questionId) : undefined
+      const manual = q && q.mapX != null && q.mapY != null
+      const elk = elkPos.get(n.id)
+      const position = manual ? { x: q!.mapX!, y: q!.mapY! } : (elk ?? { x: 0, y: 0 })
+      return {
+        id: n.id,
+        type: n.data.kind === 'question' ? 'question' : 'terminal',
+        position,
+        data: n.data,
+        draggable: n.data.kind === 'question',
+      }
+    })
+    setRfNodes(next)
+    if (elkPos.size > 0) {
+      setTimeout(() => instRef.current?.fitView({ padding: 0.15, duration: 300 }), 60)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureKey, posKey, elkPos])
+
   const edges: Edge[] = useMemo(
-    () => graph.edges.map(e => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      label: e.label,
-      type: 'smoothstep',
-      animated: e.kind === 'jump',
-      data: { kind: e.kind, questionId: e.questionId },
-      style: EDGE_STYLE[e.kind],
-      labelStyle: { fontSize: 10, fontWeight: 600, fill: e.kind === 'sequential' ? '#94a3b8' : '#475569' },
-      labelBgStyle: { fill: '#fff', fillOpacity: 0.92 },
-      labelBgPadding: [4, 2] as [number, number],
-      labelBgBorderRadius: 4,
-      markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_STYLE[e.kind].stroke },
-    })),
-    [graph],
+    () => graph.edges
+      .filter(e => showDefaultEdges || e.kind !== 'sequential')
+      .map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: 'in',
+        label: e.label,
+        type: 'smoothstep',
+        animated: e.kind === 'jump',
+        data: { kind: e.kind, questionId: e.questionId },
+        style: EDGE_STYLE[e.kind],
+        labelStyle: { fontSize: 10, fontWeight: 600, fill: e.kind === 'sequential' ? '#94a3b8' : '#475569' },
+        labelBgStyle: { fill: '#fff', fillOpacity: 0.92 },
+        labelBgPadding: [4, 2] as [number, number],
+        labelBgBorderRadius: 4,
+        markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_STYLE[e.kind].stroke },
+      })),
+    [graph, showDefaultEdges],
   )
 
   const onNodeClick = useCallback((_: unknown, node: Node) => {
@@ -189,7 +255,27 @@ export function LogicMap({
     if (data.kind === 'question' && data.questionId) onSelectQuestion(data.questionId)
   }, [onSelectQuestion])
 
-  // ── Etapa 2: conectar dois blocos cria uma regra de salto ────────────────
+  // Arrasto: salva a posição final na pergunta (mapX/mapY).
+  const onNodeDragStop = useCallback((_: unknown, node: Node) => {
+    const data = node.data as LogicNodeData
+    if (data.kind === 'question' && data.questionId) {
+      onUpdateQuestion(data.questionId, { mapX: Math.round(node.position.x), mapY: Math.round(node.position.y) })
+    }
+  }, [onUpdateQuestion])
+
+  // Reorganizar: limpa as posições manuais → volta ao layout automático.
+  const reorganize = useCallback(() => {
+    let cleared = 0
+    for (const q of questions) {
+      if (q.mapX != null || q.mapY != null) {
+        onUpdateQuestion(q.id, { mapX: undefined, mapY: undefined })
+        cleared++
+      }
+    }
+    toast.success(cleared > 0 ? 'Mapa reorganizado automaticamente.' : 'O mapa já está no layout automático.')
+  }, [questions, onUpdateQuestion])
+
+  // Etapa 2: conectar dois blocos cria uma regra de salto.
   const onConnect = useCallback((conn: Connection) => {
     const { source, target } = conn
     if (!source || !target || source === target) return
@@ -199,26 +285,22 @@ export function LogicMap({
     }
     const srcQ = questions.find(q => q.id === source)
     if (!srcQ) return
-    const isCheckboxes = srcQ.type === 'checkboxes'
     const newRule: JumpRule = {
       id: newId(),
-      condition: { questionId: source, operator: isCheckboxes ? 'contains' : 'equals', value: '' },
-      action: target === '__end__'
-        ? { type: 'submit' }
-        : { type: 'jump', targetQuestionId: target },
+      condition: { questionId: source, operator: srcQ.type === 'checkboxes' ? 'contains' : 'equals', value: '' },
+      action: target === '__end__' ? { type: 'submit' } : { type: 'jump', targetQuestionId: target },
     }
-    const nextRules = [...(srcQ.jumpRules ?? []), newRule]
     const needsRequired = srcQ.type !== 'content_block' && srcQ.type !== 'html_block'
-    onUpdateQuestion(source, { jumpRules: nextRules, ...(needsRequired ? { required: true } : {}) })
-    setJumpEditorFor(source) // abre o editor para o usuário definir a condição
+    onUpdateQuestion(source, { jumpRules: [...(srcQ.jumpRules ?? []), newRule], ...(needsRequired ? { required: true } : {}) })
+    setJumpEditorFor(source)
     toast.success('Salto criado — defina quando ele acontece.')
   }, [questions, onUpdateQuestion])
 
-  // ── Etapa 3: clicar numa aresta edita/remove o salto ─────────────────────
+  // Etapa 3: clicar numa aresta edita/remove o salto.
   const onEdgeClick = useCallback((_: unknown, edge: Edge) => {
     const d = edge.data as { kind?: string; questionId?: string } | undefined
     if (!d || d.kind === 'sequential') {
-      toast.info('Essa é a rota padrão ("senão") — ela não é uma regra editável.')
+      toast.info('Essa é a rota padrão ("senão") — não é uma regra editável.')
       return
     }
     if (d.questionId) setJumpEditorFor(d.questionId)
@@ -232,27 +314,33 @@ export function LogicMap({
 
   const errors = graph.warnings.filter(w => w.severity === 'error')
   const warns = graph.warnings.filter(w => w.severity === 'warning')
-
   const jumpQuestion = jumpEditorFor ? questions.find(q => q.id === jumpEditorFor) : null
   const pixelQuestion = pixelEditorFor ? questions.find(q => q.id === pixelEditorFor) : null
 
   return (
     <div className="flex-1 min-w-0 h-full flex flex-col">
       {/* Barra de ferramentas */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-3 py-2 flex items-center gap-2">
+      <div className="shrink-0 border-b border-slate-200 bg-white px-3 py-2 flex items-center gap-2 flex-wrap">
         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={onAddQuestion}>
           <Plus className="w-3.5 h-3.5 mr-1" /> Pergunta
         </Button>
-        <Button
-          size="sm" variant="outline" className="h-8 text-xs"
-          onClick={() => setDirection(d => (d === 'TB' ? 'LR' : 'TB'))}
-        >
+        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setDirection(d => (d === 'TB' ? 'LR' : 'TB'))}>
           {direction === 'TB'
             ? <><MoveHorizontal className="w-3.5 h-3.5 mr-1" /> Horizontal</>
             : <><MoveVertical className="w-3.5 h-3.5 mr-1" /> Vertical</>}
         </Button>
-        <span className="text-[11px] text-slate-400 ml-1 hidden sm:inline">
-          Arraste de um bloco a outro para criar um salto · clique numa seta roxa/verde para editar
+        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={reorganize}>
+          <LayoutGrid className="w-3.5 h-3.5 mr-1" /> Reorganizar
+        </Button>
+        <Button
+          size="sm" variant={showDefaultEdges ? 'outline' : 'secondary'} className="h-8 text-xs"
+          onClick={() => setShowDefaultEdges(v => !v)}
+        >
+          <GitFork className="w-3.5 h-3.5 mr-1" />
+          {showDefaultEdges ? 'Ocultar caminho padrão' : 'Mostrar caminho padrão'}
+        </Button>
+        <span className="text-[11px] text-slate-400 ml-1 hidden lg:inline">
+          Arraste de um ponto de saída a outro bloco para criar um salto · arraste os blocos para organizar
         </span>
       </div>
 
@@ -292,15 +380,18 @@ export function LogicMap({
         ) : (
           <LogicMapContext.Provider value={ctxValue}>
             <ReactFlow
-              nodes={nodes}
+              nodes={rfNodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              onNodesChange={onNodesChange}
               onNodeClick={onNodeClick}
+              onNodeDragStop={onNodeDragStop}
               onEdgeClick={onEdgeClick}
               onConnect={onConnect}
+              onInit={(inst) => { instRef.current = inst }}
               fitView
-              fitViewOptions={{ padding: 0.2 }}
-              minZoom={0.15}
+              fitViewOptions={{ padding: 0.15 }}
+              minZoom={0.1}
               maxZoom={1.6}
               proOptions={{ hideAttribution: true }}
             >
@@ -312,7 +403,7 @@ export function LogicMap({
         )}
       </div>
 
-      {/* Modal: editar regras de salto da pergunta */}
+      {/* Modal: regras de salto */}
       <Dialog open={!!jumpQuestion} onOpenChange={(o) => !o && setJumpEditorFor(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -334,7 +425,7 @@ export function LogicMap({
         </DialogContent>
       </Dialog>
 
-      {/* Modal: editar conversões de pixel da pergunta */}
+      {/* Modal: conversões de pixel da pergunta */}
       <Dialog open={!!pixelQuestion} onOpenChange={(o) => !o && setPixelEditorFor(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -370,8 +461,7 @@ export function LogicMap({
               onChange={(e) => {
                 const v = e.target.value || null
                 onUpdateFormPixel(terminalPixelFor === 'start'
-                  ? { pixel_event_on_start: v }
-                  : { pixel_event_on_complete: v })
+                  ? { pixel_event_on_start: v } : { pixel_event_on_complete: v })
               }}
             />
             <p className="text-[11px] text-slate-400">Deixe em branco para não disparar nenhum evento.</p>

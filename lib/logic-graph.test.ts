@@ -66,9 +66,22 @@ describe('buildLogicGraph', () => {
     expect(g.warnings).toBeDefined()
   })
 
-  it('posiciona os nós (layout aplicado)', () => {
-    const g = buildLogicGraph([q('a'), q('b')])
-    const positioned = g.nodes.every(n => Number.isFinite(n.position.x) && Number.isFinite(n.position.y))
-    expect(positioned).toBe(true)
+  it('cada aresta de saída tem um ponto de saída (handle) próprio', () => {
+    const g = buildLogicGraph([
+      q('a', { type: 'yes_no', jumpRules: [
+        { id: 'r1', condition: { questionId: 'a', operator: 'equals', value: 'Sim' }, action: { type: 'jump', targetQuestionId: 'b' } },
+      ] }),
+      q('b'),
+    ])
+    const aNode = g.nodes.find(n => n.id === 'a')!
+    // 'a' tem 2 saídas: o salto e o caminho padrão → 2 handles distintos
+    expect(aNode.data.outHandles.length).toBe(2)
+    const handleIds = new Set(aNode.data.outHandles.map(h => h.id))
+    expect(handleIds.size).toBe(2)
+    // toda aresta referencia um handle existente do seu nó de origem
+    for (const e of g.edges) {
+      const src = g.nodes.find(n => n.id === e.source)!
+      expect(src.data.outHandles.some(h => h.id === e.sourceHandle)).toBe(true)
+    }
   })
 })

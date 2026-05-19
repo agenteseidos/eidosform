@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EidosForm — Mockup: Editor de Condições</title>
+<style>
+  :root{
+    --bg:#f1f5f9; --panel:#ffffff; --line:#e2e8f0;
+    --ink:#1e293b; --ink2:#475569; --ink3:#94a3b8;
+    --violet:#7c3aed; --violet-bg:#f5f3ff;
+    --emerald:#16a34a; --emerald-bg:#ecfdf5;
+    --red:#dc2626; --red-bg:#fef2f2;
+    --amber:#b45309;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,sans-serif;
+       background:var(--bg);color:var(--ink);padding:32px 20px;line-height:1.5}
+  .head{max-width:1080px;margin:0 auto 28px}
+  .head h1{font-size:22px;font-weight:800}
+  .head p{color:var(--ink2);font-size:14px;margin-top:6px}
+  .cols{max-width:1080px;margin:0 auto;display:flex;gap:24px;flex-wrap:wrap}
+  .col{flex:1;min-width:380px}
+  .col > h2{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+            color:var(--ink3);margin-bottom:10px}
+  .col > .sub{font-size:12px;color:var(--ink2);margin:-6px 0 12px}
+
+  /* painel direito (como na tela real) */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+         padding:18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .qhead{padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .qhead .t{font-size:16px;font-weight:700}
+  .chips{margin-top:7px;display:flex;gap:6px}
+  .chip{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+        padding:3px 8px;border-radius:6px;background:#f1f5f9;color:var(--ink2)}
+  .chip.req{background:#fff7ed;color:#c2410c}
+
+  .sectitle{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800;
+            text-transform:uppercase;letter-spacing:.05em;color:var(--violet);margin-bottom:3px}
+  .sectitle.eye{color:var(--ink2)}
+  .secsub{font-size:12px;color:var(--ink3);margin-bottom:12px}
+  .ic{width:15px;height:15px;display:inline-flex}
+
+  /* select fake */
+  .sel{display:flex;align-items:center;justify-content:space-between;gap:8px;
+       border:1.5px solid var(--line);border-radius:9px;padding:8px 10px;background:#fff;
+       font-size:13px;color:var(--ink);cursor:pointer}
+  .sel .cv{width:14px;text-align:right;color:var(--ink3)}
+  .sel.dest-end{border-color:#fecaca;background:var(--red-bg)}
+  .sel.dest-end .lbl{color:var(--red)}
+
+  .ans-dot{width:18px;height:18px;border-radius:50%;flex:none;display:inline-flex;
+           align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff}
+  .dot-y{background:var(--emerald)} .dot-n{background:#64748b}
+
+  /* ---- versão A: linhas ---- */
+  .rowbox{border:1.5px solid var(--line);border-radius:11px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:10px;padding:10px 12px}
+  .row + .row{border-top:1px solid var(--line)}
+  .row .ans{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;min-width:74px}
+  .row .arrow{color:var(--ink3);font-size:14px}
+  .row .sel{flex:1}
+  .hint{font-size:11px;color:var(--ink3);margin-top:9px;padding-left:2px}
+
+  /* ---- versão B: cartões ---- */
+  .cintro{font-size:13px;color:var(--ink2);margin-bottom:9px}
+  .pathcard{border:1.5px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+  .pathcard .ph{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;margin-bottom:9px}
+  .pathcard .gostep{font-size:11px;color:var(--ink3);margin-bottom:5px;padding-left:2px}
+
+  .divider{height:1px;background:var(--line);margin:18px 0}
+
+  .note{max-width:1080px;margin:26px auto 0;background:#fff;border:1px solid var(--line);
+        border-radius:12px;padding:16px 18px}
+  .note h3{font-size:13px;font-weight:800;color:var(--ink);margin-bottom:8px}
+  .note p{font-size:13px;color:var(--ink2)}
+  .note .ruleline{margin-top:10px;font-size:13.5px;color:var(--ink);
+        background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+  .pill{display:inline-block;background:var(--violet-bg);color:var(--violet);font-weight:700;
+        border-radius:6px;padding:1px 7px;font-size:12.5px}
+  .legend{font-size:11px;color:var(--ink3);margin-top:14px;text-align:center}
+</style>
+</head>
+<body>
+
+  <div class="head">
+    <h1>Editor de Condições — 2 versões para validar</h1>
+    <p>É o painel da direita quando você seleciona a pergunta <b>“Você tem 18 anos ou mais?”</b>.
+       A ideia é a mesma nas duas: cada resposta mostra <b>para onde vai</b>, sem “Regra 1”, sem operador.
+       Muda só o tratamento visual.</p>
+  </div>
+
+  <div class="cols">
+
+    <!-- ============ VERSÃO A — LINHAS ============ -->
+    <div class="col">
+      <h2>Versão A — Linhas</h2>
+      <div class="sub">Compacto. Mostra tudo de relance. Bom quando a pergunta tem várias opções.</div>
+      <div class="panel">
+        <div class="qhead">
+          <div class="t">Você tem 18 anos ou mais?</div>
+          <div class="chips"><span class="chip">Sim / Não</span><span class="chip req">Obrigatória</span></div>
+        </div>
+
+        <div class="sectitle"><span class="ic">🔀</span> Ramificação</div>
+        <div class="secsub">Para onde vai cada resposta:</div>
+        <div class="rowbox">
+          <div class="row">
+            <span class="ans"><span class="ans-dot dot-y">S</span> Sim</span>
+            <span class="arrow">→</span>
+            <span class="sel"><span class="lbl">Próxima pergunta</span><span class="cv">▾</span></span>
+          </div>
+          <div class="row">
+            <span class="ans"><span class="ans-dot dot-n">N</span> Não</span>
+            <span class="arrow">→</span>
+            <span class="sel dest-end"><span class="lbl">🚫 Tela: não qualificado</span><span class="cv">▾</span></span>
+          </div>
+        </div>
+        <div class="hint">Cada destino pode ser: a próxima pergunta · outra pergunta · 🏁 encerrar o formulário.</div>
+
+        <div class="divider"></div>
+
+        <div class="sectitle eye"><span class="ic">👁</span> Exibição</div>
+        <div class="secsub">Quando esta pergunta aparece:</div>
+        <span class="sel"><span class="lbl">Sempre visível</span><span class="cv">▾</span></span>
+      </div>
+    </div>
+
+    <!-- ============ VERSÃO B — CARTÕES ============ -->
+    <div class="col">
+      <h2>Versão B — Cartões</h2>
+      <div class="sub">Mais respiro e linguagem de frase. Mais fácil de ler; ocupa mais altura.</div>
+      <div class="panel">
+        <div class="qhead">
+          <div class="t">Você tem 18 anos ou mais?</div>
+          <div class="chips"><span class="chip">Sim / Não</span><span class="chip req">Obrigatória</span></div>
+        </div>
+
+        <div class="sectitle"><span class="ic">🔀</span> Ramificação</div>
+        <div class="cintro">Se a pessoa responder…</div>
+
+        <div class="pathcard">
+          <div class="ph"><span class="ans-dot dot-y">S</span> Sim</div>
+          <div class="gostep">↳ ir para</div>
+          <span class="sel"><span class="lbl">Próxima pergunta</span><span class="cv">▾</span></span>
+        </div>
+        <div class="pathcard">
+          <div class="ph"><span class="ans-dot dot-n">N</span> Não</div>
+          <div class="gostep">↳ ir para</div>
+          <span class="sel dest-end"><span class="lbl">🚫 Tela: não qualificado</span><span class="cv">▾</span></span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="sectitle eye"><span class="ic">👁</span> Quando esta pergunta aparece</div>
+        <div style="height:8px"></div>
+        <span class="sel"><span class="lbl">Sempre visível</span><span class="cv">▾</span></span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- comum às duas: perguntas abertas -->
+  <div class="note">
+    <h3>E nas perguntas abertas (texto, número, data)?</h3>
+    <p>Aí não dá para listar respostas — então continua uma regra, mas escrita em linguagem natural,
+       sem “operador / SE / ENTÃO”:</p>
+    <div class="ruleline">
+      Quando a resposta for <span class="pill">maior que</span> <span class="pill">200</span>
+      &nbsp;→&nbsp; ir para <span class="pill">Agendar consulta</span>
+    </div>
+    <p style="margin-top:10px">Qualquer outra resposta segue para a próxima pergunta — automático,
+       você não precisa configurar nada.</p>
+  </div>
+
+  <div class="legend">Mockup estático (não funcional) · EidosForm — editor de condições</div>
+
+</body>
+</html>

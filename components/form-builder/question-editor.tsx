@@ -41,7 +41,14 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
             rules={question.jumpRules || []}
             questionId={question.id}
             allQuestions={allQuestions}
-            onChange={(jumpRules) => onUpdate({ jumpRules })}
+            onChange={(jumpRules) => onUpdate({
+              jumpRules,
+              // Pergunta com regra de salto precisa de resposta para a regra
+              // poder ser avaliada — senão o fluxo "fura" o roteamento.
+              ...(jumpRules.length > 0 && question.type !== 'content_block' && question.type !== 'html_block'
+                ? { required: true }
+                : {}),
+            })}
           />
         </div>
 

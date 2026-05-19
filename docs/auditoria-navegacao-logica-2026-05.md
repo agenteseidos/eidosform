@@ -82,8 +82,9 @@ Uma pergunta de roteamento (com regras de salto) que **não** é obrigatória
 pode ser avançada sem resposta — aí nenhuma regra de salto casa e o fluxo
 "fura" o roteamento, caindo na próxima pergunta sequencial. O construtor
 deveria **forçar `required` quando há regras de salto** (ou ao menos avisar).
-**Status:** não implementado no construtor (recomendação). Mitigado nos
-formulários afetados marcando as perguntas de salto como obrigatórias.
+**Correção:** o construtor passa a marcar a pergunta como obrigatória
+automaticamente sempre que ela recebe uma regra de salto (com aviso visível
+no editor de regras). Blocos de conteúdo são exceção (não têm resposta).
 
 ## Verificação
 
@@ -94,10 +95,23 @@ lógica condicional e 3 blocos de conteúdo):
 - Botão "voltar" percorre o histórico na ordem certa.
 - `npm run build`, `tsc` e 8 testes de `lib/form-logic-engine` passando.
 
-## Itens observados, não corrigidos (baixo impacto)
-- **B8** — `ArrowDown` dentro de `textarea` (texto longo) avança o formulário em
-  vez de mover o cursor.
-- **B9** — Barra de progresso e contador "Pergunta X de Y" não descontam
-  perguntas puladas por salto; formulários com muitos saltos não chegam a 100%.
-- **B10** — `getVisibleQuestions` devolve um array novo a cada render, fazendo
-  `useEffect`s de posição dispararem em todo render (custo, não erro).
+### B8 — [BAIXO] Setas de direção dentro de campos de texto avançavam o form
+`ArrowUp`/`ArrowDown` com o cursor dentro de um `input`/`textarea` navegavam o
+formulário em vez de mover o cursor (atrapalhava editar texto longo).
+**Correção:** setas dentro de `input`/`textarea` não disparam navegação.
+
+### B9 — [BAIXO] Progresso e contador não descontavam perguntas puladas
+A barra de progresso e o "Pergunta X de Y" se baseavam em *todas* as
+perguntas; um formulário com saltos nunca chegava a 100% e o contador podia
+pular números.
+**Correção:** progresso e contador passam a usar o caminho efetivamente
+percorrido (`buildQuestionPath`, que segue as regras de salto).
+
+### B10 — [BAIXO] `getVisibleQuestions` recalculava a cada render
+Devolvia um array novo a cada render, disparando `useEffect`s de posição sem
+necessidade.
+**Correção:** `visibleQuestions` e `questions` agora são memoizados
+(`useMemo`).
+
+## Itens observados, não corrigidos
+Nenhum — todos os itens da auditoria foram corrigidos.

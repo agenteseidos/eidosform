@@ -169,15 +169,24 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   }, [errors, currentQuestion?.id])
   const isLastQuestion = currentIndex >= 0 && currentIndex === visibleQuestions.length - 1
   const isFirstQuestion = navigationHistory.length === 0 && !form.welcome_enabled
-  // Progresso baseado em total original de perguntas (não visíveis) para evitar saltos com conditional logic
-  const answeredCount = questions.filter(q => q.type !== 'content_block' && answers[q.id] !== undefined && answers[q.id] !== '' && !(Array.isArray(answers[q.id]) && (answers[q.id] as unknown[]).length === 0)).length
-  const questionCount = questions.filter(q => q.type !== 'content_block').length
-  // Counter display: exclude content_blocks from both position and total
-  const visibleNonContentCount = visibleQuestions.filter(q => q.type !== 'content_block').length
-  const currentQuestionNumber = visibleQuestions.slice(0, currentIndex + 1).filter(q => q.type !== 'content_block').length
-  const positionProgress = questionCount > 0 ? ((answeredCount + 1) / questionCount) * 100 : 0
-  const answeredProgress = questionCount > 0 ? (answeredCount / questionCount) * 100 : 0
-  const progressFull = Math.max(positionProgress, answeredProgress)
+  // Progresso e contador baseados no CAMINHO efetivamente percorrido
+  // (seguindo as regras de salto), não em todas as perguntas — senão um
+  // formulário com saltos nunca chega a 100%. Blocos de conteúdo não contam.
+  const pathNonContent = useMemo(() => {
+    const ids = buildQuestionPath(questions, answers)
+    return ids.filter(id => {
+      const q = questions.find(x => x.id === id)
+      return q && q.type !== 'content_block'
+    })
+  }, [questions, answers])
+  const visibleNonContentCount = pathNonContent.length
+    || visibleQuestions.filter(q => q.type !== 'content_block').length
+  const currentQuestionNumber = currentQuestion && currentQuestion.type !== 'content_block'
+    ? Math.max(1, pathNonContent.indexOf(currentQuestion.id) + 1)
+    : pathNonContent.length
+  const progressFull = visibleNonContentCount > 0
+    ? Math.min(100, (currentQuestionNumber / visibleNonContentCount) * 100)
+    : 0
 
   // Animate progress on question change
   useEffect(() => {
@@ -524,6 +533,14 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         e.preventDefault()
         e.stopPropagation()
         goToNext()
+      }
+
+      // Setas dentro de um campo de texto movem o cursor — não navegam o
+      // formulário (antes, ArrowDown numa textarea de texto longo avançava).
+      const arrowTarget = e.target as HTMLElement
+      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown')
+        && (arrowTarget.tagName === 'TEXTAREA' || arrowTarget.tagName === 'INPUT')) {
+        return
       }
 
       if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {

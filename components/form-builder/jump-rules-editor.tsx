@@ -207,6 +207,14 @@ export function JumpRulesEditor({ rules, questionId, allQuestions, onChange }: J
           SENÃO: segue para a próxima pergunta (comportamento padrão)
         </p>
       )}
+
+      {rules.length > 0 && currentQuestion
+        && currentQuestion.type !== 'content_block' && currentQuestion.type !== 'html_block' && (
+        <p className="text-[10px] text-amber-600">
+          Esta pergunta é marcada como obrigatória automaticamente — a regra de
+          salto precisa de uma resposta para ser avaliada.
+        </p>
+      )}
     </div>
   )
 }

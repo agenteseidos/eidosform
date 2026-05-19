@@ -121,14 +121,14 @@ export function LogicMap({ questions, selectedQuestionId, onSelectQuestion }: Lo
 
   if (questions.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-slate-400">
+      <div className="flex-1 min-w-0 h-full flex items-center justify-center text-sm text-slate-400">
         Adicione perguntas para ver o mapa da lógica.
       </div>
     )
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex-1 min-w-0 h-full flex flex-col">
       {/* Painel de alertas */}
       {graph.warnings.length > 0 && (
         <div className="shrink-0 border-b border-slate-200 bg-amber-50/60 px-4 py-2.5 max-h-36 overflow-auto">

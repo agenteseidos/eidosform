@@ -50,8 +50,8 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'dropdown',
-    label: 'Lista Suspensa',
-    description: 'Selecione uma opção da lista',
+    label: 'Múltipla Escolha',
+    description: 'Escolha única entre várias opções',
     icon: List,
     defaultConfig: {
       options: ['Opção 1', 'Opção 2', 'Opção 3'],

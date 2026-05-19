@@ -27,7 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AlertTriangle, Flag, Play, Eye, Target, Plus, MoveHorizontal, MoveVertical, LayoutGrid, GitFork } from 'lucide-react'
+import { AlertTriangle, Flag, Play, Eye, Target, Plus, LayoutGrid, GitFork } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface LogicMapProps {
@@ -167,7 +167,7 @@ export function LogicMap({
   onAddQuestion, formPixelEvents, onUpdateFormPixel, hasPixelPlan,
 }: LogicMapProps) {
   const nodeTypes = useMemo(() => ({ question: QuestionNode, terminal: TerminalNode }), [])
-  const [direction, setDirection] = useState<LogicDirection>('TB')
+  const direction: LogicDirection = 'LR' // visualização horizontal (padrão fixo)
   const [showDefaultEdges, setShowDefaultEdges] = useState(true)
   const [jumpEditorFor, setJumpEditorFor] = useState<string | null>(null)
   const [pixelEditorFor, setPixelEditorFor] = useState<string | null>(null)
@@ -175,6 +175,9 @@ export function LogicMap({
   const [elkPos, setElkPos] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<FlowNode>([])
   const instRef = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null)
+  // Enquadra o mapa apenas na primeira carga (e ao "Reorganizar") — nunca a
+  // cada edição, senão o zoom do usuário se perde a todo ajuste.
+  const hasFittedRef = useRef(false)
 
   const graph = useMemo(
     () => buildLogicGraph(questions, { direction, formPixel: formPixelEvents }),
@@ -221,7 +224,10 @@ export function LogicMap({
       }
     })
     setRfNodes(next)
-    if (elkPos.size > 0) {
+    // Só enquadra uma vez (carga inicial ou após "Reorganizar"). Em edições
+    // normais a viewport do usuário é preservada.
+    if (elkPos.size > 0 && !hasFittedRef.current) {
+      hasFittedRef.current = true
       setTimeout(() => instRef.current?.fitView({ padding: 0.15, duration: 300 }), 60)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -272,6 +278,7 @@ export function LogicMap({
         cleared++
       }
     }
+    hasFittedRef.current = false // re-enquadra após reorganizar
     toast.success(cleared > 0 ? 'Mapa reorganizado automaticamente.' : 'O mapa já está no layout automático.')
   }, [questions, onUpdateQuestion])
 
@@ -323,11 +330,6 @@ export function LogicMap({
       <div className="shrink-0 border-b border-slate-200 bg-white px-3 py-2 flex items-center gap-2 flex-wrap">
         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={onAddQuestion}>
           <Plus className="w-3.5 h-3.5 mr-1" /> Pergunta
-        </Button>
-        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setDirection(d => (d === 'TB' ? 'LR' : 'TB'))}>
-          {direction === 'TB'
-            ? <><MoveHorizontal className="w-3.5 h-3.5 mr-1" /> Horizontal</>
-            : <><MoveVertical className="w-3.5 h-3.5 mr-1" /> Vertical</>}
         </Button>
         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={reorganize}>
           <LayoutGrid className="w-3.5 h-3.5 mr-1" /> Reorganizar
@@ -389,8 +391,6 @@ export function LogicMap({
               onEdgeClick={onEdgeClick}
               onConnect={onConnect}
               onInit={(inst) => { instRef.current = inst }}
-              fitView
-              fitViewOptions={{ padding: 0.15 }}
               minZoom={0.1}
               maxZoom={1.6}
               proOptions={{ hideAttribution: true }}

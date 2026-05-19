@@ -1158,7 +1158,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
                   backgroundColor: theme.primaryColor,
                   color: theme.backgroundColor,
                 }}
-                onClick={() => { onChange('viewed'); onSubmit(true, 'viewed') }}
+                onClick={() => { onChange(''); onSubmit(true, '') }}
               >
                 {question.contentButtonText}
                 <ExternalLink className="w-4 h-4" />
@@ -1166,7 +1166,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
             ) : (
               <button
                 type="button"
-                onClick={() => { onChange('viewed'); onSubmit(true, 'viewed') }}
+                onClick={() => { onChange(''); onSubmit(true, '') }}
                 className="inline-flex items-center justify-center px-6 py-3 rounded-xl text-base font-medium transition-opacity hover:opacity-80"
                 style={{
                   backgroundColor: theme.primaryColor,

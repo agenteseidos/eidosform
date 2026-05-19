@@ -3,6 +3,7 @@ import {
   Type,
   AlignLeft,
   List,
+  ChevronDown,
   CheckSquare,
   Mail,
   Phone,
@@ -55,6 +56,16 @@ export const questionTypes: QuestionTypeInfo[] = [
     icon: List,
     defaultConfig: {
       options: ['Opção 1', 'Opção 2', 'Opção 3'],
+    },
+  },
+  {
+    type: 'select',
+    label: 'Lista Suspensa',
+    description: 'Menu suspenso compacto (ideal para listas longas)',
+    icon: ChevronDown,
+    defaultConfig: {
+      options: ['Opção 1', 'Opção 2', 'Opção 3'],
+      placeholder: 'Selecione uma opção...',
     },
   },
   {

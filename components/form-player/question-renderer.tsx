@@ -7,7 +7,7 @@ import { formatCPF, validateCPF } from '@/lib/validators'
 import { countries, getCountryByCode } from '@/lib/countries'
 import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
-import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink } from 'lucide-react'
+import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink, ChevronDown } from 'lucide-react'
 import { renderContentBlockHtml } from '@/lib/content-block'
 import { sanitizeHtml, isSafeUrl } from '@/lib/html'
 import { sanitizeEmbedHtml } from '@/lib/html-server'
@@ -647,6 +647,140 @@ const DropdownQuestion = React.memo(function DropdownQuestion({ question, value,
   )
 })
 
+const SelectQuestion = React.memo(function SelectQuestion({ question, value, onChange, theme, error, onSubmit, onClearError }: ChoiceQuestionProps) {
+  const options = question.options || []
+  const strValue = typeof value === 'string' ? value : ''
+  const placeholder = question.placeholder || 'Selecione uma opção...'
+  const [isOpen, setIsOpen] = useState(false)
+  const [otherActive, setOtherActive] = useState(
+    () => !!question.allowOther && strValue !== '' && !options.includes(strValue)
+  )
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    if (!isOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [isOpen])
+
+  const pickOption = (option: string) => {
+    setOtherActive(false)
+    setIsOpen(false)
+    onChange(option)
+    onClearError?.()
+    onSubmit(true, option)
+  }
+
+  const pickOther = () => {
+    setOtherActive(true)
+    setIsOpen(false)
+    onChange('')
+    onClearError?.()
+  }
+
+  const displayLabel = otherActive
+    ? 'Outro'
+    : (strValue && options.includes(strValue) ? strValue : '')
+
+  return (
+    <div className="space-y-3" ref={containerRef}>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen(v => !v)}
+          className="w-full flex items-center justify-between gap-3 p-4 rounded-xl border-2 text-left transition-all text-lg"
+          style={{
+            borderColor: error ? '#EF4444' : isOpen ? theme.primaryColor : `${theme.textColor}30`,
+            backgroundColor: 'transparent',
+            color: theme.textColor,
+          }}
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+        >
+          <span className={displayLabel ? '' : 'opacity-50'}>
+            {displayLabel || placeholder}
+          </span>
+          <ChevronDown
+            className="w-5 h-5 shrink-0 transition-transform"
+            style={{
+              color: theme.textColor,
+              transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+            }}
+          />
+        </button>
+        {isOpen && (
+          <div
+            role="listbox"
+            className="absolute left-0 right-0 top-full mt-2 z-50 max-h-[40vh] overflow-y-auto rounded-xl border-2 shadow-lg"
+            style={{
+              backgroundColor: theme.backgroundColor,
+              borderColor: `${theme.primaryColor}80`,
+            }}
+          >
+            {options.map((option, index) => {
+              const isSelected = !otherActive && strValue === option
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => pickOption(option)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:opacity-80"
+                  style={{
+                    color: theme.textColor,
+                    backgroundColor: isSelected ? `${theme.primaryColor}15` : 'transparent',
+                  }}
+                >
+                  <span className="flex-1 text-base">{option}</span>
+                  {isSelected && <Check className="w-4 h-4 shrink-0" style={{ color: theme.primaryColor }} />}
+                </button>
+              )
+            })}
+            {question.allowOther && (
+              <button
+                type="button"
+                role="option"
+                aria-selected={otherActive}
+                onClick={pickOther}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:opacity-80 border-t"
+                style={{
+                  color: theme.textColor,
+                  borderColor: `${theme.textColor}20`,
+                  backgroundColor: otherActive ? `${theme.primaryColor}15` : 'transparent',
+                }}
+              >
+                <span className="flex-1 text-base italic opacity-80">Outro</span>
+                {otherActive && <Check className="w-4 h-4 shrink-0" style={{ color: theme.primaryColor }} />}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {otherActive && (
+        <input
+          autoFocus
+          type="text"
+          value={strValue}
+          placeholder="Descreva..."
+          onChange={(e) => { onChange(e.target.value); onClearError?.() }}
+          className="w-full p-3 rounded-xl border-2 text-lg outline-none transition-colors"
+          style={{
+            borderColor: `${theme.primaryColor}80`,
+            backgroundColor: 'transparent',
+            color: theme.textColor,
+          }}
+        />
+      )}
+    </div>
+  )
+})
+
 const CheckboxesQuestion = React.memo(function CheckboxesQuestion({ question, value, onChange, theme, error, onClearError }: ChoiceQuestionProps) {
   const options = question.options || []
   const selectedValues = Array.isArray(value) ? (value as string[]) : []
@@ -896,6 +1030,19 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
     case 'dropdown':
       return (
         <DropdownQuestion
+          question={question}
+          value={value}
+          onChange={onChange}
+          theme={theme}
+          error={error}
+          onSubmit={onSubmit}
+          onClearError={onClearError}
+        />
+      )
+
+    case 'select':
+      return (
+        <SelectQuestion
           question={question}
           value={value}
           onChange={onChange}

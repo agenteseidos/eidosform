@@ -72,6 +72,7 @@ export function validateFieldValue(
       return validateYesNo(value)
 
     case 'dropdown':
+    case 'select':
       return validateDropdown(value, question.options ?? [])
 
     case 'checkboxes':

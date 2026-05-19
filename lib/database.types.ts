@@ -15,6 +15,7 @@ export type QuestionType =
   | 'short_text'
   | 'long_text'
   | 'dropdown'
+  | 'select'
   | 'checkboxes'
   | 'email'
   | 'phone'
@@ -83,8 +84,8 @@ export interface QuestionConfig {
   description?: string
   required: boolean
   // Type-specific options
-  options?: string[] // For dropdown and checkboxes
-  allowOther?: boolean // For dropdown and checkboxes: adds a native "Outro" option with a free-text box
+  options?: string[] // For dropdown, select and checkboxes
+  allowOther?: boolean // For dropdown, select and checkboxes: adds a native "Outro" option with a free-text box
   minValue?: number // For rating (1-5 stars) or opinion_scale (1-10)
   maxValue?: number
   allowedFileTypes?: string[] // For file_upload

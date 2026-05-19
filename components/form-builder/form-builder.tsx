@@ -68,6 +68,7 @@ import {
   Crosshair,
   Database,
   Bell,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -93,6 +94,7 @@ const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> =
   number:        { icon: Hash,        color: 'text-orange-500' },
   yes_no:        { icon: ToggleLeft,  color: 'text-purple-500' },
   dropdown:      { icon: List,        color: 'text-yellow-600' },
+  select:        { icon: ChevronDown, color: 'text-yellow-600' },
   checkboxes:    { icon: CheckSquare, color: 'text-yellow-600' },
   nps:           { icon: Star,        color: 'text-amber-500' },
   opinion_scale: { icon: Gauge,       color: 'text-amber-500' },
@@ -518,7 +520,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       if (q.id !== id) return q
       const updated = { ...q, ...updates }
       // Prevent removing all options from choice-type questions
-      if ((updated.type === 'dropdown' || updated.type === 'checkboxes') &&
+      if ((updated.type === 'dropdown' || updated.type === 'select' || updated.type === 'checkboxes') &&
           Array.isArray(updated.options) && updated.options.length === 0) {
         return q // Reject the update
       }
@@ -1799,7 +1801,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               },
               {
                 label: 'Escolhas',
-                types: ['dropdown', 'checkboxes', 'yes_no', 'nps', 'rating', 'opinion_scale'],
+                types: ['dropdown', 'select', 'checkboxes', 'yes_no', 'nps', 'rating', 'opinion_scale'],
               },
               {
                 label: 'Dados',

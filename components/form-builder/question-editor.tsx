@@ -295,7 +295,7 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
         </div>
       )}
 
-      {(question.type === 'dropdown' || question.type === 'checkboxes') && (
+      {(question.type === 'dropdown' || question.type === 'select' || question.type === 'checkboxes') && (
         <>
           <div className="flex items-center justify-between">
             <div>

@@ -19,13 +19,13 @@ export function genId(): string {
 
 /** Tipos cuja ramificação é editada resposta-a-resposta. */
 export function isChoiceType(type: string): boolean {
-  return type === 'yes_no' || type === 'dropdown' || type === 'checkboxes'
+  return type === 'yes_no' || type === 'dropdown' || type === 'select' || type === 'checkboxes'
 }
 
 /** As respostas possíveis de uma pergunta de escolha. */
 export function answerOptions(q: QuestionConfig): string[] {
   if (q.type === 'yes_no') return ['Sim', 'Não']
-  if (q.type === 'dropdown' || q.type === 'checkboxes') return q.options ?? []
+  if (q.type === 'dropdown' || q.type === 'select' || q.type === 'checkboxes') return q.options ?? []
   return []
 }
 

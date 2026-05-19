@@ -5,7 +5,7 @@ import { QuestionConfig } from '@/lib/database.types'
 import { ThemeConfig } from '@/lib/database.types'
 import { motion, AnimatePresence } from 'framer-motion'
 import DOMPurify from 'dompurify'
-import { Star, CalendarClock, Code, Plus, X } from 'lucide-react'
+import { Star, CalendarClock, Code, Plus, X, ChevronDown } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 import { renderContentBlockHtml } from '@/lib/content-block'
 import { TiptapEditor, renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
@@ -419,6 +419,101 @@ export function FormPreview({
                     <span className="text-sm">Adicionar opção</span>
                   </button>
                 )}
+              </div>
+            )}
+
+            {question.type === 'select' && (
+              <div className="space-y-3">
+                <div
+                  className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border-2"
+                  style={{
+                    borderColor: `${theme.primaryColor}40`,
+                    color: theme.textColor,
+                  }}
+                >
+                  <span className="opacity-50 text-sm">{question.placeholder || 'Selecione uma opção...'}</span>
+                  <ChevronDown className="w-4 h-4 opacity-50" />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs uppercase tracking-wide opacity-60" style={{ color: theme.textColor }}>
+                    Opções
+                  </p>
+                  {(question.options || []).map((option, i) => (
+                    <div
+                      key={i}
+                      className="group flex items-center gap-2 px-3 py-2 rounded-md border transition-colors"
+                      style={{
+                        borderColor: `${theme.primaryColor}30`,
+                        color: theme.textColor,
+                      }}
+                    >
+                      <span className="text-xs opacity-50 w-5 shrink-0" style={{ color: theme.textColor }}>
+                        {i + 1}.
+                      </span>
+                      {onUpdateQuestion ? (
+                        <div className="flex-1 flex items-center gap-1">
+                          <InlineEditableText
+                            value={option}
+                            placeholder={`Opção ${i + 1}`}
+                            onSave={(newVal) => {
+                              const options = [...(question.options || [])]
+                              options[i] = newVal
+                              onUpdateQuestion(question.id, { options })
+                            }}
+                            className="flex-1 text-sm"
+                            style={{ color: theme.textColor }}
+                          />
+                          {(question.options?.length || 0) > 1 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const options = (question.options || []).filter((_, idx) => idx !== i)
+                                onUpdateQuestion(question.id, { options })
+                              }}
+                              className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded"
+                              title="Remover opção"
+                            >
+                              <X className="w-3.5 h-3.5" style={{ color: theme.textColor }} />
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm">{option}</span>
+                      )}
+                    </div>
+                  ))}
+                  {question.allowOther && (
+                    <div
+                      className="flex items-center gap-2 px-3 py-2 rounded-md border"
+                      style={{
+                        borderColor: `${theme.primaryColor}30`,
+                        color: theme.textColor,
+                      }}
+                    >
+                      <span className="text-xs opacity-50 w-5 shrink-0">
+                        {(question.options?.length || 0) + 1}.
+                      </span>
+                      <span className="text-sm italic opacity-80">Outro (com caixa de texto)</span>
+                    </div>
+                  )}
+                  {onUpdateQuestion && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const options = question.options || []
+                        onUpdateQuestion(question.id, { options: [...options, `Opção ${options.length + 1}`] })
+                      }}
+                      className="flex items-center gap-2 px-3 py-2 rounded-md border border-dashed w-full transition-colors opacity-50 hover:opacity-80"
+                      style={{
+                        borderColor: `${theme.primaryColor}40`,
+                        color: theme.textColor,
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span className="text-sm">Adicionar opção</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 

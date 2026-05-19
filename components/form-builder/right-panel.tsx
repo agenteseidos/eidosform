@@ -275,7 +275,7 @@ export function RightPanel({
       ...newTypeInfo?.defaultConfig,
     }
     // Preserve common fields
-    if (newType !== 'dropdown' && newType !== 'checkboxes') {
+    if (newType !== 'dropdown' && newType !== 'select' && newType !== 'checkboxes') {
       updates.options = undefined
     }
     onUpdateQuestion(selectedQuestion.id, updates)

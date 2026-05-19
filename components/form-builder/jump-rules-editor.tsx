@@ -6,6 +6,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Plus, X, ArrowRight, LogOut } from 'lucide-react'
+import { renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
+import { renderContentBlockHtml } from '@/lib/content-block'
+
+/** Extrai texto puro de um conteúdo rich-text (Tiptap JSON, HTML ou markdown). */
+function richTextToPlain(raw: string | null | undefined): string {
+  if (!raw?.trim()) return ''
+  const html = renderTiptapHtml(raw, renderContentBlockHtml)
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 interface JumpRulesEditorProps {
   rules: JumpRule[]
@@ -54,7 +68,21 @@ export function JumpRulesEditor({ rules, questionId, allQuestions, onChange }: J
   }
 
   const getQuestionLabel = (q: QuestionConfig) => {
-    return q.title ? (q.title.length > 40 ? q.title.slice(0, 40) + '…' : q.title) : 'Pergunta sem título'
+    const truncate = (s: string) => (s.length > 40 ? s.slice(0, 40).trimEnd() + '…' : s)
+
+    if (q.title?.trim()) return truncate(q.title.trim())
+
+    // Blocos de conteúdo não têm título — usa as primeiras palavras do conteúdo.
+    if (q.type === 'content_block') {
+      const text = richTextToPlain(q.contentBody)
+      return text ? truncate(text) : 'Bloco de conteúdo'
+    }
+    if (q.type === 'html_block') {
+      const text = richTextToPlain(q.htmlBlockNote)
+      return text ? truncate(text) : 'Bloco de conteúdo (embed)'
+    }
+
+    return 'Pergunta sem título'
   }
 
   // Current question for Model B — condition always references this question

@@ -3,6 +3,27 @@ import { createHmac, timingSafeEqual } from 'crypto'
 const MAX_TIMESTAMP_AGE_MS = 5 * 60 * 1000 // 5 minutes
 
 /**
+ * Autenticação padrão de webhook do Asaas: o Asaas envia o `authToken`
+ * configurado no header `asaas-access-token` e espera igualdade simples.
+ * O Asaas NÃO assina o payload (não há HMAC `asaas-signature` nativo) —
+ * por isso o handler precisa aceitar este header, senão todo webhook real
+ * toma 401 e entra em retry storm.
+ *
+ * Comparação em tempo constante.
+ */
+export function verifyAsaasAccessToken(header: string | null, token: string): boolean {
+  if (!header || !token) return false
+  const a = Buffer.from(header)
+  const b = Buffer.from(token)
+  if (a.length !== b.length) return false
+  try {
+    return timingSafeEqual(a, b)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Robust parser for "key=value&key=value" signature headers.
  * URLSearchParams must not be used here — it URL-decodes values, which corrupts hex hashes.
  */

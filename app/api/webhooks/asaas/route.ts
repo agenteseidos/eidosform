@@ -9,7 +9,7 @@ import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, cancelSubscription, getSubscription } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
-import { verifyAsaasSignature } from '@/lib/webhook-hmac'
+import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
 
 function getSupabase() {
@@ -242,12 +242,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Only HMAC — token fallback removed (P1-INT3)
+  // Autenticação: aceita DOIS mecanismos.
+  //  1. asaas-access-token — mecanismo NATIVO do Asaas: o authToken configurado
+  //     no webhook é enviado nesse header e comparado por igualdade. É o que o
+  //     Asaas realmente manda. Sem isto, todo webhook real toma 401 e o Asaas
+  //     entra em retry storm (consumiu a cota de 30k req do sandbox).
+  //  2. asaas-signature — HMAC-SHA256 do payload (esquema custom). Mantido por
+  //     compatibilidade/defesa, mas o Asaas padrão NÃO assina o payload.
+  const accessTokenHeader = req.headers.get('asaas-access-token')
   const hmacMatch = !!(hmacHeader && verifyAsaasSignature(rawBody, hmacHeader, webhookToken))
+  const tokenMatch = verifyAsaasAccessToken(accessTokenHeader, webhookToken)
 
-  if (!hmacMatch) {
-    logWarn('[asaas-webhook] HMAC auth failed', {
+  if (!hmacMatch && !tokenMatch) {
+    logWarn('[asaas-webhook] Auth failed', {
       hasHmacHeader: !!hmacHeader,
+      hasAccessTokenHeader: !!accessTokenHeader,
       tokenPrefix: webhookToken.slice(0, 8),
     })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

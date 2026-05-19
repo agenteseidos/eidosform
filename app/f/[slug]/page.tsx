@@ -117,9 +117,14 @@ export default async function FormPage({ params }: FormPageProps) {
   const metaPixelId = rawPixelId && /^\d{10,20}$/.test(rawPixelId.trim()) ? rawPixelId.trim() : null
   const canShowPixels = ownerPlan === 'plus' || ownerPlan === 'professional'
 
-  // White-label: force hide_branding for Plus and Professional plans
-  if ((ownerPlan === 'plus' || ownerPlan === 'professional') && !form.hide_branding) {
-    form.hide_branding = true
+  // Marca "Feito com EidosForm": free/starter sempre exibem (watermark
+  // obrigatório — o toggle fica travado no builder); plus/professional
+  // decidem pelo toggle hide_branding salvo no form. Antes esta regra
+  // FORÇAVA hide_branding=true em todo plano pago, ignorando a escolha
+  // do dono (toggle "Ocultar" desligado não tinha efeito).
+  const ownerCanHideBranding = ownerPlan === 'plus' || ownerPlan === 'professional'
+  if (!ownerCanHideBranding) {
+    form.hide_branding = false
   }
 
   // Gate pixel data: strip from payload if plan doesn't allow pixels

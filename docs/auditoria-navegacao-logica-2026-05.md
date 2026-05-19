@@ -77,6 +77,23 @@ de uma seleção. O editor oferecia `equals` como padrão, induzindo erro.
 - Envio exigia perguntas puladas por salto — `2349ab3`
 - Bloco de conteúdo gravava `'viewed'` e quebrava a condição "está vazio" — `34d05f6`
 
+### B11 — [ALTO, lado do produto] Pergunta com salto deveria ser obrigatória
+Uma pergunta de roteamento (com regras de salto) que **não** é obrigatória
+pode ser avançada sem resposta — aí nenhuma regra de salto casa e o fluxo
+"fura" o roteamento, caindo na próxima pergunta sequencial. O construtor
+deveria **forçar `required` quando há regras de salto** (ou ao menos avisar).
+**Status:** não implementado no construtor (recomendação). Mitigado nos
+formulários afetados marcando as perguntas de salto como obrigatórias.
+
+## Verificação
+
+Refatoração validada end-to-end no player (Playwright) com o formulário de
+qualificação real (ramificações por `dropdown`, `yes_no`, `checkboxes`,
+lógica condicional e 3 blocos de conteúdo):
+- 5 caminhos percorridos — roteamento correto, nenhum crash, todos encerram.
+- Botão "voltar" percorre o histórico na ordem certa.
+- `npm run build`, `tsc` e 8 testes de `lib/form-logic-engine` passando.
+
 ## Itens observados, não corrigidos (baixo impacto)
 - **B8** — `ArrowDown` dentro de `textarea` (texto longo) avança o formulário em
   vez de mover o cursor.

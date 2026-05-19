@@ -573,6 +573,9 @@ const DropdownQuestion = React.memo(function DropdownQuestion({ question, value,
       whileHover={{ scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick() }}
+      // Enter é reservado para avançar o formulário; não deve marcar a opção
+      // (Espaço continua marcando, preservando a acessibilidade do botão).
+      onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
       className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
       style={{
         borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
@@ -661,6 +664,9 @@ const CheckboxesQuestion = React.memo(function CheckboxesQuestion({ question, va
       whileHover={{ scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick() }}
+      // Enter é reservado para avançar o formulário; não deve marcar a opção
+      // (Espaço continua marcando, preservando a acessibilidade do botão).
+      onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
       className="w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all relative"
       style={{
         borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,
@@ -934,6 +940,8 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
                   onClearError?.()
                   onSubmit(true, option)
                 }}
+                // Enter avança o formulário; não deve re-acionar a opção focada.
+                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
                 className="flex-1 flex items-center justify-center gap-3 p-5 rounded-xl border-2 transition-all relative"
                 style={{
                   borderColor: isSelected ? theme.primaryColor : `${theme.textColor}20`,

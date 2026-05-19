@@ -10,6 +10,7 @@ import { motion } from 'framer-motion'
 import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink } from 'lucide-react'
 import { renderContentBlockHtml } from '@/lib/content-block'
 import { sanitizeHtml, isSafeUrl } from '@/lib/html'
+import { sanitizeEmbedHtml } from '@/lib/html-server'
 import { renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
 
 interface FileUploadValue {
@@ -520,7 +521,10 @@ interface HtmlBlockQuestionProps {
 }
 
 const HtmlBlockQuestion = React.memo(function HtmlBlockQuestion({ question, theme }: HtmlBlockQuestionProps) {
-  const html = question.htmlContent?.trim()
+  // Defesa em profundidade: mesmo o htmlContent já sendo sanitizado na
+  // escrita (sanitizeContentBlocksServer), re-sanitiza no render — protege
+  // forms antigos salvos antes do fix e qualquer caminho que pule a escrita.
+  const html = sanitizeEmbedHtml(question.htmlContent?.trim() ?? '')
   const note = question.htmlBlockNote?.trim()
   const noteHtml = note ? renderTiptapHtml(note, renderContentBlockHtml) : ''
 

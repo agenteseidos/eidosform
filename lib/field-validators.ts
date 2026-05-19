@@ -279,12 +279,19 @@ function validateFileUpload(value: unknown, maxFileSizeMb?: number): FieldValida
   if (typeof obj.name !== 'string' || typeof obj.url !== 'string') {
     return { valid: false, error: 'Upload deve ter name (string) e url (string)' }
   }
+  // A URL DEVE apontar para o bucket público de uploads (form-uploads).
+  // Antes a condição era uma disjunção que aceitava qualquer https?:// —
+  // tornando a restrição inútil e permitindo URL externa controlada pelo
+  // respondente (phishing/tracking disfarçado de anexo). (P1-4)
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const allowedPrefix = supabaseUrl
     ? `${supabaseUrl}/storage/v1/object/public/form-uploads/`
     : '/storage/v1/object/public/form-uploads/'
-  if (!obj.url.startsWith(allowedPrefix) && !obj.url.startsWith('https://') && !obj.url.startsWith('http://')) {
+  if (!obj.url.startsWith(allowedPrefix)) {
     return { valid: false, error: 'URL do arquivo inválida' }
+  }
+  if (obj.name.length > 500) {
+    return { valid: false, error: 'Nome do arquivo muito longo' }
   }
   if (obj.size !== undefined) {
     // Cap configured maxFileSize at 25 MB

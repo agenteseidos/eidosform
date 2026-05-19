@@ -2,7 +2,8 @@ import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/dat
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { authenticateApiKey } from '@/lib/api-key-auth'
-import { checkResponseLimit, incrementResponseCount, PLANS, PlanName } from '@/lib/plan-limits'
+import { checkAndIncrementResponseCount, PLANS, PlanName } from '@/lib/plan-limits'
+import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
 import { validateAllAnswers } from '@/lib/field-validators'
@@ -254,8 +255,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   const completed = isResponseComplete(answers, form.questions ?? [])
 
+  // Checagem de limite atômica (RPC check_and_increment_response) — mesma
+  // do endpoint público /api/responses. Evita corrida TOCTOU entre ler e
+  // incrementar o contador (P1-2).
   if (!existingResponseId) {
-    const limitCheck = await checkResponseLimit(form.user_id)
+    const limitCheck = await checkAndIncrementResponseCount(form.user_id)
     if (!limitCheck.allowed) {
       return NextResponse.json(
         { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit },
@@ -282,8 +286,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       )
     }
 
+    // Ownership: ambos os respondent_id precisam existir E coincidir — mesma
+    // regra do endpoint público /api/responses (P1-A). Uma resposta criada
+    // sem respondent_id (anônima) não pode ser atualizada por esta via (P1-1).
     const bodyRespondentId = typeof body.respondent_id === 'string' ? body.respondent_id : null
-    if (existingResponse.respondent_id && existingResponse.respondent_id !== bodyRespondentId) {
+    if (!existingResponse.respondent_id || existingResponse.respondent_id !== bodyRespondentId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 403, headers: getCorsHeaders(req.headers.get("origin")) }
@@ -335,7 +342,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     responseId = response.id
-    await incrementResponseCount(form.user_id).catch((err) => logError('Failed to increment response count', err))
+    // Contador já foi incrementado atomicamente em checkAndIncrementResponseCount acima.
   }
 
   const answerItems = Object.entries(answers).map(([questionId, value]) => ({
@@ -356,10 +363,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (completed && form.webhook_url) {
     const { data: ownerProfile } = await supabase
       .from('profiles')
-      .select('plan')
+      .select('plan, plan_expires_at')
       .eq('id', form.user_id)
       .single()
-    const ownerPlan = (ownerProfile?.plan ?? 'free') as PlanName
+    // Considera expiração do plano (P1-3).
+    const ownerPlan = getEffectivePlan(ownerProfile) as PlanName
     const planConfig = PLANS[ownerPlan]
 
     if (planConfig?.webhooks) {

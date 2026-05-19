@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
+import { getEffectivePlan } from '@/lib/plans'
 
 /**
  * GET /api/forms/[id]/plan
@@ -29,14 +30,14 @@ export async function GET(
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
-  // Fetch owner's plan
+  // Fetch owner's plan — considera expiração (P1-3).
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', form.user_id)
     .single()
 
-  const plan = profile?.plan ?? 'free'
+  const plan = getEffectivePlan(profile)
 
   return NextResponse.json({ plan })
 }

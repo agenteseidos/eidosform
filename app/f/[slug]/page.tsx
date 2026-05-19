@@ -3,6 +3,7 @@ import Script from 'next/script'
 import { createPublicClient } from '@/lib/supabase/public'
 import { FormPlayer } from '@/components/form-player/form-player'
 import { Form } from '@/lib/database.types'
+import { getEffectivePlan } from '@/lib/plans'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,10 +23,11 @@ async function fetchOwnerPlan(supabase: ReturnType<typeof createPublicClient>, f
   if (!form?.user_id) return 'free'
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', form.user_id)
     .single()
-  return (profile?.plan as string) || 'free'
+  // Considera expiração: plano pago vencido conta como free (P1-3).
+  return getEffectivePlan(profile)
 }
 
 async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient>, slugOrId: string) {

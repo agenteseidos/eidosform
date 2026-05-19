@@ -4,7 +4,7 @@ import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkAndIncrementResponseCount, PLANS } from '@/lib/plan-limits'
-import { normalizePlan } from '@/lib/plans'
+import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { extractLead } from '@/lib/lead-extraction'
 import { sendEmailNotification } from '@/lib/notify'
@@ -312,13 +312,14 @@ export async function POST(req: NextRequest) {
   // quando a resposta HTTP termina. Por isso acumulamos promises e aguardamos.
   const postSubmitTasks: Promise<unknown>[] = []
   if (completed) {
-    // Fetch form owner's plan for feature gating
+    // Fetch form owner's plan for feature gating — considera expiração (P1-3):
+    // plano pago vencido conta como free, mesmo que o webhook Asaas tenha falhado.
     const { data: ownerProfile } = await supabase
       .from('profiles')
-      .select('plan, email')
+      .select('plan, email, plan_expires_at')
       .eq('id', form.user_id)
-      .single() as { data: { plan: string | null; email: string | null } | null; error: unknown }
-    const ownerPlan = normalizePlan(ownerProfile?.plan)
+      .single() as { data: { plan: string | null; email: string | null; plan_expires_at: string | null } | null; error: unknown }
+    const ownerPlan = getEffectivePlan(ownerProfile)
     const ownerPlanConfig = PLANS[ownerPlan]
 
     // Notificação principal para o dono do formulário — feature gated em Plus+.

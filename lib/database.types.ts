@@ -92,7 +92,7 @@ export interface QuestionConfig {
   placeholder?: string
   defaultCountry?: string // Country code for phone type (default: BR)
   calendlyUrl?: string // Calendly embed URL for calendly type
-  htmlContent?: string // Raw HTML for html_block type (rendered as-is, no sanitization)
+  htmlContent?: string // HTML for html_block — sanitizado (allowlist de iframes) em sanitizeContentBlocksServer na escrita e no render
   htmlBlockNote?: string // Optional rich-text instruction shown below the iframe in html_block (e.g. "After scheduling, click Send")
   conditionalLogic?: ConditionalRule
   pixelEvents?: PixelEventRule[]

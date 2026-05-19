@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
+import { verifyRecoveryToken, RECOVERY_COOKIE_NAME } from '@/lib/recovery-token'
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,6 +15,23 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = await createClient()
+
+    // P1-5: só permitir troca de senha SEM a senha antiga quando a sessão veio
+    // mesmo do fluxo de recovery (cookie assinado posto pelo /auth/callback).
+    // Uma sessão de login normal não tem esse cookie — para trocar a senha
+    // logada, o caminho é /api/auth/change-password (que exige a senha atual).
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 })
+    }
+    const recoveryCookie = req.cookies.get(RECOVERY_COOKIE_NAME)?.value
+    if (!verifyRecoveryToken(recoveryCookie, user.id)) {
+      return NextResponse.json(
+        { error: 'Link de redefinição inválido ou expirado. Solicite um novo e-mail de redefinição.' },
+        { status: 403 }
+      )
+    }
+
     const { error } = await supabase.auth.updateUser({ password })
 
     if (error) {
@@ -28,7 +46,10 @@ export async function POST(req: NextRequest) {
     // Sign out after successful password reset
     await supabase.auth.signOut()
 
-    return NextResponse.json({ success: true }, { status: 200 })
+    // Consome o cookie de recovery (uso único).
+    const res = NextResponse.json({ success: true }, { status: 200 })
+    res.cookies.set(RECOVERY_COOKIE_NAME, '', { path: '/', maxAge: 0 })
+    return res
   } catch {
     return NextResponse.json(
       { error: 'Internal server error' },

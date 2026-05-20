@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,8 +9,12 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import { MessageCircle, Loader2, Send, AlertCircle } from 'lucide-react'
+import { MessageCircle, Loader2, Send, AlertCircle, Plus, ChevronDown } from 'lucide-react'
 import { FormWhatsAppSettings } from '@/lib/types/whatsapp'
 import { PLAN_ORDER } from '@/lib/plans'
 
@@ -36,20 +40,51 @@ function validatePhoneNumber(phone: string): boolean {
   return digits.length >= 10 && digits.length <= 15
 }
 
-// Available template variables — fixed list, all guaranteed to resolve in buildMessage
-const TEMPLATE_VARIABLES = [
-  { key: '{form_name}', description: 'Nome do formulário' },
-  { key: '{nome}', description: 'Primeiro nome do respondente, capitalizado (ex.: "João"). Fallback: "Lead"' },
-  { key: '{primeiro_nome}', description: 'Alias de {nome} — primeiro nome capitalizado' },
-  { key: '{nome_completo}', description: 'Nome completo capitalizado (ex.: "João Silva da Costa")' },
-  { key: '{email}', description: 'Email do respondente' },
-  { key: '{telefone}', description: 'Telefone do respondente' },
-  { key: '{data}', description: 'Data do envio (ex.: "20/05/2026")' },
-  { key: '{horario}', description: 'Horário do envio (ex.: "14:32")' },
-  { key: '{dia_semana}', description: 'Dia da semana (ex.: "terça-feira")' },
-  { key: '{response_id}', description: 'ID da resposta' },
-  { key: '{response_link}', description: 'Link para ver a resposta no painel' },
-  { key: '{meta_events}', description: 'Eventos do Meta Pixel disparados pelo lead' },
+// Available template variables — fixed list, all guaranteed to resolve in buildMessage.
+// Agrupadas pra renderizar o popover de inserção com categorias claras.
+interface TemplateVariable {
+  key: string
+  description: string
+  /** Exemplo de render — usado no popover pra dar contexto rápido. */
+  example: string
+}
+interface TemplateVariableGroup {
+  label: string
+  vars: TemplateVariable[]
+}
+const TEMPLATE_VARIABLE_GROUPS: TemplateVariableGroup[] = [
+  {
+    label: 'Lead',
+    vars: [
+      { key: '{nome}',           description: 'Primeiro nome capitalizado',                example: 'João' },
+      { key: '{primeiro_nome}',  description: 'Alias de {nome}',                           example: 'João' },
+      { key: '{nome_completo}',  description: 'Nome inteiro capitalizado',                 example: 'João Silva da Costa' },
+      { key: '{email}',          description: 'Email do respondente',                      example: 'joao@exemplo.com' },
+      { key: '{telefone}',       description: 'Telefone do respondente',                   example: '+55 11 99999-0000' },
+    ],
+  },
+  {
+    label: 'Formulário',
+    vars: [
+      { key: '{form_name}',      description: 'Nome do formulário',                        example: 'Psi Karin' },
+      { key: '{response_id}',    description: 'ID da resposta',                            example: 'a1b2c3...' },
+      { key: '{response_link}',  description: 'Link para ver a resposta no painel',        example: 'eidosform.com.br/...' },
+    ],
+  },
+  {
+    label: 'Tempo',
+    vars: [
+      { key: '{data}',           description: 'Data do envio',                             example: '20/05/2026' },
+      { key: '{horario}',        description: 'Horário do envio',                          example: '14:32' },
+      { key: '{dia_semana}',     description: 'Dia da semana',                             example: 'terça-feira' },
+    ],
+  },
+  {
+    label: 'Conversões',
+    vars: [
+      { key: '{meta_events}',    description: 'Eventos do Meta Pixel disparados',          example: 'Lead, LeadQualificado' },
+    ],
+  },
 ]
 
 const DEFAULT_MESSAGE_TEMPLATE = 'Nova resposta em {form_name}: {nome}'
@@ -225,7 +260,26 @@ export function WhatsAppPanel({
   const charCount = messageTemplate.length
   const isCharCountWarning = charCount > 160
 
-  const templateVariables = TEMPLATE_VARIABLES
+  // Referência ao textarea pra inserir variáveis na posição do cursor.
+  const templateTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const insertTemplateVariable = useCallback((key: string) => {
+    const textarea = templateTextareaRef.current
+    if (!textarea) {
+      // Fallback: append no fim
+      setMessageTemplate((prev) => (prev ? prev + ' ' + key : key))
+      return
+    }
+    const start = textarea.selectionStart ?? messageTemplate.length
+    const end = textarea.selectionEnd ?? messageTemplate.length
+    const next = messageTemplate.slice(0, start) + key + messageTemplate.slice(end)
+    setMessageTemplate(next)
+    // Reposiciona o cursor logo depois do que foi inserido
+    requestAnimationFrame(() => {
+      textarea.focus()
+      const pos = start + key.length
+      textarea.setSelectionRange(pos, pos)
+    })
+  }, [messageTemplate])
 
   // Show loading while fetching settings
   if (isLoadingSettings) {
@@ -350,24 +404,58 @@ export function WhatsAppPanel({
                 </div>
                 <Textarea
                   id="whatsapp-template"
+                  ref={templateTextareaRef}
                   value={messageTemplate}
                   onChange={(e) => setMessageTemplate(e.target.value)}
                   disabled={isLoading || isSaving}
                   placeholder={DEFAULT_MESSAGE_TEMPLATE}
                   className="text-sm min-h-[80px]"
                 />
-                <p className="text-[10px] text-slate-500 mt-2">
-                  Variáveis disponíveis:
-                </p>
-                <div className="mt-2 space-y-1">
-                  {templateVariables.map((variable) => (
-                    <div key={variable.key} className="flex items-start gap-2">
-                      <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono whitespace-nowrap">
-                        {variable.key}
-                      </code>
-                      <span className="text-[10px] text-slate-500">{variable.description}</span>
-                    </div>
-                  ))}
+                <div className="mt-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1.5 text-slate-700"
+                        disabled={isLoading || isSaving}
+                      >
+                        <Plus className="w-3 h-3" />
+                        Inserir variável
+                        <ChevronDown className="w-3 h-3 opacity-60" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-72 max-h-[60vh] overflow-y-auto">
+                      {TEMPLATE_VARIABLE_GROUPS.map((group, gIdx) => (
+                        <DropdownMenuGroup key={group.label}>
+                          {gIdx > 0 && <DropdownMenuSeparator />}
+                          <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-slate-400">
+                            {group.label}
+                          </DropdownMenuLabel>
+                          {group.vars.map((variable) => (
+                            <DropdownMenuItem
+                              key={variable.key}
+                              onSelect={() => insertTemplateVariable(variable.key)}
+                              className="flex flex-col items-start gap-0.5 py-1.5 cursor-pointer"
+                            >
+                              <div className="flex items-center justify-between w-full gap-2">
+                                <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono">
+                                  {variable.key}
+                                </code>
+                                <span className="text-[10px] text-slate-400 truncate">
+                                  ex.: {variable.example}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 leading-tight">
+                                {variable.description}
+                              </span>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuGroup>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 {isCharCountWarning && (
                   <p className="text-[10px] text-amber-600 mt-2">

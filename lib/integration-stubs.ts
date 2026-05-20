@@ -1,5 +1,6 @@
 import { log, logWarn, logError } from '@/lib/logger'
 import { createPublicClient } from '@/lib/supabase/public'
+import { NAME_QUESTION_KEYWORDS, firstName, capitalizeFullName } from '@/lib/name-utils'
 
 /**
  * Send WhatsApp notification when form response is submitted
@@ -69,13 +70,28 @@ export async function sendWhatsAppOnFormResponse(params: {
       return ''
     }
 
-    const nameValue = findByLabel('nome', 'name', 'nome completo') || 'Lead'
+    const fullNameRaw = findByLabel(...NAME_QUESTION_KEYWORDS)
+    const fullNameValue = fullNameRaw ? capitalizeFullName(fullNameRaw) : ''
+    const firstNameValue = firstName(fullNameRaw) || 'Lead'
     const emailValue = findByType('email') || findByLabel('email', 'e-mail') || 'N/A'
     const phoneValue = findByType('phone') || findByLabel('telefone', 'phone', 'celular', 'whatsapp') || ''
 
+    // Variáveis de data/hora — usa fuso de São Paulo pra render natural pro
+    // dono brasileiro. Calculadas no momento do envio (não persistidas).
+    const now = new Date()
+    const sp = (parts: Intl.DateTimeFormatOptions) =>
+      now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', ...parts })
+    const horarioValue = sp({ hour: '2-digit', minute: '2-digit', hour12: false })
+    const dataValue = sp({ day: '2-digit', month: '2-digit', year: 'numeric' })
+    const diaSemanaValue = sp({ weekday: 'long' })
+
     const leadData = {
-      name: nameValue,
-      nome: nameValue,
+      // {nome} agora é o PRIMEIRO nome capitalizado; antes era o que o lead
+      // digitou cru (caixa baixa estragava o "Oi {nome}!").
+      name: firstNameValue,
+      nome: firstNameValue,
+      primeiro_nome: firstNameValue,
+      nome_completo: fullNameValue || firstNameValue,
       email: emailValue,
       phone: phoneValue,
       telefone: phoneValue,
@@ -84,6 +100,9 @@ export async function sendWhatsAppOnFormResponse(params: {
       form_name: params.form.title || 'Formulário',
       response_id: responseId,
       response_link: `${appUrl}/form/${formId}/responses/${responseId}`,
+      horario: horarioValue,
+      data: dataValue,
+      dia_semana: diaSemanaValue,
       ...mappedAnswers,
     }
 

@@ -39,9 +39,14 @@ function validatePhoneNumber(phone: string): boolean {
 // Available template variables — fixed list, all guaranteed to resolve in buildMessage
 const TEMPLATE_VARIABLES = [
   { key: '{form_name}', description: 'Nome do formulário' },
-  { key: '{nome}', description: 'Nome do respondente (busca por título da pergunta; fallback: "Lead")' },
-  { key: '{email}', description: 'Email do respondente (busca por tipo "email" ou título; fallback: "N/A")' },
-  { key: '{telefone}', description: 'Telefone do respondente (busca por tipo "phone" ou título contendo telefone/celular/whatsapp)' },
+  { key: '{nome}', description: 'Primeiro nome do respondente, capitalizado (ex.: "João"). Fallback: "Lead"' },
+  { key: '{primeiro_nome}', description: 'Alias de {nome} — primeiro nome capitalizado' },
+  { key: '{nome_completo}', description: 'Nome completo capitalizado (ex.: "João Silva da Costa")' },
+  { key: '{email}', description: 'Email do respondente' },
+  { key: '{telefone}', description: 'Telefone do respondente' },
+  { key: '{data}', description: 'Data do envio (ex.: "20/05/2026")' },
+  { key: '{horario}', description: 'Horário do envio (ex.: "14:32")' },
+  { key: '{dia_semana}', description: 'Dia da semana (ex.: "terça-feira")' },
   { key: '{response_id}', description: 'ID da resposta' },
   { key: '{response_link}', description: 'Link para ver a resposta no painel' },
   { key: '{meta_events}', description: 'Eventos do Meta Pixel disparados pelo lead' },

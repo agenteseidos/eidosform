@@ -4,6 +4,8 @@
  * Hybrid lookup: question type first (deterministic), title fallback.
  */
 
+import { NAME_QUESTION_KEYWORDS } from '@/lib/name-utils'
+
 export interface ExtractedLead {
   name: string
   email: string
@@ -27,7 +29,14 @@ export function extractLead(params: {
     mappedAnswers[label] = String(value ?? '')
   }
 
+  // Tenta match exato antes do `includes` pra evitar falsos positivos como
+  // "nome da empresa" sendo capturado quando o dono pergunta só "nome".
   const findByLabel = (...labels: string[]): string => {
+    for (const label of labels) {
+      for (const [key, val] of Object.entries(mappedAnswers)) {
+        if (key === label) return val
+      }
+    }
     for (const label of labels) {
       for (const [key, val] of Object.entries(mappedAnswers)) {
         if (key.includes(label)) return val
@@ -49,7 +58,7 @@ export function extractLead(params: {
   const phoneRaw = findByType('phone') || findByLabel('telefone', 'phone', 'celular', 'whatsapp')
 
   return {
-    name: findByLabel('nome', 'name', 'nome completo'),
+    name: findByLabel(...NAME_QUESTION_KEYWORDS),
     email: findByType('email') || findByLabel('email', 'e-mail'),
     phone: normalizePhoneE164(phoneRaw),
   }

@@ -73,10 +73,10 @@ export function validateFieldValue(
 
     case 'dropdown':
     case 'select':
-      return validateDropdown(value, question.options ?? [])
+      return validateDropdown(value, question.options ?? [], !!question.allowOther)
 
     case 'checkboxes':
-      return validateCheckboxes(value, question.options ?? [])
+      return validateCheckboxes(value, question.options ?? [], !!question.allowOther)
 
     case 'file_upload':
       return validateFileUpload(value, question.maxFileSize)
@@ -261,20 +261,27 @@ function validateYesNo(value: unknown): FieldValidationResult {
   return { valid: true }
 }
 
-function validateDropdown(value: unknown, options: string[]): FieldValidationResult {
+function validateDropdown(value: unknown, options: string[], allowOther: boolean): FieldValidationResult {
   if (options.length < 2) {
     return { valid: false, error: 'Dropdown deve ter ao menos 2 opções configuradas' }
   }
   if (typeof value !== 'string') {
     return { valid: false, error: 'Seleção deve ser texto' }
   }
+  // Quando "Outro" está ativo, o respondente pode digitar texto livre que não
+  // está em `options` — aceita qualquer string com tamanho razoável.
   if (!options.includes(value)) {
-    return { valid: false, error: 'Opção selecionada não é válida' }
+    if (!allowOther) {
+      return { valid: false, error: 'Opção selecionada não é válida' }
+    }
+    if (value.length > 1000) {
+      return { valid: false, error: 'Resposta "Outro" excede 1000 caracteres' }
+    }
   }
   return { valid: true }
 }
 
-function validateCheckboxes(value: unknown, options: string[]): FieldValidationResult {
+function validateCheckboxes(value: unknown, options: string[], allowOther: boolean): FieldValidationResult {
   if (options.length < 2) {
     return { valid: false, error: 'Checkboxes deve ter ao menos 2 opções configuradas' }
   }
@@ -286,7 +293,14 @@ function validateCheckboxes(value: unknown, options: string[]): FieldValidationR
   }
   const invalid = value.filter(v => !options.includes(v as string))
   if (invalid.length > 0) {
-    return { valid: false, error: `Opções inválidas: ${invalid.join(', ')}` }
+    if (!allowOther) {
+      return { valid: false, error: `Opções inválidas: ${invalid.join(', ')}` }
+    }
+    // Quando "Outro" está ativo, as extras viram texto livre do respondente.
+    const tooLong = invalid.find(v => (v as string).length > 1000)
+    if (tooLong) {
+      return { valid: false, error: 'Resposta "Outro" excede 1000 caracteres' }
+    }
   }
   return { valid: true }
 }

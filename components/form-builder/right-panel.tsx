@@ -176,18 +176,6 @@ export function RightPanel({
         </div>
         <ScrollArea className="flex-1 max-w-full overflow-x-hidden">
           <div className="p-4 space-y-5 max-w-full overflow-hidden">
-            <div className="flex items-center justify-between gap-3 py-1 max-w-full">
-              <div>
-                <Label className="text-xs font-medium text-slate-700">Ativar tela de agradecimento</Label>
-                <p className="text-[10px] text-slate-500">Mostrar depois do envio. Se desativada, com redirect_url o usuário é redirecionado direto; sem redirect, vê um aviso mínimo.</p>
-              </div>
-              <Switch
-                checked={form.thank_you_enabled !== false}
-                onCheckedChange={(checked) => onUpdateForm({ thank_you_enabled: checked })}
-              />
-            </div>
-            {form.thank_you_enabled !== false && (
-            <>
             <div>
               <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Título</Label>
               <Input
@@ -235,8 +223,6 @@ export function RightPanel({
               />
               <p className="text-[10px] text-slate-500 mt-1">Usada como fallback se título estiver vazio</p>
             </div>
-            </>
-            )}
           </div>
         </ScrollArea>
       </div>

@@ -233,7 +233,6 @@ const baseFormShape = {
   status: z.enum(['draft', 'published', 'closed']).optional(),
   theme: z.enum(['midnight', 'ocean', 'sunset', 'forest', 'lavender', 'minimal']).optional(),
   questions: QuestionsArraySchema.optional(),
-  thank_you_enabled: z.boolean().optional(),
   thank_you_message: z.string().max(5000).optional(),
   thank_you_title: z.string().max(200).nullable().optional(),
   thank_you_description: z.string().max(5000).nullable().optional(),

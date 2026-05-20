@@ -391,7 +391,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       }
       return next
     }),
-    thank_you_enabled: form.thank_you_enabled !== false,
     thank_you_message: form.thank_you_message,
     thank_you_title: form.thank_you_title || null,
     thank_you_description: form.thank_you_description || null,
@@ -974,7 +973,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     <p className="text-sm font-medium text-slate-700 line-clamp-2">
                       {form.thank_you_title || 'Tela de agradecimento'}
                     </p>
-                    <p className="text-xs text-slate-400">{form.thank_you_enabled !== false ? 'Ativada' : 'Desativada'}</p>
+                    <p className="text-xs text-slate-400">Padrão</p>
                   </div>
                 </button>
 

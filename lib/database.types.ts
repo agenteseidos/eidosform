@@ -389,7 +389,6 @@ export interface Database {
           is_published: boolean
           theme: ThemePreset
           questions: QuestionConfig[]
-          thank_you_enabled: boolean
           thank_you_message: string
           thank_you_title: string | null
           thank_you_description: string | null
@@ -432,7 +431,6 @@ export interface Database {
           is_published?: boolean
           theme?: ThemePreset
           questions?: QuestionConfig[]
-          thank_you_enabled?: boolean
           thank_you_message?: string
           thank_you_title?: string | null
           thank_you_description?: string | null
@@ -473,7 +471,6 @@ export interface Database {
           is_published?: boolean
           theme?: ThemePreset
           questions?: QuestionConfig[]
-          thank_you_enabled?: boolean
           thank_you_message?: string
           thank_you_title?: string | null
           thank_you_description?: string | null

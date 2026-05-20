@@ -956,12 +956,21 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                     </span>
                   </motion.div>
 
-                  {/* Title */}
+                  {/* Title — fonte se ajusta ao comprimento pra não estourar
+                      layout em perguntas longas (auto-fit 4 níveis). */}
                   <motion.h2
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.12 }}
-                    className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-3 leading-snug"
+                    className={`${
+                      (currentQuestion.title?.length ?? 0) > 200
+                        ? 'text-base sm:text-lg md:text-xl lg:text-2xl leading-relaxed'
+                        : (currentQuestion.title?.length ?? 0) > 120
+                          ? 'text-lg sm:text-xl md:text-2xl lg:text-3xl leading-relaxed'
+                          : (currentQuestion.title?.length ?? 0) > 60
+                            ? 'text-lg sm:text-xl md:text-2xl lg:text-3xl leading-snug'
+                            : 'text-xl sm:text-2xl md:text-3xl lg:text-4xl leading-snug'
+                    } font-bold mb-3`}
                     style={{ color: theme.textColor }}
                   >
                     {currentQuestion.title || 'Pergunta sem título'}

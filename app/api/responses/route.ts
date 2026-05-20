@@ -12,7 +12,7 @@ import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers } from '@/lib/field-validators'
 import { buildQuestionPath } from '@/lib/form-logic-engine'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
-import { appendSubmission } from '@/lib/google-sheets'
+import { upsertSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
@@ -268,25 +268,35 @@ export async function POST(req: NextRequest) {
 
   let responseId: string
   let responseMetaEvents: string[] = []
+  let existingSheetsRowIndex: number | null = null
 
   if (existingResponseId) {
     // P0-2: Verify ownership — respondent_id from cookie must match the response's respondent_id
     // Fetch the existing response to check ownership
     const { data: existingResponse } = await supabase
       .from('responses')
-      .select('id, respondent_id')
+      .select('id, respondent_id, completed, sheets_row_index')
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
-      .single() as { data: { id: string; respondent_id: string | null } | null; error: unknown }
+      .single() as { data: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null } | null; error: unknown }
 
     if (!existingResponse) {
       return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
     }
 
-    // P1-A: Verify ownership — both respondent_id values must be present AND match.
-    // If the response was created without respondent_id (anonymous), it cannot be updated via this path.
+    // Há dois caminhos legítimos de UPDATE:
+    //  (a) Autenticado: a row tem respondent_id e bate com o cookie/header do
+    //      lado do cliente — fluxo de partial-response Plus+ pra logados.
+    //  (b) Anônimo partial→final: a row foi criada por /api/responses/partial
+    //      sem respondent_id (anônima) e ainda não foi finalizada. O id é
+    //      sigiloso (UUID v4 ~122 bits de entropia) e está no localStorage do
+    //      navegador do próprio respondente — ninguém mais consegue forjar.
     const bodyRespondentId = typeof respondent_id === 'string' ? respondent_id : null
-    if (!existingResponse.respondent_id || existingResponse.respondent_id !== bodyRespondentId) {
+    const isAnonymousPartialUpgrade =
+      existingResponse.respondent_id === null && existingResponse.completed === false
+    const isAuthenticatedOwner =
+      !!existingResponse.respondent_id && existingResponse.respondent_id === bodyRespondentId
+    if (!isAnonymousPartialUpgrade && !isAuthenticatedOwner) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 403, headers: CORS_HEADERS })
     }
 
@@ -295,8 +305,8 @@ export async function POST(req: NextRequest) {
       .update({ answers, meta_events: metaEvents, completed, last_question_answered: last_question_answered ?? null, ...utmData } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
-      .select('id, meta_events')
-      .single() as { data: { id: string; meta_events?: string[] } | null; error: unknown }
+      .select('id, meta_events, sheets_row_index')
+      .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null } | null; error: unknown }
 
     if (updateError || !updated) {
       return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
@@ -304,6 +314,7 @@ export async function POST(req: NextRequest) {
 
     responseId = updated.id
     responseMetaEvents = Array.isArray((updated as { meta_events?: unknown }).meta_events) ? ((updated as { meta_events: string[] }).meta_events) : []
+    existingSheetsRowIndex = updated.sheets_row_index ?? existingResponse.sheets_row_index ?? null
     await supabase.from('answer_items').delete().eq('response_id', responseId)
   } else {
     const { data: newResponse, error: insertError } = await supabase
@@ -436,14 +447,31 @@ export async function POST(req: NextRequest) {
       for (const q of formQuestions) {
         questionIdToLabel[q.id] = q.title || 'Sem título'
       }
+      // Se a row já existe no Sheets (criada por /api/responses/partial), faz
+      // UPDATE direto pela rowIndex e marca status=Completo — evita duplicar
+      // a linha no submit final.
+      const spreadsheetId = form.google_sheets_id
+      const sheetsRowIndex = existingSheetsRowIndex
       postSubmitTasks.push(
-        appendSubmission(
-          form.google_sheets_id,
-          fieldLabels,
-          answers as Record<string, unknown>,
-          questionIdToLabel,
-          utmData,
-        ).catch((e) => logError('Google Sheets sync failed:', e))
+        (async () => {
+          const result = await upsertSubmission({
+            spreadsheetId,
+            fieldLabels,
+            answers: answers as Record<string, unknown>,
+            questionIdToLabel,
+            utmData,
+            responseId,
+            status: 'Completo',
+            rowIndex: sheetsRowIndex,
+          })
+          // Se foi append (sem rowIndex prévio), persiste o novo índice
+          if (result.rowIndex && result.rowIndex !== sheetsRowIndex) {
+            await supabase
+              .from('responses')
+              .update({ sheets_row_index: result.rowIndex })
+              .eq('id', responseId)
+          }
+        })().catch((e) => logError('Google Sheets sync failed:', e))
       )
     }
 

@@ -122,6 +122,14 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const lastIndexRef = useRef(0)
   const isAuthenticatedRef = useRef(false)
   const errorRef = useRef<HTMLParagraphElement>(null)
+  // Partial público (anônimo): timer de 60s + último estado pendente.
+  // O response_id retornado pela 1ª chamada vira chave de update tanto pra
+  // chamadas subsequentes em /api/responses/partial quanto pro submit final.
+  const PUBLIC_PARTIAL_IDLE_MS = 60_000
+  const PUBLIC_PARTIAL_STORAGE_KEY = `eidosform_partial_response_id_${form.id}`
+  const publicPartialTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const publicResponseIdRef = useRef<string | null>(null)
+  const pendingPartialPayloadRef = useRef<{ answers: Record<string, Json>; lastQuestionId: string } | null>(null)
 
   // Lista de perguntas visíveis com base nas respostas atuais
   const visibleQuestions = useMemo(
@@ -250,6 +258,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
     // Salvar progresso parcial + pixel events da pergunta atual
     savePartialResponseDebounced(updatedAnswers, currentQuestion.id)
+    schedulePublicPartialSave(updatedAnswers, currentQuestion.id)
     if (currentQuestion.pixelEvents) {
       evaluatePixelEvents(currentQuestion.pixelEvents as PixelEventRule[], updatedAnswers[currentQuestion.id])
     }
@@ -302,6 +311,98 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       setCurrentQuestionId(null)
     }
   }, [form.welcome_enabled, navigationHistory])
+
+  // ── Partial público (anônimo) → /api/responses/partial ──────────────────────
+  // Cria/atualiza uma row no Sheets enquanto o lead avança, com debounce de 60s
+  // de inatividade. Cobre o caso "lead respondeu 2 perguntas e abandonou" —
+  // que antes só virava row no Sheets se ele clicasse Enviar/jump-submit.
+  // Só ativa se o form tem Sheets habilitado (gating via prop).
+  const publicPartialEnabled = Boolean((form as { google_sheets_enabled?: boolean }).google_sheets_enabled)
+
+  // Hidrata response_id de localStorage (lead voltou no mesmo navegador).
+  useEffect(() => {
+    if (!publicPartialEnabled) return
+    try {
+      const stored = window.localStorage.getItem(PUBLIC_PARTIAL_STORAGE_KEY)
+      if (stored) publicResponseIdRef.current = stored
+    } catch { /* ignore storage failures */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicPartialEnabled])
+
+  const runPublicPartialSave = useCallback(async () => {
+    const pending = pendingPartialPayloadRef.current
+    if (!pending || !publicPartialEnabled || isSubmittedRef.current) return
+    pendingPartialPayloadRef.current = null
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (publicResponseIdRef.current) headers['x-response-id'] = publicResponseIdRef.current
+      const utms = getUtms()
+      const res = await fetch('/api/responses/partial', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          form_id: form.id,
+          answers: pending.answers,
+          last_question_answered: pending.lastQuestionId,
+          ...utms,
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json().catch(() => null)
+        if (data?.response_id) {
+          publicResponseIdRef.current = data.response_id
+          try { window.localStorage.setItem(PUBLIC_PARTIAL_STORAGE_KEY, data.response_id) } catch { /* ignore */ }
+        }
+      }
+    } catch { /* fire-and-forget, log no servidor */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.id, publicPartialEnabled])
+
+  const schedulePublicPartialSave = useCallback((currentAnswers: Record<string, Json>, lastQuestionId: string) => {
+    if (!publicPartialEnabled || isSubmittedRef.current) return
+    if (Object.keys(currentAnswers).length === 0) return
+    pendingPartialPayloadRef.current = { answers: currentAnswers, lastQuestionId }
+    if (publicPartialTimerRef.current) clearTimeout(publicPartialTimerRef.current)
+    publicPartialTimerRef.current = setTimeout(() => {
+      publicPartialTimerRef.current = null
+      runPublicPartialSave()
+    }, PUBLIC_PARTIAL_IDLE_MS)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicPartialEnabled, runPublicPartialSave])
+
+  // Flush imediato quando a aba fica oculta/fechada — cobre "lead abandonou
+  // antes dos 60s". sendBeacon é a forma confiável de enviar durante unload.
+  useEffect(() => {
+    if (!publicPartialEnabled) return
+    const flush = () => {
+      const pending = pendingPartialPayloadRef.current
+      if (!pending || isSubmittedRef.current) return
+      pendingPartialPayloadRef.current = null
+      if (publicPartialTimerRef.current) { clearTimeout(publicPartialTimerRef.current); publicPartialTimerRef.current = null }
+      try {
+        const utms = getUtms()
+        const payload = {
+          form_id: form.id,
+          answers: pending.answers,
+          last_question_answered: pending.lastQuestionId,
+          ...utms,
+          // sendBeacon não suporta headers — incluímos o response_id no body
+          // e o endpoint aceita ambos (header tem prioridade).
+          response_id: publicResponseIdRef.current ?? undefined,
+        }
+        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+        navigator.sendBeacon('/api/responses/partial', blob)
+      } catch { /* ignore */ }
+    }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', flush)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', flush)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicPartialEnabled, form.id])
 
   // Salva resposta parcial com debounce (2s) — só se autenticado e plano permitir
   function savePartialResponseDebounced(currentAnswers: Record<string, Json>, lastQuestionId: string) {
@@ -414,9 +515,19 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     // Só agora o envio está confirmado: interrompe o auto-save de progresso.
     isSubmittedRef.current = true
 
+    // Cancela o timer de partial público — o submit final vai cuidar do Sheets.
+    if (publicPartialTimerRef.current) {
+      clearTimeout(publicPartialTimerRef.current)
+      publicPartialTimerRef.current = null
+    }
+    pendingPartialPayloadRef.current = null
+
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (responseId) headers['x-response-id'] = responseId
+      // Prioridade: response_id do partial-response autenticado > partial público.
+      // O /api/responses aceita ambos os caminhos de UPDATE.
+      const effectiveResponseId = responseId || publicResponseIdRef.current
+      if (effectiveResponseId) headers['x-response-id'] = effectiveResponseId
 
       const utms = getUtms()
 
@@ -479,6 +590,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       // pixel_event_on_complete já foi disparado antes do POST (linha ~410) pra entrar
       // no buffer meta_events da response. Não disparar novamente aqui pra evitar dupla
       // contagem no Events Manager.
+      // Limpa o response_id do partial público — submit final consumou a row.
+      publicResponseIdRef.current = null
+      try { window.localStorage.removeItem(PUBLIC_PARTIAL_STORAGE_KEY) } catch { /* ignore */ }
       setIsSubmitted(true)
       if (form.redirect_url) {
         const redirectDelay = form.redirect_delay != null ? Number(form.redirect_delay) : 2800

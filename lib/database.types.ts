@@ -34,7 +34,7 @@ export type QuestionType =
   | 'content_block'
 
 // Conditional logic operators
-export type ConditionalOperator = 'equals' | 'not_equals' | 'contains' | 'not_empty' | 'is_empty'
+export type ConditionalOperator = 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'not_empty' | 'is_empty'
 
 // Conditional logic rule
 export interface ConditionalRule {

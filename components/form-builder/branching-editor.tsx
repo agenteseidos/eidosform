@@ -189,10 +189,18 @@ export function BranchingEditor({ question, allQuestions, onChange }: BranchingE
   if (isChoiceType(question.type)) {
     const opts = answerOptions(question)
     const extra = unhandledRules(rules, question)
+    const isMultiSelect = question.type === 'checkboxes'
     return (
       <div className="space-y-2">
         <SectionHeader>Ramificação</SectionHeader>
         <p className="text-xs text-slate-500 mb-1">Para onde vai cada resposta:</p>
+        {isMultiSelect && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
+            ⚠️ Como o respondente pode marcar várias, o destino que dispara é o da
+            <strong> primeira opção marcada que tiver caminho definido</strong> (de cima pra baixo).
+            Use ramificação aqui só pra opções "exclusivas" (ex.: "Outro" → pergunta de detalhe).
+          </div>
+        )}
 
         {opts.length === 0 ? (
           <p className="text-xs text-slate-400 italic">Adicione opções de resposta para definir a ramificação.</p>

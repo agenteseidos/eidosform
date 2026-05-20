@@ -16,6 +16,8 @@ const OPERATORS: { value: ConditionalOperator; label: string }[] = [
   { value: 'equals', label: 'for igual a' },
   { value: 'not_equals', label: 'for diferente de' },
   { value: 'contains', label: 'contiver' },
+  { value: 'greater_than', label: 'for maior que' },
+  { value: 'less_than', label: 'for menor que' },
   { value: 'not_empty', label: 'estiver preenchida' },
   { value: 'is_empty', label: 'estiver vazia' },
 ]

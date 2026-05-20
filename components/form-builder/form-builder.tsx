@@ -362,13 +362,34 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     slug: form.slug,
     theme: form.theme,
     questions: questions.map(q => {
-      if (!q.pixelEvents?.length) return q
-      // Evento "Personalizado…" recém-selecionado fica com name='' até o usuário
-      // digitar. Persistir nesse estado viola o schema (name.min(1)) e o autosave
-      // estoura "Payload inválido". Filtra eventos incompletos — o estado local
-      // do editor preserva a regra até ela ficar válida.
-      const valid = q.pixelEvents.filter(r => r.event?.name?.trim())
-      return valid.length === q.pixelEvents.length ? q : { ...q, pixelEvents: valid }
+      // Sanitiza estados intermediários do editor que violam o schema do servidor
+      // ("Payload inválido" no autosave). O estado local do editor preserva a
+      // regra incompleta — o save só leva o que está válido.
+      let next = q
+      // 1) pixelEvents com event.name vazio (caso "Personalizado…" recém-selecionado).
+      if (next.pixelEvents?.length) {
+        const valid = next.pixelEvents.filter(r => r.event?.name?.trim())
+        if (valid.length !== next.pixelEvents.length) {
+          next = { ...next, pixelEvents: valid }
+        }
+      }
+      // 2) jumpRules com condition.questionId vazio ou jump sem targetQuestionId.
+      if (next.jumpRules?.length) {
+        const valid = next.jumpRules.filter(r => {
+          if (!r.condition?.questionId) return false
+          if (r.action?.type === 'jump' && !r.action.targetQuestionId) return false
+          return true
+        })
+        if (valid.length !== next.jumpRules.length) {
+          next = { ...next, jumpRules: valid }
+        }
+      }
+      // 3) conditionalLogic com questionId vazio — sem base de comparação, o engine
+      //    ignora a regra (sempre visível); persistir o estado vazio é só lixo.
+      if (next.conditionalLogic && !next.conditionalLogic.questionId) {
+        next = { ...next, conditionalLogic: undefined }
+      }
+      return next
     }),
     thank_you_message: form.thank_you_message,
     thank_you_title: form.thank_you_title || null,
@@ -409,7 +430,13 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     const data = await response.json().catch(() => null)
 
     if (!response.ok) {
-      throw new Error(data?.error || 'Falha ao atualizar formulário')
+      if (data?.issues?.length) {
+        console.error('[EidosForm] Payload inválido — schema issues:', data.issues)
+      }
+      const detail = data?.issues?.[0]
+        ? ` (${data.issues[0].path}: ${data.issues[0].message})`
+        : ''
+      throw new Error((data?.error || 'Falha ao atualizar formulário') + detail)
     }
 
     return data?.form as Form | undefined

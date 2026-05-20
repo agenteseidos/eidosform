@@ -48,8 +48,8 @@ const optionalSafeUrl = z
 const ConditionalRuleSchema = z
   .object({
     questionId: z.string(),
-    operator: z.enum(['equals', 'not_equals', 'contains', 'not_empty', 'is_empty']),
-    value: z.string().max(2000).optional(),
+    operator: z.enum(['equals', 'not_equals', 'contains', 'greater_than', 'less_than', 'not_empty', 'is_empty']),
+    value: z.string().max(2000).optional().nullable(),
   })
   .strict()
 
@@ -111,7 +111,7 @@ const QuestionBaseShape = {
   required: z.boolean().default(false),
   placeholder: z.string().max(500).optional().nullable(),
   defaultCountry: z.string().max(8).optional().nullable(),
-  conditionalLogic: ConditionalRuleSchema.optional(),
+  conditionalLogic: ConditionalRuleSchema.optional().nullable(),
   pixelEvents: z.array(PixelEventRuleSchema).max(40).optional(),
   jumpRules: z.array(JumpRuleSchema).max(40).optional(),
   imageUrl: optionalSafeUrl.optional(),

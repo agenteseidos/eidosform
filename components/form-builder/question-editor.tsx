@@ -295,23 +295,6 @@ export function QuestionEditor({ question, allQuestions = [], onUpdate, ownerPla
         </div>
       )}
 
-      {(question.type === 'dropdown' || question.type === 'select' || question.type === 'checkboxes') && (
-        <>
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="allow-other-toggle" className="text-sm font-medium text-slate-700">Opção &quot;Outro&quot;</Label>
-              <p className="text-xs text-slate-500">Adiciona uma opção &quot;Outro&quot; com caixa de texto para o respondente descrever</p>
-            </div>
-            <Switch
-              id="allow-other-toggle"
-              checked={!!question.allowOther}
-              onCheckedChange={(checked) => onUpdate({ allowOther: checked })}
-            />
-          </div>
-          <Separator />
-        </>
-      )}
-
       <Separator />
 
       {/* Required toggle */}

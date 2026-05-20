@@ -457,12 +457,18 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
       if (!res.ok) {
         let errorMsg = 'Falha ao enviar resposta'
+        let detail = ''
         try {
           const data = await res.json()
           errorMsg = data.error ?? errorMsg
+          if (Array.isArray(data.field_errors) && data.field_errors.length) {
+            console.error('[EidosForm] Submit field errors:', data.field_errors)
+            const first = data.field_errors[0]
+            if (first?.error) detail = first.error
+          }
         } catch { /* response body not JSON */ }
         console.error('[EidosForm] Submit failed:', res.status, errorMsg)
-        toast.error(errorMsg)
+        toast.error(errorMsg, detail ? { description: detail } : undefined)
         setIsSubmitting(false)
         isSubmittedRef.current = false
         isSubmittingRef.current = false

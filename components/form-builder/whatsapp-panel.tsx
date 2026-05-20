@@ -66,7 +66,7 @@ const TEMPLATE_VARIABLE_GROUPS: TemplateVariableGroup[] = [
   {
     label: 'Formulário',
     vars: [
-      { key: '{form_name}',      description: 'Nome do formulário',                        example: 'Psi Karin' },
+      { key: '{form_name}',      description: 'Nome do formulário',                        example: 'Form Captura 1' },
       { key: '{response_id}',    description: 'ID da resposta',                            example: 'a1b2c3...' },
       { key: '{response_link}',  description: 'Link para ver a resposta no painel',        example: 'eidosform.com.br/...' },
     ],

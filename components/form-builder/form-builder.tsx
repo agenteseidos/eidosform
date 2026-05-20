@@ -361,7 +361,15 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     description: form.description,
     slug: form.slug,
     theme: form.theme,
-    questions,
+    questions: questions.map(q => {
+      if (!q.pixelEvents?.length) return q
+      // Evento "Personalizado…" recém-selecionado fica com name='' até o usuário
+      // digitar. Persistir nesse estado viola o schema (name.min(1)) e o autosave
+      // estoura "Payload inválido". Filtra eventos incompletos — o estado local
+      // do editor preserva a regra até ela ficar válida.
+      const valid = q.pixelEvents.filter(r => r.event?.name?.trim())
+      return valid.length === q.pixelEvents.length ? q : { ...q, pixelEvents: valid }
+    }),
     thank_you_message: form.thank_you_message,
     thank_you_title: form.thank_you_title || null,
     thank_you_description: form.thank_you_description || null,

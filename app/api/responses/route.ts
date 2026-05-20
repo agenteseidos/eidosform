@@ -9,7 +9,7 @@ import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { extractLead } from '@/lib/lead-extraction'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
-import { validateAllAnswers } from '@/lib/field-validators'
+import { validateAllAnswers, pruneOrphanAnswers } from '@/lib/field-validators'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { appendSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Bug #9: Sanitize answers
-  const answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
+  let answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
 
   if (!form_id) {
     return NextResponse.json({ error: 'ID do formulário é obrigatório' }, { status: 400, headers: CORS_HEADERS })
@@ -210,10 +210,23 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Remove chaves de perguntas que não existem mais no form (ex.: dono editou
+  // o form depois que o respondente começou). Antes, qualquer chave órfã
+  // bloqueava o submit inteiro com "Pergunta desconhecida".
+  const formQuestions = (form.questions ?? []) as QuestionConfig[]
+  const { pruned: prunedAnswers, removedKeys } = pruneOrphanAnswers(
+    formQuestions,
+    answers as Record<string, unknown>
+  )
+  if (removedKeys.length > 0) {
+    console.warn('[responses] orphan answer keys discarded', { form_id, removedKeys })
+  }
+  answers = prunedAnswers
+
   // B16b: Validação backend por tipo de campo
   const fieldErrors = validateAllAnswers(
-    (form.questions ?? []) as QuestionConfig[],
-    answers as Record<string, unknown>
+    formQuestions,
+    answers
   )
   if (fieldErrors.length > 0) {
     return NextResponse.json(

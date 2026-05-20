@@ -116,10 +116,10 @@ export function validateAllAnswers(
 
   for (const [questionId, value] of Object.entries(answers)) {
     const question = questionMap.get(questionId)
-    if (!question) {
-      errors.push({ questionId, error: 'Pergunta desconhecida' })
-      continue
-    }
+    // Chave órfã (pergunta deletada/renomeada após o respondente começar): ignora.
+    // Bloquear o submit por isso pune o respondente por mudanças que o dono fez.
+    // O sanitize de answers no /api/responses já remove a chave antes do INSERT.
+    if (!question) continue
 
     const result = validateFieldValue(question, value)
     if (!result.valid && result.error) {
@@ -128,6 +128,25 @@ export function validateAllAnswers(
   }
 
   return errors
+}
+
+/**
+ * Remove chaves de `answers` que não correspondem a nenhuma pergunta atual do
+ * form. Útil pra persistir só dados úteis quando o form foi editado entre o
+ * início do preenchimento e o submit.
+ */
+export function pruneOrphanAnswers(
+  questions: QuestionConfig[],
+  answers: Record<string, unknown>
+): { pruned: Record<string, unknown>; removedKeys: string[] } {
+  const known = new Set(questions.map(q => q.id))
+  const pruned: Record<string, unknown> = {}
+  const removedKeys: string[] = []
+  for (const [k, v] of Object.entries(answers)) {
+    if (known.has(k)) pruned[k] = v
+    else removedKeys.push(k)
+  }
+  return { pruned, removedKeys }
 }
 
 // ── Validadores individuais ──

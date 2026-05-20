@@ -6,7 +6,7 @@ import { checkAndIncrementResponseCount, PLANS, PlanName } from '@/lib/plan-limi
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
-import { validateAllAnswers } from '@/lib/field-validators'
+import { validateAllAnswers, pruneOrphanAnswers } from '@/lib/field-validators'
 import { logError } from '@/lib/logger'
 
 interface RouteParams {
@@ -244,8 +244,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     )
   }
 
+  // Remove chaves de perguntas órfãs (form editado depois do respondente começar).
+  const formQuestions = (form.questions ?? []) as import('@/lib/database.types').QuestionConfig[]
+  const { pruned: prunedAnswers, removedKeys } = pruneOrphanAnswers(formQuestions, answers)
+  if (removedKeys.length > 0) {
+    console.warn('[v1/forms] orphan answer keys discarded', { form_id: id, removedKeys })
+  }
+  const answersForPersist = prunedAnswers
+
   // Validate answers against known question IDs
-  const validationErrors = validateAllAnswers((form.questions ?? []) as import('@/lib/database.types').QuestionConfig[], answers)
+  const validationErrors = validateAllAnswers(formQuestions, answersForPersist)
   if (validationErrors.length > 0) {
     return NextResponse.json(
       { error: 'Respostas inválidas', details: validationErrors },
@@ -253,7 +261,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const completed = isResponseComplete(answers, form.questions ?? [])
+  const completed = isResponseComplete(answersForPersist, form.questions ?? [])
 
   // Checagem de limite atômica (RPC check_and_increment_response) — mesma
   // do endpoint público /api/responses. Evita corrida TOCTOU entre ler e
@@ -300,7 +308,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const { data: updated, error } = await supabase
       .from('responses')
       .update({
-        answers: answers as Record<string, import('@/lib/database.types').Json>,
+        answers: answersForPersist as Record<string, import('@/lib/database.types').Json>,
         completed,
         last_question_answered: lastQuestionAnswered ?? null,
         ...(bodyRespondentId ? { respondent_id: bodyRespondentId } : {}),
@@ -325,7 +333,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       .from('responses')
       .insert({
         form_id: id,
-        answers: answers as Record<string, import('@/lib/database.types').Json>,
+        answers: answersForPersist as Record<string, import('@/lib/database.types').Json>,
         completed,
         last_question_answered: lastQuestionAnswered ?? null,
         respondent_id: typeof body.respondent_id === 'string' ? body.respondent_id : null,
@@ -345,7 +353,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     // Contador já foi incrementado atomicamente em checkAndIncrementResponseCount acima.
   }
 
-  const answerItems = Object.entries(answers).map(([questionId, value]) => ({
+  const answerItems = Object.entries(answersForPersist).map(([questionId, value]) => ({
     response_id: responseId,
     question_id: questionId,
     value: value === null || value === undefined ? ''
@@ -375,7 +383,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         webhookUrl: form.webhook_url,
         formId: id,
         responseId,
-        responseData: answers,
+        responseData: answersForPersist,
       }).catch((err) => logError('Failed to dispatch webhook', err))
     }
   }

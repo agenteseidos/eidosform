@@ -623,6 +623,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
   // ─── Thank you screen ────────────────────────────────────────────────────────
   if (isSubmitted) {
+    // Quando desativada: se tem redirect_url, faz redirect imediato (o setTimeout
+    // já roda no handleSubmit). Mantém só um aviso visual mínimo (check + branding)
+    // — o usuário sabe que enviou, mas sem o título/descrição/botão.
+    const thankYouEnabled = form.thank_you_enabled !== false
     return (
       <div
         className="min-h-screen flex items-center justify-center p-6"
@@ -644,6 +648,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
             <Check className="w-10 h-10" style={{ color: theme.primaryColor }} />
           </motion.div>
 
+          {thankYouEnabled && (
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -653,7 +658,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           >
             {form.thank_you_title || form.thank_you_message || 'Obrigado! 🎉'}
           </motion.h1>
+          )}
 
+          {thankYouEnabled && (
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -663,8 +670,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           >
             {form.thank_you_description || 'Sua resposta foi registrada com sucesso.'}
           </motion.p>
+          )}
 
-          {form.thank_you_button_text && form.thank_you_button_url && (
+          {thankYouEnabled && form.thank_you_button_text && form.thank_you_button_url && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

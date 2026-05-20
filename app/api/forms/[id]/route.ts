@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const FORM_COLUMNS = 'id, user_id, folder_id, title, description, slug, status, is_public, is_published, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, redirect_delay, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, created_at, updated_at'
+  const FORM_COLUMNS = 'id, user_id, folder_id, title, description, slug, status, is_public, is_published, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, redirect_delay, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, created_at, updated_at'
 
   const { data, error } = await supabase
     .from('forms')
@@ -94,7 +94,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     )
   }
   const body = parsed.data
-  const { title, description, slug, status, theme, questions, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url } = body
+  const { title, description, slug, status, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url } = body
 
   // P1-C: Ignore 'plan' field — plan is managed exclusively via billing/admin endpoints
   // Prevents users from escalating their own plan via PATCH
@@ -304,6 +304,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(status !== undefined && { status }),
     ...(theme !== undefined && { theme }),
     ...(sanitizedQuestions !== undefined && { questions: sanitizedQuestions }),
+    ...(thank_you_enabled !== undefined && { thank_you_enabled }),
     ...(thank_you_message !== undefined && { thank_you_message }),
     ...(thank_you_title !== undefined && { thank_you_title }),
     ...(thank_you_description !== undefined && { thank_you_description }),

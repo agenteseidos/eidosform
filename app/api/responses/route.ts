@@ -10,6 +10,7 @@ import { extractLead } from '@/lib/lead-extraction'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers } from '@/lib/field-validators'
+import { buildQuestionPath } from '@/lib/form-logic-engine'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { appendSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
@@ -76,15 +77,29 @@ function serializeAnswerValue(value: unknown): string {
   return String(value)
 }
 
-// Check if all required questions are answered (Bug #5)
+// Check if all required questions are answered, considerando o caminho que o
+// respondente efetivamente percorreu (lógica condicional pode esconder ramos
+// inteiros do formulário — exigi-los marcaria como incompleto um lead que
+// terminou o fluxo dele).
 function isResponseComplete(
   answers: Record<string, unknown>,
   questions: Array<{ id: string; type?: string; required?: boolean }>
 ): boolean {
-  const requiredIds = questions.filter((q) => q.required && q.type !== 'content_block').map((q) => q.id)
-  if (requiredIds.length === 0) return true
-  return requiredIds.every((id) => {
-    const val = answers[id]
+  const path = buildQuestionPath(
+    questions as unknown as Parameters<typeof buildQuestionPath>[0],
+    answers,
+  )
+  const pathSet = path.length > 0 ? new Set(path) : null
+  const required = questions.filter((q) => q.required && q.type !== 'content_block')
+  // Se nenhum required existe no form, ou nenhum required cai no caminho
+  // percorrido, considera completo (o respondente terminou o fluxo dele).
+  if (required.length === 0) return true
+  const requiredInPath = pathSet
+    ? required.filter((q) => pathSet.has(q.id))
+    : required
+  if (requiredInPath.length === 0) return true
+  return requiredInPath.every((q) => {
+    const val = answers[q.id]
     if (val === undefined || val === null || val === '') return false
     if (Array.isArray(val) && val.length === 0) return false
     return true

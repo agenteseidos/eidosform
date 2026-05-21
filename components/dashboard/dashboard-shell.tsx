@@ -16,7 +16,10 @@ import {
 } from '@/components/ui/dialog'
 import { Form, Folder } from '@/lib/database.types'
 import { FormCard } from '@/components/dashboard/form-card'
-import { Folder as FolderIcon, FolderOpen, Plus, Files } from 'lucide-react'
+import { Folder as FolderIcon, FolderOpen, Plus, Files, MoreVertical, Pencil, Trash2 } from 'lucide-react'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import {
   Select,
@@ -52,6 +55,11 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
   const [isFolderDialogOpen, setIsFolderDialogOpen] = useState(false)
   const [isMobileFoldersOpen, setIsMobileFoldersOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  // Gerenciamento de pastas existentes
+  const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
+  const [folderToRename, setFolderToRename] = useState<Folder | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [isProcessingFolder, setIsProcessingFolder] = useState(false)
 
   const formsWithFolders = useMemo(() => {
     return forms.map((form) => {
@@ -156,6 +164,100 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
     }
   }
 
+  const handleDeleteFolder = async () => {
+    if (!folderToDelete) return
+    setIsProcessingFolder(true)
+    try {
+      const response = await fetch(`/api/folders/${folderToDelete.id}`, { method: 'DELETE' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.error || 'Não foi possível excluir a pasta')
+      // Os formulários da pasta voltam pra "Sem pasta" — refletir no estado local.
+      setAssignments((current) => {
+        const next = { ...current }
+        for (const [formId, fid] of Object.entries(current)) {
+          if (fid === folderToDelete.id) next[formId] = null
+        }
+        return next
+      })
+      setFolders((current) => current.filter((f) => f.id !== folderToDelete.id))
+      if (selectedFilter === folderToDelete.id) setSelectedFilter('all')
+      toast.success('Pasta excluída')
+      setFolderToDelete(null)
+      refreshDashboard()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível excluir a pasta')
+    } finally {
+      setIsProcessingFolder(false)
+    }
+  }
+
+  const handleRenameFolder = async () => {
+    if (!folderToRename) return
+    const trimmed = renameValue.trim()
+    if (!trimmed) {
+      toast.error('Digite um nome para a pasta')
+      return
+    }
+    if (trimmed === folderToRename.name) {
+      setFolderToRename(null)
+      return
+    }
+    setIsProcessingFolder(true)
+    try {
+      const response = await fetch(`/api/folders/${folderToRename.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.error || 'Não foi possível renomear a pasta')
+      const updated = payload.folder as Folder
+      setFolders((current) => current.map((f) => (f.id === updated.id ? updated : f)))
+      toast.success('Pasta renomeada')
+      setFolderToRename(null)
+      refreshDashboard()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível renomear a pasta')
+    } finally {
+      setIsProcessingFolder(false)
+    }
+  }
+
+  const formsInFolderCount = (folderId: string) =>
+    formsWithFolders.filter((form) => form.folder_id === folderId).length
+
+  // Renderiza o menu "..." que aparece no hover. Reusável entre desktop e mobile.
+  const renderFolderActions = (folder: Folder) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Ações da pasta ${folder.name}`}
+          onClick={(e) => e.stopPropagation()}
+          className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 lg:opacity-0 lg:group-hover:opacity-100 data-[state=open]:opacity-100"
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem
+          onSelect={() => {
+            setFolderToRename(folder)
+            setRenameValue(folder.name)
+          }}
+        >
+          <Pencil className="mr-2 h-4 w-4" /> Renomear
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() => setFolderToDelete(folder)}
+        >
+          <Trash2 className="mr-2 h-4 w-4" /> Excluir
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   return (
     <>
       <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -193,21 +295,29 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
               <div className="pt-2">
                 <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Pastas</p>
                 <div className="space-y-1">
-                  {folders.map((folder) => (
-                    <button
-                      key={folder.id}
-                      onClick={() => setSelectedFilter(folder.id)}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${selectedFilter === folder.id ? 'bg-amber-50 text-amber-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <FolderIcon className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{folder.name}</span>
-                      </span>
-                      <Badge variant="secondary" className="bg-white text-slate-500">
-                        {formsWithFolders.filter((form) => form.folder_id === folder.id).length}
-                      </Badge>
-                    </button>
-                  ))}
+                  {folders.map((folder) => {
+                    const isSelected = selectedFilter === folder.id
+                    return (
+                      <div
+                        key={folder.id}
+                        className={`group flex w-full items-center rounded-xl pr-1 transition-colors ${isSelected ? 'bg-amber-50 text-amber-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+                      >
+                        <button
+                          onClick={() => setSelectedFilter(folder.id)}
+                          className="flex flex-1 min-w-0 items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <FolderIcon className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{folder.name}</span>
+                          </span>
+                          <Badge variant="secondary" className="bg-white text-slate-500">
+                            {formsInFolderCount(folder.id)}
+                          </Badge>
+                        </button>
+                        {renderFolderActions(folder)}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -356,22 +466,112 @@ export function DashboardShell({ forms, folders: initialFolders, responseCounts 
               <span className="flex items-center gap-2"><FolderOpen className="h-4 w-4" /> 📁 Sem pasta</span>
               <Badge variant="secondary" className="bg-white text-slate-500">{formsWithFolders.filter((f) => !f.folder_id).length}</Badge>
             </button>
-            {folders.map((folder) => (
-              <button
-                key={folder.id}
-                onClick={() => { setSelectedFilter(folder.id); setIsMobileFoldersOpen(false) }}
-                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${selectedFilter === folder.id ? 'bg-amber-50 text-amber-700' : 'text-slate-600 hover:bg-slate-50'}`}
-              >
-                <span className="flex min-w-0 items-center gap-2"><FolderIcon className="h-4 w-4 shrink-0" /><span className="truncate">{folder.name}</span></span>
-                <Badge variant="secondary" className="bg-white text-slate-500">{formsWithFolders.filter((f) => f.folder_id === folder.id).length}</Badge>
-              </button>
-            ))}
+            {folders.map((folder) => {
+              const isSelected = selectedFilter === folder.id
+              return (
+                <div
+                  key={folder.id}
+                  className={`group flex w-full items-center rounded-xl pr-1 transition-colors ${isSelected ? 'bg-amber-50 text-amber-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  <button
+                    onClick={() => { setSelectedFilter(folder.id); setIsMobileFoldersOpen(false) }}
+                    className="flex flex-1 min-w-0 items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm"
+                  >
+                    <span className="flex min-w-0 items-center gap-2"><FolderIcon className="h-4 w-4 shrink-0" /><span className="truncate">{folder.name}</span></span>
+                    <Badge variant="secondary" className="bg-white text-slate-500">{formsInFolderCount(folder.id)}</Badge>
+                  </button>
+                  {renderFolderActions(folder)}
+                </div>
+              )
+            })}
           </div>
           <div className="border-t border-slate-100 pt-3">
             <Button variant="outline" className="w-full justify-start" onClick={() => { setIsMobileFoldersOpen(false); setIsFolderDialogOpen(true) }} disabled={isPending}>
               <Plus className="mr-2 h-4 w-4" />Nova pasta
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmar exclusão de pasta */}
+      <Dialog
+        open={!!folderToDelete}
+        onOpenChange={(open) => { if (!open) setFolderToDelete(null) }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir pasta?</DialogTitle>
+            <DialogDescription>
+              {folderToDelete && (
+                <>
+                  A pasta <strong>{folderToDelete.name}</strong> será excluída.{' '}
+                  {formsInFolderCount(folderToDelete.id) > 0 ? (
+                    <>
+                      Os <strong>{formsInFolderCount(folderToDelete.id)} formulário{formsInFolderCount(folderToDelete.id) === 1 ? '' : 's'}</strong>{' '}
+                      dentro dela voltam pra <strong>Sem pasta</strong> (não são deletados).
+                    </>
+                  ) : (
+                    <>A pasta está vazia.</>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setFolderToDelete(null)}
+              disabled={isProcessingFolder}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteFolder}
+              disabled={isProcessingFolder}
+            >
+              {isProcessingFolder ? 'Excluindo...' : 'Excluir pasta'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Renomear pasta */}
+      <Dialog
+        open={!!folderToRename}
+        onOpenChange={(open) => { if (!open) setFolderToRename(null) }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Renomear pasta</DialogTitle>
+            <DialogDescription>Digite o novo nome da pasta.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label htmlFor="rename-folder" className="text-sm font-medium text-slate-700">Nome da pasta</label>
+            <Input
+              id="rename-folder"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleRenameFolder() }}
+              autoFocus
+              disabled={isProcessingFolder}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setFolderToRename(null)}
+              disabled={isProcessingFolder}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleRenameFolder}
+              disabled={isProcessingFolder || !renameValue.trim()}
+            >
+              {isProcessingFolder ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

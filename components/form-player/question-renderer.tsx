@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
 import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink, ChevronDown } from 'lucide-react'
 import { renderContentBlockHtml } from '@/lib/content-block'
-import { sanitizeHtml, isSafeUrl } from '@/lib/html'
+import { sanitizeHtml, sanitizeRichHtml, isSafeUrl } from '@/lib/html'
 import { sanitizeEmbedHtml } from '@/lib/html-server'
 import { renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
 
@@ -1282,7 +1282,10 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
 
     case 'content_block': {
       const rawHtml = renderTiptapHtml(question.contentBody, renderContentBlockHtml)
-      const contentHtml = sanitizeHtml(rawHtml)
+      // Rich sanitization: preserva style="font-size: 24px" etc. que o Tiptap
+      // injeta (FontSize, peso, alinhamento). O sanitizeHtml comum apagava
+      // os estilos — texto saía sempre no tamanho default no player.
+      const contentHtml = sanitizeRichHtml(rawHtml)
       return (
         <div className="space-y-5">
           {contentHtml ? (

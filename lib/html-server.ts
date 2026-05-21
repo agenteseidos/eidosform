@@ -1,4 +1,4 @@
-import { isSafeUrl, ALLOWED_TAGS, ALLOWED_ATTR } from './html'
+import { isSafeUrl, ALLOWED_TAGS, ALLOWED_ATTR, filterSafeStyle } from './html'
 
 /**
  * Server-only HTML sanitization — NO jsdom dependency.
@@ -77,7 +77,7 @@ function sanitizeIframeTag(match: string): string {
  * Com `opts.allowIframe`, mantém `<iframe>` cujo `src` esteja na allowlist
  * de hosts (usado pelo html_block); todo o resto continua sendo removido.
  */
-export function sanitizeHtmlServer(dirty: unknown, opts?: { allowIframe?: boolean }): string {
+export function sanitizeHtmlServer(dirty: unknown, opts?: { allowIframe?: boolean; allowSafeStyle?: boolean }): string {
   if (typeof dirty !== 'string' || !dirty) return ''
 
   let input = dirty
@@ -113,7 +113,9 @@ export function sanitizeHtmlServer(dirty: unknown, opts?: { allowIframe?: boolea
     let attrMatch
     while ((attrMatch = attrRegex.exec(match)) !== null) {
       const attrName = attrMatch[1].toLowerCase()
-      if (!ALLOWED_ATTR_SET.has(attrName)) continue
+      const isStyleAttr = attrName === 'style'
+      const styleAllowed = isStyleAttr && opts?.allowSafeStyle === true
+      if (!ALLOWED_ATTR_SET.has(attrName) && !styleAllowed) continue
 
       let attrValue = attrMatch[0].trim()
 
@@ -125,11 +127,28 @@ export function sanitizeHtmlServer(dirty: unknown, opts?: { allowIframe?: boolea
         }
       }
 
+      // Filtra style — só passa propriedades CSS na safelist (font-size, etc.)
+      if (isStyleAttr) {
+        const styleMatch = attrValue.match(/=["']([^"']*)["']/)
+        const raw = styleMatch ? styleMatch[1] : ''
+        const safe = filterSafeStyle(raw)
+        if (!safe) continue
+        attrValue = `style="${safe}"`
+      }
+
       filteredAttrs += ' ' + attrValue
     }
 
     return `<${tag}${filteredAttrs}>`
   })
+}
+
+/**
+ * Variante "rich" do server-side sanitizer — preserva `style="..."` filtrado
+ * pela safelist (font-size, color, text-align etc.). Usado em content_block.
+ */
+export function sanitizeRichHtmlServer(dirty: unknown): string {
+  return sanitizeHtmlServer(dirty, { allowSafeStyle: true })
 }
 
 /**
@@ -150,7 +169,8 @@ export function sanitizeContentBlocksServer<T>(questions: T): T {
     if (obj.type === 'content_block') {
       const next: Record<string, unknown> = { ...obj }
       if (typeof obj.contentBody === 'string') {
-        next.contentBody = sanitizeHtmlServer(obj.contentBody)
+        // Rich: preserva inline styles seguros (Tiptap FontSize, etc.).
+        next.contentBody = sanitizeRichHtmlServer(obj.contentBody)
       }
       if (typeof obj.contentButtonUrl === 'string' && !isSafeUrl(obj.contentButtonUrl)) {
         next.contentButtonUrl = ''

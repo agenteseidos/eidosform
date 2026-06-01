@@ -117,6 +117,14 @@ export default async function FormPage({ params }: FormPageProps) {
   const metaPixelId = rawPixelId && /^\d{10,20}$/.test(rawPixelId.trim()) ? rawPixelId.trim() : null
   const canShowPixels = ownerPlan === 'plus' || ownerPlan === 'professional'
 
+  // Google Tag Manager + Google Ads — injetados server-side (igual ao Meta Pixel)
+  // para detecção confiável (Tag Assistant) em todas as telas do player.
+  // Sanitize: só formatos válidos de ID entram no HTML inline (previne XSS).
+  const rawGtmId = px.gtmId || px.gtm_id || null
+  const gtmId = canShowPixels && rawGtmId && /^GTM-[A-Z0-9]+$/i.test(rawGtmId.trim()) ? rawGtmId.trim() : null
+  const rawGoogleAdsId = px.googleAdsId || px.google_ads_id || null
+  const googleAdsId = canShowPixels && rawGoogleAdsId && /^AW-\d+$/.test(rawGoogleAdsId.trim()) ? rawGoogleAdsId.trim() : null
+
   // Marca "Feito com EidosForm": free/starter sempre exibem (watermark
   // obrigatório — o toggle fica travado no builder); plus/professional
   // decidem pelo toggle hide_branding salvo no form. Antes esta regra
@@ -170,6 +178,46 @@ export default async function FormPage({ params }: FormPageProps) {
           }}
         />
       )}
+
+      {/* Google Tag Manager — container injetado server-side para detecção confiável */}
+      {gtmId && (
+        <>
+          <Script
+            id="gtm"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');`,
+            }}
+          />
+          <noscript>
+            <iframe
+              src={`https://www.googletagmanager.com/ns.html?id=${gtmId}`}
+              height="0"
+              width="0"
+              style={{ display: 'none', visibility: 'hidden' }}
+            />
+          </noscript>
+        </>
+      )}
+
+      {/* Google Ads (gtag) — carrega a lib e configura o ID de conversão */}
+      {googleAdsId && (
+        <>
+          <Script
+            id="google-ads-lib"
+            strategy="afterInteractive"
+            src={`https://www.googletagmanager.com/gtag/js?id=${googleAdsId}`}
+          />
+          <Script
+            id="google-ads-init"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${googleAdsId}');`,
+            }}
+          />
+        </>
+      )}
+
       <FormPlayer form={form} ownerPlan={ownerPlan} allowEmbed={canEmbed} />
     </>
   )

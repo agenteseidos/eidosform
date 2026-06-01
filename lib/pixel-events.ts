@@ -9,7 +9,21 @@ declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void
     __eidosCapturedFbqEvents?: string[]
+    dataLayer?: unknown[]
   }
+}
+
+/**
+ * Empurra um evento pro dataLayer do GTM/Google.
+ * Espelha os mesmos eventos da aba CONVERSÕES (já usados pelo Meta) para o
+ * Google: o GTM/gtag escutam e disparam conversões do Google Ads/GA4.
+ * Dispara na hora — NÃO depende do fbq/Meta estar carregado e NÃO altera
+ * em nada o comportamento do Meta.
+ */
+export function pushDataLayerEvent(event: string, params?: Record<string, unknown>) {
+  if (typeof window === 'undefined' || !event) return
+  window.dataLayer = window.dataLayer || []
+  window.dataLayer.push({ event, ...(params || {}) })
 }
 
 function recordCapturedEvent(name: string) {
@@ -47,12 +61,24 @@ export function matchesCondition(answer: unknown, condition: PixelEventCondition
   }
 }
 
-export function firePixelEvent(event: PixelEventConfig, retries = 10) {
+export function firePixelEvent(event: PixelEventConfig) {
+  // Google/GTM — dispara uma vez, imediatamente (independe do fbq).
+  pushDataLayerEvent(
+    event.name,
+    event.value !== undefined
+      ? { value: event.value, currency: event.currency || 'BRL' }
+      : undefined,
+  )
+  // Meta — comportamento inalterado (espera o fbq carregar, com retry).
+  fireFbqEvent(event)
+}
+
+function fireFbqEvent(event: PixelEventConfig, retries = 10) {
   if (typeof window === 'undefined') return
   const { fbq } = window
   if (!fbq) {
     if (retries > 0) {
-      setTimeout(() => firePixelEvent(event, retries - 1), 300)
+      setTimeout(() => fireFbqEvent(event, retries - 1), 300)
     }
     return
   }
@@ -69,13 +95,21 @@ export function firePixelEvent(event: PixelEventConfig, retries = 10) {
   }
 }
 
-export function fireNamedPixelEvent(name: string, retries = 10) {
+export function fireNamedPixelEvent(name: string) {
+  if (!name) return
+  // Google/GTM — dispara uma vez, imediatamente (independe do fbq).
+  pushDataLayerEvent(name)
+  // Meta — comportamento inalterado (espera o fbq carregar, com retry).
+  fireFbqNamedEvent(name)
+}
+
+function fireFbqNamedEvent(name: string, retries = 10) {
   if (!name || typeof window === 'undefined') return
   const { fbq } = window
   if (!fbq) {
     // fbq ainda não carregou — tentar novamente em 300ms (até 10x = 3s)
     if (retries > 0) {
-      setTimeout(() => fireNamedPixelEvent(name, retries - 1), 300)
+      setTimeout(() => fireFbqNamedEvent(name, retries - 1), 300)
     }
     return
   }

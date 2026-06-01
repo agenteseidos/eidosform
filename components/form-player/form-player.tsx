@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
-import { evaluatePixelEvents, fireNamedPixelEvent } from '@/lib/pixel-events'
+import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
@@ -587,6 +587,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       }
 
       triggerPixelSubmitRef.current?.()
+      // GTM/Google: evento universal de conclusão do formulário. Permite criar um
+      // gatilho de conversão no GTM mesmo sem configurar evento por bloco. Vai só
+      // pro dataLayer — não toca no Meta.
+      pushDataLayerEvent('form_submit', { form_id: form.id })
       // pixel_event_on_complete já foi disparado antes do POST (linha ~410) pra entrar
       // no buffer meta_events da response. Não disparar novamente aqui pra evitar dupla
       // contagem no Events Manager.

@@ -74,3 +74,32 @@ export function formatCNPJ(cnpj: string): string {
     .replace(/(\d{3})(\d)/, '$1/$2')
     .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
 }
+
+/**
+ * Validação "leniente" de URL para campos preenchidos por leigos.
+ * Aceita endereços SEM protocolo (ex.: "www.site.com.br", "site.com.br") —
+ * o `https://` é assumido por baixo dos panos. Exige apenas que o host
+ * pareça um domínio (tenha pelo menos um ponto), pra continuar barrando
+ * texto solto. Use em vez de `new URL(value)` cru, que exige protocolo.
+ */
+export function isValidLooseUrl(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+  try {
+    const url = new URL(candidate)
+    return url.hostname.includes('.') && !url.hostname.startsWith('.') && !url.hostname.endsWith('.')
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Normaliza uma URL preenchida por leigo adicionando `https://` quando falta
+ * o protocolo. Retorna a string original (trim) se já tiver protocolo.
+ */
+export function normalizeLooseUrl(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}

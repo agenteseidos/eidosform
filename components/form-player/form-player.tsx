@@ -15,6 +15,7 @@ import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
 import { createClient } from '@/lib/supabase/client'
+import { isValidLooseUrl } from '@/lib/validators'
 
 interface FormPlayerProps {
   ownerPlan?: string
@@ -228,7 +229,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
 
     if (answer && currentQuestion.type === 'url') {
-      try { new URL(String(answer)) } catch {
+      if (!isValidLooseUrl(String(answer))) {
         setErrors(prev => ({ ...prev, [currentQuestion.id]: 'Por favor, insira uma URL válida' }))
         return false
       }
@@ -468,7 +469,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         }
       }
       if (answerSource[q.id] && q.type === 'url') {
-        try { new URL(String(answerSource[q.id])) } catch {
+        if (!isValidLooseUrl(String(answerSource[q.id]))) {
           newErrors[q.id] = 'Por favor, insira uma URL válida'
           allValid = false
         }

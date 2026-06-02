@@ -4,7 +4,7 @@
  */
 
 import { QuestionConfig, QuestionType } from './database.types'
-import { validateCPF } from './validators'
+import { validateCPF, isValidLooseUrl } from './validators'
 
 export interface FieldValidationResult {
   valid: boolean
@@ -221,12 +221,8 @@ function validateUrl(value: unknown): FieldValidationResult {
   if (typeof value !== 'string') {
     return { valid: false, error: 'URL deve ser texto' }
   }
-  try {
-    const url = new URL(value)
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      return { valid: false, error: 'URL deve usar http ou https' }
-    }
-  } catch {
+  // Aceita URL sem protocolo (ex.: "www.site.com.br") — não exige http(s)://.
+  if (!isValidLooseUrl(value)) {
     return { valid: false, error: 'URL inválida' }
   }
   return { valid: true }

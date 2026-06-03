@@ -55,6 +55,15 @@ export const themes: Record<ThemePreset, ThemeConfig> = {
     accentColor: '#3F3F46',
     fontFamily: "'Inter', sans-serif",
   },
+  terracota: {
+    id: 'terracota',
+    name: 'Terracota',
+    primaryColor: '#2F5749',
+    backgroundColor: '#F1E9DD',
+    textColor: '#294A3A',
+    accentColor: '#C2674A',
+    fontFamily: "'DM Sans', sans-serif",
+  },
 }
 
 export const themeList = Object.values(themes)

@@ -57,6 +57,7 @@ export type ThemePreset =
   | 'forest'
   | 'lavender'
   | 'minimal'
+  | 'terracota'
 
 export interface ThemeConfig {
   id: ThemePreset

@@ -181,9 +181,10 @@ function validatePhone(value: unknown): FieldValidationResult {
     return { valid: false, error: 'Telefone deve ser texto' }
   }
   // Aceita formatos internacionais: +55119999900000, etc.
+  // Teto de 15 dígitos = limite do padrão internacional E.164 (DDI + número).
   const clean = value.replace(/[\s\-().]/g, '')
-  if (!/^\+?\d{7,15}$/.test(clean)) {
-    return { valid: false, error: 'Telefone inválido (7-15 dígitos)' }
+  if (!/^\+?\d{8,15}$/.test(clean)) {
+    return { valid: false, error: 'Telefone inválido (8-15 dígitos)' }
   }
   return { valid: true }
 }

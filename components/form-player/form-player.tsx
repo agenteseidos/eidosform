@@ -16,6 +16,7 @@ import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
 import { createClient } from '@/lib/supabase/client'
 import { isValidLooseUrl } from '@/lib/validators'
+import { isValidPhoneLocal } from '@/lib/phone'
 
 interface FormPlayerProps {
   ownerPlan?: string
@@ -236,8 +237,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
 
     if (answer && currentQuestion.type === 'phone') {
-      if (!/^[+]?[\d\s\-().]+$/.test(String(answer))) {
-        setErrors(prev => ({ ...prev, [currentQuestion.id]: 'Por favor, insira um telefone válido' }))
+      if (!isValidPhoneLocal(String(answer))) {
+        setErrors(prev => ({ ...prev, [currentQuestion.id]: 'Por favor, insira um número de telefone válido' }))
         return false
       }
     }
@@ -471,6 +472,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       if (answerSource[q.id] && q.type === 'url') {
         if (!isValidLooseUrl(String(answerSource[q.id]))) {
           newErrors[q.id] = 'Por favor, insira uma URL válida'
+          allValid = false
+        }
+      }
+      if (answerSource[q.id] && q.type === 'phone') {
+        if (!isValidPhoneLocal(String(answerSource[q.id]))) {
+          newErrors[q.id] = 'Por favor, insira um número de telefone válido'
           allValid = false
         }
       }

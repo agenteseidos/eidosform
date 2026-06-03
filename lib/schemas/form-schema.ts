@@ -231,7 +231,7 @@ const baseFormShape = {
   description: z.string().max(2000).nullable().optional(),
   slug: slugSchema,
   status: z.enum(['draft', 'published', 'closed']).optional(),
-  theme: z.enum(['midnight', 'ocean', 'sunset', 'forest', 'lavender', 'minimal']).optional(),
+  theme: z.enum(['midnight', 'ocean', 'sunset', 'forest', 'lavender', 'minimal', 'terracota']).optional(),
   questions: QuestionsArraySchema.optional(),
   thank_you_enabled: z.boolean().optional(),
   thank_you_message: z.string().max(5000).optional(),

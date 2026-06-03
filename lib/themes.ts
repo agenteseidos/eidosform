@@ -60,7 +60,7 @@ export const themes: Record<ThemePreset, ThemeConfig> = {
     name: 'Terracota',
     primaryColor: '#2F5749',
     backgroundColor: '#F1E9DD',
-    textColor: '#294A3A',
+    textColor: '#1C1917',
     accentColor: '#C2674A',
     fontFamily: "'DM Sans', sans-serif",
   },

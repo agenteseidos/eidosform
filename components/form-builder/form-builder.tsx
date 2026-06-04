@@ -199,32 +199,34 @@ function QuestionReorderItem({
                 : (question.title || 'Pergunta sem título')}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 h-7 w-7 p-0"
-            title="Duplicar pergunta"
-            aria-label="Duplicar pergunta"
-            data-testid="duplicate-question"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDuplicate()
-            }}
-          >
-            <Copy className="w-4 h-4 text-slate-400 hover:text-blue-500" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 h-7 w-7 p-0"
-            aria-label="Excluir pergunta"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-          >
-            <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
-          </Button>
+          <div className="flex flex-col gap-0.5 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="opacity-100 md:opacity-0 md:group-hover:opacity-100 h-7 w-7 p-0"
+              title="Duplicar pergunta"
+              aria-label="Duplicar pergunta"
+              data-testid="duplicate-question"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDuplicate()
+              }}
+            >
+              <Copy className="w-4 h-4 text-slate-400 hover:text-blue-500" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="opacity-100 md:opacity-0 md:group-hover:opacity-100 h-7 w-7 p-0"
+              aria-label="Excluir pergunta"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+            >
+              <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
+            </Button>
+          </div>
         </div>
       </motion.div>
     </Reorder.Item>

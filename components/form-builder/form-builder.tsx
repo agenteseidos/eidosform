@@ -895,7 +895,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
             )}
 
             <TabsContent value="questions" className="flex-1 flex flex-col mt-0 overflow-hidden data-[state=inactive]:hidden">
-              <div className="flex-1 min-h-0 p-2 space-y-1 flex flex-col">
+              <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 flex flex-col pr-1">
 
                 {/* === SEÇÃO: TELA DE BOAS VINDAS === */}
                 <div className="px-2 pt-3 pb-1 shrink-0">
@@ -938,7 +938,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   </Button>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+                <div>
                   {questions.length === 0 ? (
                     <div className="text-center py-6 px-4">
                       <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />

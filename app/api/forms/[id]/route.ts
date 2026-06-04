@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const FORM_COLUMNS = 'id, user_id, folder_id, title, description, slug, status, is_public, is_published, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, redirect_delay, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, created_at, updated_at'
+  const FORM_COLUMNS = 'id, user_id, folder_id, title, description, slug, status, is_public, is_published, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, redirect_delay, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, version, created_at, updated_at'
 
   const { data, error } = await supabase
     .from('forms')
@@ -68,7 +68,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // Verify ownership
   const { data: existing } = await supabase
     .from('forms')
-    .select('id, title, questions, google_sheets_id, google_sheets_enabled')
+    .select('id, title, questions, google_sheets_id, google_sheets_enabled, version')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
@@ -94,7 +94,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     )
   }
   const body = parsed.data
-  const { title, description, slug, status, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url } = body
+  const { title, description, slug, status, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url, expectedVersion } = body
 
   // P1-C: Ignore 'plan' field — plan is managed exclusively via billing/admin endpoints
   // Prevents users from escalating their own plan via PATCH
@@ -297,7 +297,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ? (sanitizeContentBlocks(questions) as FormUpdate['questions'])
     : undefined
 
+  // Camada 1 — controle de concorrência otimista. A versão sempre incrementa neste
+  // save; se o cliente mandou `expectedVersion`, o UPDATE abaixo só casa a linha se ela
+  // ainda estiver nessa versão (senão = outra aba alterou no intervalo -> 409).
+  const currentVersion = (existing as { version?: number | null }).version ?? 0
+  const nextVersion = (expectedVersion ?? currentVersion) + 1
+
   const update: FormUpdate = {
+    version: nextVersion,
     ...(title !== undefined && { title }),
     ...(description !== undefined && { description }),
     ...(slug !== undefined && { slug }),
@@ -334,16 +341,33 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     updated_at: new Date().toISOString(),
   }
 
-  const { data, error } = await supabase
+  let updateQuery = supabase
     .from('forms')
     .update(update)
     .eq('id', id)
-    .select()
-    .single()
+  // Guard otimista: só aplica se a versão no banco ainda for a que o cliente tinha.
+  // Sem expectedVersion (cliente antigo), cai em update cego — comportamento legado.
+  if (expectedVersion !== undefined) {
+    updateQuery = updateQuery.eq('version', expectedVersion)
+  }
+
+  const { data, error } = await updateQuery.select().single()
 
   if (error) {
     if (error.code === '23505') {
       return NextResponse.json({ error: 'Slug already in use' }, { status: 409 })
+    }
+    // PGRST116 = nenhuma linha casou. Com guard de versão ligado, isso significa que
+    // outra aba/sessão alterou o form no intervalo (lost update evitado).
+    if (expectedVersion !== undefined && error.code === 'PGRST116') {
+      return NextResponse.json(
+        {
+          error: 'O formulário foi alterado em outra aba ou sessão. Recarregue para ver a versão mais recente antes de salvar.',
+          code: 'version_conflict',
+          currentVersion,
+        },
+        { status: 409 }
+      )
     }
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }

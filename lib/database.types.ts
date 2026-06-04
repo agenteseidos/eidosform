@@ -418,6 +418,7 @@ export interface Database {
           google_sheets_enabled: boolean
           google_sheets_id: string | null
           google_sheets_share_email: string | null
+          version: number
           created_at: string
           updated_at: string
         }
@@ -462,6 +463,7 @@ export interface Database {
           google_sheets_enabled?: boolean
           google_sheets_id?: string | null
           google_sheets_share_email?: string | null
+          version?: number
           updated_at?: string
         }
         Update: {
@@ -503,6 +505,7 @@ export interface Database {
           google_sheets_enabled?: boolean
           google_sheets_id?: string | null
           google_sheets_share_email?: string | null
+          version?: number
         }
         Relationships: []
       }

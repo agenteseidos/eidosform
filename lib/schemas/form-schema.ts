@@ -259,6 +259,10 @@ const baseFormShape = {
   google_sheets_id: z.string().max(120).nullable().optional(),
   google_sheets_share_email: z.string().max(320).nullable().optional(),
   google_sheets_url: z.string().max(2048).nullable().optional(),
+  // Camada 1 — controle de concorrência otimista. O builder envia a versão que tem
+  // em mãos; o PATCH só grava se ela ainda for a versão atual no banco (senão 409).
+  // Ausente = cliente antigo -> fallback p/ update cego (compatibilidade retroativa).
+  expectedVersion: z.number().int().nonnegative().optional(),
 }
 
 export const FormCreateSchema = z

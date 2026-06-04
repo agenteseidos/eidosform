@@ -268,6 +268,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     return null
   }, [])
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Camada 1 — quando o save tomar 409 (outra aba alterou o form), pausamos o autosave
+  // e pedimos recarregar, em vez de seguir sobrescrevendo a versão mais nova.
+  const [hasConflict, setHasConflict] = useState(false)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
   const isMobileUtilityTab = activeTab === 'integrations' || activeTab === 'share' || activeTab === 'logic'
@@ -416,6 +419,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     google_sheets_enabled: form.google_sheets_enabled ?? false,
     google_sheets_id: form.google_sheets_id || null,
     google_sheets_share_email: form.google_sheets_share_email || null,
+    // Camada 1 — versão que o cliente tem em mãos. O servidor só grava se ela ainda
+    // for a atual no banco (senão devolve 409 e o save é pausado). Se undefined (form
+    // carregado antes da migration da coluna), o servidor faz update cego (legado).
+    expectedVersion: form.version,
     ...(status && { status }),
   }), [form, questions, pixels])
 
@@ -431,6 +438,13 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     const data = await response.json().catch(() => null)
 
     if (!response.ok) {
+      // Camada 1 — conflito de versão (outra aba/sessão alterou o form). Sinalizamos
+      // com uma flag pra o chamador pausar o autosave e pedir recarregar.
+      if (response.status === 409 && data?.code === 'version_conflict') {
+        const conflictErr = new Error(data?.error || 'O formulário foi alterado em outra aba.') as Error & { conflict?: boolean }
+        conflictErr.conflict = true
+        throw conflictErr
+      }
       if (data?.issues?.length) {
         console.error('[EidosForm] Payload inválido — schema issues:', data.issues)
       }
@@ -442,6 +456,18 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
     return data?.form as Form | undefined
   }, [form.id])
+
+  // Camada 1 — conflito de versão: pausa o autosave e pede recarregar (não sobrescreve).
+  const notifyVersionConflict = useCallback(() => {
+    setHasConflict(true)
+    setSaveStatus('error')
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    toast.error('Conflito de versão — salvamento pausado', {
+      description: 'Este formulário foi alterado em outra aba ou sessão. Recarregue a página para carregar a versão mais recente antes de continuar editando, pra não sobrescrever o trabalho mais novo.',
+      duration: Infinity,
+      action: { label: 'Recarregar', onClick: () => window.location.reload() },
+    })
+  }, [])
 
   const handleAutosave = useCallback(async () => {
     setSaveStatus('saving')
@@ -459,16 +485,17 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         setTimeout(() => setSaveStatus('idle'), 5000)
       }
     } catch (err) {
+      if ((err as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return }
       toast.error(err instanceof Error ? err.message : 'Erro de conexão ao salvar', { description: 'Verifique sua internet e tente salvar manualmente.' })
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 5000)
     } finally {
       setIsSaving(false)
     }
-  }, [buildFormPayload, updateFormViaApi])
+  }, [buildFormPayload, updateFormViaApi, notifyVersionConflict])
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return
+    if (!hasUnsavedChanges || hasConflict) return
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = setTimeout(() => {
       handleAutosave()
@@ -476,7 +503,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     }
-  }, [hasUnsavedChanges, handleAutosave])
+  }, [hasUnsavedChanges, hasConflict, handleAutosave])
 
   const handleSave = useCallback(async () => {
     setIsSaving(true)
@@ -488,12 +515,13 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       setHasUnsavedChanges(false)
       return true
     } catch (error) {
+      if ((error as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return false }
       toast.error(error instanceof Error ? error.message : 'Falha ao salvar formulário')
       return false
     } finally {
       setIsSaving(false)
     }
-  }, [buildFormPayload, updateFormViaApi])
+  }, [buildFormPayload, updateFormViaApi, notifyVersionConflict])
 
   const handlePublish = async () => {
     if (!form.title.trim()) {

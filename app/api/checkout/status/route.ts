@@ -170,12 +170,21 @@ export async function GET() {
       log('[checkout/status] handleUpgrade failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
     }
 
-    // Reconciliar: cancela assinaturas órfãs do cliente (≠ a recém-persistida). O
-    // polling não cancelava nada antes — a sub antiga vazava quando a ativação vinha
-    // por aqui (webhook atrasado). Não-bloqueante.
-    const recon = await reconcileActiveSubscriptions(asaasCustomerId ?? profile?.asaas_customer_id ?? null, subscriptionId)
-    if (recon.cancelled.length) {
-      log('[checkout/status] Assinaturas órfãs canceladas (reconcile via polling)', { userId: user!.id, kept: recon.kept, cancelled: recon.cancelled })
+    // Reconciliar: cancela só as órfãs MAIS ANTIGAS que a recém-persistida. Re-lê o
+    // profile: se outro fluxo (webhook) já trocou a sub vigente, NÃO reconcilia (evita um
+    // reconcile atrasado cancelar a sub vencedora). Não-bloqueante.
+    const { data: freshProfile } = await admin
+      .from('profiles')
+      .select('asaas_subscription_id')
+      .eq('id', user!.id)
+      .single()
+    if ((freshProfile as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id === subscriptionId) {
+      const recon = await reconcileActiveSubscriptions(asaasCustomerId ?? profile?.asaas_customer_id ?? null, subscriptionId)
+      if (recon.cancelled.length || recon.ambiguous.length) {
+        log('[checkout/status] Reconcile via polling', { userId: user!.id, kept: recon.kept, cancelled: recon.cancelled, ambiguous: recon.ambiguous })
+      }
+    } else {
+      log('[checkout/status] Reconcile pulado — profile já aponta outra sub', { userId: user!.id, persistedSub: subscriptionId })
     }
 
     return true
@@ -217,14 +226,18 @@ export async function GET() {
   //    up unrelated active subscriptions.
   if (asaasCustomerId) {
     try {
-      const subs = await getCustomerSubscriptions(asaasCustomerId) as Array<{ id: string; status: string; description?: string; dateCreated?: string; cycle?: string }>
-      const activeSubs = (subs ?? []).filter((s) => (s.status as string)?.toUpperCase() === 'ACTIVE')
+      // getCustomerSubscriptions já retorna só ACTIVE de cartão (limit=100). Ordena por
+      // mais nova primeiro p/ desempate determinístico.
+      const activeSubs = ((await getCustomerSubscriptions(asaasCustomerId)) as Array<{ id: string; status: string; description?: string; dateCreated?: string; cycle?: string }>)
+        .filter((s) => (s.status as string)?.toUpperCase() === 'ACTIVE')
+        .sort((a, b) => {
+          const ta = a.dateCreated ? new Date(a.dateCreated).getTime() : 0
+          const tb = b.dateCreated ? new Date(b.dateCreated).getTime() : 0
+          return tb - ta
+        })
 
       const expectedPlan = checkoutPlan?.toLowerCase()
       const expectedCycle = (checkoutCycle ?? '').toUpperCase()
-      // keepSubId robusto: preferir a sub que bate PLANO (descrição) E CICLO; depois só
-      // plano; por último a mais recente. Importa porque o reconcile cancela TODAS as
-      // outras — eleger a errada como "keep" cancelaria a certa.
       const byPlanAndCycle = (expectedPlan && expectedCycle)
         ? activeSubs.find((s) => (s.description ?? '').toLowerCase().includes(`plano ${expectedPlan}`) && (s.cycle ?? '').toUpperCase() === expectedCycle)
         : undefined
@@ -232,19 +245,27 @@ export async function GET() {
         ? activeSubs.find((s) => (s.description ?? '').toLowerCase().includes(`plano ${expectedPlan}`))
         : undefined
 
-      const sortedByDate = [...activeSubs].sort((a, b) => {
-        const ta = a.dateCreated ? new Date(a.dateCreated).getTime() : 0
-        const tb = b.dateCreated ? new Date(b.dateCreated).getTime() : 0
-        return tb - ta
-      })
-
-      const active = byPlanAndCycle ?? byPlan ?? sortedByDate[0]
+      // Escolha do keepSubId NÃO pode ser ambígua: o persist grava esta sub e o reconcile
+      // cancela as órfãs mais antigas. Se nenhum match de plano e houver MAIS DE UMA
+      // ACTIVE, é ambíguo → retorna pending (deixa o webhook, com subscription explícita,
+      // resolver) em vez de eleger a sub errada no escuro.
+      let active = byPlanAndCycle ?? byPlan
+      if (!active) {
+        if (activeSubs.length === 1) {
+          active = activeSubs[0]
+        } else if (activeSubs.length > 1) {
+          log('[checkout/status] Múltiplas assinaturas ACTIVE sem match claro — ambíguo, retornando pending', {
+            customerId: asaasCustomerId, count: activeSubs.length, expectedPlan, expectedCycle,
+          })
+          return NextResponse.json({ status: 'pending' })
+        }
+      }
 
       if (active) {
         log('[checkout/status] Asaas customer fallback: found ACTIVE subscription', {
           customerId: asaasCustomerId,
           subId: active.id,
-          matchStrategy: byPlanAndCycle ? 'plan+cycle' : byPlan ? 'plan' : 'most_recent',
+          matchStrategy: byPlanAndCycle ? 'plan+cycle' : byPlan ? 'plan' : 'single_active',
         })
         if (await persistPlanFromAsaas(active.id)) {
           return NextResponse.json({ status: 'success' })

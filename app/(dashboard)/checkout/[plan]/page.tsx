@@ -85,6 +85,7 @@ function CheckoutContent() {
   const [profileData, setProfileData] = useState<ProfileFields>(EMPTY_PROFILE)
   const [dialogOpen, setDialogOpen] = useState(false)
   const cancelRef = useRef(false)
+  const submittingRef = useRef(false)
 
   const loadProfile = useCallback(async () => {
     const supabase = createClient()
@@ -113,7 +114,9 @@ function CheckoutContent() {
   }, [])
 
   const startCheckout = useCallback(async () => {
-    if (cancelRef.current) return
+    // Guard de duplo clique: dois cliques rápidos no "Confirmar" criariam dois checkouts.
+    if (cancelRef.current || submittingRef.current) return
+    submittingRef.current = true
     setState('loading')
     try {
       const res = await fetch(`/api/checkout/${normalized}?cycle=${cycle}`, {
@@ -162,6 +165,8 @@ function CheckoutContent() {
       if (cancelRef.current) return
       setState('error')
       setErrorMsg('Falha de conexão. Tente novamente.')
+    } finally {
+      submittingRef.current = false
     }
   }, [normalized, cycle, loadProfile])
 
@@ -252,7 +257,9 @@ function CheckoutContent() {
           missingFields={missingFields}
           onSaved={() => {
             setDialogOpen(false)
-            startCheckout()
+            // Volta pro PREVIEW (não executa direto): numa troca de plano, isso reexibe a
+            // tela de confirmação. loadPreview já manda 1ª compra (free) direto pro checkout.
+            loadPreview()
           }}
         />
       </>

@@ -50,7 +50,7 @@ export function CheckoutSuccessOverlay() {
         setVisible(true)
         window.history.replaceState({}, '', '/billing')
 
-        const POLL_INTERVAL = 4000 // ~15 req/min — folga sob o limite de 30/min do servidor
+        const POLL_INTERVAL = 4000 // ~15 req/min — folga sob o limite de 90/min do servidor
         const MAX_POLL_MS = 240_000 // 4 min de tolerância (webhook pode atrasar)
         const MAX_CONSECUTIVE_ERRORS = 3
         const start = Date.now()
@@ -80,10 +80,10 @@ export function CheckoutSuccessOverlay() {
             // fim da janela. Se vier success, mostra sucesso em vez de "pendente".
             const finalStatus = await checkStatus()
             if (!mounted) return
-            if (finalStatus === 'success') {
+            if (finalStatus === 'success' || finalStatus === 'cancelled' || finalStatus === 'expired') {
               setIsPolling(false)
-              setResolvedStatus('success')
-              router.refresh()
+              setResolvedStatus(finalStatus)
+              if (finalStatus === 'success') router.refresh()
               return
             }
             setIsPolling(false)

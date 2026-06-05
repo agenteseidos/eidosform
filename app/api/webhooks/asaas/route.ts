@@ -389,12 +389,26 @@ export async function POST(req: NextRequest) {
           billingType,
         })
 
-        // Reconciliar: garante no máximo 1 assinatura ACTIVE por cliente (cancela as
-        // órfãs ≠ a nova). Subsume o cancel único antigo. Roda APÓS o profile ter sido
-        // persistido com a nova sub (o throw acima garante). Não-bloqueante.
-        const recon = await reconcileActiveSubscriptions(customerId, payment.subscription ?? null)
-        if (recon.cancelled.length) {
-          log('[asaas-webhook] Assinaturas órfãs canceladas (reconcile)', { userId: user.id, kept: recon.kept, cancelled: recon.cancelled })
+        // Reconciliar: garante no máximo 1 assinatura ACTIVE por cliente (cancela só as
+        // órfãs MAIS ANTIGAS que a nova). Subsume o cancel único antigo. Não-bloqueante.
+        // Só reconcilia se: (a) o evento traz subscription (sem ela, keep=null — a guarda
+        // do reconcile já protege, mas evitamos a chamada); e (b) o profile AINDA aponta
+        // pra essa sub (re-leitura evita um reconcile atrasado agir depois de outro fluxo
+        // concorrente já ter vencido).
+        if (payment.subscription) {
+          const { data: freshProfile } = await supabase
+            .from('profiles')
+            .select('asaas_subscription_id')
+            .eq('id', user.id)
+            .single()
+          if (freshProfile?.asaas_subscription_id === payment.subscription) {
+            const recon = await reconcileActiveSubscriptions(customerId, payment.subscription)
+            if (recon.cancelled.length || recon.ambiguous.length) {
+              log('[asaas-webhook] Reconcile', { userId: user.id, kept: recon.kept, cancelled: recon.cancelled, ambiguous: recon.ambiguous })
+            }
+          } else {
+            log('[asaas-webhook] Reconcile pulado — profile já aponta outra sub (fluxo concorrente venceu)', { userId: user.id, eventSub: payment.subscription, profileSub: freshProfile?.asaas_subscription_id })
+          }
         }
 
         const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)

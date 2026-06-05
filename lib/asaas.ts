@@ -133,9 +133,9 @@ export async function createCheckout(params: {
   return { id: data.id, url: checkoutUrl }
 }
 
-/** Lista assinaturas de um customer */
+/** Lista assinaturas ATIVAS de cartão de um customer (até 100). */
 export async function getCustomerSubscriptions(customerId: string) {
-  const data = await asaasFetch(`/subscriptions?customer=${customerId}&limit=10`)
+  const data = await asaasFetch(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=ACTIVE&billingType=CREDIT_CARD&limit=100`)
   return data.data ?? []
 }
 
@@ -156,18 +156,46 @@ export async function cancelSubscription(subscriptionId: string): Promise<{ dele
 export async function reconcileActiveSubscriptions(
   customerId: string | null | undefined,
   keepSubscriptionId: string | null,
-): Promise<{ cancelled: string[]; kept: string | null }> {
+): Promise<{ cancelled: string[]; kept: string | null; ambiguous: string[] }> {
   const cancelled: string[] = []
-  if (!customerId) return { cancelled, kept: keepSubscriptionId }
+  const ambiguous: string[] = []
+
+  // GUARDA CRÍTICA: sem keep, NÃO cancela nada (senão cancelaria TODAS as assinaturas
+  // do cliente). Idem sem customerId.
+  if (!customerId || !keepSubscriptionId) {
+    if (customerId && !keepSubscriptionId) {
+      logWarn('[asaas] reconcile: keepSubscriptionId nulo — não cancela nada (proteção)', { customerId })
+    }
+    return { cancelled, kept: keepSubscriptionId, ambiguous }
+  }
+
   try {
     const data = await asaasFetch(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=ACTIVE&billingType=CREDIT_CARD&limit=100`)
-    const subs: Array<{ id?: string }> = data?.data ?? []
+    const subs: Array<{ id?: string; dateCreated?: string }> = data?.data ?? []
+
+    // Só cancela órfãs MAIS ANTIGAS que a keep (a keep é a assinatura vigente/mais nova).
+    // Assim, se houver dois checkouts concorrentes, nunca cancelamos a sub mais nova de
+    // outro fluxo. Data indeterminada (da keep ou da candidata) → NÃO cancela (ambígua).
+    const keepSub = subs.find((s) => s.id === keepSubscriptionId)
+    const keepDate = keepSub?.dateCreated ? new Date(keepSub.dateCreated).getTime() : null
+    if (keepDate === null) {
+      logWarn('[asaas] reconcile: dateCreated da keep indeterminada — não cancela nada (conservador)', { customerId, keepSubscriptionId })
+      return { cancelled, kept: keepSubscriptionId, ambiguous }
+    }
+
     for (const sub of subs) {
       if (!sub?.id || sub.id === keepSubscriptionId) continue
+      const subDate = sub.dateCreated ? new Date(sub.dateCreated).getTime() : null
+      if (subDate === null || subDate >= keepDate) {
+        // Mais nova/igual à keep ou data indeterminada → ambígua, não cancela.
+        ambiguous.push(sub.id)
+        logWarn('[asaas] reconcile: sub NÃO cancelada (mais nova/ambígua que a keep)', { customerId, keepSubscriptionId, subId: sub.id })
+        continue
+      }
       try {
         await cancelSubscription(sub.id)
         cancelled.push(sub.id)
-        log('[asaas] reconcile: assinatura órfã cancelada', { customerId, keepSubscriptionId, cancelledSubId: sub.id })
+        log('[asaas] reconcile: órfã antiga cancelada', { customerId, keepSubscriptionId, cancelledSubId: sub.id })
       } catch (err) {
         // Idempotente: já deletada/erro pontual → loga e segue (não derruba a ativação).
         logError('[asaas] reconcile: falha ao cancelar órfã (segue)', err, { customerId, subId: sub.id })
@@ -176,7 +204,7 @@ export async function reconcileActiveSubscriptions(
   } catch (err) {
     logError('[asaas] reconcile: falha ao listar assinaturas do cliente (não-bloqueante)', err, { customerId })
   }
-  return { cancelled, kept: keepSubscriptionId }
+  return { cancelled, kept: keepSubscriptionId, ambiguous }
 }
 
 // Cache em memória do getSubscription pra mitigar consumo da cota do Asaas em

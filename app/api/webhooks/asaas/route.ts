@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { PLAN_PRICES, reconcileActiveSubscriptions, getSubscription } from '@/lib/asaas'
+import { PLAN_PRICES, cancelSubscription, reconcileActiveSubscriptions, getSubscription } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -356,6 +356,17 @@ export async function POST(req: NextRequest) {
 
         log('[asaas-webhook] Activating plan', { userId: user.id, plan, cycle, expiresAt: planExpiresAt })
 
+        // Capture the subscription currently linked to the profile before replacing it.
+        // This is the explicit "old subscription" signal needed to cancel same-day plan
+        // changes, where Asaas dateCreated has day-level granularity and reconcile alone
+        // intentionally treats same-day duplicates as ambiguous.
+        const { data: previousProfile } = await supabase
+          .from('profiles')
+          .select('asaas_subscription_id')
+          .eq('id', user.id)
+          .single()
+        const previousSubId = previousProfile?.asaas_subscription_id ?? null
+
         const { data: activatedRows, error: activateError } = await supabase
           .from('profiles')
           .update({
@@ -367,7 +378,7 @@ export async function POST(req: NextRequest) {
             responses_limit: planConfig?.maxResponses ?? 100,
             responses_used: 0,
             asaas_customer_id: customerId,
-            asaas_subscription_id: payment.subscription ?? null,
+            ...(payment.subscription ? { asaas_subscription_id: payment.subscription } : {}),
           })
           .eq('id', user.id)
           .select('id')
@@ -402,6 +413,37 @@ export async function POST(req: NextRequest) {
             .eq('id', user.id)
             .single()
           if (freshProfile?.asaas_subscription_id === payment.subscription) {
+            if (previousSubId && previousSubId !== payment.subscription) {
+              try {
+                const { data: latestProfile } = await supabase
+                  .from('profiles')
+                  .select('asaas_subscription_id')
+                  .eq('id', user.id)
+                  .single()
+                if (latestProfile?.asaas_subscription_id === payment.subscription) {
+                  await cancelSubscription(previousSubId)
+                  log('[asaas-webhook] Assinatura anterior cancelada explicitamente após troca confirmada', {
+                    userId: user.id,
+                    oldSubscriptionId: previousSubId,
+                    newSubscriptionId: payment.subscription,
+                  })
+                } else {
+                  log('[asaas-webhook] Cancelamento explícito da sub anterior pulado — profile mudou durante a conciliação', {
+                    userId: user.id,
+                    oldSubscriptionId: previousSubId,
+                    eventSub: payment.subscription,
+                    profileSub: latestProfile?.asaas_subscription_id ?? null,
+                  })
+                }
+              } catch (err) {
+                logError('[asaas-webhook] Falha ao cancelar assinatura anterior explicitamente (não-bloqueante)', err, {
+                  userId: user.id,
+                  oldSubscriptionId: previousSubId,
+                  newSubscriptionId: payment.subscription,
+                })
+              }
+            }
+
             const recon = await reconcileActiveSubscriptions(customerId, payment.subscription)
             if (recon.cancelled.length || recon.ambiguous.length) {
               log('[asaas-webhook] Reconcile', { userId: user.id, kept: recon.kept, cancelled: recon.cancelled, ambiguous: recon.ambiguous })

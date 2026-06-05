@@ -170,8 +170,17 @@ export async function reconcileActiveSubscriptions(
   }
 
   try {
-    const data = await asaasFetch(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=ACTIVE&billingType=CREDIT_CARD&limit=100`)
-    const subs: Array<{ id?: string; dateCreated?: string }> = data?.data ?? []
+    // Paginação: a listagem do Asaas é paginada (até 100/página). Acumula todas as
+    // páginas — legado/retry storm pode ter criado >100 subs. Backstop em 2000.
+    const subs: Array<{ id?: string; dateCreated?: string }> = []
+    let offset = 0
+    for (;;) {
+      const data = await asaasFetch(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=ACTIVE&billingType=CREDIT_CARD&limit=100&offset=${offset}`)
+      const page: Array<{ id?: string; dateCreated?: string }> = data?.data ?? []
+      subs.push(...page)
+      if (!data?.hasMore || page.length === 0 || offset >= 2000) break
+      offset += 100
+    }
 
     // Só cancela órfãs MAIS ANTIGAS que a keep (a keep é a assinatura vigente/mais nova).
     // Assim, se houver dois checkouts concorrentes, nunca cancelamos a sub mais nova de

@@ -325,6 +325,29 @@ export async function POST(req: NextRequest) {
           break
         }
 
+        // "Checkout mais recente vence": se já existe um checkout PAGO mais NOVO que este
+        // evento para o mesmo profile, este é um webhook fora de ordem chegando atrasado.
+        // NÃO sobrescrever o plano (senão rebaixaria o usuário pro plano antigo). O evento
+        // segue marcado como processado (idempotência) — só pulamos a ativação.
+        if (checkoutLink?.profile_id && checkoutLink?.created_at) {
+          const { data: newerPaid } = await supabase
+            .from('billing_checkouts')
+            .select('id')
+            .eq('profile_id', checkoutLink.profile_id)
+            .eq('status', 'paid')
+            .gt('created_at', checkoutLink.created_at)
+            .limit(1)
+            .maybeSingle()
+          if (newerPaid) {
+            log('[asaas-webhook] Evento ignorado — checkout mais recente já venceu (entrega fora de ordem)', {
+              userId: user.id,
+              eventCheckoutId: checkoutLink.id,
+              eventCheckoutCreatedAt: checkoutLink.created_at,
+            })
+            break
+          }
+        }
+
         // Prefer plan/cycle from checkout record (handles prorated values)
         let plan: string
         let cycle: 'MONTHLY' | 'YEARLY'

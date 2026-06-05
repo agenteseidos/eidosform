@@ -140,7 +140,12 @@ export function CheckoutSuccessOverlay() {
       if (pollTimer) clearInterval(pollTimer)
       document.removeEventListener('visibilitychange', recheckOnFocus)
     }
-  }, [router, status])
+    // Deps vazias DE PROPÓSITO: roda só no mount. `status` é capturado uma vez. Se
+    // dependêssemos de searchParams, o replaceState abaixo (que limpa a URL para /billing)
+    // poderia re-disparar o efeito → o cleanup mataria o pollTimer → a tela travava em
+    // "Aguardando" (e o botão parecia morto). Rodando uma vez, o polling não é interrompido.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const content = useMemo(() => {
     if (resolvedStatus === 'cancelled') {
@@ -206,7 +211,7 @@ export function CheckoutSuccessOverlay() {
 
   const handleRedirect = () => {
     if (content.buttonAction === 'reload') {
-      router.refresh()
+      window.location.reload()
       return
     }
 
@@ -216,7 +221,8 @@ export function CheckoutSuccessOverlay() {
       return
     }
 
-    router.push('/forms')
+    // window.location é mais confiável que router.push num estado degradado da página.
+    window.location.href = '/forms'
   }
 
   return (

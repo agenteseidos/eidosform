@@ -25,6 +25,30 @@ interface CheckoutResponse {
   nextChargeDate?: string
 }
 
+interface PreviewResponse {
+  action: 'already_subscribed' | 'downgrade_scheduled' | 'credit_covered' | 'checkout'
+  currentPlan: string
+  currentCycle: string | null
+  newPlan: string
+  newCycle: string
+  proration: { credit: number; originalPrice: number; finalPrice: number } | null
+  amountDueNow: number
+  coveredByCredit: boolean
+  creditCoverageDays: number | null
+  nextChargeDate: string | null
+  missingFields?: string[]
+  error?: string
+}
+
+const brl = (n: number) => `R$ ${Number(n ?? 0).toFixed(2).replace('.', ',')}`
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
+const cycleLabel = (c: string | null | undefined) => (c?.toUpperCase() === 'YEARLY' ? 'Anual' : 'Mensal')
+const fmtDate = (d: string | null) => {
+  if (!d) return '—'
+  const [y, m, day] = d.split('-')
+  return `${day}/${m}/${y}`
+}
+
 type ProfileFields = {
   fullName: string
   email: string
@@ -54,7 +78,8 @@ function CheckoutContent() {
   const normalized = normalizePlan(plan)
   const isValid = normalized !== 'free' && PAID_PLANS.includes(normalized)
 
-  const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing'>('loading')
+  const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing' | 'confirm' | 'downgrade'>('loading')
+  const [preview, setPreview] = useState<PreviewResponse | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [missingFields, setMissingFields] = useState<string[]>([])
   const [profileData, setProfileData] = useState<ProfileFields>(EMPTY_PROFILE)
@@ -140,12 +165,50 @@ function CheckoutContent() {
     }
   }, [normalized, cycle, loadProfile])
 
+  const loadPreview = useCallback(async () => {
+    if (cancelRef.current) return
+    setState('loading')
+    try {
+      const res = await fetch(`/api/checkout/${normalized}/preview?cycle=${cycle}`, { cache: 'no-store' })
+      const json: PreviewResponse = await res.json()
+      if (cancelRef.current) return
+
+      if (!res.ok) {
+        setState('error')
+        setErrorMsg(json.error || 'Não foi possível carregar o resumo da mudança.')
+        return
+      }
+
+      if (json.missingFields && json.missingFields.length > 0) {
+        setMissingFields(json.missingFields)
+        await loadProfile()
+        setState('missing-billing')
+        setDialogOpen(true)
+        return
+      }
+
+      if (json.action === 'already_subscribed') { setState('already'); return }
+      if (json.action === 'downgrade_scheduled') { setPreview(json); setState('downgrade'); return }
+
+      // Primeira compra (free → pago): vai direto pro checkout (a página do Asaas confirma).
+      if (json.currentPlan === 'free') { startCheckout(); return }
+
+      // Troca de plano (já assinante): mostrar tela de confirmação ANTES de executar.
+      setPreview(json)
+      setState('confirm')
+    } catch {
+      if (cancelRef.current) return
+      setState('error')
+      setErrorMsg('Falha de conexão. Tente novamente.')
+    }
+  }, [normalized, cycle, loadProfile, startCheckout])
+
   useEffect(() => {
     if (!isValid) return
     cancelRef.current = false
-    queueMicrotask(() => { startCheckout() })
+    queueMicrotask(() => { loadPreview() })
     return () => { cancelRef.current = true }
-  }, [isValid, startCheckout])
+  }, [isValid, loadPreview])
 
   if (!isValid) {
     router.replace('/billing')
@@ -193,6 +256,65 @@ function CheckoutContent() {
           }}
         />
       </>
+    )
+  }
+
+  if (state === 'confirm' && preview) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-full max-w-md px-6 space-y-6">
+          <h1 className="text-2xl font-bold text-slate-900 text-center">Confirmar mudança de plano</h1>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-2.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Plano atual</span>
+              <span className="text-slate-900">{cap(preview.currentPlan)} · {cycleLabel(preview.currentCycle)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Novo plano</span>
+              <span className="font-semibold text-slate-900">{cap(preview.newPlan)} · {cycleLabel(preview.newCycle)}</span>
+            </div>
+            {preview.proration && preview.proration.credit > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Crédito do plano atual</span>
+                <span className="text-emerald-600">− {brl(preview.proration.credit)}</span>
+              </div>
+            )}
+            <div className="border-t border-slate-200 my-1" />
+            <div className="flex justify-between text-base">
+              <span className="text-slate-700 font-medium">A pagar agora</span>
+              <span className="font-bold text-slate-900">{preview.coveredByCredit ? 'R$ 0,00' : brl(preview.amountDueNow)}</span>
+            </div>
+            {preview.coveredByCredit && (
+              <p className="text-slate-500 text-xs pt-1">
+                Seu crédito cobre esta mudança — você não paga nada agora. A próxima cobrança de {brl(preview.proration?.originalPrice ?? 0)} será em {fmtDate(preview.nextChargeDate)}.
+              </p>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => router.push('/billing')} className="flex-1">
+              Cancelar
+            </Button>
+            <Button onClick={() => startCheckout()} className="flex-1 bg-[#F5B731] hover:bg-[#F5B731]/90 text-black font-semibold">
+              Confirmar
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (state === 'downgrade') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-6 max-w-md px-6">
+          <div className="text-5xl">🗓️</div>
+          <h1 className="text-2xl font-bold text-slate-900">Mudança agendada</h1>
+          <p className="text-slate-500">Mudanças para um plano menor são processadas ao final do seu período atual. Seu plano continua o mesmo até lá.</p>
+          <Button onClick={() => router.push('/billing')} className="bg-slate-900 hover:bg-slate-800 text-white">
+            Voltar ao billing
+          </Button>
+        </div>
+      </div>
     )
   }
 

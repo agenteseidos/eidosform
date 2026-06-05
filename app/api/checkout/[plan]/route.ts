@@ -8,7 +8,7 @@ import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { createCheckout, createCustomer, updateSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { calculateUpgradePrice, calculateCreditCoverageDays, isUpgrade } from '@/lib/proration'
@@ -98,6 +98,12 @@ export async function POST(
     })
   }
 
+  // ⚠️ SINCRONIA: a lógica de decisão abaixo (isCycleChange/isPlanUpgrade/proration/
+  // finalPrice<=0 → Caminho D) espelha lib/plan-change.ts:computePlanChange, usada pelo
+  // endpoint de PREVIEW (GET .../preview) que alimenta a tela de confirmação. Os dois
+  // produzem os mesmos números hoje (mesmas funções de base). TODO (follow-up de baixo
+  // risco, isolado): fazer este POST consumir computePlanChange direto, pra eliminar a
+  // duplicação e garantir que nunca divirjam.
   const isCycleChange = profile.plan === plan && profile.plan_cycle !== cycle
   const isPlanUpgrade = profile.plan !== plan && isUpgrade(profile.plan as PlanId, plan as PlanId)
   const shouldApplyProration = isCycleChange || isPlanUpgrade
@@ -225,6 +231,13 @@ export async function POST(
           }
         } catch (err) {
           logError('[checkout] handleUpgrade falhou (Caminho D)', err)
+        }
+
+        // Reconciliar: limpa assinaturas órfãs do cliente, MANTENDO a editada (a sub
+        // é a mesma; aqui só garantimos que não sobrou nenhuma órfã de fluxos antigos).
+        const reconD = await reconcileActiveSubscriptions(profile.asaasCustomerId ?? null, profile.asaasSubscriptionId)
+        if (reconD.cancelled.length) {
+          log('[checkout] Caminho D — assinaturas órfãs canceladas (reconcile)', { userId: profile.profileId, kept: reconD.kept, cancelled: reconD.cancelled })
         }
 
         // 4) Auditoria em billing_checkouts (mantém asaas_subscription_id)

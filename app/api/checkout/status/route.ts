@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
+import { getSubscription, getCustomerSubscriptions, reconcileActiveSubscriptions } from '@/lib/asaas'
 import { handleUpgrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate } from '@/lib/billing-activation'
 import { log, logError } from '@/lib/logger'
@@ -25,9 +25,11 @@ export async function GET() {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
-  // Rate limit checkout status polling (30 req/min per user to protect Asaas API)
+  // Rate limit checkout status polling (90 req/min per user). O endpoint tem fast-path
+  // local (não bate no Asaas quando o profile já reflete o plano), então 90/min é
+  // folgado e evita o overlay tomar 429 e ficar preso em "Aguardando" durante testes.
   const statusLimit = await checkRateLimitAsync(`checkout-status:${user.id}`, {
-    maxAttempts: 30,
+    maxAttempts: 90,
     windowMs: 60 * 1000,
   })
   if (!statusLimit.allowed) {
@@ -168,6 +170,14 @@ export async function GET() {
       log('[checkout/status] handleUpgrade failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
     }
 
+    // Reconciliar: cancela assinaturas órfãs do cliente (≠ a recém-persistida). O
+    // polling não cancelava nada antes — a sub antiga vazava quando a ativação vinha
+    // por aqui (webhook atrasado). Não-bloqueante.
+    const recon = await reconcileActiveSubscriptions(asaasCustomerId ?? profile?.asaas_customer_id ?? null, subscriptionId)
+    if (recon.cancelled.length) {
+      log('[checkout/status] Assinaturas órfãs canceladas (reconcile via polling)', { userId: user!.id, kept: recon.kept, cancelled: recon.cancelled })
+    }
+
     return true
   }
 
@@ -207,11 +217,18 @@ export async function GET() {
   //    up unrelated active subscriptions.
   if (asaasCustomerId) {
     try {
-      const subs = await getCustomerSubscriptions(asaasCustomerId) as Array<{ id: string; status: string; description?: string; dateCreated?: string }>
+      const subs = await getCustomerSubscriptions(asaasCustomerId) as Array<{ id: string; status: string; description?: string; dateCreated?: string; cycle?: string }>
       const activeSubs = (subs ?? []).filter((s) => (s.status as string)?.toUpperCase() === 'ACTIVE')
 
       const expectedPlan = checkoutPlan?.toLowerCase()
-      const matchByDescription = expectedPlan
+      const expectedCycle = (checkoutCycle ?? '').toUpperCase()
+      // keepSubId robusto: preferir a sub que bate PLANO (descrição) E CICLO; depois só
+      // plano; por último a mais recente. Importa porque o reconcile cancela TODAS as
+      // outras — eleger a errada como "keep" cancelaria a certa.
+      const byPlanAndCycle = (expectedPlan && expectedCycle)
+        ? activeSubs.find((s) => (s.description ?? '').toLowerCase().includes(`plano ${expectedPlan}`) && (s.cycle ?? '').toUpperCase() === expectedCycle)
+        : undefined
+      const byPlan = expectedPlan
         ? activeSubs.find((s) => (s.description ?? '').toLowerCase().includes(`plano ${expectedPlan}`))
         : undefined
 
@@ -221,13 +238,13 @@ export async function GET() {
         return tb - ta
       })
 
-      const active = matchByDescription ?? sortedByDate[0]
+      const active = byPlanAndCycle ?? byPlan ?? sortedByDate[0]
 
       if (active) {
         log('[checkout/status] Asaas customer fallback: found ACTIVE subscription', {
           customerId: asaasCustomerId,
           subId: active.id,
-          matchStrategy: matchByDescription ? 'description' : 'most_recent',
+          matchStrategy: byPlanAndCycle ? 'plan+cycle' : byPlan ? 'plan' : 'most_recent',
         })
         if (await persistPlanFromAsaas(active.id)) {
           return NextResponse.json({ status: 'success' })

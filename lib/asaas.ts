@@ -26,7 +26,7 @@ export const PLAN_PRICES = {
 } as const
 
 import { PlanId } from '@/lib/plans'
-import { log, logWarn } from '@/lib/logger'
+import { log, logWarn, logError } from '@/lib/logger'
 
 /** @deprecated Use PlanId from lib/plans.ts */
 export type PlanName = PlanId
@@ -142,6 +142,41 @@ export async function getCustomerSubscriptions(customerId: string) {
 /** Cancela assinatura */
 export async function cancelSubscription(subscriptionId: string): Promise<{ deleted: boolean; id: string }> {
   return asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' })
+}
+
+/**
+ * Garante NO MÁXIMO 1 assinatura ACTIVE de cartão por cliente: cancela todas as
+ * assinaturas ACTIVE (CREDIT_CARD) do cliente EXCETO keepSubscriptionId.
+ * Idempotente e NÃO-BLOQUEANTE (erros logados, não lançados — nunca deve travar a
+ * ativação do plano). Chamar SEMPRE depois de persistir o novo plano/sub no profile.
+ * Os cancelamentos disparam SUBSCRIPTION_DELETED; o handler do webhook tem match
+ * estrito (só rebaixa se for a sub vigente do profile), então as órfãs não derrubam
+ * o usuário.
+ */
+export async function reconcileActiveSubscriptions(
+  customerId: string | null | undefined,
+  keepSubscriptionId: string | null,
+): Promise<{ cancelled: string[]; kept: string | null }> {
+  const cancelled: string[] = []
+  if (!customerId) return { cancelled, kept: keepSubscriptionId }
+  try {
+    const data = await asaasFetch(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=ACTIVE&billingType=CREDIT_CARD&limit=100`)
+    const subs: Array<{ id?: string }> = data?.data ?? []
+    for (const sub of subs) {
+      if (!sub?.id || sub.id === keepSubscriptionId) continue
+      try {
+        await cancelSubscription(sub.id)
+        cancelled.push(sub.id)
+        log('[asaas] reconcile: assinatura órfã cancelada', { customerId, keepSubscriptionId, cancelledSubId: sub.id })
+      } catch (err) {
+        // Idempotente: já deletada/erro pontual → loga e segue (não derruba a ativação).
+        logError('[asaas] reconcile: falha ao cancelar órfã (segue)', err, { customerId, subId: sub.id })
+      }
+    }
+  } catch (err) {
+    logError('[asaas] reconcile: falha ao listar assinaturas do cliente (não-bloqueante)', err, { customerId })
+  }
+  return { cancelled, kept: keepSubscriptionId }
 }
 
 // Cache em memória do getSubscription pra mitigar consumo da cota do Asaas em

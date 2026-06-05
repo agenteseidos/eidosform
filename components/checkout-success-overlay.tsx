@@ -76,6 +76,16 @@ export function CheckoutSuccessOverlay() {
           if (!mounted) return
           if (Date.now() - start >= MAX_POLL_MS) {
             clearInterval(pollTimer)
+            // Checagem final antes de desistir: o pagamento pode ter confirmado bem no
+            // fim da janela. Se vier success, mostra sucesso em vez de "pendente".
+            const finalStatus = await checkStatus()
+            if (!mounted) return
+            if (finalStatus === 'success') {
+              setIsPolling(false)
+              setResolvedStatus('success')
+              router.refresh()
+              return
+            }
             setIsPolling(false)
             setResolvedStatus('pending')
             return

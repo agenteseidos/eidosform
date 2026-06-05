@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { PLAN_PRICES, cancelSubscription, getSubscription } from '@/lib/asaas'
+import { PLAN_PRICES, reconcileActiveSubscriptions, getSubscription } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -356,13 +356,6 @@ export async function POST(req: NextRequest) {
 
         log('[asaas-webhook] Activating plan', { userId: user.id, plan, cycle, expiresAt: planExpiresAt })
 
-        // Read previous subscription BEFORE the update so we can cancel it after.
-        const { data: previousProfile } = await supabase
-          .from('profiles')
-          .select('asaas_subscription_id, plan')
-          .eq('id', user.id)
-          .single()
-
         const { data: activatedRows, error: activateError } = await supabase
           .from('profiles')
           .update({
@@ -396,15 +389,12 @@ export async function POST(req: NextRequest) {
           billingType,
         })
 
-        // Cancel old subscription if user had a different one (upgrade scenario)
-        try {
-          const oldSubId = previousProfile?.asaas_subscription_id
-          if (oldSubId && oldSubId !== payment.subscription && previousProfile?.plan !== 'free') {
-            await cancelSubscription(oldSubId)
-            log('[asaas-webhook] Old subscription cancelled after upgrade confirmation', { oldSubscriptionId: oldSubId, newSubscriptionId: payment.subscription })
-          }
-        } catch (err) {
-          logError('[asaas-webhook] Failed to cancel old subscription (non-blocking)', err)
+        // Reconciliar: garante no máximo 1 assinatura ACTIVE por cliente (cancela as
+        // órfãs ≠ a nova). Subsume o cancel único antigo. Roda APÓS o profile ter sido
+        // persistido com a nova sub (o throw acima garante). Não-bloqueante.
+        const recon = await reconcileActiveSubscriptions(customerId, payment.subscription ?? null)
+        if (recon.cancelled.length) {
+          log('[asaas-webhook] Assinaturas órfãs canceladas (reconcile)', { userId: user.id, kept: recon.kept, cancelled: recon.cancelled })
         }
 
         const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)

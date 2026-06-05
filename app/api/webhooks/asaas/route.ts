@@ -513,11 +513,15 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        if (deletedSubId && deletedProfile?.asaas_subscription_id && deletedSubId !== deletedProfile.asaas_subscription_id) {
-          log('[asaas-webhook] SUBSCRIPTION_DELETED ignored — subscription mismatch (old/ghost subscription)', {
+        // Match ESTRITO: só reverte se a sub deletada for EXATAMENTE a assinatura ativa
+        // do profile. Se o profile não tem sub (null) ou tem outra, é uma sub antiga/
+        // fantasma (ex.: cancelada durante um upgrade) — derrubar aqui rebaixaria o
+        // usuário por engano (bug do downgrade-fantasma).
+        if (!deletedSubId || deletedProfile?.asaas_subscription_id !== deletedSubId) {
+          log('[asaas-webhook] SUBSCRIPTION_DELETED ignorado — não é a assinatura ativa do profile', {
             userId: user.id,
             eventSubscriptionId: deletedSubId,
-            activeSubscriptionId: deletedProfile.asaas_subscription_id,
+            activeSubscriptionId: deletedProfile?.asaas_subscription_id ?? null,
           })
           break
         }
@@ -585,11 +589,14 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        if (subscriptionId && refundProfile?.asaas_subscription_id && subscriptionId !== refundProfile.asaas_subscription_id) {
-          log('[asaas-webhook] Refund/chargeback ignored — subscription mismatch', {
+        // Match ESTRITO: só age se o evento for da assinatura ATIVA do profile. Sub
+        // antiga/fantasma (cancelada num upgrade — ex.: SUBSCRIPTION_INACTIVATED) ou
+        // profile sem sub (null) → não derruba o usuário.
+        if (!subscriptionId || refundProfile?.asaas_subscription_id !== subscriptionId) {
+          log('[asaas-webhook] Refund/chargeback/inactivated ignorado — não é a assinatura ativa do profile', {
             userId: user.id,
             eventSubscriptionId: subscriptionId,
-            activeSubscriptionId: refundProfile.asaas_subscription_id,
+            activeSubscriptionId: refundProfile?.asaas_subscription_id ?? null,
             event,
           })
           break

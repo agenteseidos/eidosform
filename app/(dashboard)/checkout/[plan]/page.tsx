@@ -18,6 +18,11 @@ interface CheckoutResponse {
   settingsUrl?: string
   missingFields?: string[]
   missingFieldLabels?: string[]
+  status?: string
+  coveredByCredit?: boolean
+  isDowngrade?: boolean
+  creditCoverageDays?: number
+  nextChargeDate?: string
 }
 
 type ProfileFields = {
@@ -105,6 +110,19 @@ function CheckoutContent() {
         await loadProfile()
         setState('missing-billing')
         setDialogOpen(true)
+        return
+      }
+
+      // Crédito cobriu o novo plano (Caminho D): plano ativado direto, SEM checkout.
+      // Reusa a tela de sucesso do billing (overlay) em vez de mostrar erro.
+      if (json.coveredByCredit || (res.ok && json.status === 'success' && !json.checkoutUrl)) {
+        window.location.href = '/billing?checkout=success'
+        return
+      }
+
+      // Downgrade: processado ao fim do período (informativo, sem checkout).
+      if (json.isDowngrade) {
+        window.location.href = '/billing'
         return
       }
 

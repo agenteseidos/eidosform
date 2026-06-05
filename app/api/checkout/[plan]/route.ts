@@ -157,7 +157,7 @@ export async function POST(
 
         // Atualizar profile com o novo plano (service_role — bypassa RLS de cookie)
         const sSupa = getServiceSupabase() ?? supabase
-        await sSupa
+        const { data: creditActivatedRows, error: creditActivateError } = await sSupa
           .from('profiles')
           .update({
             plan: plan as PlanId,
@@ -168,6 +168,22 @@ export async function POST(
             limit_alert_sent: false,
           })
           .eq('id', profile.profileId)
+          .select('id')
+
+        // ERROR-CHECK: se a ativação NÃO persistiu, abortar ANTES de cancelar a
+        // assinatura antiga. Sem isso, um update que falha silenciosamente cancelaria
+        // a sub sem ter ativado o novo plano → conta quebrada.
+        if (creditActivateError || !creditActivatedRows || creditActivatedRows.length !== 1) {
+          logError('[checkout] Falha ao ativar plano via proration credit — abortando antes de cancelar sub antiga', creditActivateError, {
+            userId: profile.profileId,
+            plan,
+            rows: creditActivatedRows?.length ?? 0,
+          })
+          return NextResponse.json(
+            { error: 'Não foi possível processar a mudança de plano. Tente novamente.' },
+            { status: 500 }
+          )
+        }
 
         // Cancelar assinatura antiga no Asaas (seguro: upgrade garantido pelo crédito)
         if (profile.asaasSubscriptionId) {

@@ -24,9 +24,11 @@ export function CheckoutSuccessOverlay() {
     async function checkStatus(): Promise<string> {
       try {
         const res = await fetch('/api/checkout/status', { cache: 'no-store' })
+        // 429 (rate limit) é transitório: segue tentando, não conta como erro fatal.
+        if (res.status === 429) return 'pending'
         const data = await res.json()
         consecutiveErrorsRef.current = 0
-        return data.status as string
+        return (data.status as string) ?? 'pending'
       } catch {
         consecutiveErrorsRef.current += 1
         return 'error'
@@ -48,8 +50,8 @@ export function CheckoutSuccessOverlay() {
         setVisible(true)
         window.history.replaceState({}, '', '/billing')
 
-        const POLL_INTERVAL = 3000
-        const MAX_POLL_MS = 120_000
+        const POLL_INTERVAL = 4000 // ~15 req/min — folga sob o limite de 30/min do servidor
+        const MAX_POLL_MS = 240_000 // 4 min de tolerância (webhook pode atrasar)
         const MAX_CONSECUTIVE_ERRORS = 3
         const start = Date.now()
 
@@ -106,9 +108,27 @@ export function CheckoutSuccessOverlay() {
     }
 
     resolveStatus()
+
+    // Rede de segurança: se o usuário sair e voltar pra aba (ou a janela de polling
+    // expirar), re-checa uma vez ao reganhar foco e confirma se o pagamento já passou.
+    async function recheckOnFocus() {
+      if (!mounted || document.visibilityState !== 'visible') return
+      if (status !== 'success') return // só no fluxo de retorno do checkout
+      const s = await checkStatus()
+      if (!mounted) return
+      if (s === 'success') {
+        if (pollTimer) clearInterval(pollTimer)
+        setIsPolling(false)
+        setResolvedStatus('success')
+        router.refresh()
+      }
+    }
+    document.addEventListener('visibilitychange', recheckOnFocus)
+
     return () => {
       mounted = false
       if (pollTimer) clearInterval(pollTimer)
+      document.removeEventListener('visibilitychange', recheckOnFocus)
     }
   }, [router, status])
 

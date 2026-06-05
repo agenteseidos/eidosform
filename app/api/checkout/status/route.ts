@@ -40,7 +40,7 @@ export async function GET() {
   const [{ data: profile }, { data: checkout }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('plan, plan_status, asaas_customer_id')
+      .select('plan, plan_status, plan_cycle, asaas_customer_id')
       .eq('id', user.id)
       .single(),
     supabase
@@ -54,10 +54,17 @@ export async function GET() {
 
   const plan = profile?.plan ?? 'free'
   const planStatus = profile?.plan_status ?? null
+  const planCycle = profile?.plan_cycle ?? null
 
-  // ── Fast path: local DB says active ──
+  // ── Fast path: o DB local já reflete o plano ATIVO deste checkout ──
+  // Com checkout pendente, exigir que plano E ciclo batam — senão um upgrade
+  // (starter→plus ou mensal→anual) retornaria 'success' no plano ANTIGO antes de
+  // processar. Sem checkout, basta estar num plano pago ativo.
   if (plan !== 'free' && planStatus === 'active') {
-    return NextResponse.json({ status: 'success' })
+    const matchesCheckout = !checkout || (checkout.plan === plan && checkout.cycle === planCycle)
+    if (matchesCheckout) {
+      return NextResponse.json({ status: 'success' })
+    }
   }
 
   // ── Fast path: checkout record says paid ──
@@ -89,15 +96,17 @@ export async function GET() {
   async function persistPlanFromAsaas(subscriptionId: string): Promise<boolean> {
     if (!checkoutPlan) return false
 
-    // Skip se o profile já está com o plano correto ativo (webhook ou poll anterior)
-    if (profile?.plan === checkoutPlan && profile?.plan_status === 'active') {
-      log('[checkout/status] Plan already active locally, skipping persist')
-      return true
-    }
-
     // checkoutCycle (de billing_checkouts, salvo na criação do checkout) é a fonte
     // de verdade do ciclo. NÃO inferir do subValue (valores prorateados não batem).
     const cycle: 'MONTHLY' | 'YEARLY' = (checkoutCycle ?? 'MONTHLY') as 'MONTHLY' | 'YEARLY'
+
+    // Skip se o profile já está com o plano E CICLO corretos ativos (webhook ou poll
+    // anterior). Checar o CICLO também: num upgrade mensal→anual o tier é o mesmo,
+    // então comparar só o plano pularia a atualização do ciclo (Bug B).
+    if (profile?.plan === checkoutPlan && profile?.plan_status === 'active' && profile?.plan_cycle === cycle) {
+      log('[checkout/status] Plan+cycle already active locally, skipping persist')
+      return true
+    }
 
     let admin: ReturnType<typeof createAdminClient>
     try {

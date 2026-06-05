@@ -104,3 +104,15 @@ export function calculateUpgradePrice(params: UpgradePriceParams): ProrationResu
     finalPrice,
   }
 }
+
+/**
+ * "Saldo em tempo": quando o crédito cobre todo o novo plano (finalPrice <= 0),
+ * calcula por quantos DIAS o crédito cobre o novo plano. Usado para empurrar o
+ * `nextDueDate` da assinatura — a próxima cobrança só ocorre depois que o crédito
+ * "vale". Ex.: crédito R$1.164 em Professional mensal R$257 → ~136 dias.
+ */
+export function calculateCreditCoverageDays(credit: number, newPlanPrice: number, newCycle: BillingCycle): number {
+  if (newPlanPrice <= 0 || credit <= 0) return 0
+  const daysInCycle = getDaysInCycle(newCycle)
+  return Math.round((credit * daysInCycle) / newPlanPrice)
+}

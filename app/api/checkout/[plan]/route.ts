@@ -8,10 +8,10 @@ import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { createCheckout, createCustomer, cancelSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, updateSubscription, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
-import { calculateUpgradePrice, isUpgrade } from '@/lib/proration'
+import { calculateUpgradePrice, calculateCreditCoverageDays, isUpgrade } from '@/lib/proration'
 import { log, logError } from '@/lib/logger'
 
 function hashCustomerPayload(payload: Record<string, unknown>): string {
@@ -140,88 +140,106 @@ export async function POST(
         finalPrice: proration.finalPrice,
       })
 
-      // Se crédito cobre o novo plano, ativar diretamente no backend
+      // CAMINHO D: o crédito cobre todo o novo plano. Em vez de CANCELAR a assinatura
+      // (perdendo a recorrência — bug antigo), EDITAMOS a assinatura existente para o
+      // novo plano e empurramos a próxima cobrança (nextDueDate) pelo tempo que o
+      // crédito cobre ("saldo em tempo"). A assinatura segue ACTIVE e recorrente;
+      // depois do nextDueDate a cobrança volta ao normal. Não cancela, não pede cartão.
       if (proration.finalPrice <= 0) {
-        log('[checkout] Crédito cobre o novo plano, ativando diretamente', {
+        const coverageDays = Math.max(1, calculateCreditCoverageDays(proration.credit, proration.originalPrice, cycle))
+        const nextDue = new Date()
+        nextDue.setDate(nextDue.getDate() + coverageDays)
+        const nextDueDate = nextDue.toISOString().split('T')[0]
+
+        log('[checkout] Caminho D — crédito cobre o novo plano; editando assinatura existente', {
           userId: profile.profileId,
-          credit: proration.credit,
+          subscriptionId: profile.asaasSubscriptionId,
           newPlan: plan,
+          newCycle: cycle,
+          credit: proration.credit,
+          coverageDays,
+          nextDueDate,
         })
 
-        // Calcular nova expiração baseada no ciclo do novo plano
-        const now = new Date()
-        if (cycle === 'YEARLY') now.setFullYear(now.getFullYear() + 1)
-        else now.setDate(now.getDate() + 30)
+        // 1) Editar a assinatura no Asaas (PUT). Se falhar, abortar SEM alterar o
+        //    profile — mantém a conta consistente com o plano atual.
+        try {
+          await updateSubscription(profile.asaasSubscriptionId!, {
+            value: proration.originalPrice,
+            cycle,
+            nextDueDate,
+            description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
+            externalReference: `profile:${profile.profileId}`,
+            updatePendingPayments: true,
+          })
+        } catch (err) {
+          logError('[checkout] Caminho D — falha ao editar assinatura no Asaas; abortando sem alterar plano', err, {
+            userId: profile.profileId,
+            subscriptionId: profile.asaasSubscriptionId,
+          })
+          return NextResponse.json(
+            { error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' },
+            { status: 502 }
+          )
+        }
 
+        // 2) Atualizar o profile pro novo plano, MANTENDO o asaas_subscription_id.
+        //    plan_expires_at = nextDueDate: acesso garantido durante o período coberto
+        //    pelo crédito; cada cobrança futura estende via webhook PAYMENT_CONFIRMED.
         const planConfig = (await import('@/lib/plan-definitions')).PLANS[plan as PlanId]
-
-        // Atualizar profile com o novo plano (service_role — bypassa RLS de cookie)
         const sSupa = getServiceSupabase() ?? supabase
-        const { data: creditActivatedRows, error: creditActivateError } = await sSupa
+        const { data: dRows, error: dErr } = await sSupa
           .from('profiles')
           .update({
             plan: plan as PlanId,
+            plan_cycle: cycle,
             plan_status: 'active',
-            plan_expires_at: now.toISOString(),
+            plan_expires_at: nextDue.toISOString(),
             responses_limit: planConfig?.maxResponses ?? 100,
             responses_used: 0,
             limit_alert_sent: false,
+            // asaas_subscription_id MANTIDO — a assinatura é a mesma, só foi editada.
           })
           .eq('id', profile.profileId)
           .select('id')
 
-        // ERROR-CHECK: se a ativação NÃO persistiu, abortar ANTES de cancelar a
-        // assinatura antiga. Sem isso, um update que falha silenciosamente cancelaria
-        // a sub sem ter ativado o novo plano → conta quebrada.
-        if (creditActivateError || !creditActivatedRows || creditActivatedRows.length !== 1) {
-          logError('[checkout] Falha ao ativar plano via proration credit — abortando antes de cancelar sub antiga', creditActivateError, {
+        if (dErr || !dRows || dRows.length !== 1) {
+          // A assinatura já foi editada; só o profile não persistiu. Estado recuperável
+          // (polling/webhook reconciliam). Logar alto e devolver erro suave.
+          logError('[checkout] Caminho D — assinatura editada mas falha ao atualizar profile (reconciliar)', dErr, {
             userId: profile.profileId,
-            plan,
-            rows: creditActivatedRows?.length ?? 0,
+            rows: dRows?.length ?? 0,
           })
           return NextResponse.json(
-            { error: 'Não foi possível processar a mudança de plano. Tente novamente.' },
+            { error: 'Sua assinatura foi alterada, mas houve um erro ao atualizar o plano. Atualize a página em instantes.' },
             { status: 500 }
           )
         }
 
-        // Cancelar assinatura antiga no Asaas (seguro: upgrade garantido pelo crédito)
-        if (profile.asaasSubscriptionId) {
-          try {
-            await cancelSubscription(profile.asaasSubscriptionId)
-            log('[checkout] Assinatura anterior cancelada (proration credit)', { oldSubscriptionId: profile.asaasSubscriptionId })
-            await sSupa
-              .from('profiles')
-              .update({ asaas_subscription_id: null })
-              .eq('id', profile.profileId)
-          } catch (err) {
-            logError('[checkout] Falha ao cancelar assinatura antiga (proration)', err)
-          }
-        }
-
-        // Processar upgrade (unpause forms, etc.)
+        // 3) Processar upgrade (despausar forms, etc.)
         try {
           const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
           if (serviceKey) {
             const upgrade = await (await import('@/lib/plan-limits')).handleUpgrade(profile.profileId, serviceKey)
-            log('[checkout] Upgrade processado via proration credit', { userId: profile.profileId, unpausedForms: upgrade.unpausedCount })
+            log('[checkout] Caminho D — upgrade processado', { userId: profile.profileId, unpausedForms: upgrade.unpausedCount })
           }
         } catch (err) {
-          logError('[checkout] handleUpgrade falhou (proration credit)', err)
+          logError('[checkout] handleUpgrade falhou (Caminho D)', err)
         }
 
-        // Registrar checkout como pago (service_role)
+        // 4) Auditoria em billing_checkouts (mantém asaas_subscription_id)
         await sSupa
           .from('billing_checkouts')
           .upsert({
             profile_id: profile.profileId,
-            checkout_id: `proration-${Date.now()}`,
+            checkout_id: `plan-change-${Date.now()}`,
             asaas_customer_id: profile.asaasCustomerId ?? null,
+            asaas_subscription_id: profile.asaasSubscriptionId,
             plan,
             cycle,
             status: 'paid',
-            last_event: 'PRORATION_CREDIT_COVERED',
-            payment_method: 'proration_credit',
+            last_event: 'PLAN_CHANGE_CREDIT_TIME',
+            payment_method: 'proration_credit_time',
             original_price: proration.originalPrice,
             proration_credit: proration.credit,
             final_price: 0,
@@ -230,6 +248,8 @@ export async function POST(
         return NextResponse.json({
           status: 'success',
           coveredByCredit: true,
+          creditCoverageDays: coverageDays,
+          nextChargeDate: nextDueDate,
           proration,
         })
       }

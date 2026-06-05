@@ -169,3 +169,29 @@ export async function getSubscription(subscriptionId: string) {
   }
   return data
 }
+
+/**
+ * Edita uma assinatura existente (PUT /v3/subscriptions/{id}). Usado no "Caminho D"
+ * de troca de plano quando o crédito de proration cobre todo o novo plano: muda
+ * value/cycle/nextDueDate SEM cancelar a assinatura — mantém a recorrência e o cartão
+ * salvo (não pede cartão de novo). Requer tokenização ATIVA na conta Asaas.
+ * Invalida o cache de getSubscription para a próxima leitura ver o estado novo.
+ */
+export async function updateSubscription(
+  subscriptionId: string,
+  payload: {
+    value?: number
+    cycle?: BillingCycle
+    nextDueDate?: string // formato YYYY-MM-DD
+    description?: string
+    externalReference?: string
+    updatePendingPayments?: boolean
+  }
+): Promise<{ id: string; value: number; cycle: string; nextDueDate: string; status: string }> {
+  const data = await asaasFetch(`/subscriptions/${subscriptionId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+  subscriptionCache.delete(subscriptionId)
+  return data
+}

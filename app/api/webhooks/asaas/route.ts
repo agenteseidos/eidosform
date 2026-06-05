@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { PLAN_PRICES, cancelSubscription, reconcileActiveSubscriptions, getSubscription } from '@/lib/asaas'
+import { PLAN_PRICES, cancelSubscription, reconcileActiveSubscriptions, updateSubscription, getSubscription } from '@/lib/asaas'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -447,6 +447,24 @@ export async function POST(req: NextRequest) {
             const recon = await reconcileActiveSubscriptions(customerId, payment.subscription)
             if (recon.cancelled.length || recon.ambiguous.length) {
               log('[asaas-webhook] Reconcile', { userId: user.id, kept: recon.kept, cancelled: recon.cancelled, ambiguous: recon.ambiguous })
+            }
+
+            // Corrige o valor RECORRENTE da assinatura para o preço CHEIO do plano. No
+            // upgrade com proration (finalPrice > 0), o checkout cria a sub com o valor
+            // PRORATEADO (1ª cobrança), então sem isto a renovação cobraria o prorateado em
+            // vez do preço cheio (perda de receita). A 1ª cobrança já foi paga; ajustamos só
+            // o recorrente (updatePendingPayments:false) e NÃO mexemos no nextDueDate.
+            // Idempotente: no-op quando a sub já está no preço cheio (1ª compra / Caminho D).
+            const fullPrice = cycle === 'YEARLY'
+              ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES]?.yearly
+              : PLAN_PRICES[plan as keyof typeof PLAN_PRICES]?.monthly
+            if (fullPrice && fullPrice > 0) {
+              try {
+                await updateSubscription(payment.subscription, { value: fullPrice, updatePendingPayments: false })
+                log('[asaas-webhook] Valor recorrente ajustado para o preço cheio do plano', { userId: user.id, subscriptionId: payment.subscription, value: fullPrice })
+              } catch (err) {
+                logError('[asaas-webhook] Falha ao ajustar valor recorrente (não-bloqueante)', err, { userId: user.id, subscriptionId: payment.subscription })
+              }
             }
           } else {
             log('[asaas-webhook] Reconcile pulado — profile já aponta outra sub (fluxo concorrente venceu)', { userId: user.id, eventSub: payment.subscription, profileSub: freshProfile?.asaas_subscription_id })

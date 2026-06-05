@@ -42,3 +42,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 credentials/
+
+# Claude Code workspace (não versionar)
+.claude/
+docs/.claude/
+
+# Logs rotacionados do serviço WhatsApp
+services/whatsapp/server.log
+services/whatsapp/server.log.*

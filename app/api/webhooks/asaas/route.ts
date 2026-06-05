@@ -168,7 +168,7 @@ async function updateCheckoutLink(params: {
     return
   }
 
-  await supabase
+  const { error: ckUpdateError } = await supabase
     .from('billing_checkouts')
     .update({
       asaas_customer_id: customerId ?? checkoutLink.asaas_customer_id,
@@ -178,6 +178,12 @@ async function updateCheckoutLink(params: {
       ...(billingType ? { payment_method: billingType } : {}),
     })
     .eq('id', checkoutLink.id)
+
+  // Não-bloqueante: billing_checkouts é bookkeeping secundário. O estado de verdade
+  // do plano é o profile (já checado com throw nos handlers). Só logar.
+  if (ckUpdateError) {
+    logError('[asaas-webhook] Falha ao atualizar billing_checkouts (não-bloqueante)', ckUpdateError, { checkoutId: checkoutLink.id, event, status })
+  }
 }
 
 interface AsaasPayment {
@@ -207,11 +213,20 @@ type IdempotencyResult = 'fresh' | 'duplicate' | 'error'
  *  - 'duplicate' → unique violation, already processed
  *  - 'error'     → unexpected DB error; caller should fail closed (5xx) so Asaas retries
  */
-async function checkAndMarkIdempotent(eventId: string, event: string): Promise<IdempotencyResult> {
+async function checkAndMarkIdempotent(
+  eventId: string,
+  event: string,
+  keys?: { customerId?: string | null; subscriptionId?: string | null }
+): Promise<IdempotencyResult> {
   const supabase = getSupabase()
   const { error } = await supabase
     .from('asaas_webhook_events')
-    .insert({ event_id: eventId, event })
+    .insert({
+      event_id: eventId,
+      event,
+      customer_id: keys?.customerId ?? null,
+      subscription_id: keys?.subscriptionId ?? null,
+    })
 
   if (!error) return 'fresh'
   if (error.code === '23505') return 'duplicate'
@@ -274,7 +289,10 @@ export async function POST(req: NextRequest) {
   // Idempotency: use body.id if present, else hash of (event + customerId + subscriptionId)
   const eventId = body.id ?? `${event}:${payment?.customer ?? subscription?.customer ?? ''}:${payment?.subscription ?? subscription?.id ?? ''}`
 
-  const idempotencyResult = await checkAndMarkIdempotent(eventId, event)
+  const idempotencyResult = await checkAndMarkIdempotent(eventId, event, {
+    customerId: payment?.customer ?? subscription?.customer ?? null,
+    subscriptionId: payment?.subscription ?? subscription?.id ?? null,
+  })
   if (idempotencyResult === 'duplicate') {
     log('[asaas-webhook] Duplicate event ignored (idempotent)', { eventId, event })
     return NextResponse.json({ received: true, duplicate: true })
@@ -345,7 +363,7 @@ export async function POST(req: NextRequest) {
           .eq('id', user.id)
           .single()
 
-        await supabase
+        const { data: activatedRows, error: activateError } = await supabase
           .from('profiles')
           .update({
             plan,
@@ -359,6 +377,14 @@ export async function POST(req: NextRequest) {
             asaas_subscription_id: payment.subscription ?? null,
           })
           .eq('id', user.id)
+          .select('id')
+
+        // Se a ativação NÃO persistiu, abortar ANTES de cancelar sub antiga,
+        // rodar handleUpgrade ou mandar e-mail. O throw cai no catch → evento
+        // marcado 'failed' (DLQ) p/ reprocesso manual. Nunca confirmar venda fantasma.
+        if (activateError || !activatedRows || activatedRows.length !== 1) {
+          throw new Error(`Falha ao ativar plano no profile (rows=${activatedRows?.length ?? 0}): ${activateError?.message ?? 'sem erro DB'}`)
+        }
 
         const billingType = (body as unknown as Record<string, unknown>).billingType as string | undefined
 
@@ -428,7 +454,7 @@ export async function POST(req: NextRequest) {
 
         log('[asaas-webhook] Payment overdue, reverting to free', { userId: user.id, customerId })
 
-        await supabase
+        const { data: overdueRows, error: overdueError } = await supabase
           .from('profiles')
           .update({
             plan: 'free',
@@ -439,6 +465,11 @@ export async function POST(req: NextRequest) {
             responses_used: 0,
           })
           .eq('id', user.id)
+          .select('id')
+
+        if (overdueError || !overdueRows || overdueRows.length !== 1) {
+          throw new Error(`Falha ao reverter plano (overdue) (rows=${overdueRows?.length ?? 0}): ${overdueError?.message ?? 'sem erro DB'}`)
+        }
 
         await updateCheckoutLink({
           customerId,
@@ -495,7 +526,7 @@ export async function POST(req: NextRequest) {
 
         log('[asaas-webhook] Subscription deleted, reverting to free', { userId: user.id, customerId })
 
-        await supabase
+        const { data: cancelledRows, error: cancelledError } = await supabase
           .from('profiles')
           .update({
             plan: 'free',
@@ -507,6 +538,11 @@ export async function POST(req: NextRequest) {
             responses_used: 0,
           })
           .eq('id', user.id)
+          .select('id')
+
+        if (cancelledError || !cancelledRows || cancelledRows.length !== 1) {
+          throw new Error(`Falha ao reverter plano (cancelled) (rows=${cancelledRows?.length ?? 0}): ${cancelledError?.message ?? 'sem erro DB'}`)
+        }
 
         await updateCheckoutLink({
           customerId,
@@ -564,7 +600,7 @@ export async function POST(req: NextRequest) {
 
         log('[asaas-webhook] Refund/chargeback — reverting to free', { userId: user.id, customerId, event, newStatus })
 
-        await supabase
+        const { data: refundRows, error: refundError } = await supabase
           .from('profiles')
           .update({
             plan: 'free',
@@ -576,6 +612,11 @@ export async function POST(req: NextRequest) {
             responses_used: 0,
           })
           .eq('id', user.id)
+          .select('id')
+
+        if (refundError || !refundRows || refundRows.length !== 1) {
+          throw new Error(`Falha ao reverter plano (${newStatus}) (rows=${refundRows?.length ?? 0}): ${refundError?.message ?? 'sem erro DB'}`)
+        }
 
         await updateCheckoutLink({
           customerId,
@@ -615,6 +656,27 @@ export async function POST(req: NextRequest) {
       status: 'error',
       error: err instanceof Error ? err.message : String(err),
     })
+
+    // DLQ: marca o evento como 'failed' para reprocesso manual (endpoint admin).
+    // NÃO guarda payload (evita PII) — o reprocessador reconcilia contra o Asaas
+    // usando customer_id/subscription_id. Mantém 200 (anti retry-storm); a
+    // recuperação é interna, não depende de retry do Asaas.
+    try {
+      await supabase
+        .from('asaas_webhook_events')
+        .update({
+          status: 'failed',
+          error: err instanceof Error ? err.message : String(err),
+          attempts: 1,
+          customer_id: payment?.customer ?? subscription?.customer ?? null,
+          subscription_id: payment?.subscription ?? subscription?.id ?? null,
+          last_attempt_at: new Date().toISOString(),
+        })
+        .eq('event_id', eventId)
+    } catch (markErr) {
+      logError('[asaas-webhook] Falha ao marcar evento como failed (DLQ)', markErr, { eventId })
+    }
+
     return NextResponse.json({ received: true, processed: false, error: 'Logged for manual reprocess' })
   }
 

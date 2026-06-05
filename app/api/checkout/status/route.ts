@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
-import { PLANS, handleUpgrade } from '@/lib/plan-limits'
-import { type PlanId } from '@/lib/plans'
-import { log } from '@/lib/logger'
+import { handleUpgrade } from '@/lib/plan-limits'
+import { buildActivePlanUpdate } from '@/lib/billing-activation'
+import { log, logError } from '@/lib/logger'
 
 /**
  * GET /api/checkout/status
@@ -79,62 +80,75 @@ export async function GET() {
   const checkoutCycle = checkout?.cycle ?? null
   const checkoutId = checkout?.id ?? null
 
-  // Helper: persist plan locally when Asaas confirms ACTIVE.
-  // Uses billing_checkouts.plan (saved at checkout creation) and cycle from
-  // the Asaas subscription value. Idempotent — safe if webhook already ran.
-  async function persistPlanFromAsaas(subscriptionId: string) {
-    if (!checkoutPlan) return
+  // Helper: persiste o plano quando o Asaas confirma ACTIVE.
+  // CRÍTICO: usa SERVICE-ROLE (createAdminClient). A RLS do usuário proíbe alterar
+  // plan/plan_status/asaas_*/responses_* no profile, e billing_checkouts só tem
+  // policy de SELECT pro usuário — gravar com o cliente de cookie afeta 0 linhas
+  // silenciosamente (era o bug P0 que deixava o polling "confirmar" sem ativar).
+  // Retorna true SOMENTE se realmente persistiu (1 linha). Idempotente.
+  async function persistPlanFromAsaas(subscriptionId: string): Promise<boolean> {
+    if (!checkoutPlan) return false
 
-    // Skip if profile already has the correct plan active (webhook or previous poll)
+    // Skip se o profile já está com o plano correto ativo (webhook ou poll anterior)
     if (profile?.plan === checkoutPlan && profile?.plan_status === 'active') {
       log('[checkout/status] Plan already active locally, skipping persist')
-      return
+      return true
     }
 
-    // checkoutCycle (from billing_checkouts, saved at checkout creation) is the
-    // single source of truth for the billing cycle. Do NOT infer from subValue
-    // because prorated values never match exact plan prices.
+    // checkoutCycle (de billing_checkouts, salvo na criação do checkout) é a fonte
+    // de verdade do ciclo. NÃO inferir do subValue (valores prorateados não batem).
     const cycle: 'MONTHLY' | 'YEARLY' = (checkoutCycle ?? 'MONTHLY') as 'MONTHLY' | 'YEARLY'
 
-    const now = new Date()
-    if (cycle === 'YEARLY') now.setFullYear(now.getFullYear() + 1)
-    else now.setDate(now.getDate() + 30)
+    let admin: ReturnType<typeof createAdminClient>
+    try {
+      admin = createAdminClient()
+    } catch (err) {
+      logError('[checkout/status] SERVICE_ROLE indisponível — não foi possível ativar plano via polling', err, { userId: user!.id, subscriptionId })
+      return false
+    }
 
-    const planConfig = PLANS[checkoutPlan as PlanId]
-
-    log('[checkout/status] Persisting plan from Asaas polling', {
+    log('[checkout/status] Persisting plan from Asaas polling (service-role)', {
       userId: user!.id,
       plan: checkoutPlan,
       cycle,
       subscriptionId,
     })
 
-    await supabase
+    const { data: updatedRows, error: updateError } = await admin
       .from('profiles')
-      .update({
-        plan: checkoutPlan as PlanId,
-        plan_status: 'active',
-        plan_cycle: cycle,
-        plan_expires_at: now.toISOString(),
-        limit_alert_sent: false,
-        responses_limit: planConfig?.maxResponses ?? 100,
-        responses_used: 0,
-        asaas_customer_id: asaasCustomerId ?? profile?.asaas_customer_id,
-        asaas_subscription_id: subscriptionId,
-      })
+      .update(buildActivePlanUpdate({
+        plan: checkoutPlan,
+        cycle,
+        customerId: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
+        subscriptionId,
+      }) as never)
       .eq('id', user!.id)
+      .select('id')
+
+    if (updateError || !updatedRows || updatedRows.length !== 1) {
+      logError('[checkout/status] Falha ao persistir plano no profile (0 linhas/erro)', updateError, {
+        userId: user!.id,
+        subscriptionId,
+        rows: updatedRows?.length ?? 0,
+      })
+      return false
+    }
 
     if (checkoutId) {
-      await supabase
+      const { error: ckError } = await admin
         .from('billing_checkouts')
         .update({
           asaas_subscription_id: subscriptionId,
           status: 'paid',
           last_event: 'POLLING_CONFIRMED',
-        })
+        } as never)
         .eq('id', checkoutId)
+      if (ckError) {
+        logError('[checkout/status] Falha ao atualizar billing_checkouts (não-bloqueante)', ckError, { checkoutId })
+      }
     }
 
+    // handleUpgrade SÓ depois de confirmar que o plano persistiu de verdade.
     try {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
       if (serviceKey) {
@@ -144,6 +158,8 @@ export async function GET() {
     } catch (err) {
       log('[checkout/status] handleUpgrade failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
     }
+
+    return true
   }
 
   // 1. Try by subscription ID if available
@@ -154,8 +170,12 @@ export async function GET() {
 
       if (asaasStatus === 'ACTIVE') {
         log('[checkout/status] Asaas fallback: subscription ACTIVE', { subId: asaasSubId })
-        await persistPlanFromAsaas(asaasSubId)
-        return NextResponse.json({ status: 'success' })
+        if (await persistPlanFromAsaas(asaasSubId)) {
+          return NextResponse.json({ status: 'success' })
+        }
+        // ACTIVE no Asaas mas não persistiu localmente — NÃO mentir 'success'.
+        // Mantém 'pending' (frontend segue polling; webhook/reprocesso podem cobrir).
+        return NextResponse.json({ status: 'pending' })
       }
 
       if (asaasStatus === 'INACTIVE' || asaasStatus === 'EXPIRED' || asaasStatus === 'SUSPENDED') {
@@ -200,8 +220,10 @@ export async function GET() {
           subId: active.id,
           matchStrategy: matchByDescription ? 'description' : 'most_recent',
         })
-        await persistPlanFromAsaas(active.id)
-        return NextResponse.json({ status: 'success' })
+        if (await persistPlanFromAsaas(active.id)) {
+          return NextResponse.json({ status: 'success' })
+        }
+        return NextResponse.json({ status: 'pending' })
       }
       log('[checkout/status] Asaas customer fallback: no active subscription', { customerId: asaasCustomerId })
     } catch (err) {

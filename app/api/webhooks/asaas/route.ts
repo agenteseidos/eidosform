@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { PLAN_PRICES, getSubscription, parseExternalReference } from '@/lib/asaas'
+import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
 import { finalizeActivation } from '@/lib/billing-activation'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
@@ -431,6 +431,41 @@ export async function POST(req: NextRequest) {
               eventCheckoutId: checkoutLink.id,
               eventCheckoutCreatedAt: checkoutLink.created_at,
             })
+            // P0 round 5 (audit Codex 2026-06-07): pagar um checkout ANTIGO depois de já ter
+            // pago um mais NOVO cria uma assinatura nova (subA) que NÃO é a vigente do profile.
+            // O reconcile NÃO a cancela (subA é mais nova que a keep → tratada como ambígua),
+            // então ficariam 2 subs ACTIVE = cobrança dupla recorrente. Cancela a órfã
+            // explicitamente (não ativa A nem mexe no profile), marca o checkout como
+            // superseded e loga ALTO (a 1ª cobrança de A já ocorreu → avaliar refund manual).
+            // Guarda: só cancela se NÃO for a sub vigente (nunca derruba o plano ativo).
+            if (payment.subscription) {
+              const { data: vigente } = await supabase
+                .from('profiles')
+                .select('asaas_subscription_id')
+                .eq('id', user.id)
+                .single()
+              const vigenteSub = (vigente as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id ?? null
+              if (payment.subscription !== vigenteSub) {
+                try {
+                  await cancelSubscription(payment.subscription)
+                  logError('[asaas-webhook] CRÍTICO: checkout antigo pago após um mais novo — assinatura órfã CANCELADA p/ evitar cobrança dupla (avaliar refund manual da 1ª cobrança)', undefined, {
+                    userId: user.id,
+                    orphanSubscriptionId: payment.subscription,
+                    activeSubscriptionId: vigenteSub,
+                    supersededCheckoutId: checkoutLink.id,
+                  })
+                } catch (err) {
+                  logError('[asaas-webhook] Falha ao cancelar assinatura órfã do checkout antigo (revisar manual)', err, {
+                    userId: user.id,
+                    orphanSubscriptionId: payment.subscription,
+                  })
+                }
+                await supabase
+                  .from('billing_checkouts')
+                  .update({ status: 'cancelled', last_event: 'SUPERSEDED_BY_NEWER' })
+                  .eq('id', checkoutLink.id)
+              }
+            }
             break
           }
         }

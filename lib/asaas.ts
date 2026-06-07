@@ -91,8 +91,12 @@ export async function createCheckout(params: {
   expiredUrl: string
   customerId: string
   customValue?: number
+  /** Ex.: `profile:{id}` — propaga p/ a assinatura e p/ os eventos de pagamento,
+   *  permitindo resolução INEQUÍVOCA do dono no webhook (não depende de adivinhar
+   *  o checkout certo por customer+created_at). Audit Codex 2026-06-07 (P2-5). */
+  externalReference?: string
 }): Promise<{ id: string; url: string }> {
-  const { plan, cycle, successUrl, cancelUrl, expiredUrl, customerId, customValue } = params
+  const { plan, cycle, successUrl, cancelUrl, expiredUrl, customerId, customValue, externalReference } = params
   const basePrice = cycle === 'MONTHLY' ? PLAN_PRICES[plan].monthly : PLAN_PRICES[plan].yearly
   const price = customValue !== undefined ? customValue : basePrice
   // nextDueDate = hoje força o Asaas a processar a primeira cobrança imediatamente
@@ -108,11 +112,17 @@ export async function createCheckout(params: {
     customer: customerId,
     billingTypes: ['CREDIT_CARD'],
     chargeTypes: ['RECURRENT'],
+    // externalReference no topo (checkout) E na subscription: o Asaas propaga p/ a
+    // assinatura criada e p/ os eventos PAYMENT_* (payment.externalReference), tornando
+    // a resolução do dono inequívoca no webhook. Aditivo — se ignorado em um nível,
+    // o outro ainda vale. (P2-5, audit Codex 2026-06-07.)
+    ...(externalReference ? { externalReference } : {}),
     subscription: {
       value: price,
       nextDueDate: nextDueDate.toISOString().split('T')[0],
       cycle,
       description: itemDescription,
+      ...(externalReference ? { externalReference } : {}),
     },
     items: [{
       name: itemName,

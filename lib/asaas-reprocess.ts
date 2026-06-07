@@ -24,7 +24,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getSubscription } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
-import { buildActivePlanUpdate, buildFreePlanUpdate, type BillingCycle } from '@/lib/billing-activation'
+import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, type BillingCycle } from '@/lib/billing-activation'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
 
@@ -159,6 +159,9 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     const asaasStatus = await getAsaasStatus(subscriptionId) // relança em erro transitório → retry
     if (asaasStatus !== 'ACTIVE') return 'noop_activation_nao_active'
 
+    // Sub vigente ANTES desta ativação — pro finalizeActivation cancelar a anterior.
+    const previousSubId = (profile as { asaas_subscription_id?: string | null }).asaas_subscription_id ?? null
+
     const cycle = (checkout.cycle ?? 'MONTHLY') as BillingCycle
     const { data: actRows, error: actErr } = await supabase
       .from('profiles')
@@ -177,6 +180,25 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
       await sendPlanActivated({ to: profile.email, name: profile.full_name ?? 'usuário', plan: checkout.plan })
         .catch((e) => logError('[asaas-reprocess] email ativação falhou', e))
     }
+
+    // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente —
+    // MESMA rotina do webhook e do polling (helper compartilhado). Antes, o reprocesso só
+    // ativava (P1-1/P1-2 valiam aqui também) — audit Codex 2026-06-07.
+    const fin = await finalizeActivation({
+      db: supabase,
+      userId: profile.id,
+      customerId,
+      newSubscriptionId: subscriptionId,
+      previousSubscriptionId: previousSubId,
+      plan: checkout.plan,
+      cycle,
+      source: 'reprocess',
+    })
+    // Correção de valor recorrente necessária mas falhou → RELANÇA: mantém o evento 'failed'
+    // (reprocessEvent incrementa attempts) p/ nova tentativa. NUNCA subcobrar na renovação.
+    if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
+      throw new Error(`correção de valor recorrente pendente (sub ${subscriptionId}) — mantém failed p/ retry`)
+    }
     log('[asaas-reprocess] plano ativado via reprocesso', { profileId: profile.id, plan: checkout.plan })
     return 'activated'
   }
@@ -191,8 +213,11 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     return 'noop_evento_nao_mapeado'
   }
   if (profile.plan === 'free') return 'noop_already_free'
-  if (subscriptionId && profile.asaas_subscription_id && profile.asaas_subscription_id !== subscriptionId) {
-    return 'skip_subscription_mismatch'
+  // Match ESTRITO (igual ao webhook): só reverte se o evento TEM subscription E ela é a
+  // ativa do profile. Reversão sem subscriptionId NÃO derruba por customer-fallback —
+  // fica como skip (revisão manual via lista do admin). (P1-3, audit Codex 2026-06-07.)
+  if (!subscriptionId || profile.asaas_subscription_id !== subscriptionId) {
+    return 'skip_subscription_mismatch_ou_sem_sub'
   }
 
   const { data: rows, error } = await supabase

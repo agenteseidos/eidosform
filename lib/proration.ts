@@ -114,5 +114,8 @@ export function calculateUpgradePrice(params: UpgradePriceParams): ProrationResu
 export function calculateCreditCoverageDays(credit: number, newPlanPrice: number, newCycle: BillingCycle): number {
   if (newPlanPrice <= 0 || credit <= 0) return 0
   const daysInCycle = getDaysInCycle(newCycle)
-  return Math.round((credit * daysInCycle) / newPlanPrice)
+  // ceil (não round): "saldo em tempo" do cliente. Arredondar pra baixo encurtaria o
+  // crédito por fração de dia (cobra o cliente cedo demais); ceil favorece o cliente —
+  // no máximo ~1 dia a mais de cobertura, nunca a menos. (Audit Codex 2026-06-07.)
+  return Math.ceil((credit * daysInCycle) / newPlanPrice)
 }

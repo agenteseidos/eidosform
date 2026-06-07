@@ -7,7 +7,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { PLAN_PRICES, cancelSubscription, reconcileActiveSubscriptions, updateSubscription, getSubscription } from '@/lib/asaas'
+import { PLAN_PRICES, getSubscription } from '@/lib/asaas'
+import { finalizeActivation } from '@/lib/billing-activation'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -96,19 +97,33 @@ async function getProfileById(profileId: string) {
   return data as ResolvedUser | null
 }
 
+/** Extrai o UUID de um externalReference no formato `profile:{uuid}` (senão null). */
+function parseProfileRef(externalReference?: string | null): string | null {
+  if (!externalReference) return null
+  const m = /^profile:([0-9a-fA-F-]{36})$/.exec(externalReference.trim())
+  return m ? m[1] : null
+}
+
 async function resolveBillingContext(params: {
   customerId?: string
   subscriptionId?: string | null
+  externalReference?: string | null
 }) {
   const supabase = getSupabase()
-  const { customerId, subscriptionId } = params
+  const { customerId, subscriptionId, externalReference } = params
+  const COLS = 'id, profile_id, plan, cycle, checkout_id, asaas_customer_id, asaas_subscription_id, status, created_at'
+  // externalReference=`profile:{id}` (plantado na criação do checkout, P2-5a): identifica
+  // o DONO de forma INEQUÍVOCA, sem depender de adivinhar o checkout certo por
+  // customer+created_at. (P2-5b, audit Codex 2026-06-07.)
+  const refProfileId = parseProfileRef(externalReference)
 
   let checkoutLink: ResolvedCheckoutLink | null = null
 
+  // (1) Por subscription — sinal mais forte quando presente.
   if (subscriptionId) {
     const { data } = await supabase
       .from('billing_checkouts')
-      .select('id, profile_id, plan, cycle, checkout_id, asaas_customer_id, asaas_subscription_id, status, created_at')
+      .select(COLS)
       .eq('asaas_subscription_id', subscriptionId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -117,12 +132,12 @@ async function resolveBillingContext(params: {
     if (data) checkoutLink = data as ResolvedCheckoutLink
   }
 
-  if (!checkoutLink && customerId) {
+  // (2) Por externalReference — escopa o checkout ao DONO certo (não ao customer genérico).
+  if (!checkoutLink && refProfileId) {
     const { data } = await supabase
       .from('billing_checkouts')
-      .select('id, profile_id, plan, cycle, checkout_id, asaas_customer_id, asaas_subscription_id, status, created_at')
-      .eq('asaas_customer_id', customerId)
-      .or(subscriptionId ? `asaas_subscription_id.eq.${subscriptionId},asaas_subscription_id.is.null` : 'asaas_subscription_id.is.null')
+      .select(COLS)
+      .eq('profile_id', refProfileId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -130,9 +145,41 @@ async function resolveBillingContext(params: {
     if (data) checkoutLink = data as ResolvedCheckoutLink
   }
 
+  // (3) Fallback por customer — agora DETECTA AMBIGUIDADE: vários checkouts recentes do
+  //     mesmo customer com planos diferentes e sub ainda nula → resolver por created_at
+  //     pode pegar o errado. Sem externalReference pra desambiguar, loga alto (não ativa
+  //     no escuro com falsa confiança).
+  if (!checkoutLink && customerId) {
+    const { data: candidates } = await supabase
+      .from('billing_checkouts')
+      .select(COLS)
+      .eq('asaas_customer_id', customerId)
+      .or(subscriptionId ? `asaas_subscription_id.eq.${subscriptionId},asaas_subscription_id.is.null` : 'asaas_subscription_id.is.null')
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    const rows = (candidates ?? []) as ResolvedCheckoutLink[]
+    if (rows.length > 1 && !refProfileId) {
+      const distinct = new Set(rows.map((r) => `${r.plan}:${r.cycle}`))
+      if (distinct.size > 1) {
+        logWarn('[asaas-webhook] resolveBillingContext AMBÍGUO — múltiplos checkouts recentes do customer com planos diferentes e sub nula; resolução por created_at pode pegar o errado', {
+          customerId,
+          subscriptionId: subscriptionId ?? null,
+          candidates: rows.map((r) => ({ plan: r.plan, cycle: r.cycle, status: r.status, created_at: r.created_at })),
+        })
+      }
+    }
+    if (rows[0]) checkoutLink = rows[0]
+  }
+
   let user: ResolvedUser | null = null
 
-  if (checkoutLink?.profile_id) {
+  // externalReference é AUTORITATIVO pro dono — prevalece sobre o customer-fallback.
+  if (refProfileId) {
+    user = await getProfileById(refProfileId)
+  }
+
+  if (!user && checkoutLink?.profile_id) {
     user = await getProfileById(checkoutLink.profile_id)
   }
 
@@ -190,11 +237,13 @@ interface AsaasPayment {
   customer?: string
   value: number
   subscription?: string
+  externalReference?: string
 }
 
 interface AsaasSubscription {
   customer?: string
   id?: string
+  externalReference?: string
 }
 
 interface AsaasWebhookBody {
@@ -316,6 +365,7 @@ export async function POST(req: NextRequest) {
         const { user, checkoutLink } = await resolveBillingContext({
           customerId,
           subscriptionId: payment?.subscription ?? null,
+          externalReference: payment?.externalReference ?? null,
         })
         if (!user) {
           logWarn('[asaas-webhook] User not found for payment context', {
@@ -423,81 +473,32 @@ export async function POST(req: NextRequest) {
           billingType,
         })
 
-        // Reconciliar: garante no máximo 1 assinatura ACTIVE por cliente (cancela só as
-        // órfãs MAIS ANTIGAS que a nova). Subsume o cancel único antigo. Não-bloqueante.
-        // Só reconcilia se: (a) o evento traz subscription (sem ela, keep=null — a guarda
-        // do reconcile já protege, mas evitamos a chamada); e (b) o profile AINDA aponta
-        // pra essa sub (re-leitura evita um reconcile atrasado agir depois de outro fluxo
-        // concorrente já ter vencido).
-        if (payment.subscription) {
-          const { data: freshProfile } = await supabase
-            .from('profiles')
-            .select('asaas_subscription_id')
-            .eq('id', user.id)
-            .single()
-          if (freshProfile?.asaas_subscription_id === payment.subscription) {
-            if (previousSubId && previousSubId !== payment.subscription) {
-              try {
-                const { data: latestProfile } = await supabase
-                  .from('profiles')
-                  .select('asaas_subscription_id')
-                  .eq('id', user.id)
-                  .single()
-                if (latestProfile?.asaas_subscription_id === payment.subscription) {
-                  await cancelSubscription(previousSubId)
-                  log('[asaas-webhook] Assinatura anterior cancelada explicitamente após troca confirmada', {
-                    userId: user.id,
-                    oldSubscriptionId: previousSubId,
-                    newSubscriptionId: payment.subscription,
-                  })
-                } else {
-                  log('[asaas-webhook] Cancelamento explícito da sub anterior pulado — profile mudou durante a conciliação', {
-                    userId: user.id,
-                    oldSubscriptionId: previousSubId,
-                    eventSub: payment.subscription,
-                    profileSub: latestProfile?.asaas_subscription_id ?? null,
-                  })
-                }
-              } catch (err) {
-                logError('[asaas-webhook] Falha ao cancelar assinatura anterior explicitamente (não-bloqueante)', err, {
-                  userId: user.id,
-                  oldSubscriptionId: previousSubId,
-                  newSubscriptionId: payment.subscription,
-                })
-              }
-            }
-
-            const recon = await reconcileActiveSubscriptions(customerId, payment.subscription)
-            if (recon.cancelled.length || recon.ambiguous.length) {
-              log('[asaas-webhook] Reconcile', { userId: user.id, kept: recon.kept, cancelled: recon.cancelled, ambiguous: recon.ambiguous })
-            }
-
-            // Corrige o valor RECORRENTE da assinatura para o preço CHEIO do plano. No
-            // upgrade com proration (finalPrice > 0), o checkout cria a sub com o valor
-            // PRORATEADO (1ª cobrança), então sem isto a renovação cobraria o prorateado em
-            // vez do preço cheio (perda de receita). A 1ª cobrança já foi paga; ajustamos só
-            // o recorrente (updatePendingPayments:false) e NÃO mexemos no nextDueDate.
-            // Idempotente: no-op quando a sub já está no preço cheio (1ª compra / Caminho D).
-            const fullPrice = cycle === 'YEARLY'
-              ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES]?.yearly
-              : PLAN_PRICES[plan as keyof typeof PLAN_PRICES]?.monthly
-            if (fullPrice && fullPrice > 0) {
-              try {
-                await updateSubscription(payment.subscription, { value: fullPrice, updatePendingPayments: false })
-                log('[asaas-webhook] Valor recorrente ajustado para o preço cheio do plano', { userId: user.id, subscriptionId: payment.subscription, value: fullPrice })
-              } catch (err) {
-                logError('[asaas-webhook] Falha ao ajustar valor recorrente (não-bloqueante)', err, { userId: user.id, subscriptionId: payment.subscription })
-              }
-            }
-          } else {
-            log('[asaas-webhook] Reconcile pulado — profile já aponta outra sub (fluxo concorrente venceu)', { userId: user.id, eventSub: payment.subscription, profileSub: freshProfile?.asaas_subscription_id })
-          }
-        }
-
+        // handleUpgrade + e-mail PRIMEIRO (idempotentes): se a correção de valor recorrente
+        // cair na DLQ abaixo, o reprocessador NÃO repete o despause/e-mail (profile já está
+        // no plano), então precisam acontecer aqui de qualquer forma.
         const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
         log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
 
         await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
+
+        // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente.
+        // MESMA rotina do polling e do reprocessador (helper compartilhado finalizeActivation),
+        // eliminando a divergência que existia (P1-1/P1-2, audit Codex 2026-06-07).
+        const fin = await finalizeActivation({
+          db: supabase,
+          userId: user.id,
+          customerId: customerId ?? null,
+          newSubscriptionId: payment.subscription ?? null,
+          previousSubscriptionId: previousSubId,
+          plan,
+          cycle,
+          source: 'webhook',
+        })
+        // Correção de valor recorrente necessária mas falhou → DLQ (throw → catch marca
+        // 'failed' → reprocessador retenta). NUNCA deixar a renovação subcobrar em silêncio.
+        if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
+          throw new Error(`Correção de valor recorrente pendente (sub ${payment.subscription}) — enviado p/ DLQ/retry`)
+        }
         break
       }
 
@@ -508,6 +509,7 @@ export async function POST(req: NextRequest) {
         const { user } = await resolveBillingContext({
           customerId,
           subscriptionId: payment?.subscription ?? null,
+          externalReference: payment?.externalReference ?? null,
         })
         if (!user) {
           logWarn('[asaas-webhook] User not found for overdue payment context', {
@@ -530,11 +532,15 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        if (overdueSubId && overdueProfile?.asaas_subscription_id && overdueSubId !== overdueProfile.asaas_subscription_id) {
-          log('[asaas-webhook] PAYMENT_OVERDUE ignored — subscription mismatch (old/ghost subscription)', {
+        // Match ESTRITO (igual a DELETED/REFUND): só rebaixa se o evento TEM subscription
+        // E ela é EXATAMENTE a assinatura ativa do profile. Sem subscription (overdueSubId
+        // null) NÃO rebaixa por customer-fallback — um overdue antigo/ambíguo sem sub
+        // derrubaria um usuário que já tem outra assinatura ativa (P1-3, audit Codex 2026-06-07).
+        if (!overdueSubId || overdueProfile?.asaas_subscription_id !== overdueSubId) {
+          log('[asaas-webhook] PAYMENT_OVERDUE ignorado — sem subscription ou não é a assinatura ativa do profile', {
             userId: user.id,
             eventSubscriptionId: overdueSubId,
-            activeSubscriptionId: overdueProfile.asaas_subscription_id,
+            activeSubscriptionId: overdueProfile?.asaas_subscription_id ?? null,
           })
           break
         }
@@ -578,6 +584,7 @@ export async function POST(req: NextRequest) {
         const { user } = await resolveBillingContext({
           customerId,
           subscriptionId: subscription?.id ?? null,
+          externalReference: subscription?.externalReference ?? null,
         })
         if (!user) {
           logWarn('[asaas-webhook] User not found for deleted subscription context', {
@@ -658,7 +665,11 @@ export async function POST(req: NextRequest) {
         const subscriptionId = payment?.subscription ?? subscription?.id ?? null
         if (!customerId) break
 
-        const { user } = await resolveBillingContext({ customerId, subscriptionId })
+        const { user } = await resolveBillingContext({
+          customerId,
+          subscriptionId,
+          externalReference: payment?.externalReference ?? subscription?.externalReference ?? null,
+        })
         if (!user) {
           logWarn('[asaas-webhook] User not found for refund/chargeback context', { customerId, subscriptionId, event })
           break

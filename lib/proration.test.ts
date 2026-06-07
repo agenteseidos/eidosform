@@ -9,7 +9,7 @@
  * 4. Edge cases — crédito cobre plano inteiro, 0 dias restantes, plano expirado
  */
 
-import { calculateProrationCredit, calculateUpgradePrice, isUpgrade } from './proration'
+import { calculateProrationCredit, calculateUpgradePrice, calculateCreditCoverageDays, isUpgrade } from './proration'
 
 let passed = 0
 let failed = 0
@@ -223,6 +223,22 @@ const freeCredit = calculateProrationCredit({
   currentPlan: 'free', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15),
 })
 assert(freeCredit === 0, 'Free plan = crédito 0')
+
+// ============================================================
+// calculateCreditCoverageDays — "saldo em tempo" (ceil, favorece o cliente)
+// ============================================================
+// Crédito/preço exatos não-fracionários → valor inteiro inalterado
+assert(calculateCreditCoverageDays(257, 257, 'MONTHLY') === 30, 'coverage: 1 ciclo exato mensal = 30 dias')
+// Fração: ceil arredonda PRA CIMA (nunca encurta o crédito do cliente)
+// 100 * 30 / 257 = 11.67 → ceil 12
+assert(calculateCreditCoverageDays(100, 257, 'MONTHLY') === 12, 'coverage: fração mensal usa ceil (12, não 11)')
+// 1164 * 30 / 257 = 135.9 → ceil 136
+assert(calculateCreditCoverageDays(1164, 257, 'MONTHLY') === 136, 'coverage: R$1164 em Professional mensal = 136 dias (ceil)')
+// Guardas: preço/crédito <= 0 → 0
+assert(calculateCreditCoverageDays(0, 257, 'MONTHLY') === 0, 'coverage: crédito 0 = 0 dias')
+assert(calculateCreditCoverageDays(100, 0, 'MONTHLY') === 0, 'coverage: preço 0 = 0 dias')
+// Anual: 365 dias no ciclo
+assert(calculateCreditCoverageDays(2364, 2364, 'YEARLY') === 365, 'coverage: 1 ciclo exato anual = 365 dias')
 
 // ============================================================
 // Resultado

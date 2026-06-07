@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { getSubscription, getCustomerSubscriptions, reconcileActiveSubscriptions } from '@/lib/asaas'
+import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
 import { handleUpgrade } from '@/lib/plan-limits'
-import { buildActivePlanUpdate } from '@/lib/billing-activation'
+import { buildActivePlanUpdate, finalizeActivation } from '@/lib/billing-activation'
 import { log, logError } from '@/lib/logger'
 
 /**
@@ -42,7 +42,7 @@ export async function GET() {
   const [{ data: profile }, { data: checkout }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('plan, plan_status, plan_cycle, asaas_customer_id')
+      .select('plan, plan_status, plan_cycle, asaas_customer_id, asaas_subscription_id')
       .eq('id', user.id)
       .single(),
     supabase
@@ -97,6 +97,10 @@ export async function GET() {
   // Retorna true SOMENTE se realmente persistiu (1 linha). Idempotente.
   async function persistPlanFromAsaas(subscriptionId: string): Promise<boolean> {
     if (!checkoutPlan) return false
+
+    // Sub vigente ANTES desta ativação — usada pelo finalizeActivation pra cancelar a
+    // anterior explicitamente (duplicata do mesmo dia que o reconcile por data não pega).
+    const previousSubId = (profile as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id ?? null
 
     // checkoutCycle (de billing_checkouts, salvo na criação do checkout) é a fonte
     // de verdade do ciclo. NÃO inferir do subValue (valores prorateados não batem).
@@ -170,21 +174,43 @@ export async function GET() {
       log('[checkout/status] handleUpgrade failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
     }
 
-    // Reconciliar: cancela só as órfãs MAIS ANTIGAS que a recém-persistida. Re-lê o
-    // profile: se outro fluxo (webhook) já trocou a sub vigente, NÃO reconcilia (evita um
-    // reconcile atrasado cancelar a sub vencedora). Não-bloqueante.
-    const { data: freshProfile } = await admin
-      .from('profiles')
-      .select('asaas_subscription_id')
-      .eq('id', user!.id)
-      .single()
-    if ((freshProfile as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id === subscriptionId) {
-      const recon = await reconcileActiveSubscriptions(asaasCustomerId ?? profile?.asaas_customer_id ?? null, subscriptionId)
-      if (recon.cancelled.length || recon.ambiguous.length) {
-        log('[checkout/status] Reconcile via polling', { userId: user!.id, kept: recon.kept, cancelled: recon.cancelled, ambiguous: recon.ambiguous })
+    // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente —
+    // MESMA rotina do webhook e do reprocessador (helper compartilhado). Antes, o polling
+    // só reconciliava: não cancelava a sub anterior do MESMO DIA (P1-2) nem corrigia o
+    // valor recorrente (P1-1) — audit Codex 2026-06-07.
+    const fin = await finalizeActivation({
+      db: admin,
+      userId: user!.id,
+      customerId: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
+      newSubscriptionId: subscriptionId,
+      previousSubscriptionId: previousSubId,
+      plan: checkoutPlan,
+      cycle,
+      source: 'polling',
+    })
+    // Correção de valor recorrente necessária mas falhou: o polling não tem um evento na
+    // DLQ pra retentar, então registra uma linha sintética 'failed' que o reprocessador
+    // (endpoint admin) vai pegar e retentar. NUNCA deixar a renovação subcobrar em silêncio.
+    if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
+      try {
+        // asaas_webhook_events não está no database.types.ts (DLQ adicionada por migration);
+        // cast pra escapar do tipo do client tipado, igual ao webhook (client destipado).
+        await (admin as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+          .from('asaas_webhook_events')
+          .upsert({
+            event_id: `polling-recurfix:${subscriptionId}`,
+            event: 'PAYMENT_CONFIRMED',
+            status: 'failed',
+            error: 'polling: correção de valor recorrente pendente (proration-checkout)',
+            attempts: 0,
+            customer_id: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
+            subscription_id: subscriptionId,
+            last_attempt_at: new Date().toISOString(),
+          }, { onConflict: 'event_id' })
+        logError('[checkout/status] Valor recorrente não corrigido no polling — enfileirado na DLQ p/ reprocesso', undefined, { userId: user!.id, subscriptionId })
+      } catch (err) {
+        logError('[checkout/status] Falha ao enfileirar correção de valor recorrente na DLQ', err, { userId: user!.id, subscriptionId })
       }
-    } else {
-      log('[checkout/status] Reconcile pulado — profile já aponta outra sub', { userId: user!.id, persistedSub: subscriptionId })
     }
 
     return true

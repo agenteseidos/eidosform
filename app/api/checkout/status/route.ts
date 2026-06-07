@@ -49,6 +49,9 @@ export async function GET() {
       .from('billing_checkouts')
       .select('id, status, last_event, updated_at, asaas_subscription_id, asaas_customer_id, plan, cycle')
       .eq('profile_id', user.id)
+      // Ignora linhas internas de recuperação do Caminho D (status='recovering'): elas
+      // existem numa janela antes do PUT no Asaas e não devem guiar o polling. (P2 round 4.)
+      .neq('status', 'recovering')
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle(),

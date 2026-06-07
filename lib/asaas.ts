@@ -105,7 +105,9 @@ export function parseExternalReference(ref?: string | null): { profileId: string
     const k = part.slice(0, idx)
     const v = part.slice(idx + 1)
     if (k === 'profile' && /^[0-9a-fA-F-]{36}$/.test(v)) out.profileId = v
-    else if (k === 'plan' && v) out.plan = v
+    // plan só é aceito se for um plano CONHECIDO (evita persistir plano inválido caso o
+    // campo venha truncado/editado → cairia em erro de DB). (P3 round 4, Codex 2026-06-07.)
+    else if (k === 'plan' && v && Object.prototype.hasOwnProperty.call(PLAN_PRICES, v)) out.plan = v
     else if (k === 'cycle' && (v === 'MONTHLY' || v === 'YEARLY')) out.cycle = v
   }
   return out

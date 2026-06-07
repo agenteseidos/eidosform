@@ -42,5 +42,9 @@ assert(pBadCycle.profileId === UUID && pBadCycle.plan === 'starter' && pBadCycle
 const pReorder = parseExternalReference(`plan:starter|cycle:MONTHLY|profile:${UUID}`)
 assert(pReorder.profileId === UUID && pReorder.plan === 'starter' && pReorder.cycle === 'MONTHLY', 'ordem dos campos indiferente')
 
+// Plano DESCONHECIDO é rejeitado (P3): evita persistir plano inválido
+const pBadPlan = parseExternalReference(`profile:${UUID}|plan:enterprise|cycle:MONTHLY`)
+assert(pBadPlan.profileId === UUID && pBadPlan.plan === null && pBadPlan.cycle === 'MONTHLY', 'plano desconhecido → plan null (dono e ciclo ok)')
+
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed > 0 ? 1 : 0)

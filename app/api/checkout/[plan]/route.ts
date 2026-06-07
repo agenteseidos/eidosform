@@ -181,7 +181,10 @@ export async function POST(
         asaas_subscription_id: profile.asaasSubscriptionId,
         plan,
         cycle,
-        status: 'pending',
+        // status='recovering' (não 'pending'): o /api/checkout/status IGNORA essa linha
+        // interna, então durante a janela antes do PUT ela não pode fazer o polling ativar
+        // o novo plano cedo (vendo a sub atual como ACTIVE). (P2 round 4, Codex 2026-06-07.)
+        status: 'recovering',
         last_event: 'PLAN_CHANGE_CREDIT_TIME_PENDING',
         payment_method: 'proration_credit_time',
         original_price: proration.originalPrice,

@@ -215,34 +215,51 @@ async function resolveBillingContext(params: {
 async function updateCheckoutLink(params: {
   customerId?: string
   subscriptionId?: string | null
+  externalReference?: string | null
+  /** Linha já resolvida pelo chamador — atualiza EXATAMENTE ela, sem re-resolver. */
+  checkoutLinkId?: string | null
   event: string
   status: string
   billingType?: string
 }) {
   const supabase = getSupabase()
-  const { customerId, subscriptionId, event, status, billingType } = params
-  const { checkoutLink } = await resolveBillingContext({ customerId, subscriptionId })
+  const { customerId, subscriptionId, externalReference, checkoutLinkId, event, status, billingType } = params
 
-  if (!checkoutLink) {
-    logWarn('[asaas-webhook] Checkout link not found for update', { customerId, subscriptionId, event, status })
-    return
+  // P1 round 4 (audit Codex 2026-06-07): NÃO re-resolver quando o chamador já tem a linha
+  // certa (resolvida pela intent do externalReference). Re-resolver aqui sem a intent podia
+  // cair no fallback por customer/latest e marcar o checkout ERRADO como pago — e aí o
+  // reprocessador por subscriptionId reativaria plano/ciclo errado. Quando checkoutLinkId
+  // não vem, resolve pela MESMA intent (externalReference).
+  let targetId = checkoutLinkId ?? null
+  let existingCustomer: string | null = null
+  let existingSub: string | null = null
+  if (!targetId) {
+    const { checkoutLink } = await resolveBillingContext({ customerId, subscriptionId, externalReference })
+    if (!checkoutLink) {
+      logWarn('[asaas-webhook] Checkout link not found for update', { customerId, subscriptionId, event, status })
+      return
+    }
+    targetId = checkoutLink.id
+    existingCustomer = checkoutLink.asaas_customer_id ?? null
+    existingSub = checkoutLink.asaas_subscription_id ?? null
   }
+
+  const updatePayload: Record<string, unknown> = { status, last_event: event }
+  if (billingType) updatePayload.payment_method = billingType
+  const newCustomer = customerId ?? existingCustomer
+  const newSub = subscriptionId ?? existingSub
+  if (newCustomer != null) updatePayload.asaas_customer_id = newCustomer
+  if (newSub != null) updatePayload.asaas_subscription_id = newSub
 
   const { error: ckUpdateError } = await supabase
     .from('billing_checkouts')
-    .update({
-      asaas_customer_id: customerId ?? checkoutLink.asaas_customer_id,
-      asaas_subscription_id: subscriptionId ?? checkoutLink.asaas_subscription_id,
-      status,
-      last_event: event,
-      ...(billingType ? { payment_method: billingType } : {}),
-    })
-    .eq('id', checkoutLink.id)
+    .update(updatePayload)
+    .eq('id', targetId)
 
   // Não-bloqueante: billing_checkouts é bookkeeping secundário. O estado de verdade
   // do plano é o profile (já checado com throw nos handlers). Só logar.
   if (ckUpdateError) {
-    logError('[asaas-webhook] Falha ao atualizar billing_checkouts (não-bloqueante)', ckUpdateError, { checkoutId: checkoutLink.id, event, status })
+    logError('[asaas-webhook] Falha ao atualizar billing_checkouts (não-bloqueante)', ckUpdateError, { checkoutId: targetId, event, status })
   }
 }
 
@@ -497,6 +514,9 @@ export async function POST(req: NextRequest) {
         await updateCheckoutLink({
           customerId,
           subscriptionId: payment.subscription ?? null,
+          // Linha JÁ resolvida pela intent — marca exatamente ela como paga (P1 round 4).
+          checkoutLinkId: checkoutLink?.id ?? null,
+          externalReference: payment?.externalReference ?? null,
           event,
           status: 'paid',
           billingType,
@@ -596,6 +616,7 @@ export async function POST(req: NextRequest) {
         await updateCheckoutLink({
           customerId,
           subscriptionId: payment?.subscription ?? null,
+          externalReference: payment?.externalReference ?? null,
           event,
           status: 'overdue',
         })
@@ -674,6 +695,7 @@ export async function POST(req: NextRequest) {
         await updateCheckoutLink({
           customerId,
           subscriptionId: subscription?.id ?? null,
+          externalReference: subscription?.externalReference ?? null,
           event,
           status: 'cancelled',
         })
@@ -755,6 +777,7 @@ export async function POST(req: NextRequest) {
         await updateCheckoutLink({
           customerId,
           subscriptionId,
+          externalReference: payment?.externalReference ?? subscription?.externalReference ?? null,
           event,
           status: newStatus,
         })

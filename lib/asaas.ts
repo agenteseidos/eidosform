@@ -82,6 +82,35 @@ export async function createCustomer(payload: AsaasCustomerPayload): Promise<{ i
   return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+/**
+ * externalReference carrega a INTENÇÃO completa (dono + plano + ciclo), não só o dono.
+ * Formato: `profile:{uuid}|plan:{plan}|cycle:{cycle}`. O Asaas propaga isso da assinatura
+ * para os eventos PAYMENT_*, então o webhook resolve EXATAMENTE o que foi pago (mesmo que
+ * o usuário tenha aberto vários checkouts e pago um link antigo). (P1 round 3, Codex 2026-06-07.)
+ */
+export function buildExternalReference(profileId: string, plan?: string, cycle?: string): string {
+  let ref = `profile:${profileId}`
+  if (plan) ref += `|plan:${plan}`
+  if (cycle) ref += `|cycle:${cycle}`
+  return ref
+}
+
+/** Faz o parse de um externalReference no formato acima (campos ausentes → null). */
+export function parseExternalReference(ref?: string | null): { profileId: string | null; plan: string | null; cycle: string | null } {
+  const out = { profileId: null as string | null, plan: null as string | null, cycle: null as string | null }
+  if (!ref) return out
+  for (const part of ref.split('|')) {
+    const idx = part.indexOf(':')
+    if (idx < 0) continue
+    const k = part.slice(0, idx)
+    const v = part.slice(idx + 1)
+    if (k === 'profile' && /^[0-9a-fA-F-]{36}$/.test(v)) out.profileId = v
+    else if (k === 'plan' && v) out.plan = v
+    else if (k === 'cycle' && (v === 'MONTHLY' || v === 'YEARLY')) out.cycle = v
+  }
+  return out
+}
+
 /** Cria checkout hospedado — retorna URL para redirecionamento */
 export async function createCheckout(params: {
   plan: Exclude<PlanName, 'free'>

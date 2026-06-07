@@ -209,7 +209,11 @@ export async function GET() {
           }, { onConflict: 'event_id' })
         logError('[checkout/status] Valor recorrente não corrigido no polling — enfileirado na DLQ p/ reprocesso', undefined, { userId: user!.id, subscriptionId })
       } catch (err) {
-        logError('[checkout/status] Falha ao enfileirar correção de valor recorrente na DLQ', err, { userId: user!.id, subscriptionId })
+        // Não conseguimos NEM corrigir NEM enfileirar p/ retry → não confirmar success
+        // (senão a subcobrança ficaria silenciosa). Retorna pending: o overlay segue
+        // pollando e tentamos de novo; erro alto p/ alerta operacional. (P2b round 3.)
+        logError('[checkout/status] CRÍTICO: valor recorrente não corrigido E falha ao enfileirar DLQ — retornando pending', err, { userId: user!.id, subscriptionId })
+        return false
       }
     }
 

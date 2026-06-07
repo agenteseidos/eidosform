@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { PLAN_PRICES, getSubscription } from '@/lib/asaas'
+import { PLAN_PRICES, getSubscription, parseExternalReference } from '@/lib/asaas'
 import { finalizeActivation } from '@/lib/billing-activation'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
@@ -97,13 +97,6 @@ async function getProfileById(profileId: string) {
   return data as ResolvedUser | null
 }
 
-/** Extrai o UUID de um externalReference no formato `profile:{uuid}` (senão null). */
-function parseProfileRef(externalReference?: string | null): string | null {
-  if (!externalReference) return null
-  const m = /^profile:([0-9a-fA-F-]{36})$/.exec(externalReference.trim())
-  return m ? m[1] : null
-}
-
 async function resolveBillingContext(params: {
   customerId?: string
   subscriptionId?: string | null
@@ -112,10 +105,11 @@ async function resolveBillingContext(params: {
   const supabase = getSupabase()
   const { customerId, subscriptionId, externalReference } = params
   const COLS = 'id, profile_id, plan, cycle, checkout_id, asaas_customer_id, asaas_subscription_id, status, created_at'
-  // externalReference=`profile:{id}` (plantado na criação do checkout, P2-5a): identifica
-  // o DONO de forma INEQUÍVOCA, sem depender de adivinhar o checkout certo por
-  // customer+created_at. (P2-5b, audit Codex 2026-06-07.)
-  const refProfileId = parseProfileRef(externalReference)
+  // externalReference=`profile:{id}|plan:{plan}|cycle:{cycle}` (plantado na criação, P1 round 3):
+  // identifica o DONO E A INTENÇÃO (plano/ciclo realmente pagos), sem depender de adivinhar
+  // o checkout certo por customer+created_at. (audit Codex 2026-06-07.)
+  const intent = parseExternalReference(externalReference)
+  const refProfileId = intent.profileId
 
   let checkoutLink: ResolvedCheckoutLink | null = null
 
@@ -132,7 +126,26 @@ async function resolveBillingContext(params: {
     if (data) checkoutLink = data as ResolvedCheckoutLink
   }
 
-  // (2) Por externalReference — escopa o checkout ao DONO certo (não ao customer genérico).
+  // (2a) Por intenção EXATA (dono + plano + ciclo): casa a linha de checkout que
+  //      corresponde ao que foi REALMENTE pago, mesmo com vários checkouts pendentes do
+  //      mesmo profile (o usuário pode ter pago um link antigo). Match exato → não ativa
+  //      no escuro pelo "mais recente". (P1 round 3.)
+  if (!checkoutLink && refProfileId && intent.plan && intent.cycle) {
+    const { data } = await supabase
+      .from('billing_checkouts')
+      .select(COLS)
+      .eq('profile_id', refProfileId)
+      .eq('plan', intent.plan)
+      .eq('cycle', intent.cycle)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (data) checkoutLink = data as ResolvedCheckoutLink
+  }
+
+  // (2b) Por externalReference (só dono) — escopa ao profile certo quando a intenção não
+  //      trouxe plano/ciclo (ex.: assinatura legada sem o formato novo).
   if (!checkoutLink && refProfileId) {
     const { data } = await supabase
       .from('billing_checkouts')
@@ -362,6 +375,13 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
+        // Fluxo de assinatura: TODO pagamento recorrente carrega payment.subscription.
+        // Sem ela, não dá pra cancelar/reconciliar/corrigir a sub depois — ativar seria
+        // criar um estado órfão. Manda pra DLQ (throw → failed) p/ revisão. (P2c round 3.)
+        if (!payment?.subscription) {
+          throw new Error(`PAYMENT_CONFIRMED/RECEIVED sem payment.subscription (customer ${customerId}) — não ativa; enviado p/ DLQ`)
+        }
+
         const { user, checkoutLink } = await resolveBillingContext({
           customerId,
           subscriptionId: payment?.subscription ?? null,
@@ -398,10 +418,19 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Prefer plan/cycle from checkout record (handles prorated values)
+        // Fonte da verdade pra plan/cycle, em ordem de confiabilidade:
+        //  1. INTENÇÃO no externalReference (`...|plan:..|cycle:..`): é o que foi REALMENTE
+        //     pago — desambigua múltiplos checkouts pendentes do mesmo profile (P1 round 3).
+        //  2. checkout record (linha casada) — lida com valores prorateados.
+        //  3. detecção por valor / metadados do Asaas — fallback legado.
+        const intent = parseExternalReference(payment?.externalReference)
         let plan: string
         let cycle: 'MONTHLY' | 'YEARLY'
-        if (checkoutLink?.plan && checkoutLink?.cycle) {
+        if (intent.plan && intent.cycle) {
+          plan = intent.plan
+          cycle = intent.cycle as 'MONTHLY' | 'YEARLY'
+          log('[asaas-webhook] Using plan/cycle from externalReference intent (autoritativo)', { plan, cycle })
+        } else if (checkoutLink?.plan && checkoutLink?.cycle) {
           plan = checkoutLink.plan
           cycle = checkoutLink.cycle as 'MONTHLY' | 'YEARLY'
           log('[asaas-webhook] Using plan/cycle from checkout record', { plan, cycle })

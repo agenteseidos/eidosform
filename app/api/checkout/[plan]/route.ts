@@ -8,7 +8,7 @@ import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, buildExternalReference, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
@@ -164,39 +164,15 @@ export async function POST(
       nextDueDate,
     })
 
-    // 1) Editar a assinatura no Asaas (PUT). Se falhar, abortar SEM alterar o
-    //    profile — mantém a conta consistente com o plano atual.
-    try {
-      await updateSubscription(profile.asaasSubscriptionId, {
-        value: proration.originalPrice,
-        cycle,
-        nextDueDate,
-        description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
-        externalReference: `profile:${profile.profileId}`,
-        updatePendingPayments: true,
-      })
-    } catch (err) {
-      logError('[checkout] Caminho D — falha ao editar assinatura no Asaas; abortando sem alterar plano', err, {
-        userId: profile.profileId,
-        subscriptionId: profile.asaasSubscriptionId,
-      })
-      return NextResponse.json(
-        { error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' },
-        { status: 502 }
-      )
-    }
-
     const sSupa = getServiceSupabase() ?? supabase
 
-    // 2) RECUPERAÇÃO (P1-4, audit Codex 2026-06-07): grava em billing_checkouts o estado
-    //    INTENCIONADO (sub → NOVO plano/ciclo) ANTES de atualizar o profile. Se o update
-    //    do profile falhar logo abaixo, a sub no Asaas já mudou; sem esse mapeamento o
-    //    reprocessador reconciliaria o profile pro plano ANTIGO (o billing_checkout
-    //    original da sub aponta pro plano velho). status='pending' até confirmar o profile,
-    //    pra o /status não dar falso-sucesso nessa janela. checkout_id estável (por sub)
-    //    pra o flip→'paid' atualizar a MESMA linha.
+    // 1) RECUPERAÇÃO ANTES do PUT (P2a round 3, audit Codex 2026-06-07): grava em
+    //    billing_checkouts o estado INTENCIONADO (sub → NOVO plano/ciclo) e CHECA o erro.
+    //    Se falhar, aborta SEM tocar no Asaas — garante que, se o PUT acontecer, o mapa de
+    //    recuperação pro reprocessador JÁ existe. status='pending' até confirmar o profile
+    //    (não dá falso-sucesso no /status). checkout_id estável (por sub) p/ o flip→'paid'.
     const recoveryCheckoutId = `plan-change-${profile.profileId}-${profile.asaasSubscriptionId}`
-    await sSupa
+    const { error: recErr } = await sSupa
       .from('billing_checkouts')
       .upsert({
         profile_id: profile.profileId,
@@ -212,6 +188,42 @@ export async function POST(
         proration_credit: proration.credit,
         final_price: 0,
       }, { onConflict: 'checkout_id' })
+    if (recErr) {
+      logError('[checkout] Caminho D — falha ao gravar linha de recuperação; abortando ANTES de tocar no Asaas', recErr, {
+        userId: profile.profileId,
+        subscriptionId: profile.asaasSubscriptionId,
+      })
+      return NextResponse.json(
+        { error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' },
+        { status: 500 }
+      )
+    }
+
+    // 2) Editar a assinatura no Asaas (PUT). Se falhar, reverter a linha de recuperação
+    //    (a sub NÃO mudou) e abortar SEM alterar o profile.
+    try {
+      await updateSubscription(profile.asaasSubscriptionId, {
+        value: proration.originalPrice,
+        cycle,
+        nextDueDate,
+        description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
+        externalReference: buildExternalReference(profile.profileId, plan, cycle),
+        updatePendingPayments: true,
+      })
+    } catch (err) {
+      logError('[checkout] Caminho D — falha ao editar assinatura no Asaas; abortando sem alterar plano', err, {
+        userId: profile.profileId,
+        subscriptionId: profile.asaasSubscriptionId,
+      })
+      await sSupa
+        .from('billing_checkouts')
+        .update({ status: 'cancelled', last_event: 'PLAN_CHANGE_PUT_FAILED' })
+        .eq('checkout_id', recoveryCheckoutId)
+      return NextResponse.json(
+        { error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' },
+        { status: 502 }
+      )
+    }
 
     // 3) Atualizar o profile pro novo plano, MANTENDO o asaas_subscription_id.
     //    plan_expires_at = nextDueDate: acesso garantido durante o período coberto
@@ -243,16 +255,19 @@ export async function POST(
         rows: dRows?.length ?? 0,
       })
       try {
-        await sSupa.from('asaas_webhook_events').upsert({
-          event_id: `planchange-recover:${profile.asaasSubscriptionId}`,
-          event: 'PAYMENT_CONFIRMED',
-          status: 'failed',
-          error: 'Caminho D: sub editada mas profile não persistiu — reconciliar profile',
-          attempts: 0,
-          customer_id: profile.asaasCustomerId ?? null,
-          subscription_id: profile.asaasSubscriptionId,
-          last_attempt_at: new Date().toISOString(),
-        } as never, { onConflict: 'event_id' })
+        // asaas_webhook_events fora do database.types.ts (DLQ via migration) → cast.
+        await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+          .from('asaas_webhook_events')
+          .upsert({
+            event_id: `planchange-recover:${profile.asaasSubscriptionId}`,
+            event: 'PAYMENT_CONFIRMED',
+            status: 'failed',
+            error: 'Caminho D: sub editada mas profile não persistiu — reconciliar profile',
+            attempts: 0,
+            customer_id: profile.asaasCustomerId ?? null,
+            subscription_id: profile.asaasSubscriptionId,
+            last_attempt_at: new Date().toISOString(),
+          }, { onConflict: 'event_id' })
       } catch (qErr) {
         logError('[checkout] Caminho D — falha ao enfileirar recuperação na DLQ', qErr, { userId: profile.profileId })
       }
@@ -371,7 +386,7 @@ export async function POST(
       cancelUrl,
       expiredUrl,
       customerId,
-      externalReference: `profile:${profile.profileId}`,
+      externalReference: buildExternalReference(profile.profileId, plan, cycle),
       ...(checkoutValue ? { customValue: checkoutValue } : {}),
     })
     log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: checkoutValue ? 'prorated_checkout' : 'checkout', checkoutId: checkout.id, profileId: profile.profileId })

@@ -22,7 +22,7 @@
  * tratamento MANUAL — o evento permanece visível na lista de failed/dead do admin.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { getSubscription, resolvePlanCycleFromSubscription } from '@/lib/asaas'
+import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, type BillingCycle } from '@/lib/billing-activation'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
@@ -137,6 +137,33 @@ async function findCheckout(
 async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<string> {
   const customerId = row.customer_id
   const subscriptionId = row.subscription_id
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const ev = (row.event ?? '').toUpperCase()
+
+  // ── ALIGN_PENDING (DLQ do Caminho D, P0-1b Codex): alinha os pagamentos PENDING ao nextDueDate
+  // ATUAL da assinatura (que já está correto após o PUT). Não precisa de checkout/profile.
+  if (ev === 'ALIGN_PENDING') {
+    if (!subscriptionId) return 'noop_align_sem_subscription'
+    const subA = (await getSubscription(subscriptionId)) as { nextDueDate?: string }
+    if (!subA?.nextDueDate) return 'noop_align_sem_nextduedate'
+    const r = await alignPendingPaymentsDueDate(subscriptionId, subA.nextDueDate)
+    if (r.failed > 0) throw new Error(`ALIGN_PENDING: ${r.failed} pagamentos ainda não alinhados — mantém failed p/ retry`)
+    log('[asaas-reprocess] ALIGN_PENDING: pagamentos pendentes alinhados', { subscriptionId, moved: r.moved, nextDueDate: subA.nextDueDate })
+    return 'aligned'
+  }
+
+  // ── FORMLIMIT (DLQ do downgrade, P1-5 Codex): re-aplica os limites de forms do PLANO ATUAL do
+  // profile (que já é o plano-alvo após a troca). Acha o profile pela sub/customer.
+  if (ev === 'FORMLIMIT') {
+    const { data: prof } = subscriptionId
+      ? await supabase.from('profiles').select('id, plan').eq('asaas_subscription_id', subscriptionId).maybeSingle()
+      : await supabase.from('profiles').select('id, plan').eq('asaas_customer_id', customerId ?? '').maybeSingle()
+    if (!prof) return 'noop_formlimit_profile_nao_encontrado'
+    await handleDowngrade((prof as { id: string }).id, serviceKey, (prof as { plan: string }).plan as Parameters<typeof handleDowngrade>[2]) // lança se falhar → retry
+    log('[asaas-reprocess] FORMLIMIT: limites de forms re-aplicados', { profileId: (prof as { id: string }).id, plan: (prof as { plan: string }).plan })
+    return 'formlimit_reaplicado'
+  }
+
   if (!subscriptionId && !customerId) throw new Error('evento sem customer_id/subscription_id — não dá pra reconciliar')
 
   const checkout = await findCheckout(supabase, { customerId, subscriptionId })
@@ -148,9 +175,6 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     .eq('id', checkout.profile_id)
     .single()
   if (!profile) throw new Error('profile não encontrado')
-
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const ev = (row.event ?? '').toUpperCase()
 
   // ── EVENTO DE ATIVAÇÃO ──────────────────────────────────────────────
   // Só ativa após CONFIRMAR ACTIVE no Asaas. Sem subscriptionId ou não-ACTIVE → noop.

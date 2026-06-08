@@ -4,6 +4,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { cancelSubscription, getSubscription, getEarliestPendingDueDate } from '@/lib/asaas'
 import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
 import { logError, logWarn } from '@/lib/logger'
+import { sendBillingOpsAlert } from '@/lib/resend'
 
 export async function POST() {
   const supabase = await createClient()
@@ -59,10 +60,23 @@ export async function POST() {
     // até onde tem acesso pago). Corrige DOIS bugs de uma vez (P0, Codex 2026-06-08): (1) NÃO usa
     // o subscription.nextDueDate INFLADO (próximo ciclo) das subs com 1ª cobrança futura → mata o
     // compounding; (2) NÃO sub-concede acesso após uma renovação paga (o pendente é a próxima
-    // cobrança real, depois do ciclo já pago). Fallbacks: endDate → nextDueDate → local → ciclo.
-    const earliestPending = await getEarliestPendingDueDate(profile.asaas_subscription_id)
-    const candidate = earliestPending ?? sub?.endDate ?? sub?.nextDueDate
-    resolvedExpiresAt = expiryFromNextDueDate(candidate) ?? localFutureExpiry ?? calculateExpiryDate(cycle)
+    // cobrança real, depois do ciclo já pago).
+    const pending = await getEarliestPendingDueDate(profile.asaas_subscription_id)
+    if (!pending.ok) {
+      // A listagem de pagamentos FALHOU → NÃO confiar no nextDueDate (pode estar inflado p/
+      // credit-time). Usa a expiração LOCAL (não estende, sem compounding) + alerta operacional.
+      resolvedExpiresAt = localFutureExpiry ?? calculateExpiryDate(cycle)
+      logWarn('[subscription/cancel] listagem de pagamentos falhou — expiração pelo fallback local', { userId: user.id, subscriptionId: profile.asaas_subscription_id, resolvedExpiresAt })
+      await sendBillingOpsAlert({
+        subject: 'Cancelamento: não listou pagamentos pendentes — expiração pelo fallback local (revisar)',
+        lines: { userId: user.id, subscriptionId: profile.asaas_subscription_id, resolvedExpiresAt },
+      }).catch(() => {})
+    } else {
+      // ok: se há pendente, usa-o; senão (genuinamente sem pendente) o nextDueDate NÃO está
+      // inflado (a inflação só ocorre quando existe um pendente de 1ª cobrança) → seguro.
+      const candidate = pending.dueDate ?? sub?.endDate ?? sub?.nextDueDate
+      resolvedExpiresAt = expiryFromNextDueDate(candidate) ?? localFutureExpiry ?? calculateExpiryDate(cycle)
+    }
   } catch (err) {
     resolvedExpiresAt = localFutureExpiry ?? calculateExpiryDate(cycle)
     logWarn('[subscription/cancel] Não resolveu endDate do Asaas (pré-delete) — usando fallback futuro', { error: err instanceof Error ? err.message : String(err) })

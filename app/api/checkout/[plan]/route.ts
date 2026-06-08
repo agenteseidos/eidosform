@@ -39,6 +39,31 @@ function getServiceSupabase() {
 const VALID_PLANS = new Set<string>(PLAN_ORDER.filter((p) => p !== 'free'))
 const VALID_CYCLES = new Set<string>(['MONTHLY', 'YEARLY'])
 
+/**
+ * P1-5 (Codex): no DOWNGRADE, pausar os forms excedentes é crítico. Se handleDowngrade falhar,
+ * enfileira DLQ `formlimit:{profileId}` (event FORMLIMIT) — o reprocessador re-roda
+ * handleDowngrade(plano-alvo) — e dispara alerta operacional. NÃO silencioso.
+ */
+async function enqueueFormLimitDLQ(db: ReturnType<typeof getServiceSupabase>, profileId: string, subscriptionId: string | null) {
+  try {
+    await (db as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+      .from('asaas_webhook_events')
+      .upsert({
+        event_id: `formlimit:${profileId}`,
+        event: 'FORMLIMIT',
+        status: 'failed',
+        error: 'handleDowngrade falhou — re-aplicar limites de forms do plano-alvo',
+        attempts: 0,
+        subscription_id: subscriptionId,
+        last_attempt_at: new Date().toISOString(),
+      }, { onConflict: 'event_id' })
+  } catch { /* best-effort */ }
+  await sendBillingOpsAlert({
+    subject: 'Downgrade: falha ao pausar forms excedentes — DLQ FORMLIMIT (reprocessar)',
+    lines: { profileId, subscriptionId },
+  }).catch(() => {})
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ plan: string }> }
@@ -217,7 +242,9 @@ export async function POST(
             log('[checkout] Reativação — limites de forms do plano-alvo aplicados', { userId: profile.profileId, pausedForms: fl.pausedCount, targetPlan: plan })
           }
         } catch (e) {
-          logError('[checkout] Reativação — falha ao aplicar limites de forms (não-bloqueante)', e, { userId: profile.profileId })
+          // P1-5 (Codex): falha de pausa é CRÍTICA no downgrade → DLQ FORMLIMIT (reprocessável) + alerta.
+          logError('[checkout] Reativação — handleDowngrade falhou; enfileirando FORMLIMIT', e, { userId: profile.profileId, targetPlan: plan })
+          await enqueueFormLimitDLQ(sSupa, profile.profileId, newSub.id)
         }
         await reconcileActiveSubscriptions(profile.asaasCustomerId, newSub.id)
         // Marca um checkout 'paid' p/ o overlay de sucesso casar (senão pega o último cancelado).
@@ -501,7 +528,9 @@ export async function POST(
         }
       }
     } catch (err) {
-      logError('[checkout] handleUpgrade/Downgrade falhou (Caminho D)', err)
+      logError('[checkout] handleUpgrade/Downgrade falhou (Caminho D)', err, { userId: profile.profileId })
+      // P1-5 (Codex): se era DOWNGRADE, a pausa de forms é crítica → DLQ FORMLIMIT + alerta.
+      if (change.isPlanDowngrade) await enqueueFormLimitDLQ(sSupa, profile.profileId, profile.asaasSubscriptionId)
     }
 
     // Reconciliar: limpa assinaturas órfãs do cliente, MANTENDO a editada (a sub

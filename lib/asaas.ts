@@ -256,40 +256,52 @@ export async function createSubscriptionWithToken(params: {
  * pendente é a data de cobertura real) quanto p/ renovação paga (o pendente é a próxima cobrança).
  * Evita o `subscription.nextDueDate` INFLADO (próximo ciclo) das subs deferidas. (P0, Codex.)
  */
-export async function getEarliestPendingDueDate(subscriptionId: string): Promise<string | null> {
+export async function getEarliestPendingDueDate(subscriptionId: string): Promise<{ dueDate: string | null; ok: boolean }> {
   try {
-    const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=100`)
-    const dates: string[] = ((data?.data ?? []) as Array<{ dueDate?: string }>)
-      .map((p) => p.dueDate)
-      .filter((d): d is string => typeof d === 'string' && d.length > 0)
-      .sort()
-    return dates[0] ?? null
+    // PAGINA TODOS os pendentes (o mais antigo pode estar além dos 100 primeiros) e tira o min.
+    // (P0-2, Codex 2026-06-08.) `ok:false` distingue "listagem falhou" de "sem pendente" — o
+    // chamador NÃO deve confiar no nextDueDate inflado quando a listagem falhou.
+    const dates: string[] = []
+    let offset = 0
+    for (;;) {
+      const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=100&offset=${offset}`)
+      const pays: Array<{ dueDate?: string }> = data?.data ?? []
+      for (const p of pays) if (typeof p.dueDate === 'string' && p.dueDate) dates.push(p.dueDate)
+      if (!data?.hasMore || pays.length === 0 || offset >= 2000) break
+      offset += 100
+    }
+    dates.sort()
+    return { dueDate: dates[0] ?? null, ok: true }
   } catch (err) {
-    logError('[asaas] getEarliestPendingDueDate: falha (retorna null)', err, { subscriptionId })
-    return null
+    logError('[asaas] getEarliestPendingDueDate: listagem falhou (ok=false)', err, { subscriptionId })
+    return { dueDate: null, ok: false }
   }
 }
 
 export async function alignPendingPaymentsDueDate(subscriptionId: string, dueDate: string): Promise<{ moved: number; failed: number }> {
-  let moved = 0
-  let failed = 0
-  // Pagina TODOS os pendentes (não só 20) — um pendente perdido cobraria cedo. (P0, Codex.)
+  // FASE 1 — COLETA todos os IDs pendentes desalinhados SEM mutar (pagina estável; mutar durante a
+  // paginação por offset faria a próxima página pular pendentes, se a API ordenar por dueDate).
+  // (P0-1, Codex 2026-06-08.)
+  const toMove: string[] = []
   let offset = 0
   for (;;) {
     const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=100&offset=${offset}`)
     const pays: Array<{ id?: string; dueDate?: string }> = data?.data ?? []
-    for (const p of pays) {
-      if (!p?.id || p.dueDate === dueDate) continue
-      try {
-        await asaasFetch(`/payments/${p.id}`, { method: 'PUT', body: JSON.stringify({ dueDate }) })
-        moved++
-      } catch (err) {
-        failed++
-        logError('[asaas] alignPendingPaymentsDueDate: falha ao mover pagamento pendente', err, { paymentId: p.id, subscriptionId, dueDate })
-      }
-    }
+    for (const p of pays) if (p?.id && p.dueDate !== dueDate) toMove.push(p.id)
     if (!data?.hasMore || pays.length === 0 || offset >= 2000) break
     offset += 100
+  }
+  // FASE 2 — move cada um.
+  let moved = 0
+  let failed = 0
+  for (const id of toMove) {
+    try {
+      await asaasFetch(`/payments/${id}`, { method: 'PUT', body: JSON.stringify({ dueDate }) })
+      moved++
+    } catch (err) {
+      failed++
+      logError('[asaas] alignPendingPaymentsDueDate: falha ao mover pagamento pendente', err, { paymentId: id, subscriptionId, dueDate })
+    }
   }
   return { moved, failed }
 }

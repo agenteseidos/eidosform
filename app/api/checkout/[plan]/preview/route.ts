@@ -42,11 +42,20 @@ export async function GET(
 
   const missingFields = getMissingBillingFields(profile)
 
+  // CANCELING: cancelou mas ainda tem período pago restante → saldo vira crédito (#2). DEVE
+  // bater com o POST (mesma derivação) p/ o preview não divergir da execução.
+  const hasPaidPeriodRemaining =
+    !profile.asaasSubscriptionId &&
+    profile.plan !== 'free' &&
+    !!profile.plan_expires_at &&
+    new Date(profile.plan_expires_at).getTime() > Date.now()
+
   const change = computePlanChange({
     currentPlan: profile.plan,
     currentCycle: profile.plan_cycle,
     planExpiresAt: profile.plan_expires_at,
     hasActiveSubscription: !!profile.asaasSubscriptionId,
+    hasPaidPeriodRemaining,
     newPlan: plan as PlanId,
     newCycle: cycle,
   })

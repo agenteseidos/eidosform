@@ -103,6 +103,14 @@ export async function POST(
   // Decisão centralizada em computePlanChange — a MESMA função pura usada pelo endpoint
   // de PREVIEW (GET .../preview) que alimenta a tela de confirmação. Single source of
   // truth: o que o usuário confirma na tela é exatamente o que é executado aqui.
+  // CANCELING: cancelou mas ainda tem período pago (plano≠free, expiração futura, SEM sub) →
+  // o saldo restante vira crédito pra reassinar. (#2, Sidney 2026-06-08.)
+  const hasPaidPeriodRemaining =
+    !profile.asaasSubscriptionId &&
+    profile.plan !== 'free' &&
+    !!profile.plan_expires_at &&
+    new Date(profile.plan_expires_at).getTime() > Date.now()
+
   const change = computePlanChange({
     currentPlan: profile.plan as PlanId,
     // plan_cycle CRU (string | null), idêntico ao preview — NÃO forçar 'MONTHLY' aqui.
@@ -111,6 +119,7 @@ export async function POST(
     currentCycle: profile.plan_cycle,
     planExpiresAt: profile.plan_expires_at ?? null,
     hasActiveSubscription: Boolean(profile.asaasSubscriptionId),
+    hasPaidPeriodRemaining,
     newPlan: plan as PlanId,
     newCycle: cycle,
   })
@@ -124,6 +133,22 @@ export async function POST(
       message: 'Para reduzir de plano, cancele sua assinatura atual nas configurações de cobrança. Você mantém o acesso até o fim do período já pago e, depois disso, pode assinar o plano menor.',
       isDowngrade: true,
       action: 'cancel_then_resubscribe',
+    })
+  }
+
+  // CANCELING + saldo cobre TODO o novo plano: não há sub p/ editar (foi deletada no cancelamento)
+  // e o checkout não cria sub de graça → exigiria recriar via token (feature reactivate, futura).
+  // Por ora, não cobra: informa que o saldo cobre o plano e o acesso atual está mantido. (#2)
+  if (change.action === 'credit_covered' && !profile.asaasSubscriptionId) {
+    const expiresFmt = profile.plan_expires_at
+      ? new Date(profile.plan_expires_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : null
+    return NextResponse.json({
+      message: expiresFmt
+        ? `Seu saldo atual já cobre este plano. Você mantém o acesso até ${expiresFmt} — a reativação automática estará disponível em breve.`
+        : 'Seu saldo atual já cobre este plano. A reativação automática estará disponível em breve.',
+      coveredByCredit: true,
+      action: 'covered_no_charge',
     })
   }
 

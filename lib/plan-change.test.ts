@@ -61,5 +61,34 @@ const firstBuy = computePlanChange({
 })
 assert(firstBuy.action === 'checkout', 'free→starter (1ª compra) = checkout')
 
+// ── #2: CANCELING (sem sub ativa, mas COM saldo) ganha crédito do período restante ──
+const future80 = new Date(Date.now() + 80 * 24 * 3600 * 1000).toISOString()
+const future300 = new Date(Date.now() + 300 * 24 * 3600 * 1000).toISOString()
+
+// Canceling Plus mensal (saldo ~80 dias) → reassinar Plus anual: crédito aplicado, paga a diferença
+const cancelResub = computePlanChange({
+  currentPlan: 'plus', currentCycle: 'MONTHLY', planExpiresAt: future80,
+  hasActiveSubscription: false, hasPaidPeriodRemaining: true, newPlan: 'plus', newCycle: 'YEARLY',
+})
+assert(cancelResub.action === 'checkout', 'canceling Plus→Plus anual = checkout (proration)')
+assert(!!cancelResub.proration && cancelResub.proration.credit > 0, 'canceling: crédito > 0 (saldo aplicado)')
+assert(!!cancelResub.proration && cancelResub.proration.finalPrice < 1164, 'canceling: paga MENOS que o cheio (1164)')
+assert(!!cancelResub.proration && cancelResub.proration.finalPrice === Math.round((1164 - cancelResub.proration.credit) * 100) / 100, 'canceling: finalPrice = cheio - crédito')
+
+// MESMO cenário SEM o flag (free comum, sem saldo) = preço CHEIO, sem crédito
+const noCredit = computePlanChange({
+  currentPlan: 'plus', currentCycle: 'MONTHLY', planExpiresAt: future80,
+  hasActiveSubscription: false, hasPaidPeriodRemaining: false, newPlan: 'plus', newCycle: 'YEARLY',
+})
+assert(noCredit.action === 'checkout' && noCredit.proration === null && noCredit.amountDueNow === 1164, 'sem saldo (flag false) = preço cheio, sem crédito')
+
+// Canceling Professional anual (saldo grande) → reassinar Starter mensal: saldo COBRE tudo
+const cancelCovered = computePlanChange({
+  currentPlan: 'professional', currentCycle: 'YEARLY', planExpiresAt: future300,
+  hasActiveSubscription: false, hasPaidPeriodRemaining: true, newPlan: 'starter', newCycle: 'MONTHLY',
+})
+assert(cancelCovered.action === 'credit_covered', 'canceling: saldo cobre tudo = credit_covered')
+assert(cancelCovered.coveredByCredit === true && cancelCovered.amountDueNow === 0, 'canceling coberto: paga R$0 agora')
+
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed > 0 ? 1 : 0)

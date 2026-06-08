@@ -15,6 +15,12 @@ export interface PlanChangeInput {
   currentCycle: string | null
   planExpiresAt: string | null
   hasActiveSubscription: boolean
+  /**
+   * true quando o usuário CANCELOU mas ainda tem período pago restante (plano≠free, expiração
+   * futura, SEM assinatura ativa no Asaas). Nesse caso o saldo do período restante vira crédito
+   * pra reassinar QUALQUER plano — sempre via checkout (cria sub nova). (#2, Sidney 2026-06-08.)
+   */
+  hasPaidPeriodRemaining?: boolean
   newPlan: PlanId
   newCycle: BillingCycle
 }
@@ -44,7 +50,7 @@ function fullPrice(plan: PlanId, cycle: BillingCycle): number {
 }
 
 export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
-  const { currentPlan, currentCycle, planExpiresAt, hasActiveSubscription, newPlan, newCycle } = input
+  const { currentPlan, currentCycle, planExpiresAt, hasActiveSubscription, hasPaidPeriodRemaining = false, newPlan, newCycle } = input
 
   const isCycleChange = currentPlan === newPlan && currentCycle !== newCycle
   // Downgrade de CICLO (anual→mensal do mesmo plano) é tratado como DOWNGRADE honesto, não
@@ -78,6 +84,38 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
   // Downgrade → mensagem honesta (cancelar e reassinar): tier menor OU ciclo anual→mensal.
   if (hasActiveSubscription && ((currentPlan !== newPlan && !isPlanUpgrade) || isCycleDowngrade)) {
     return { ...base, action: 'downgrade_scheduled' }
+  }
+
+  // CANCELING — cancelou mas ainda tem período pago restante (sem sub ativa, mas COM saldo).
+  // O crédito do período restante aplica a QUALQUER plano novo; SEMPRE via checkout (cria sub
+  // nova — não há sub p/ editar, então não há Caminho D aqui). (#2, decisão Sidney 2026-06-08.)
+  if (!hasActiveSubscription && hasPaidPeriodRemaining && planExpiresAt) {
+    const r = calculateUpgradePrice({
+      currentPlan: currentPlan as PlanId,
+      currentCycle: (currentCycle ?? 'MONTHLY') as BillingCycle,
+      planExpiresAt,
+      newPlan,
+      newCycle,
+    })
+    const prorationC = { credit: r.credit, originalPrice: r.originalPrice, finalPrice: r.finalPrice }
+    if (prorationC.finalPrice <= 0) {
+      // Saldo cobre TODO o novo plano. Criar a sub sem cobrar exige token/reactivate (a sub foi
+      // deletada no cancelamento) — a EXECUÇÃO trata esse caso à parte. Aqui só sinaliza coberto.
+      const coverageDays = Math.max(1, calculateCreditCoverageDays(prorationC.credit, prorationC.originalPrice, newCycle))
+      const nextDue = new Date()
+      nextDue.setDate(nextDue.getDate() + coverageDays)
+      return {
+        ...base,
+        action: 'credit_covered',
+        shouldApplyProration: true,
+        proration: prorationC,
+        amountDueNow: 0,
+        coveredByCredit: true,
+        creditCoverageDays: coverageDays,
+        nextChargeDate: nextDue.toISOString().split('T')[0],
+      }
+    }
+    return { ...base, action: 'checkout', shouldApplyProration: true, proration: prorationC, amountDueNow: prorationC.finalPrice }
   }
 
   // Proration (upgrade de tier OU troca de ciclo do mesmo plano)

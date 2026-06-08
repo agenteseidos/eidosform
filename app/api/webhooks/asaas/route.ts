@@ -392,15 +392,31 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        // DIAGNÓSTICO SMOKE (sandbox): imprime o externalReference CRU e a subscription pra
-        // confirmar a propagação subscription→payment do Asaas no webhook real. Após validar
-        // em produção, pode baixar pra debug. (2026-06-07)
-        log('[asaas-webhook][SMOKE] payment recebido', {
-          event,
-          customerId,
-          subscription: payment?.subscription ?? null,
-          externalReference: payment?.externalReference ?? null,
-        })
+        // DIAGNÓSTICO SMOKE (sandbox): loga o externalReference do PAGAMENTO E o da própria
+        // ASSINATURA (getSubscription). Decide de vez se o Asaas propaga p/ o evento de
+        // pagamento e/ou se ao menos guardou no objeto da assinatura. (2026-06-07)
+        try {
+          let subExternalRef: string | null = null
+          let subValue: number | null = null
+          let subCycle: string | null = null
+          if (payment?.subscription) {
+            const s = (await getSubscription(payment.subscription)) as { externalReference?: string; value?: number; cycle?: string }
+            subExternalRef = s?.externalReference ?? null
+            subValue = typeof s?.value === 'number' ? s.value : null
+            subCycle = s?.cycle ?? null
+          }
+          log('[asaas-webhook][SMOKE] payment+subscription', {
+            event,
+            customerId,
+            subscription: payment?.subscription ?? null,
+            paymentExternalReference: payment?.externalReference ?? null,
+            subscriptionExternalReference: subExternalRef,
+            subValue,
+            subCycle,
+          })
+        } catch (e) {
+          logError('[asaas-webhook][SMOKE] falha ao ler a assinatura no diagnóstico', e, { subscription: payment?.subscription ?? null })
+        }
 
         // Fluxo de assinatura: TODO pagamento recorrente carrega payment.subscription.
         // Sem ela, não dá pra cancelar/reconciliar/corrigir a sub depois — ativar seria

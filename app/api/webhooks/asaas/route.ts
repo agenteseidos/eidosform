@@ -552,22 +552,10 @@ export async function POST(req: NextRequest) {
         // intentionally treats same-day duplicates as ambiguous.
         const { data: previousProfile } = await supabase
           .from('profiles')
-          .select('asaas_subscription_id, plan, plan_cycle, plan_status')
+          .select('asaas_subscription_id')
           .eq('id', user.id)
           .single()
         const previousSubId = previousProfile?.asaas_subscription_id ?? null
-
-        // TRANSIÇÃO REAL vs RENOVAÇÃO/DUPLICATA (#1, audit 2026-06-08): só é transição se o
-        // plano/ciclo/sub mudaram OU o status não era 'active'. Em renovação recorrente (mesmo
-        // plano/ciclo/sub já active) e em eventos duplicados (PAYMENT_CONFIRMED+RECEIVED do
-        // mesmo pagamento; webhook chegando após o polling já ter ativado), o profile já está
-        // no estado-alvo → NÃO reenviar e-mail "plano ativado" nem rodar handleUpgrade de novo.
-        // A ativação (update abaixo) ainda roda sempre — renova expiração e reseta a cota.
-        const isPlanTransition =
-          previousProfile?.plan !== plan ||
-          previousProfile?.plan_cycle !== cycle ||
-          previousProfile?.plan_status !== 'active' ||
-          (payment.subscription ? previousProfile?.asaas_subscription_id !== payment.subscription : false)
 
         // #7 (audit 2026-06-08): RE-CHECK "checkout mais recente vence" imediatamente antes de
         // ativar. Reduz a race entre eventos concorrentes: se um checkout MAIS NOVO já foi pago
@@ -628,16 +616,20 @@ export async function POST(req: NextRequest) {
           billingType,
         })
 
-        // handleUpgrade + e-mail SÓ em transição real (#1) E reivindicando os efeitos
-        // ATOMICAMENTE (#3): claimActivationEffects garante que apenas UM caminho/evento
-        // (PAYMENT_CONFIRMED ou RECEIVED; webhook ou polling) dispara e-mail+handleUpgrade,
-        // mesmo se dois lerem o estado antigo em paralelo. Renovação/duplicata pula.
-        if (isPlanTransition && await claimActivationEffects(supabase, payment.subscription, plan, cycle)) {
+        // Efeitos de ativação (e-mail + despause) reivindicados ATOMICAMENTE pela chave
+        // effects:{sub}:{plan}:{cycle} (#1/#3/#4, audit 2026-06-08). O marker SUBSTITUI o
+        // antigo isPlanTransition: a chave é IDÊNTICA numa renovação (mesma sub/plano/ciclo)
+        // → já reivindicada no 1º pagamento → renovação pula; e numa transição (plano/ciclo/
+        // sub novo) a chave é nova → reivindica e dispara. Garante e-mail+handleUpgrade UMA
+        // vez entre CONFIRMED/RECEIVED e webhook×polling. E-mail ANTES do despause: se o
+        // handleUpgrade lançar (forms não despausados) → DLQ → o reprocessador completa o
+        // despause, e o e-mail (já enviado) não é reenviado.
+        if (await claimActivationEffects(supabase, payment.subscription, plan, cycle)) {
+          await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
           const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
           log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
-          await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
         } else {
-          log('[asaas-webhook] Renovação/duplicata/efeitos já reivindicados — pulando e-mail e handleUpgrade', { userId: user.id, plan, cycle, subscriptionId: payment.subscription })
+          log('[asaas-webhook] Efeitos de ativação já reivindicados (renovação/duplicata/polling) — pulando', { userId: user.id, plan, cycle, subscriptionId: payment.subscription })
         }
 
         // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente.

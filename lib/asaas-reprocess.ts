@@ -189,8 +189,12 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
       .update({ status: 'paid', last_event: 'REPROCESS_CONFIRMED', asaas_subscription_id: subscriptionId })
       .eq('id', checkout.id)
 
+    // handleUpgrade SEMPRE (idempotente) — completa o despause mesmo quando o evento original
+    // já reivindicou os efeitos no webhook mas FALHOU ao despausar (foi pra DLQ). Sem isto, um
+    // profile já-ativo não teria os forms despausados na recuperação. (#2, audit 2026-06-08.)
+    await handleUpgrade(profile.id, serviceKey)
+    // E-mail só em transição (não reenvia em renovação/reprocesso de já-ativo).
     if (profile.plan === 'free' || profile.plan !== plan) {
-      await handleUpgrade(profile.id, serviceKey)
       await sendPlanActivated({ to: profile.email, name: profile.full_name ?? 'usuário', plan })
         .catch((e) => logError('[asaas-reprocess] email ativação falhou', e))
     }

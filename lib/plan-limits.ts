@@ -174,17 +174,22 @@ export async function handleDowngrade(
   const responseThreshold = 100 // Forms with 100+ responses are always paused
 
   // Step 1: Unpause all forms for this user
-  await supabase
+  // #1 (audit 2026-06-08): CHECA erro em TODAS as queries críticas e LANÇA. Antes, se o
+  // select de forms falhasse, publishedForms vinha null → retornava {pausedCount:0} e o
+  // chamador marcava free SEM pausar — "free mas forms nunca pausados". Agora o erro propaga.
+  const { error: unpauseErr } = await supabase
     .from('forms')
     .update({ paused: false })
     .eq('user_id', userId)
+  if (unpauseErr) throw new Error(`handleDowngrade: falha no unpause inicial: ${unpauseErr.message}`)
 
   // Step 2: Get all published forms for this user
-  const { data: publishedForms } = await supabase
+  const { data: publishedForms, error: pubErr } = await supabase
     .from('forms')
     .select('id')
     .eq('user_id', userId)
     .eq('status', 'published')
+  if (pubErr) throw new Error(`handleDowngrade: falha ao listar forms publicados: ${pubErr.message}`)
 
   if (!publishedForms || publishedForms.length === 0) {
     return { pausedCount: 0 }
@@ -192,8 +197,9 @@ export async function handleDowngrade(
 
   // P2-F: Use RPC aggregate instead of loading all responses into memory
   const formIds = publishedForms.map((f: { id: string }) => f.id)
-  const { data: responseCounts } = await supabase
-    .rpc('get_response_counts_by_forms', { p_form_ids: formIds }) as { data: Array<{ form_id: string; response_count: number }> | null }
+  const { data: responseCounts, error: rpcErr } = await supabase
+    .rpc('get_response_counts_by_forms', { p_form_ids: formIds }) as { data: Array<{ form_id: string; response_count: number }> | null; error: { message?: string } | null }
+  if (rpcErr) throw new Error(`handleDowngrade: falha na RPC de contagem de respostas: ${rpcErr.message ?? 'erro'}`)
 
   // Build response count map
   const countMap = new Map<string, number>()
@@ -295,21 +301,25 @@ export async function handleUpgrade(
     serviceRoleKey
   )
 
-  const { data: pausedForms } = await supabase
+  const { data: pausedForms, error: selErr } = await supabase
     .from('forms')
     .select('id')
     .eq('user_id', userId)
     .eq('paused', true)
+  // #2 (audit 2026-06-08): LANÇA em falha — antes o erro era silencioso e os forms ficavam
+  // pausados num plano pago. Com o throw, o webhook vai pra DLQ e o reprocessador completa.
+  if (selErr) throw new Error(`handleUpgrade: falha ao listar forms pausados: ${selErr.message}`)
 
   if (!pausedForms || pausedForms.length === 0) {
     return { unpausedCount: 0 }
   }
 
-  await supabase
+  const { error: updErr } = await supabase
     .from('forms')
     .update({ paused: false })
     .eq('user_id', userId)
     .eq('paused', true)
+  if (updErr) throw new Error(`handleUpgrade: falha ao despausar forms: ${updErr.message}`)
 
   return { unpausedCount: pausedForms.length }
 }

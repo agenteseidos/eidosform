@@ -99,12 +99,17 @@ const plans = [
 interface BillingPlansProps {
   currentPlan: string
   currentCycle: string | null
+  planStatus?: string | null
 }
 
-export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
+export function BillingPlans({ currentPlan, currentCycle, planStatus }: BillingPlansProps) {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('annual')
   const normalizedCurrentPlan = useMemo(() => normalizePlan(currentPlan), [currentPlan])
   const currentPlanIndex = PLAN_ORDER.indexOf(normalizedCurrentPlan)
+  // CANCELING: o usuário cancelou mas ainda tem saldo (período pago). Pode reassinar QUALQUER
+  // plano pago (o saldo é aplicado como crédito — #2/#2b). Liberamos os botões (inclusive os
+  // "menores"), em vez do bloqueio upgrade-only normal. (2026-06-08.)
+  const isCanceling = planStatus === 'canceling'
 
   return (
     <div>
@@ -155,7 +160,10 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
           const isMonthlyToAnnualSamePlan = isCurrentPlan && isPaidPlan && currentCycle === 'MONTHLY' && currentBillingCycle === 'YEARLY'
           const isUnknownCyclePaidPlan = isCurrentPlan && isPaidPlan && !currentCycle
           const isFreeCurrentPlan = isCurrentPlan && plan.id === 'free'
-          const disabled = isLowerPlan || isSamePlanAndCycle || isAnnualToMonthlySamePlan || isFreeCurrentPlan || isUnknownCyclePaidPlan
+          // Canceling: libera TODO plano pago (saldo aplica); só free fica desabilitado.
+          const disabled = isCanceling
+            ? plan.id === 'free'
+            : (isLowerPlan || isSamePlanAndCycle || isAnnualToMonthlySamePlan || isFreeCurrentPlan || isUnknownCyclePaidPlan)
           // Badge "Mais Popular" só aparece no Plus para usuários no plano Free (social proof para conversão).
           // Quando o usuário já é pagante, o badge é ocultado intencionalmente.
           const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
@@ -167,7 +175,7 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
               className={`relative flex h-full flex-col rounded-2xl border p-6 transition-all ${
                 isCurrentPlan
                   ? 'bg-[#1a1f35] border-[#F5B731]/50 shadow-lg shadow-[#F5B731]/10 ring-1 ring-[#F5B731]/20'
-                  : isLowerPlan
+                  : isLowerPlan && !isCanceling
                   ? 'bg-[#111827] border-white/[0.06] opacity-60'
                   : 'bg-[#111827] border-white/10 hover:border-white/20'
               }`}
@@ -194,7 +202,7 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
                   <h3 className="text-lg font-bold text-white">{plan.name}</h3>
                   <p className="text-sm text-slate-400">{plan.desc}</p>
                 </div>
-                {isLowerPlan && (
+                {isLowerPlan && !isCanceling && (
                   <Badge variant="secondary" className="bg-white/10 text-slate-300 border border-white/10">
                     Já incluso
                   </Badge>
@@ -244,7 +252,13 @@ export function BillingPlans({ currentPlan, currentCycle }: BillingPlansProps) {
                   }
                 }}
               >
-                {isLowerPlan
+                {isCanceling
+                  ? (plan.id === 'free'
+                    ? 'No vencimento'
+                    : isSamePlanAndCycle
+                    ? `Reativar ${plan.name}`
+                    : plan.cta)
+                  : isLowerPlan
                   ? 'Já incluso no seu plano'
                   : isFreeCurrentPlan
                   ? 'Plano atual'

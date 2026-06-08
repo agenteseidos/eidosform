@@ -15,6 +15,7 @@ import { computePlanChange } from '@/lib/plan-change'
 import { expiryFromNextDueDate } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { log, logError, logWarn } from '@/lib/logger'
+import { sendBillingOpsAlert } from '@/lib/resend'
 
 function hashCustomerPayload(payload: Record<string, unknown>): string {
   const normalized = JSON.stringify(payload, Object.keys(payload).sort())
@@ -44,7 +45,11 @@ export async function POST(
 ) {
   const { plan } = await params
   const cycle = ((req.nextUrl.searchParams.get('cycle') ?? 'monthly').toUpperCase()) as BillingCycle
-  try { await req.json() } catch { /* no body needed */ }
+  // P2 (Codex): o frontend envia a `action` que o PREVIEW mostrou. Se o recálculo no POST
+  // (new Date() avançou — virada UTC etc.) der uma action DIFERENTE (ex.: credit_covered↔checkout,
+  // R$0↔cobra), abortamos com 409 p/ o usuário revisar — em vez de cobrar algo que ele não viu.
+  let expectedAction: string | null = null
+  try { expectedAction = ((await req.json()) as { expectedAction?: string })?.expectedAction ?? null } catch { /* sem body */ }
 
   if (!VALID_PLANS.has(plan)) {
     return NextResponse.json({ error: 'Plano inválido' }, { status: 400 })
@@ -124,6 +129,15 @@ export async function POST(
     newCycle: cycle,
   })
 
+  // P2 (Codex): se o recálculo divergiu do que o usuário confirmou no preview (action mudou),
+  // aborta p/ ele revisar — evita cobrar R$X quando ele viu R$0 (ou vice-versa) na virada do dia.
+  if (expectedAction && change.action !== expectedAction) {
+    return NextResponse.json(
+      { error: 'O valor desta mudança foi recalculado. Revise o resumo atualizado antes de confirmar.', code: 'QUOTE_CHANGED' },
+      { status: 409 }
+    )
+  }
+
   // Downgrade: o sistema ainda NÃO agenda troca de plano (feature dedicada futura —
   // scheduled_plan_changes). Mensagem HONESTA (opção C, decisão Sidney 2026-06-08): orienta
   // a CANCELAR a assinatura (mantém acesso até o fim do período pago) e assinar o plano menor
@@ -147,7 +161,20 @@ export async function POST(
     const coverageNextDue = change.nextChargeDate // YYYY-MM-DD (saldo em tempo)
     if (token && profile.asaasCustomerId && coverageNextDue && proration) {
       const sSupa = getServiceSupabase() ?? supabase
+      // P1 (Codex): LOCK por profile — 2 POSTs simultâneos no canceling não podem criar 2 subs.
+      const reactLockKey = `planchange:${profile.profileId}`
+      if (!(await acquireLock(sSupa, reactLockKey))) {
+        return NextResponse.json(
+          { error: 'Já estamos processando uma alteração da sua assinatura. Aguarde um instante e tente novamente.' },
+          { status: 409 }
+        )
+      }
       try {
+        // CAS: aborta se outro fluxo já vinculou uma sub (não está mais "sem sub").
+        const { data: casRow } = await sSupa.from('profiles').select('asaas_subscription_id').eq('id', profile.profileId).single()
+        if ((casRow as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id) {
+          return NextResponse.json({ error: 'Sua assinatura já foi reativada. Recarregue a página.' }, { status: 409 })
+        }
         const newSub = await createSubscriptionWithToken({
           customerId: profile.asaasCustomerId,
           value: proration.originalPrice, // preço CHEIO do novo plano (recorrente)
@@ -159,6 +186,7 @@ export async function POST(
         })
         const planConfig = (await import('@/lib/plan-definitions')).PLANS[plan as PlanId]
         const expiry = expiryFromNextDueDate(coverageNextDue) ?? new Date(`${coverageNextDue}T00:00:00.000Z`).toISOString()
+        // CAS ATÔMICO no banco: só vincula se asaas_subscription_id AINDA é null (ninguém venceu).
         const { data: rows, error: upErr } = await sSupa
           .from('profiles')
           .update({
@@ -172,18 +200,28 @@ export async function POST(
             limit_alert_sent: false,
           })
           .eq('id', profile.profileId)
+          .is('asaas_subscription_id', null)
           .select('id')
         if (upErr || !rows || rows.length !== 1) {
-          // Sub criada mas profile não persistiu → cancela a sub nova p/ NÃO cobrar no futuro.
-          logError('[checkout] Reativação: sub criada mas profile não persistiu — cancelando a sub nova', upErr, { userId: profile.profileId, newSub: newSub.id })
+          // Outro fluxo venceu (CAS=0 linhas) OU erro → cancela a sub nova p/ NÃO cobrar fantasma.
+          logError('[checkout] Reativação: CAS falhou/profile não persistiu — cancelando a sub nova', upErr, { userId: profile.profileId, newSub: newSub.id, rows: rows?.length ?? 0 })
           await cancelSubscription(newSub.id).catch(() => {})
-          return NextResponse.json({ error: 'Não foi possível reativar agora. Tente novamente.' }, { status: 500 })
+          return NextResponse.json({ error: 'Não foi possível reativar agora. Recarregue e tente novamente.' }, { status: 409 })
+        }
+        // P1 (Codex): aplica os LIMITES DE FORMS do plano-alvo (pausa excedentes se for downgrade;
+        // despausa se ilimitado). Sem isto, Plus canceling → Starter deixava forms acima do limite.
+        try {
+          const sk = process.env.SUPABASE_SERVICE_ROLE_KEY
+          if (sk) {
+            const fl = await (await import('@/lib/plan-limits')).handleDowngrade(profile.profileId, sk, plan as PlanId)
+            log('[checkout] Reativação — limites de forms do plano-alvo aplicados', { userId: profile.profileId, pausedForms: fl.pausedCount, targetPlan: plan })
+          }
+        } catch (e) {
+          logError('[checkout] Reativação — falha ao aplicar limites de forms (não-bloqueante)', e, { userId: profile.profileId })
         }
         await reconcileActiveSubscriptions(profile.asaasCustomerId, newSub.id)
-        // Marca um checkout 'paid' do novo plano p/ o overlay de sucesso (que pollla
-        // /api/checkout/status) CASAR com starter/active — senão ele pega o último checkout
-        // (o cancelado) e mostra "Checkout cancelado" mesmo com a troca OK. (bugfix overlay.)
-        await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+        // Marca um checkout 'paid' p/ o overlay de sucesso casar (senão pega o último cancelado).
+        const { error: ckErr } = await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<{ error: unknown }> } })
           .from('billing_checkouts')
           .upsert({
             profile_id: profile.profileId,
@@ -196,11 +234,14 @@ export async function POST(
             last_event: 'REACTIVATE_COVERED',
             payment_method: 'reactivate_credit_time',
           }, { onConflict: 'checkout_id' })
+        if (ckErr) logError('[checkout] Reativação — falha ao gravar checkout paid (overlay pode mostrar estado antigo)', ckErr, { userId: profile.profileId })
         log('[checkout] Reativação via token — plano trocado SEM cobrança agora', { userId: profile.profileId, plan, cycle, newSub: newSub.id, nextDueDate: coverageNextDue })
         return NextResponse.json({ status: 'success', coveredByCredit: true, reactivated: true, nextChargeDate: coverageNextDue, proration })
       } catch (err) {
         logError('[checkout] Reativação via token falhou — caindo na mensagem (sem cobrar)', err, { userId: profile.profileId, plan, cycle })
         // segue p/ a mensagem (não cobra errado)
+      } finally {
+        await releaseLock(sSupa, reactLockKey)
       }
     }
     const expiresFmt = profile.plan_expires_at
@@ -361,13 +402,33 @@ export async function POST(
 
     // 2b) Alinhar a data dos pagamentos PENDING ao nextDueDate. O updateSubscription move o
     //     nextDueDate da assinatura mas mantém a data dos pagamentos já gerados → sem isto, um
-    //     pagamento antigo cobraria ANTES do fim da cobertura do saldo (bug achado no teste de
-    //     downgrade 2026-06-08). Best-effort.
-    const movedPays = await alignPendingPaymentsDueDate(profile.asaasSubscriptionId, nextDueDate).catch((e) => {
-      logError('[checkout] Caminho D — falha ao alinhar pagamentos pendentes (não-bloqueante)', e, { userId: profile.profileId })
-      return 0
+    //     pagamento antigo cobraria ANTES do fim da cobertura do saldo. (P0, Codex 2026-06-08:)
+    //     se NÃO alinhar tudo, é money-path → alerta operacional + registro p/ reprocesso (NÃO
+    //     silencioso). A troca de plano em si está OK; só a data da cobrança precisa de correção.
+    const align = await alignPendingPaymentsDueDate(profile.asaasSubscriptionId, nextDueDate).catch((e) => {
+      logError('[checkout] Caminho D — alinhamento de pagamentos LANÇOU', e, { userId: profile.profileId })
+      return { moved: 0, failed: -1 }
     })
-    if (movedPays) log('[checkout] Caminho D — pagamentos pendentes movidos p/ nextDueDate', { userId: profile.profileId, movedPays, nextDueDate })
+    if (align.failed !== 0) {
+      logError('[checkout] Caminho D — pagamentos pendentes NÃO totalmente alinhados (risco de cobrança cedo)', undefined, { userId: profile.profileId, subscriptionId: profile.asaasSubscriptionId, nextDueDate, moved: align.moved, failed: align.failed })
+      await sendBillingOpsAlert({
+        subject: 'Caminho D: pagamento pendente NÃO alinhado — risco de cobrança antes do fim do crédito',
+        lines: { userId: profile.profileId, subscriptionId: profile.asaasSubscriptionId, nextDueDate, moved: align.moved, failed: align.failed },
+      }).catch(() => {})
+      await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+        .from('asaas_webhook_events')
+        .upsert({
+          event_id: `align-pending:${profile.asaasSubscriptionId}`,
+          event: 'ALIGN_PENDING',
+          status: 'failed',
+          error: 'pagamentos pendentes não alinhados ao nextDueDate (risco de cobrança cedo)',
+          attempts: 0,
+          subscription_id: profile.asaasSubscriptionId,
+          last_attempt_at: new Date().toISOString(),
+        }, { onConflict: 'event_id' }).catch(() => {})
+    } else if (align.moved) {
+      log('[checkout] Caminho D — pagamentos pendentes movidos p/ nextDueDate', { userId: profile.profileId, moved: align.moved, nextDueDate })
+    }
 
     // 3) Atualizar o profile pro novo plano, MANTENDO o asaas_subscription_id.
     //    plan_expires_at = nextDueDate: acesso garantido durante o período coberto
@@ -430,8 +491,10 @@ export async function POST(
       if (serviceKey) {
         const pl = await import('@/lib/plan-limits')
         if (change.isPlanDowngrade) {
-          const dg = await pl.handleDowngrade(profile.profileId, serviceKey)
-          log('[checkout] Caminho D — DOWNGRADE: forms excedentes pausados', { userId: profile.profileId, pausedForms: dg.pausedCount })
+          // P1 (Codex): passa o PLANO-ALVO — handleDowngrade aplica o limite do alvo (Starter=100,
+          // Plus/Pro=ilimitado→nada), não o de free(3). Sem isto, Pro→Plus pausava quase tudo.
+          const dg = await pl.handleDowngrade(profile.profileId, serviceKey, plan as PlanId)
+          log('[checkout] Caminho D — DOWNGRADE: forms excedentes pausados', { userId: profile.profileId, pausedForms: dg.pausedCount, targetPlan: plan })
         } else {
           const up = await pl.handleUpgrade(profile.profileId, serviceKey)
           log('[checkout] Caminho D — upgrade processado', { userId: profile.profileId, unpausedForms: up.unpausedCount })

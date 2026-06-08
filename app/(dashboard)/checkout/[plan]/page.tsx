@@ -127,10 +127,18 @@ function CheckoutContent() {
       const res = await fetch(`/api/checkout/${normalized}?cycle=${cycle}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        // P2 (Codex): envia a action do preview p/ o backend abortar se o recálculo divergir.
+        body: JSON.stringify({ expectedAction: preview?.action }),
       })
       const json: CheckoutResponse = await res.json()
       if (cancelRef.current) return
+
+      // Recálculo divergiu do preview (virada de dia etc.) → recarrega p/ o usuário ver o novo resumo.
+      if (res.status === 409 && json.code === 'QUOTE_CHANGED') {
+        submittingRef.current = false
+        window.location.reload()
+        return
+      }
 
       if (json.alreadySubscribed) {
         setState('already')
@@ -182,7 +190,7 @@ function CheckoutContent() {
     } finally {
       submittingRef.current = false
     }
-  }, [normalized, cycle, loadProfile])
+  }, [normalized, cycle, loadProfile, preview?.action])
 
   const loadPreview = useCallback(async () => {
     if (cancelRef.current) return

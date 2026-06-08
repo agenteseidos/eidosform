@@ -249,20 +249,49 @@ export async function createSubscriptionWithToken(params: {
  * pendentes mas MANTÉM a data do que já foi gerado — então um pagamento antigo cobraria ANTES da
  * data de cobertura do saldo. Move cada pendente p/ a data correta. Best-effort. (bugfix 2026-06-08.)
  */
-export async function alignPendingPaymentsDueDate(subscriptionId: string, dueDate: string): Promise<number> {
-  const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=20`)
-  const pays: Array<{ id?: string; dueDate?: string }> = data?.data ?? []
-  let updated = 0
-  for (const p of pays) {
-    if (!p?.id || p.dueDate === dueDate) continue
-    try {
-      await asaasFetch(`/payments/${p.id}`, { method: 'PUT', body: JSON.stringify({ dueDate }) })
-      updated++
-    } catch (err) {
-      logError('[asaas] alignPendingPaymentsDueDate: falha ao mover pagamento pendente (segue)', err, { paymentId: p.id, subscriptionId })
-    }
+/**
+ * Retorna o dueDate do pagamento PENDING mais ANTIGO de uma assinatura (a próxima cobrança que o
+ * cliente ainda NÃO pagou = a data até onde ele tem acesso pago). Usado no cancelamento como
+ * fonte da expiração — é correto tanto p/ sub com 1ª cobrança futura (credit-time/reativação: o
+ * pendente é a data de cobertura real) quanto p/ renovação paga (o pendente é a próxima cobrança).
+ * Evita o `subscription.nextDueDate` INFLADO (próximo ciclo) das subs deferidas. (P0, Codex.)
+ */
+export async function getEarliestPendingDueDate(subscriptionId: string): Promise<string | null> {
+  try {
+    const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=100`)
+    const dates: string[] = ((data?.data ?? []) as Array<{ dueDate?: string }>)
+      .map((p) => p.dueDate)
+      .filter((d): d is string => typeof d === 'string' && d.length > 0)
+      .sort()
+    return dates[0] ?? null
+  } catch (err) {
+    logError('[asaas] getEarliestPendingDueDate: falha (retorna null)', err, { subscriptionId })
+    return null
   }
-  return updated
+}
+
+export async function alignPendingPaymentsDueDate(subscriptionId: string, dueDate: string): Promise<{ moved: number; failed: number }> {
+  let moved = 0
+  let failed = 0
+  // Pagina TODOS os pendentes (não só 20) — um pendente perdido cobraria cedo. (P0, Codex.)
+  let offset = 0
+  for (;;) {
+    const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=100&offset=${offset}`)
+    const pays: Array<{ id?: string; dueDate?: string }> = data?.data ?? []
+    for (const p of pays) {
+      if (!p?.id || p.dueDate === dueDate) continue
+      try {
+        await asaasFetch(`/payments/${p.id}`, { method: 'PUT', body: JSON.stringify({ dueDate }) })
+        moved++
+      } catch (err) {
+        failed++
+        logError('[asaas] alignPendingPaymentsDueDate: falha ao mover pagamento pendente', err, { paymentId: p.id, subscriptionId, dueDate })
+      }
+    }
+    if (!data?.hasMore || pays.length === 0 || offset >= 2000) break
+    offset += 100
+  }
+  return { moved, failed }
 }
 
 /**

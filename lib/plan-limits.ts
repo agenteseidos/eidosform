@@ -163,15 +163,19 @@ export async function checkFormLimit(userId: string): Promise<{ allowed: boolean
  */
 export async function handleDowngrade(
   userId: string,
-  serviceRoleKey: string
+  serviceRoleKey: string,
+  // TARGET-AWARE (P1, audit Codex 2026-06-08): o limite de forms é o do PLANO-ALVO, não fixo em
+  // free(3). Plus/Professional são ilimitados (-1) → não pausa nada; Starter(100); free(3). O
+  // threshold "100+ respostas sempre pausado" é específico do FREE (cota total de 100 resp).
+  targetPlan: PlanName = 'free'
 ): Promise<{ pausedCount: number }> {
   const supabase = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     serviceRoleKey
   )
 
-  const freeLimit = PLANS.free.maxForms // 3
-  const responseThreshold = 100 // Forms with 100+ responses are always paused
+  const formLimit = PLANS[targetPlan]?.maxForms ?? PLANS.free.maxForms
+  const responseThreshold = targetPlan === 'free' ? 100 : Number.MAX_SAFE_INTEGER
 
   // Step 1: Unpause all forms for this user
   // #1 (audit 2026-06-08): CHECA erro em TODAS as queries críticas e LANÇA. Antes, se o
@@ -182,6 +186,12 @@ export async function handleDowngrade(
     .update({ paused: false })
     .eq('user_id', userId)
   if (unpauseErr) throw new Error(`handleDowngrade: falha no unpause inicial: ${unpauseErr.message}`)
+
+  // Plano-alvo com forms ILIMITADOS (Plus/Professional, maxForms=-1): nada a pausar — os forms
+  // já foram despausados acima. Evita pausar indevidamente num downgrade Professional→Plus.
+  if (formLimit < 0) {
+    return { pausedCount: 0 }
+  }
 
   // Step 2: Get all published forms for this user
   const { data: publishedForms, error: pubErr } = await supabase
@@ -250,9 +260,9 @@ export async function handleDowngrade(
     i = j
   }
 
-  // Step 6: Keep the first `freeLimit` eligible forms active, pause the rest
-  const toKeepActive = eligible.slice(0, freeLimit).map((f) => f.id)
-  const toPauseFromEligible = eligible.slice(freeLimit).map((f) => f.id)
+  // Step 6: Keep the first `formLimit` eligible forms active, pause the rest
+  const toKeepActive = eligible.slice(0, formLimit).map((f) => f.id)
+  const toPauseFromEligible = eligible.slice(formLimit).map((f) => f.id)
 
   // Combine: always-paused (100+ responses) + eligible beyond limit
   const idsToPause = [...alwaysPaused, ...toPauseFromEligible]

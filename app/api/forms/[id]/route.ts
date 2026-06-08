@@ -10,6 +10,7 @@ import { logError } from '@/lib/logger'
 import { FormUpdateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
 import { sanitizeContentBlocksServer as sanitizeContentBlocks } from '@/lib/html-server'
 import { isSafeUrl } from '@/lib/html'
+import { getEffectivePlan } from '@/lib/plans'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string | null | undefined): string | null {
@@ -123,11 +124,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
 
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   const planConfig = PLANS[userPlan]
 
   // P1-E: Validate question count and payload size per plan

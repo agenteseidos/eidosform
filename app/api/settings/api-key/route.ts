@@ -128,11 +128,12 @@ export async function DELETE() {
   // P1 FIX: Verify plan before allowing revocation
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
-    .single() as { data: { plan: string } | null }
+    .single() as { data: { plan: string; plan_expires_at: string | null } | null }
 
-  if (!profile || (profile.plan !== 'professional' && profile.plan !== 'enterprise')) {
+  const effectivePlan = getEffectivePlan(profile)
+  if (effectivePlan !== 'professional' && (effectivePlan as string) !== 'enterprise') {
     return NextResponse.json(
       { error: 'Acesso à API key requer plano Professional ou Enterprise' },
       { status: 403 }

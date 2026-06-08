@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { createServerClient } from '@supabase/ssr'
 import { getWhatsAppSettings, createWhatsAppSettings } from '@/lib/whatsapp'
-import { PLAN_ORDER } from '@/lib/plans'
+import { getEffectivePlan, PLAN_ORDER } from '@/lib/plans'
 import { logError } from '@/lib/logger'
 
 function isPlusPlan(plan: string | null | undefined): boolean {
@@ -85,11 +85,11 @@ export async function POST(req: NextRequest) {
     const supabase = getServiceClient()
     const { data: profile } = await supabase
       .from('profiles')
-      .select('plan')
+      .select('plan, plan_expires_at')
       .eq('id', user.id)
       .single()
 
-    if (!profile || !isPlusPlan(profile.plan)) {
+    if (!profile || !isPlusPlan(getEffectivePlan(profile))) {
       return NextResponse.json({ error: 'This feature requires Plus+ plan' }, { status: 403 })
     }
 

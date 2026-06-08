@@ -54,11 +54,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
   // Feature gate: webhooks
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
 
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   if (!PLANS[userPlan]?.webhooks) {
     return NextResponse.json(
       { error: 'Webhooks disponíveis a partir do plano Plus' },

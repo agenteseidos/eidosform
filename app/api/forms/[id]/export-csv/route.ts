@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { sanitizeCellValue } from '@/lib/sanitize-formula'
+import { getEffectivePlan } from '@/lib/plans'
 
 interface QuestionRow {
   id: string
@@ -55,11 +56,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // Feature gate: csvExport
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
 
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   if (!PLANS[userPlan]?.csvExport) {
     return NextResponse.json(
       { error: 'Exportação CSV disponível a partir do plano Starter' },

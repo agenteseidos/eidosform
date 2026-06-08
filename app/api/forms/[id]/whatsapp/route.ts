@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS } from '@/lib/plan-limits'
-import { PlanId } from '@/lib/plans'
+import { getEffectivePlan, type PlanId } from '@/lib/plans'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -48,10 +48,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // P1 FIX: Plan check — WhatsApp requires Plus or Professional plan
     const { data: userProfile } = await supabase
       .from('profiles')
-      .select('plan')
+      .select('plan, plan_expires_at')
       .eq('id', user.id)
       .single()
-    const plan = (userProfile?.plan ?? 'free') as PlanId
+    const plan = getEffectivePlan(userProfile) as PlanId
     if (!PLANS[plan]?.whatsappNotifications) {
       return NextResponse.json({ error: 'WhatsApp requires Plus or Professional plan' }, { status: 403 })
     }
@@ -111,11 +111,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Plan check — WhatsApp requires Plus or Professional
     const { data: userProfile } = await supabase
       .from('profiles')
-      .select('plan')
+      .select('plan, plan_expires_at')
       .eq('id', user.id)
       .single()
 
-    const plan = (userProfile?.plan ?? 'free') as PlanId
+    const plan = getEffectivePlan(userProfile) as PlanId
     if (!PLANS[plan]?.whatsappNotifications) {
       return NextResponse.json({ error: 'WhatsApp requires Plus or Professional plan' }, { status: 403 })
     }

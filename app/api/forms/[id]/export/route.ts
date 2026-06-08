@@ -5,6 +5,7 @@ import { buildExcelExport } from '@/lib/export-excel'
 import { buildPdfExport } from '@/lib/export-pdf'
 import { sanitizeCellValue } from '@/lib/sanitize-formula'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { getEffectivePlan } from '@/lib/plans'
 
 interface QuestionRow {
   id: string
@@ -48,11 +49,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // P0-04: Gate CSV export by plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
 
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
 
   // P1-I: Rate limit export endpoint (10 requests per minute per user)
   const rlKey = `export:${user.id}`

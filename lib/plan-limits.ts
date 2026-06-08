@@ -8,6 +8,7 @@ import { createPublicClient } from '@/lib/supabase/public'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { sendLimitAlert } from '@/lib/resend'
 import { logError } from '@/lib/logger'
+import { getEffectivePlan } from '@/lib/plans'
 import {
   getPlanLimits,
   PLAN_LIMITS,
@@ -31,7 +32,7 @@ export async function checkResponseLimit(userId: string): Promise<{
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('plan, responses_used, responses_limit, limit_alert_sent')
+    .select('plan, plan_expires_at, responses_used, responses_limit, limit_alert_sent')
     .eq('id', userId)
     .single()
 
@@ -41,9 +42,9 @@ export async function checkResponseLimit(userId: string): Promise<{
     return { allowed: true, usage: 0, limit: 0, plan: 'free', nearLimit: false }
   }
 
-  const plan = (profile.plan ?? 'free') as PlanName
+  const plan = getEffectivePlan(profile) as PlanName
   const usage = profile.responses_used ?? 0
-  const limit = profile.responses_limit ?? PLANS[plan]?.maxResponses ?? 100
+  const limit = plan === 'free' ? PLANS.free.maxResponses : (profile.responses_limit ?? PLANS[plan]?.maxResponses ?? 100)
 
   if (limit === -1) {
     return { allowed: true, usage, limit, plan, nearLimit: false }
@@ -129,11 +130,11 @@ export async function checkFormLimit(userId: string): Promise<{ allowed: boolean
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', userId)
     .single()
 
-  const plan = (profile?.plan ?? 'free') as PlanName
+  const plan = getEffectivePlan(profile) as PlanName
   const limits = getPlanLimits(plan)
 
   if (limits.maxForms === -1) return { allowed: true, usage: 0, limit: -1 }

@@ -5,7 +5,7 @@ import { validateWebhookUrl } from '@/lib/webhook-validator'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkFormLimit } from '@/lib/plan-limits'
 import { PLANS } from '@/lib/plan-limits'
-import { normalizePlan } from '@/lib/plans'
+import { getEffectivePlan } from '@/lib/plans'
 import { logError } from '@/lib/logger'
 import { isSafeUrl } from '@/lib/html'
 import { FormCreateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
@@ -96,10 +96,10 @@ export async function POST(req: NextRequest) {
   // Fetch plan for feature gates and limits
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
-  const userPlan = normalizePlan((profile as { plan: string } | null)?.plan)
+  const userPlan = getEffectivePlan(profile)
   const planConfig = PLANS[userPlan]
 
   // P1-E: Validate question count and payload size per plan

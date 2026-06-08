@@ -3,7 +3,7 @@ import { getWhatsAppSettings } from '@/lib/whatsapp'
 import { logError, logWarn } from '@/lib/logger'
 import { createServerClient } from '@supabase/ssr'
 import { PLANS } from '@/lib/plan-limits'
-import { PlanId } from '@/lib/plans'
+import { getEffectivePlan, type PlanId } from '@/lib/plans'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
 
@@ -236,10 +236,10 @@ async function handleFormAwareSend(
   if (formData?.user_id) {
     const { data: ownerProfile } = await supabase
       .from('profiles')
-      .select('plan')
+      .select('plan, plan_expires_at')
       .eq('id', formData.user_id)
       .single()
-    const plan = (ownerProfile?.plan ?? 'free') as PlanId
+    const plan = getEffectivePlan(ownerProfile) as PlanId
     if (!PLANS[plan]?.whatsappNotifications) {
       return NextResponse.json(
         { success: false, error: 'WhatsApp requires Plus or Professional plan' },
@@ -308,10 +308,10 @@ async function handleDirectSend(data: DirectSendRequest & { formId?: string }): 
     if (formData?.user_id) {
       const { data: ownerProfile } = await supabase
         .from('profiles')
-        .select('plan')
+        .select('plan, plan_expires_at')
         .eq('id', formData.user_id)
         .single()
-      const plan = (ownerProfile?.plan ?? 'free') as PlanId
+      const plan = getEffectivePlan(ownerProfile) as PlanId
       if (!PLANS[plan]?.whatsappNotifications) {
         return NextResponse.json(
           { success: false, error: 'WhatsApp requires Plus or Professional plan' },

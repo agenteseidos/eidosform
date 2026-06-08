@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
+import { getEffectivePlan } from '@/lib/plans'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -31,10 +32,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // P1 FIX: Feature gate — advanced analytics (abandonment, avg time) require Plus plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   const planConfig = PLANS[userPlan]
   const questions = (form.questions as Array<{ id: string; title?: string }>) ?? []
 

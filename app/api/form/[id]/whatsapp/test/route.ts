@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS } from '@/lib/plan-limits'
-import { PlanId } from '@/lib/plans'
+import { getEffectivePlan, type PlanId } from '@/lib/plans'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 interface RouteParams {
@@ -75,11 +75,11 @@ export async function POST(
     // 3. Check if user has Plus+ plan (from profiles, not forms)
     const { data: profile } = await supabase
       .from('profiles')
-      .select('plan')
+      .select('plan, plan_expires_at')
       .eq('id', user.id)
       .single()
 
-    const plan = (profile?.plan ?? 'free') as PlanId
+    const plan = getEffectivePlan(profile) as PlanId
     if (!PLANS[plan]?.whatsappNotifications) {
       return NextResponse.json(
         { error: 'This feature is only available for Plus+ plans' },

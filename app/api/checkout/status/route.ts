@@ -61,6 +61,14 @@ export async function GET() {
   const planStatus = profile?.plan_status ?? null
   const planCycle = profile?.plan_cycle ?? null
 
+  // Guard: usuário que pediu cancelamento (plan_status='canceling') NÃO pode ser reativado
+  // pelo polling. Numa janela de race (cancel ↔ polling) o /status poderia ler a sub como
+  // ACTIVE e re-ativar, revertendo o cancelamento e podendo derrubar o acesso depois. Mantém
+  // o acesso atual (até o fim do período) sem tocar no Asaas. (#3, audit 2026-06-08.)
+  if (planStatus === 'canceling') {
+    return NextResponse.json({ status: 'success' })
+  }
+
   // ── Fast path: o DB local já reflete o plano ATIVO deste checkout ──
   // Com checkout pendente, exigir que plano E ciclo batam — senão um upgrade
   // (starter→plus ou mensal→anual) retornaria 'success' no plano ANTIGO antes de

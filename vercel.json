@@ -9,5 +9,8 @@
     "app/api/**/*.ts": {
       "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    { "path": "/api/cron/expire-plans", "schedule": "0 3 * * *" }
+  ]
 }

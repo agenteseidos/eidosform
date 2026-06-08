@@ -47,8 +47,13 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
   const { currentPlan, currentCycle, planExpiresAt, hasActiveSubscription, newPlan, newCycle } = input
 
   const isCycleChange = currentPlan === newPlan && currentCycle !== newCycle
+  // Downgrade de CICLO (anual→mensal do mesmo plano) é tratado como DOWNGRADE honesto, não
+  // como proration/Caminho D — antes ele editava a assinatura silenciosamente p/ mensal,
+  // divergindo da promessa do produto. Mensal→anual segue como upgrade de ciclo (proration).
+  // (#5, decisão Sidney 2026-06-08.)
+  const isCycleDowngrade = isCycleChange && currentCycle === 'YEARLY' && newCycle === 'MONTHLY'
   const isPlanUpgrade = currentPlan !== newPlan && isUpgrade(currentPlan as PlanId, newPlan)
-  const shouldApplyProration = isCycleChange || isPlanUpgrade
+  const shouldApplyProration = (isCycleChange && !isCycleDowngrade) || isPlanUpgrade
 
   const base = {
     currentPlan,
@@ -70,8 +75,8 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
     return { ...base, action: 'already_subscribed' }
   }
 
-  // Downgrade (plano diferente, não-upgrade) → processado ao fim do período
-  if (hasActiveSubscription && currentPlan !== newPlan && !isPlanUpgrade) {
+  // Downgrade → mensagem honesta (cancelar e reassinar): tier menor OU ciclo anual→mensal.
+  if (hasActiveSubscription && ((currentPlan !== newPlan && !isPlanUpgrade) || isCycleDowngrade)) {
     return { ...base, action: 'downgrade_scheduled' }
   }
 

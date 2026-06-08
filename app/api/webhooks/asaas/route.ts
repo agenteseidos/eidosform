@@ -552,10 +552,45 @@ export async function POST(req: NextRequest) {
         // intentionally treats same-day duplicates as ambiguous.
         const { data: previousProfile } = await supabase
           .from('profiles')
-          .select('asaas_subscription_id')
+          .select('asaas_subscription_id, plan, plan_cycle, plan_status')
           .eq('id', user.id)
           .single()
         const previousSubId = previousProfile?.asaas_subscription_id ?? null
+
+        // TRANSIÇÃO REAL vs RENOVAÇÃO/DUPLICATA (#1, audit 2026-06-08): só é transição se o
+        // plano/ciclo/sub mudaram OU o status não era 'active'. Em renovação recorrente (mesmo
+        // plano/ciclo/sub já active) e em eventos duplicados (PAYMENT_CONFIRMED+RECEIVED do
+        // mesmo pagamento; webhook chegando após o polling já ter ativado), o profile já está
+        // no estado-alvo → NÃO reenviar e-mail "plano ativado" nem rodar handleUpgrade de novo.
+        // A ativação (update abaixo) ainda roda sempre — renova expiração e reseta a cota.
+        const isPlanTransition =
+          previousProfile?.plan !== plan ||
+          previousProfile?.plan_cycle !== cycle ||
+          previousProfile?.plan_status !== 'active' ||
+          (payment.subscription ? previousProfile?.asaas_subscription_id !== payment.subscription : false)
+
+        // #7 (audit 2026-06-08): RE-CHECK "checkout mais recente vence" imediatamente antes de
+        // ativar. Reduz a race entre eventos concorrentes: se um checkout MAIS NOVO já foi pago
+        // (commitado) entre a 1ª checagem e aqui, este evento é o mais antigo → NÃO sobrescreve
+        // o plano. O fluxo do checkout mais novo (que venceu) cuida da ativação e o reconcile
+        // dele cancela esta sub órfã (mais antiga que a keep). Não há deadlock: só o evento mais
+        // antigo encontra um "mais novo pago".
+        if (checkoutLink?.profile_id && checkoutLink?.created_at) {
+          const { data: newerPaid2 } = await supabase
+            .from('billing_checkouts')
+            .select('id')
+            .eq('profile_id', checkoutLink.profile_id)
+            .eq('status', 'paid')
+            .gt('created_at', checkoutLink.created_at)
+            .limit(1)
+            .maybeSingle()
+          if (newerPaid2) {
+            log('[asaas-webhook] Re-check: checkout mais recente já venceu antes da ativação — pulando (o fluxo mais novo ativa e reconcilia)', {
+              userId: user.id, eventCheckoutId: checkoutLink.id,
+            })
+            break
+          }
+        }
 
         const { data: activatedRows, error: activateError } = await supabase
           .from('profiles')
@@ -593,13 +628,16 @@ export async function POST(req: NextRequest) {
           billingType,
         })
 
-        // handleUpgrade + e-mail PRIMEIRO (idempotentes): se a correção de valor recorrente
-        // cair na DLQ abaixo, o reprocessador NÃO repete o despause/e-mail (profile já está
-        // no plano), então precisam acontecer aqui de qualquer forma.
-        const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-        log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
-
-        await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
+        // handleUpgrade + e-mail SÓ em transição real (#1): renovação/duplicata não despausa
+        // de novo nem reenvia "plano ativado". (handleUpgrade roda antes do finalize p/ que um
+        // eventual DLQ da correção de valor não pule o despause no reprocesso.)
+        if (isPlanTransition) {
+          const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+          log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
+          await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
+        } else {
+          log('[asaas-webhook] Renovação/evento duplicado — pulando e-mail e handleUpgrade (sem transição)', { userId: user.id, plan, cycle, subscriptionId: payment.subscription })
+        }
 
         // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente.
         // MESMA rotina do polling e do reprocessador (helper compartilhado finalizeActivation),
@@ -846,10 +884,26 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        const newStatus = event === 'PAYMENT_CHARGEBACK_REQUESTED' || event === 'PAYMENT_CHARGEBACK_DISPUTE' ? 'chargeback' : 'refunded'
+        // #6 (decisão Sidney 2026-06-08): REFUND/DELETE NÃO derruba acesso automaticamente —
+        // não dá pra provar "refund TOTAL do pagamento vigente" pelo payload básico, e um
+        // refund parcial não deveria cancelar a assinatura. Vai p/ ALERTA operacional + log
+        // (revisão manual), mantendo o acesso. Já CHARGEBACK e SUBSCRIPTION_INACTIVATED
+        // rebaixam imediatamente (match estrito acima protege contra sub fantasma).
+        if (event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_DELETED') {
+          logError('[asaas-webhook] REFUND/PAYMENT_DELETED — acesso MANTIDO; revisar manualmente (refund total → cancelar manual; parcial → manter)', undefined, {
+            userId: user.id, subscriptionId, event, value: payment?.value ?? null,
+          })
+          await sendBillingOpsAlert({
+            subject: 'Refund/pagamento deletado — revisar manualmente (acesso NÃO foi derrubado automaticamente)',
+            lines: { userId: user.id, subscriptionId, event, value: payment?.value ?? null, plan: refundProfile?.plan ?? null, customerId },
+          }).catch(() => {})
+          break
+        }
+
+        const newStatus = (event === 'PAYMENT_CHARGEBACK_REQUESTED' || event === 'PAYMENT_CHARGEBACK_DISPUTE') ? 'chargeback' : 'cancelled'
         const oldPlan = user.plan ?? 'starter'
 
-        log('[asaas-webhook] Refund/chargeback — reverting to free', { userId: user.id, customerId, event, newStatus })
+        log('[asaas-webhook] Chargeback/inactivated — reverting to free', { userId: user.id, customerId, event, newStatus })
 
         const { data: refundRows, error: refundError } = await supabase
           .from('profiles')
@@ -878,10 +932,10 @@ export async function POST(req: NextRequest) {
         })
 
         const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-        log('[asaas-webhook] Downgrade processed (refund/chargeback)', { userId: user.id, pausedForms: downgrade.pausedCount, event })
+        log('[asaas-webhook] Downgrade processed (chargeback/inactivated)', { userId: user.id, pausedForms: downgrade.pausedCount, event })
 
         await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan })
-          .catch((err) => logError('Failed to send refund/chargeback notification email', err))
+          .catch((err) => logError('Failed to send chargeback/inactivation notification email', err))
         break
       }
 

@@ -13,7 +13,7 @@ import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
 import { expiryFromNextDueDate } from '@/lib/billing-activation'
-import { log, logError } from '@/lib/logger'
+import { log, logError, logWarn } from '@/lib/logger'
 
 function hashCustomerPayload(payload: Record<string, unknown>): string {
   const normalized = JSON.stringify(payload, Object.keys(payload).sort())
@@ -169,6 +169,32 @@ export async function POST(
     })
 
     const sSupa = getServiceSupabase() ?? supabase
+
+    // CAS (#4, audit 2026-06-08): re-lê o profile IMEDIATAMENTE antes de tocar no Asaas e
+    // aborta se a sub/plano/ciclo divergirem do que computePlanChange assumiu. Evita que 2
+    // POSTs simultâneos (duplo-clique / 2 abas) editem a MESMA assinatura cruzando plano/valor.
+    const { data: casRow } = await sSupa
+      .from('profiles')
+      .select('asaas_subscription_id, plan, plan_cycle')
+      .eq('id', profile.profileId)
+      .single()
+    const cas = casRow as { asaas_subscription_id?: string | null; plan?: string | null; plan_cycle?: string | null } | null
+    if (
+      !cas ||
+      cas.asaas_subscription_id !== profile.asaasSubscriptionId ||
+      cas.plan !== profile.plan ||
+      (cas.plan_cycle ?? null) !== (profile.plan_cycle ?? null)
+    ) {
+      logWarn('[checkout] Caminho D — estado do profile mudou desde a decisão (CAS); abortando p/ evitar troca concorrente', {
+        userId: profile.profileId,
+        expectedSub: profile.asaasSubscriptionId,
+        gotSub: cas?.asaas_subscription_id ?? null,
+      })
+      return NextResponse.json(
+        { error: 'Sua assinatura mudou enquanto processávamos. Recarregue a página e tente novamente.' },
+        { status: 409 }
+      )
+    }
 
     // 1) RECUPERAÇÃO ANTES do PUT (P2a round 3, audit Codex 2026-06-07): grava em
     //    billing_checkouts o estado INTENCIONADO (sub → NOVO plano/ciclo) e CHECA o erro.

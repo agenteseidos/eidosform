@@ -214,7 +214,11 @@ export async function getCustomerSubscriptions(customerId: string) {
 
 /** Cancela assinatura */
 export async function cancelSubscription(subscriptionId: string): Promise<{ deleted: boolean; id: string }> {
-  return asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' })
+  const res = await asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' })
+  // Invalida o cache de getSubscription (30s): após o DELETE, leituras stale como ACTIVE
+  // poderiam re-ativar a sub (polling) ou estender acesso indevidamente. (#3, audit 2026-06-08.)
+  subscriptionCache.delete(subscriptionId)
+  return res
 }
 
 /**
@@ -245,11 +249,11 @@ export async function reconcileActiveSubscriptions(
   try {
     // Paginação: a listagem do Asaas é paginada (até 100/página). Acumula todas as
     // páginas — legado/retry storm pode ter criado >100 subs. Backstop em 2000.
-    const subs: Array<{ id?: string; dateCreated?: string }> = []
+    const subs: Array<{ id?: string; dateCreated?: string; value?: number }> = []
     let offset = 0
     for (;;) {
       const data = await asaasFetch(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=ACTIVE&billingType=CREDIT_CARD&limit=100&offset=${offset}`)
-      const page: Array<{ id?: string; dateCreated?: string }> = data?.data ?? []
+      const page: Array<{ id?: string; dateCreated?: string; value?: number }> = data?.data ?? []
       subs.push(...page)
       if (!data?.hasMore || page.length === 0 || offset >= 2000) break
       offset += 100
@@ -260,6 +264,7 @@ export async function reconcileActiveSubscriptions(
     // outro fluxo. Data indeterminada (da keep ou da candidata) → NÃO cancela (ambígua).
     const keepSub = subs.find((s) => s.id === keepSubscriptionId)
     const keepDate = keepSub?.dateCreated ? new Date(keepSub.dateCreated).getTime() : null
+    const keepValue = typeof keepSub?.value === 'number' ? keepSub.value : null
     if (keepDate === null) {
       logWarn('[asaas] reconcile: dateCreated da keep indeterminada — não cancela nada (conservador)', { customerId, keepSubscriptionId })
       return { cancelled, kept: keepSubscriptionId, ambiguous }
@@ -269,9 +274,24 @@ export async function reconcileActiveSubscriptions(
       if (!sub?.id || sub.id === keepSubscriptionId) continue
       const subDate = sub.dateCreated ? new Date(sub.dateCreated).getTime() : null
       if (subDate === null || subDate >= keepDate) {
-        // Mais nova/igual à keep ou data indeterminada → ambígua, não cancela.
+        // Mais nova/igual à keep ou data indeterminada → AMBÍGUA por data.
+        // #8 (audit 2026-06-08): mas se for DUPLICATA do MESMO plano (mesmo `value` que a
+        // keep), é claramente órfã e SEGURA de cancelar — duas subs do mesmo plano nunca
+        // devem coexistir (= cobrança dupla). Valor DIFERENTE = plano diferente (possível
+        // upgrade concorrente legítimo) → mantém ambígua (não cancela).
+        const subValue = typeof sub.value === 'number' ? sub.value : null
+        if (keepValue !== null && subValue !== null && Math.abs(subValue - keepValue) <= 0.001) {
+          try {
+            await cancelSubscription(sub.id)
+            cancelled.push(sub.id)
+            log('[asaas] reconcile: duplicata mesmo-dia/MESMO-VALOR cancelada (#8)', { customerId, keepSubscriptionId, cancelledSubId: sub.id, value: subValue })
+          } catch (err) {
+            logError('[asaas] reconcile: falha ao cancelar duplicata mesmo-valor (segue)', err, { customerId, subId: sub.id })
+          }
+          continue
+        }
         ambiguous.push(sub.id)
-        logWarn('[asaas] reconcile: sub NÃO cancelada (mais nova/ambígua que a keep)', { customerId, keepSubscriptionId, subId: sub.id })
+        logWarn('[asaas] reconcile: sub NÃO cancelada (mais nova/valor diferente/ambígua que a keep)', { customerId, keepSubscriptionId, subId: sub.id })
         continue
       }
       try {

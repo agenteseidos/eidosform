@@ -56,7 +56,16 @@ export async function POST() {
   try {
     const sub = (await getSubscription(profile.asaas_subscription_id)) as { endDate?: string; nextDueDate?: string }
     const candidate = sub?.endDate ?? sub?.nextDueDate
-    resolvedExpiresAt = expiryFromNextDueDate(candidate) ?? localFutureExpiry ?? calculateExpiryDate(cycle)
+    const subDerived = expiryFromNextDueDate(candidate)
+    // NÃO ESTENDER além da expiração que o profile já concede (anti-COMPOUNDING): para subs com
+    // 1ª cobrança FUTURA (reativação/Caminho D), o Asaas reporta o subscription.nextDueDate como
+    // o PRÓXIMO ciclo (~1 mês além da cobertura real). Usar isso inflava a expiração a cada
+    // cancelar+reassinar (farming de acesso grátis). Mantém o MENOR entre o derivado da sub e a
+    // expiração local futura — o profile.plan_expires_at é a fonte da verdade da cobertura paga.
+    resolvedExpiresAt =
+      subDerived && localFutureExpiry
+        ? (new Date(subDerived).getTime() <= new Date(localFutureExpiry).getTime() ? subDerived : localFutureExpiry)
+        : (subDerived ?? localFutureExpiry ?? calculateExpiryDate(cycle))
   } catch (err) {
     resolvedExpiresAt = localFutureExpiry ?? calculateExpiryDate(cycle)
     logWarn('[subscription/cancel] Não resolveu endDate do Asaas (pré-delete) — usando fallback futuro', { error: err instanceof Error ? err.message : String(err) })

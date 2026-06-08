@@ -244,6 +244,28 @@ export async function createSubscriptionWithToken(params: {
 }
 
 /**
+ * Alinha o dueDate dos pagamentos PENDING de uma assinatura ao novo nextDueDate. Necessário no
+ * Caminho D: ao editar a sub (updateSubscription), o Asaas atualiza o VALOR dos pagamentos
+ * pendentes mas MANTÉM a data do que já foi gerado — então um pagamento antigo cobraria ANTES da
+ * data de cobertura do saldo. Move cada pendente p/ a data correta. Best-effort. (bugfix 2026-06-08.)
+ */
+export async function alignPendingPaymentsDueDate(subscriptionId: string, dueDate: string): Promise<number> {
+  const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=20`)
+  const pays: Array<{ id?: string; dueDate?: string }> = data?.data ?? []
+  let updated = 0
+  for (const p of pays) {
+    if (!p?.id || p.dueDate === dueDate) continue
+    try {
+      await asaasFetch(`/payments/${p.id}`, { method: 'PUT', body: JSON.stringify({ dueDate }) })
+      updated++
+    } catch (err) {
+      logError('[asaas] alignPendingPaymentsDueDate: falha ao mover pagamento pendente (segue)', err, { paymentId: p.id, subscriptionId })
+    }
+  }
+  return updated
+}
+
+/**
  * Extrai o creditCardToken de uma assinatura (campo creditCard.creditCardToken da resposta do
  * Asaas), p/ guardar no perfil e reutilizar na reativação. Retorna null se ausente. (#2b)
  */

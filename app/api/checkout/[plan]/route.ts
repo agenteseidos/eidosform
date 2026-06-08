@@ -8,7 +8,7 @@ import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, buildExternalReference, createSubscriptionWithToken, cancelSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, buildExternalReference, createSubscriptionWithToken, cancelSubscription, alignPendingPaymentsDueDate, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
@@ -358,6 +358,16 @@ export async function POST(
         { status: 502 }
       )
     }
+
+    // 2b) Alinhar a data dos pagamentos PENDING ao nextDueDate. O updateSubscription move o
+    //     nextDueDate da assinatura mas mantém a data dos pagamentos já gerados → sem isto, um
+    //     pagamento antigo cobraria ANTES do fim da cobertura do saldo (bug achado no teste de
+    //     downgrade 2026-06-08). Best-effort.
+    const movedPays = await alignPendingPaymentsDueDate(profile.asaasSubscriptionId, nextDueDate).catch((e) => {
+      logError('[checkout] Caminho D — falha ao alinhar pagamentos pendentes (não-bloqueante)', e, { userId: profile.profileId })
+      return 0
+    })
+    if (movedPays) log('[checkout] Caminho D — pagamentos pendentes movidos p/ nextDueDate', { userId: profile.profileId, movedPays, nextDueDate })
 
     // 3) Atualizar o profile pro novo plano, MANTENDO o asaas_subscription_id.
     //    plan_expires_at = nextDueDate: acesso garantido durante o período coberto

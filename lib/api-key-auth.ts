@@ -4,6 +4,7 @@
 import { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { getEffectivePlan } from '@/lib/plans'
 
 export type ApiAuthSuccess = { ok: true; userId: string; plan: string; apiKey: string }
 export type ApiAuthFailure = { ok: false; status: 401 | 429; error: string; retryAfter?: number }
@@ -55,7 +56,17 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
 
   const resolvedProfile = profile
 
-  if (resolvedProfile.plan !== 'professional' && resolvedProfile.plan !== 'enterprise') {
+  // Considera EXPIRAÇÃO: a RPC retorna só (id, plan), então buscamos plan_expires_at e
+  // usamos getEffectivePlan — plano pago vencido vira 'free' e perde o acesso à API.
+  // (P1, audit Codex 2026-06-08.)
+  const { data: planRow } = await supabase
+    .from('profiles')
+    .select('plan, plan_expires_at')
+    .eq('id', resolvedProfile.id)
+    .single()
+  const effectivePlan = getEffectivePlan(planRow ?? { plan: resolvedProfile.plan })
+
+  if (effectivePlan !== 'professional' && (effectivePlan as string) !== 'enterprise') {
     return { ok: false, status: 401, error: 'Unauthorized. Professional plan required for API access.' }
   }
 
@@ -70,5 +81,5 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
     }
   }
 
-  return { ok: true, userId: resolvedProfile.id, plan: resolvedProfile.plan, apiKey }
+  return { ok: true, userId: resolvedProfile.id, plan: effectivePlan, apiKey }
 }

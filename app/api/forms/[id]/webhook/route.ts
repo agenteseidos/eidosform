@@ -10,6 +10,7 @@ import { logError } from '@/lib/logger'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
+import { getEffectivePlan } from '@/lib/plans'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -23,10 +24,10 @@ export async function GET(req: NextRequest, { params }: Params) {
   // P1 FIX: Feature gate — webhooks require Plus plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   if (!PLANS[userPlan]?.webhooks) {
     return NextResponse.json({ error: 'Webhooks disponíveis a partir do plano Plus' }, { status: 403 })
   }
@@ -99,10 +100,10 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   // P1 FIX: Feature gate — webhooks require Plus plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   if (!PLANS[userPlan]?.webhooks) {
     return NextResponse.json({ error: 'Webhooks disponíveis a partir do plano Plus' }, { status: 403 })
   }

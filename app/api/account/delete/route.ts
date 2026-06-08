@@ -22,7 +22,9 @@ export async function POST() {
   // 2026-06-08): se o cancelamento falhar, NÃO deleta a conta — senão o profile/auth some
   // mas a assinatura segue ACTIVE no gateway e o cliente continua sendo cobrado, sem estado
   // local pra reconciliar. 404 (já removida) é tratado como sucesso (idempotente).
-  if (profile?.asaas_subscription_id && profile.plan_status !== 'cancelled') {
+  // SEMPRE tenta cancelar se há asaas_subscription_id — não confia no plan_status local, que
+  // pode estar 'cancelled' com a sub ainda ativa (inconsistência). (P1, Codex 2026-06-08.)
+  if (profile?.asaas_subscription_id) {
     try {
       await cancelSubscription(profile.asaas_subscription_id)
     } catch (err) {

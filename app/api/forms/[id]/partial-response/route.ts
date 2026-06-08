@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS, PlanName } from '@/lib/plan-limits'
+import { getEffectivePlan } from '@/lib/plans'
 import { sanitizeValue } from '@/lib/form-response-security'
 import { log, logError } from '@/lib/logger'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
@@ -53,11 +54,11 @@ export async function GET(
   // Check if form owner's plan supports partial responses
   const { data: ownerProfile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', form.user_id)
     .single()
 
-  const ownerPlan = (ownerProfile?.plan ?? 'free') as PlanName
+  const ownerPlan = getEffectivePlan(ownerProfile) as PlanName
   if (!PLANS[ownerPlan]?.partialResponses) {
     return NextResponse.json({ answers: null }, { status: 200, headers: CORS_HEADERS })
   }
@@ -140,11 +141,11 @@ export async function PUT(
   // Check if form owner's plan supports partial responses
   const { data: ownerProfile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', form.user_id)
     .single()
 
-  const ownerPlan = (ownerProfile?.plan ?? 'free') as PlanName
+  const ownerPlan = getEffectivePlan(ownerProfile) as PlanName
   if (!PLANS[ownerPlan]?.partialResponses) {
     return NextResponse.json(
       { error: 'Respostas parciais não disponíveis no plano atual' },

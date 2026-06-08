@@ -114,11 +114,15 @@ export async function POST(
     newCycle: cycle,
   })
 
-  // Downgrade: não aplica proration, cancela ao final do período
+  // Downgrade: o sistema ainda NÃO agenda troca de plano (feature dedicada futura —
+  // scheduled_plan_changes). Mensagem HONESTA (opção C, decisão Sidney 2026-06-08): orienta
+  // a CANCELAR a assinatura (mantém acesso até o fim do período pago) e assinar o plano menor
+  // depois. Não promete agendamento que não existe nem cobra/altera nada aqui.
   if (change.action === 'downgrade_scheduled') {
     return NextResponse.json({
-      message: 'Downgrades são processados ao final do período atual.',
+      message: 'Para reduzir de plano, cancele sua assinatura atual nas configurações de cobrança. Você mantém o acesso até o fim do período já pago e, depois disso, pode assinar o plano menor.',
       isDowngrade: true,
+      action: 'cancel_then_resubscribe',
     })
   }
 

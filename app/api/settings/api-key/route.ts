@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { getEffectivePlan } from '@/lib/plans'
 
 // POST /api/settings/api-key — gerar/regenerar API key
 export async function POST() {
@@ -13,14 +14,15 @@ export async function POST() {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
-  // Verificar plano Professional
+  // Verificar plano Professional (considerando EXPIRAÇÃO — P1, Codex 2026-06-08).
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
-    .single() as { data: { plan: string } | null }
+    .single() as { data: { plan: string; plan_expires_at: string | null } | null }
 
-  if (!profile || (profile.plan !== 'professional' && profile.plan !== 'enterprise')) {
+  const effectivePlan = getEffectivePlan(profile)
+  if (effectivePlan !== 'professional' && (effectivePlan as string) !== 'enterprise') {
     return NextResponse.json(
       { error: 'Acesso à API key requer plano Professional ou Enterprise' },
       { status: 403 }

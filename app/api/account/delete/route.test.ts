@@ -93,25 +93,40 @@ describe('POST /api/account/delete', () => {
     expect(adminSupabase._mocks.deleteUser).toHaveBeenCalledWith('user-1')
   })
 
-  it('falha no Asaas não bloqueia a deleção da conta (best-effort)', async () => {
+  it('FAIL-CLOSED: falha no Asaas (≠404) aborta a deleção (502, não deleta)', async () => {
     const supabase = makeSupabase({
       profile: { asaas_subscription_id: 'sub_123', plan_status: 'active' },
     })
     const adminSupabase = makeAdminSupabase()
     mockCreateClient.mockResolvedValue(supabase as never)
     mockCreateAdminClient.mockReturnValue(adminSupabase as never)
-    const asaasError = new Error('Asaas indisponível')
+    const asaasError = new Error('Asaas API error 500')
     mockCancelSubscription.mockRejectedValue(asaasError)
 
     const res = await POST()
 
-    // Deleção prossegue mesmo com falha no Asaas
-    expect(res.status).toBe(200)
-    expect(adminSupabase._mocks.deleteUser).toHaveBeenCalledWith('user-1')
+    // NÃO deleta a conta — evita cobrança órfã.
+    expect(res.status).toBe(502)
+    expect(adminSupabase._mocks.deleteUser).not.toHaveBeenCalled()
     expect(mockLogError).toHaveBeenCalledWith(
-      'Asaas cancel on delete failed',
+      'Asaas cancel on delete FAILED — abortando deleção (fail-closed)',
       asaasError,
       expect.objectContaining({ subscriptionId: 'sub_123' }),
     )
+  })
+
+  it('404 no Asaas (sub já removida) é idempotente — prossegue e deleta', async () => {
+    const supabase = makeSupabase({
+      profile: { asaas_subscription_id: 'sub_123', plan_status: 'active' },
+    })
+    const adminSupabase = makeAdminSupabase()
+    mockCreateClient.mockResolvedValue(supabase as never)
+    mockCreateAdminClient.mockReturnValue(adminSupabase as never)
+    mockCancelSubscription.mockRejectedValue(new Error('Asaas API error 404'))
+
+    const res = await POST()
+
+    expect(res.status).toBe(200)
+    expect(adminSupabase._mocks.deleteUser).toHaveBeenCalledWith('user-1')
   })
 })

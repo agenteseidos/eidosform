@@ -82,6 +82,37 @@ export async function createCustomer(payload: AsaasCustomerPayload): Promise<{ i
   return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+/** Mapeia o VALOR cheio de uma assinatura para o plano/ciclo (preços únicos → 1:1). */
+export function detectPlanAndCycleFromValue(value: number): { plan: string; cycle: BillingCycle } | null {
+  for (const [plan, prices] of Object.entries(PLAN_PRICES)) {
+    if (value === prices.yearly) return { plan, cycle: 'YEARLY' }
+    if (value === prices.monthly) return { plan, cycle: 'MONTHLY' }
+  }
+  return null
+}
+
+/**
+ * Resolve plano/ciclo a partir do objeto da ASSINATURA paga (fonte da verdade): valor cheio
+ * → plano (1:1); senão a `description` ("Plano X (...)") → plano-alvo (proration). Usado pelo
+ * webhook e pelo reprocessador pra não depender do billing_checkouts. (Pivô 2026-06-08.)
+ */
+export function resolvePlanCycleFromSubscription(
+  sub: { value?: number; cycle?: string; description?: string } | null | undefined
+): { plan: string; cycle: BillingCycle } | null {
+  if (!sub) return null
+  const cycle: BillingCycle = String(sub.cycle ?? '').toUpperCase() === 'YEARLY' ? 'YEARLY' : 'MONTHLY'
+  if (typeof sub.value === 'number') {
+    const byValue = detectPlanAndCycleFromValue(sub.value)
+    if (byValue) return byValue
+  }
+  const m = String(sub.description ?? '').match(/Plano\s+([a-zA-Z]+)/)
+  const planFromDesc = m?.[1]?.toLowerCase()
+  if (planFromDesc && Object.prototype.hasOwnProperty.call(PLAN_PRICES, planFromDesc)) {
+    return { plan: planFromDesc, cycle }
+  }
+  return null
+}
+
 /**
  * externalReference no formato `profile:{uuid}|plan:{plan}|cycle:{cycle}`.
  * ⚠️ ATENÇÃO (smoke sandbox 2026-06-08): o Asaas NÃO persiste o externalReference quando a

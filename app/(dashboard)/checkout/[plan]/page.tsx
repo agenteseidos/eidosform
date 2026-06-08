@@ -314,11 +314,14 @@ function CheckoutContent() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-6 max-w-md px-6">
-          <div className="text-5xl">🗓️</div>
-          <h1 className="text-2xl font-bold text-slate-900">Mudança agendada</h1>
-          <p className="text-slate-500">Mudanças para um plano menor são processadas ao final do seu período atual. Seu plano continua o mesmo até lá.</p>
+          <div className="text-5xl">↘️</div>
+          <h1 className="text-2xl font-bold text-slate-900">Como reduzir de plano</h1>
+          <p className="text-slate-500">
+            Para mudar para um plano menor, cancele sua assinatura atual nas configurações de cobrança.
+            Você mantém o acesso até o fim do período já pago e, depois disso, pode assinar o plano menor.
+          </p>
           <Button onClick={() => router.push('/billing')} className="bg-slate-900 hover:bg-slate-800 text-white">
-            Voltar ao billing
+            Ir para cobrança
           </Button>
         </div>
       </div>

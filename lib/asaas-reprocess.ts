@@ -22,7 +22,7 @@
  * tratamento MANUAL — o evento permanece visível na lista de failed/dead do admin.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { getSubscription } from '@/lib/asaas'
+import { getSubscription, resolvePlanCycleFromSubscription } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, type BillingCycle } from '@/lib/billing-activation'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
@@ -162,10 +162,22 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     // Sub vigente ANTES desta ativação — pro finalizeActivation cancelar a anterior.
     const previousSubId = (profile as { asaas_subscription_id?: string | null }).asaas_subscription_id ?? null
 
-    const cycle = (checkout.cycle ?? 'MONTHLY') as BillingCycle
+    // Pivô (P2, audit Codex 2026-06-08): resolve plano/ciclo pela ASSINATURA paga
+    // (valor/descrição), não confiando só no checkout record (pode estar errado/ausente).
+    // getSubscription é cacheado (já foi chamado em getAsaasStatus). Fallback no checkout.
+    let subData: { value?: number; cycle?: string; description?: string } | null = null
+    try {
+      subData = (await getSubscription(subscriptionId)) as { value?: number; cycle?: string; description?: string }
+    } catch {
+      // usa o checkout record como fallback
+    }
+    const resolved = resolvePlanCycleFromSubscription(subData)
+    const plan = resolved?.plan ?? checkout.plan
+    const cycle = (resolved?.cycle ?? checkout.cycle ?? 'MONTHLY') as BillingCycle
+
     const { data: actRows, error: actErr } = await supabase
       .from('profiles')
-      .update(buildActivePlanUpdate({ plan: checkout.plan, cycle, customerId, subscriptionId }))
+      .update(buildActivePlanUpdate({ plan, cycle, customerId, subscriptionId }))
       .eq('id', profile.id)
       .select('id')
     if (actErr || !actRows || actRows.length !== 1) throw new Error(`ativar plano falhou (rows=${actRows?.length ?? 0}): ${actErr?.message ?? 'sem erro DB'}`)
@@ -175,9 +187,9 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
       .update({ status: 'paid', last_event: 'REPROCESS_CONFIRMED', asaas_subscription_id: subscriptionId })
       .eq('id', checkout.id)
 
-    if (profile.plan === 'free' || profile.plan !== checkout.plan) {
+    if (profile.plan === 'free' || profile.plan !== plan) {
       await handleUpgrade(profile.id, serviceKey)
-      await sendPlanActivated({ to: profile.email, name: profile.full_name ?? 'usuário', plan: checkout.plan })
+      await sendPlanActivated({ to: profile.email, name: profile.full_name ?? 'usuário', plan })
         .catch((e) => logError('[asaas-reprocess] email ativação falhou', e))
     }
 
@@ -190,7 +202,7 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
       customerId,
       newSubscriptionId: subscriptionId,
       previousSubscriptionId: previousSubId,
-      plan: checkout.plan,
+      plan,
       cycle,
       source: 'reprocess',
     })
@@ -199,7 +211,7 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
       throw new Error(`correção de valor recorrente pendente (sub ${subscriptionId}) — mantém failed p/ retry`)
     }
-    log('[asaas-reprocess] plano ativado via reprocesso', { profileId: profile.id, plan: checkout.plan })
+    log('[asaas-reprocess] plano ativado via reprocesso', { profileId: profile.id, plan })
     return 'activated'
   }
 

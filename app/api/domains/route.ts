@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { addDomain, removeDomain, checkDomainStatus } from '@/lib/custom-domain'
 import { logError } from '@/lib/logger'
 import { PLANS, PlanName } from '@/lib/plan-limits'
+import { getEffectivePlan } from '@/lib/plans'
 
 // POST /api/domains — adicionar domínio personalizado
 // Body: { domain: string, form_id: string }
@@ -25,10 +26,10 @@ export async function POST(req: NextRequest) {
   // P0 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   if (!PLANS[userPlan]?.customDomain) {
     return NextResponse.json(
       { error: 'Domínio personalizado requer plano Professional' },
@@ -103,10 +104,10 @@ export async function GET() {
   // P1 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   if (!PLANS[userPlan]?.customDomain) {
     return NextResponse.json(
       { error: 'Domínio personalizado requer plano Professional' },
@@ -141,10 +142,10 @@ export async function DELETE(req: NextRequest) {
   // P1 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   if (!PLANS[userPlan]?.customDomain) {
     return NextResponse.json(
       { error: 'Domínio personalizado requer plano Professional' },
@@ -194,10 +195,10 @@ export async function PATCH(req: NextRequest) {
   // P1 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', user.id)
     .single()
-  const userPlan = (profile?.plan ?? 'free') as PlanName
+  const userPlan = getEffectivePlan(profile) as PlanName
   if (!PLANS[userPlan]?.customDomain) {
     return NextResponse.json(
       { error: 'Domínio personalizado requer plano Professional' },

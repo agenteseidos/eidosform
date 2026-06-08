@@ -12,6 +12,7 @@ import {
   getSubscription,
   reconcileActiveSubscriptions,
   updateSubscription,
+  extractCardToken,
 } from '@/lib/asaas'
 import { log, logError } from '@/lib/logger'
 
@@ -179,7 +180,17 @@ export async function finalizeActivation(params: {
   let recurringValueNeeded = false
   let recurringValueFixed = true
   try {
-    const sub = (await getSubscription(newSubscriptionId)) as { value?: number; nextDueDate?: string }
+    const sub = (await getSubscription(newSubscriptionId)) as { value?: number; nextDueDate?: string; creditCard?: { creditCardToken?: string } }
+
+    // (4a-token) Captura o creditCardToken (tokenização por cliente) p/ permitir RECRIAR a
+    // assinatura na reativação pós-cancelamento (a sub é deletada no cancel) sem pedir o cartão
+    // de novo. Best-effort, não-bloqueante. (#2b, 2026-06-08.)
+    const cardToken = extractCardToken(sub)
+    if (cardToken) {
+      const { error: tokErr } = await db.from('profiles').update({ asaas_card_token: cardToken }).eq('id', userId)
+      if (tokErr) logError(`${tag}: falha ao salvar card token (não-bloqueante)`, tokErr, { userId })
+      else log(`${tag}: card token capturado`, { userId, newSubscriptionId })
+    }
 
     // (4a) Expiração a partir do nextDueDate REAL do Asaas (fim do dia BRT), com guarda de
     //      futuro: só ajusta se a data for > agora (senão mantém o now+ciclo seguro posto

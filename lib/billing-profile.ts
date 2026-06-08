@@ -19,6 +19,7 @@ export type BillingProfile = {
   state: string | null
   asaasCustomerId: string | null
   asaasSubscriptionId: string | null
+  asaasCardToken: string | null
   plan: string
   plan_cycle: string | null
   plan_expires_at: string | null
@@ -81,6 +82,7 @@ export function mapProfileRowToBillingProfile(profile: Record<string, unknown>, 
     state: cleanString(profile.state),
     asaasCustomerId: cleanString(profile.asaas_customer_id),
     asaasSubscriptionId: cleanString(profile.asaas_subscription_id),
+    asaasCardToken: cleanString(profile.asaas_card_token),
     plan: cleanString(profile.plan) ?? 'free',
     plan_cycle: cleanString(profile.plan_cycle),
     plan_expires_at: cleanString(profile.plan_expires_at),
@@ -122,7 +124,7 @@ export async function getBillingProfileForUser(userId: string, fallbackEmail?: s
   const supabase = await createClient()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, email, full_name, phone, cpf_cnpj, address, address_number, postal_code, province, city, state, asaas_customer_id, asaas_subscription_id, plan, plan_cycle, plan_expires_at')
+    .select('id, email, full_name, phone, cpf_cnpj, address, address_number, postal_code, province, city, state, asaas_customer_id, asaas_subscription_id, asaas_card_token, plan, plan_cycle, plan_expires_at')
     .eq('id', userId)
     .single()
 

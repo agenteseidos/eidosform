@@ -8,7 +8,7 @@ import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, buildExternalReference, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, buildExternalReference, createSubscriptionWithToken, cancelSubscription, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
@@ -136,10 +136,57 @@ export async function POST(
     })
   }
 
-  // CANCELING + saldo cobre TODO o novo plano: não há sub p/ editar (foi deletada no cancelamento)
-  // e o checkout não cria sub de graça → exigiria recriar via token (feature reactivate, futura).
-  // Por ora, não cobra: informa que o saldo cobre o plano e o acesso atual está mantido. (#2)
+  const proration = change.proration
+
+  // CANCELING + saldo cobre TODO o novo plano: não há sub p/ editar (foi deletada no cancelamento).
+  // #2b — REATIVAÇÃO via token: recria a assinatura com o creditCardToken salvo + nextDueDate =
+  // data de cobertura do saldo → NÃO cobra agora, troca o plano de verdade. Sem token (legado/
+  // captura falhou) → mensagem honesta (A), sem cobrar errado.
   if (change.action === 'credit_covered' && !profile.asaasSubscriptionId) {
+    const token = profile.asaasCardToken
+    const coverageNextDue = change.nextChargeDate // YYYY-MM-DD (saldo em tempo)
+    if (token && profile.asaasCustomerId && coverageNextDue && proration) {
+      const sSupa = getServiceSupabase() ?? supabase
+      try {
+        const newSub = await createSubscriptionWithToken({
+          customerId: profile.asaasCustomerId,
+          value: proration.originalPrice, // preço CHEIO do novo plano (recorrente)
+          cycle,
+          nextDueDate: coverageNextDue,
+          creditCardToken: token,
+          description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
+          externalReference: buildExternalReference(profile.profileId, plan, cycle),
+        })
+        const planConfig = (await import('@/lib/plan-definitions')).PLANS[plan as PlanId]
+        const expiry = expiryFromNextDueDate(coverageNextDue) ?? new Date(`${coverageNextDue}T00:00:00.000Z`).toISOString()
+        const { data: rows, error: upErr } = await sSupa
+          .from('profiles')
+          .update({
+            plan: plan as PlanId,
+            plan_cycle: cycle,
+            plan_status: 'active',
+            plan_expires_at: expiry,
+            asaas_subscription_id: newSub.id,
+            responses_limit: planConfig?.maxResponses ?? 100,
+            responses_used: 0,
+            limit_alert_sent: false,
+          })
+          .eq('id', profile.profileId)
+          .select('id')
+        if (upErr || !rows || rows.length !== 1) {
+          // Sub criada mas profile não persistiu → cancela a sub nova p/ NÃO cobrar no futuro.
+          logError('[checkout] Reativação: sub criada mas profile não persistiu — cancelando a sub nova', upErr, { userId: profile.profileId, newSub: newSub.id })
+          await cancelSubscription(newSub.id).catch(() => {})
+          return NextResponse.json({ error: 'Não foi possível reativar agora. Tente novamente.' }, { status: 500 })
+        }
+        await reconcileActiveSubscriptions(profile.asaasCustomerId, newSub.id)
+        log('[checkout] Reativação via token — plano trocado SEM cobrança agora', { userId: profile.profileId, plan, cycle, newSub: newSub.id, nextDueDate: coverageNextDue })
+        return NextResponse.json({ status: 'success', coveredByCredit: true, reactivated: true, nextChargeDate: coverageNextDue, proration })
+      } catch (err) {
+        logError('[checkout] Reativação via token falhou — caindo na mensagem (sem cobrar)', err, { userId: profile.profileId, plan, cycle })
+        // segue p/ a mensagem (não cobra errado)
+      }
+    }
     const expiresFmt = profile.plan_expires_at
       ? new Date(profile.plan_expires_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
       : null
@@ -152,7 +199,6 @@ export async function POST(
     })
   }
 
-  const proration = change.proration
   let checkoutValue: number | undefined
 
   if (proration) {

@@ -213,6 +213,45 @@ export async function getCustomerSubscriptions(customerId: string) {
   return data.data ?? []
 }
 
+/**
+ * Cria assinatura recorrente reutilizando o creditCardToken JÁ existente do cliente (tokenização
+ * por cliente — o token substitui os dados completos do cartão). Com nextDueDate FUTURO, a 1ª
+ * cobrança só ocorre nessa data (não cobra agora). Usado na REATIVAÇÃO pós-cancelamento quando o
+ * saldo cobre o novo plano (a sub foi deletada no cancelamento, então recriamos). (#2b, 2026-06-08.)
+ */
+export async function createSubscriptionWithToken(params: {
+  customerId: string
+  value: number
+  cycle: BillingCycle
+  nextDueDate: string
+  creditCardToken: string
+  description: string
+  externalReference?: string
+}): Promise<{ id: string }> {
+  const { customerId, value, cycle, nextDueDate, creditCardToken, description, externalReference } = params
+  const payload = {
+    customer: customerId,
+    billingType: 'CREDIT_CARD',
+    value,
+    nextDueDate,
+    cycle,
+    description,
+    creditCardToken,
+    ...(externalReference ? { externalReference } : {}),
+  }
+  const data = await asaasFetch('/subscriptions', { method: 'POST', body: JSON.stringify(payload) })
+  return { id: data.id }
+}
+
+/**
+ * Extrai o creditCardToken de uma assinatura (campo creditCard.creditCardToken da resposta do
+ * Asaas), p/ guardar no perfil e reutilizar na reativação. Retorna null se ausente. (#2b)
+ */
+export function extractCardToken(subscription: unknown): string | null {
+  const cc = (subscription as { creditCard?: { creditCardToken?: string } } | null)?.creditCard
+  return cc?.creditCardToken ?? null
+}
+
 /** Cancela assinatura */
 export async function cancelSubscription(subscriptionId: string): Promise<{ deleted: boolean; id: string }> {
   const res = await asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' })

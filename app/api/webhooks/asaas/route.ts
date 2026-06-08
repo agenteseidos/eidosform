@@ -723,7 +723,7 @@ export async function POST(req: NextRequest) {
         const deletedSubId = subscription?.id ?? null
         const { data: deletedProfile } = await supabase
           .from('profiles')
-          .select('asaas_subscription_id, plan')
+          .select('asaas_subscription_id, plan, plan_status, plan_expires_at')
           .eq('id', user.id)
           .single()
 
@@ -742,6 +742,26 @@ export async function POST(req: NextRequest) {
             eventSubscriptionId: deletedSubId,
             activeSubscriptionId: deletedProfile?.asaas_subscription_id ?? null,
           })
+          break
+        }
+
+        // Cancelamento iniciado pelo USUÁRIO (plan_status='canceling') com período ainda
+        // vigente: mantém o acesso até plan_expires_at (promessa "até o fim do período").
+        // Só desvincula a sub; a reversão p/ free acontece na expiração (lib/plan-features).
+        // NÃO rebaixa nem pausa forms agora. (P1, audit Codex 2026-06-08.)
+        if (
+          deletedProfile?.plan_status === 'canceling' &&
+          deletedProfile?.plan_expires_at &&
+          new Date(deletedProfile.plan_expires_at).getTime() > Date.now()
+        ) {
+          const { error: softErr } = await supabase
+            .from('profiles')
+            .update({ asaas_subscription_id: null })
+            .eq('id', user.id)
+          if (softErr) logError('[asaas-webhook] SUBSCRIPTION_DELETED (canceling) — falha ao desvincular sub', softErr, { userId: user.id })
+          await updateCheckoutLink({ customerId, subscriptionId: subscription?.id ?? null, externalReference: subscription?.externalReference ?? null, event, status: 'cancelled' })
+          log('[asaas-webhook] SUBSCRIPTION_DELETED — cancelamento do usuário; acesso mantido até o fim do período', { userId: user.id, expiresAt: deletedProfile.plan_expires_at })
+          await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: user.plan ?? 'starter' }).catch((err) => logError('Failed to send plan cancellation email', err))
           break
         }
 

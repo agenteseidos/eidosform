@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { cancelSubscription } from '@/lib/asaas'
-import { logError } from '@/lib/logger'
+import { logError, logWarn } from '@/lib/logger'
 
 export async function POST() {
   const supabase = await createClient()
@@ -18,12 +18,24 @@ export async function POST() {
     .eq('id', user.id)
     .single()
 
-  // Cancel Asaas subscription if one exists and isn't already cancelled
+  // Cancela a assinatura no Asaas ANTES de deletar a conta. FAIL-CLOSED (P0, audit Codex
+  // 2026-06-08): se o cancelamento falhar, NÃO deleta a conta — senão o profile/auth some
+  // mas a assinatura segue ACTIVE no gateway e o cliente continua sendo cobrado, sem estado
+  // local pra reconciliar. 404 (já removida) é tratado como sucesso (idempotente).
   if (profile?.asaas_subscription_id && profile.plan_status !== 'cancelled') {
     try {
       await cancelSubscription(profile.asaas_subscription_id)
     } catch (err) {
-      logError('Asaas cancel on delete failed', err, { subscriptionId: profile.asaas_subscription_id, userId: user.id })
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/error 404/i.test(msg)) {
+        logWarn('Asaas sub já removida (404) na deleção — prosseguindo', { subscriptionId: profile.asaas_subscription_id, userId: user.id })
+      } else {
+        logError('Asaas cancel on delete FAILED — abortando deleção (fail-closed)', err, { subscriptionId: profile.asaas_subscription_id, userId: user.id })
+        return NextResponse.json(
+          { error: 'Não foi possível cancelar sua assinatura no provedor de pagamento agora. Sua conta NÃO foi deletada (para evitar cobrança indevida). Tente novamente em instantes.' },
+          { status: 502 }
+        )
+      }
     }
   }
 

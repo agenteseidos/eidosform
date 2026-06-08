@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PLAN_ORDER, PlanId } from '@/lib/plans'
 import { getAdminSupabase, requireAdmin } from '@/lib/admin-auth'
 import { PLANS, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { log } from '@/lib/logger'
+import { cancelSubscription } from '@/lib/asaas'
+import { log, logError, logWarn } from '@/lib/logger'
 
 function isValidPlan(value: unknown): value is PlanId {
   return typeof value === 'string' && (PLAN_ORDER as readonly string[]).includes(value)
@@ -69,13 +70,36 @@ export async function PATCH(
     // Fetch current plan to determine if this is an upgrade or downgrade
     const { data: currentProfile } = await supabase
       .from('profiles')
-      .select('plan')
+      .select('plan, asaas_subscription_id')
       .eq('id', id)
       .single()
 
     const currentPlan = (currentProfile?.plan as PlanId) ?? 'free'
+    const currentSub = (currentProfile as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id ?? null
     const planConfig = PLANS[newPlan]
     const isDowngrade = PLAN_ORDER.indexOf(newPlan) < PLAN_ORDER.indexOf(currentPlan)
+
+    // P0 (audit Codex 2026-06-08): ao mover pra FREE, cancelar a assinatura no Asaas ANTES
+    // de limpar o asaas_subscription_id local. Sem isto, o profile vira free/cancelled mas a
+    // cobrança recorrente segue ATIVA no gateway (cobrança fantasma). FAIL-CLOSED: se o
+    // cancelamento falhar (≠404), NÃO aplica o downgrade. 404 = já removida (idempotente).
+    if (newPlan === 'free' && currentSub) {
+      try {
+        await cancelSubscription(currentSub)
+        log('[admin/plan] Assinatura cancelada no Asaas ao mover usuário p/ free', { userId: id, subscriptionId: currentSub })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/error 404/i.test(msg)) {
+          logWarn('[admin/plan] Sub já removida no Asaas (404) — prosseguindo com o downgrade', { userId: id, subscriptionId: currentSub })
+        } else {
+          logError('[admin/plan] Falha ao cancelar assinatura no Asaas — downgrade NÃO aplicado (fail-closed)', err, { userId: id, subscriptionId: currentSub })
+          return NextResponse.json(
+            { error: 'Falha ao cancelar a assinatura no Asaas. Downgrade NÃO aplicado para evitar cobrança ativa órfã. Tente novamente.' },
+            { status: 502 }
+          )
+        }
+      }
+    }
 
     // Build plan_expires_at update logic:
     // - new plan === 'free': always force null (free has no expiration)

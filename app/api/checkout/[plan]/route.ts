@@ -180,6 +180,22 @@ export async function POST(
           return NextResponse.json({ error: 'Não foi possível reativar agora. Tente novamente.' }, { status: 500 })
         }
         await reconcileActiveSubscriptions(profile.asaasCustomerId, newSub.id)
+        // Marca um checkout 'paid' do novo plano p/ o overlay de sucesso (que pollla
+        // /api/checkout/status) CASAR com starter/active — senão ele pega o último checkout
+        // (o cancelado) e mostra "Checkout cancelado" mesmo com a troca OK. (bugfix overlay.)
+        await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+          .from('billing_checkouts')
+          .upsert({
+            profile_id: profile.profileId,
+            checkout_id: `reactivate-${profile.profileId}-${newSub.id}`,
+            asaas_customer_id: profile.asaasCustomerId,
+            asaas_subscription_id: newSub.id,
+            plan,
+            cycle,
+            status: 'paid',
+            last_event: 'REACTIVATE_COVERED',
+            payment_method: 'reactivate_credit_time',
+          }, { onConflict: 'checkout_id' })
         log('[checkout] Reativação via token — plano trocado SEM cobrança agora', { userId: profile.profileId, plan, cycle, newSub: newSub.id, nextDueDate: coverageNextDue })
         return NextResponse.json({ status: 'success', coveredByCredit: true, reactivated: true, nextChargeDate: coverageNextDue, proration })
       } catch (err) {

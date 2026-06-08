@@ -45,14 +45,21 @@ export async function POST() {
   // não manteria o acesso até o fim do período (quebra a promessa). Cadeia de fallback:
   // nextDueDate/endDate do Asaas (fim-de-dia BRT) → valor local → now+ciclo (sempre futuro).
   const cycle = (profile.plan_cycle ?? 'MONTHLY') as BillingCycle
-  let resolvedExpiresAt = profile.plan_expires_at as string | null
+  // Só aceita o plan_expires_at local se for FUTURO. Gravar expiração passada faria o webhook
+  // SUBSCRIPTION_DELETED não entrar no soft-cancel (exige período vigente) e rebaixar imediato,
+  // tirando acesso que o usuário ainda pagou. (P2, audit Codex 2026-06-08.) Garante data futura.
+  const localFutureExpiry =
+    profile.plan_expires_at && new Date(profile.plan_expires_at).getTime() > Date.now()
+      ? (profile.plan_expires_at as string)
+      : null
+  let resolvedExpiresAt: string
   try {
     const sub = (await getSubscription(profile.asaas_subscription_id)) as { endDate?: string; nextDueDate?: string }
     const candidate = sub?.endDate ?? sub?.nextDueDate
-    resolvedExpiresAt = expiryFromNextDueDate(candidate) ?? resolvedExpiresAt ?? calculateExpiryDate(cycle)
+    resolvedExpiresAt = expiryFromNextDueDate(candidate) ?? localFutureExpiry ?? calculateExpiryDate(cycle)
   } catch (err) {
-    resolvedExpiresAt = resolvedExpiresAt ?? calculateExpiryDate(cycle)
-    logWarn('[subscription/cancel] Não resolveu endDate do Asaas (pré-delete) — usando fallback local', { error: err instanceof Error ? err.message : String(err) })
+    resolvedExpiresAt = localFutureExpiry ?? calculateExpiryDate(cycle)
+    logWarn('[subscription/cancel] Não resolveu endDate do Asaas (pré-delete) — usando fallback futuro', { error: err instanceof Error ? err.message : String(err) })
   }
 
   // Persiste 'canceling' + a expiração resolvida ANTES do DELETE (service-role; checa linhas).

@@ -101,19 +101,27 @@ async function resolveBillingContext(params: {
   customerId?: string
   subscriptionId?: string | null
   externalReference?: string | null
+  /** Plano/ciclo REALMENTE pagos — derivados do VALOR da assinatura paga pelo handler.
+   *  Fonte primária de desambiguação (o Asaas NÃO persiste nosso externalReference no
+   *  checkout hospedado — confirmado no smoke 2026-06-08). */
+  intentPlan?: string | null
+  intentCycle?: string | null
 }) {
   const supabase = getSupabase()
-  const { customerId, subscriptionId, externalReference } = params
+  const { customerId, subscriptionId, externalReference, intentPlan, intentCycle } = params
   const COLS = 'id, profile_id, plan, cycle, checkout_id, asaas_customer_id, asaas_subscription_id, status, created_at'
-  // externalReference=`profile:{id}|plan:{plan}|cycle:{cycle}` (plantado na criação, P1 round 3):
-  // identifica o DONO E A INTENÇÃO (plano/ciclo realmente pagos), sem depender de adivinhar
-  // o checkout certo por customer+created_at. (audit Codex 2026-06-07.)
-  const intent = parseExternalReference(externalReference)
-  const refProfileId = intent.profileId
+  // Intenção do que foi pago: prioriza intentPlan/intentCycle (valor da sub); externalReference
+  // fica como fallback legado (não confiável no hosted checkout). O DONO sai do customer
+  // (1 customer ↔ 1 profile), então não é ambíguo — só o checkout/plano precisa de cuidado.
+  const parsed = parseExternalReference(externalReference)
+  const refProfileId = parsed.profileId
+  const wantPlan = intentPlan ?? parsed.plan
+  const wantCycle = intentCycle ?? parsed.cycle
+  const ACTIVEISH = ['pending', 'paid'] // ignora cancelled/recovering na resolução
 
   let checkoutLink: ResolvedCheckoutLink | null = null
 
-  // (1) Por subscription — sinal mais forte quando presente.
+  // (1) Por subscription — sinal mais forte quando a sub já está vinculada à linha.
   if (subscriptionId) {
     const { data } = await supabase
       .from('billing_checkouts')
@@ -126,17 +134,17 @@ async function resolveBillingContext(params: {
     if (data) checkoutLink = data as ResolvedCheckoutLink
   }
 
-  // (2a) Por intenção EXATA (dono + plano + ciclo): casa a linha de checkout que
-  //      corresponde ao que foi REALMENTE pago, mesmo com vários checkouts pendentes do
-  //      mesmo profile (o usuário pode ter pago um link antigo). Match exato → não ativa
-  //      no escuro pelo "mais recente". (P1 round 3.)
-  if (!checkoutLink && refProfileId && intent.plan && intent.cycle) {
+  // (2) Por INTENÇÃO EXATA (customer + plano + ciclo realmente pagos): casa a linha do
+  //     checkout correspondente ao que foi pago, mesmo com vários pendentes do mesmo
+  //     customer (o usuário pode ter pago um link antigo). Match exato → não pega o errado.
+  if (!checkoutLink && customerId && wantPlan && wantCycle) {
     const { data } = await supabase
       .from('billing_checkouts')
       .select(COLS)
-      .eq('profile_id', refProfileId)
-      .eq('plan', intent.plan)
-      .eq('cycle', intent.cycle)
+      .eq('asaas_customer_id', customerId)
+      .eq('plan', wantPlan)
+      .eq('cycle', wantCycle)
+      .in('status', ACTIVEISH)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -144,38 +152,24 @@ async function resolveBillingContext(params: {
     if (data) checkoutLink = data as ResolvedCheckoutLink
   }
 
-  // (2b) Por externalReference (só dono) — escopa ao profile certo quando a intenção não
-  //      trouxe plano/ciclo (ex.: assinatura legada sem o formato novo).
-  if (!checkoutLink && refProfileId) {
-    const { data } = await supabase
-      .from('billing_checkouts')
-      .select(COLS)
-      .eq('profile_id', refProfileId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (data) checkoutLink = data as ResolvedCheckoutLink
-  }
-
-  // (3) Fallback por customer — agora DETECTA AMBIGUIDADE: vários checkouts recentes do
-  //     mesmo customer com planos diferentes e sub ainda nula → resolver por created_at
-  //     pode pegar o errado. Sem externalReference pra desambiguar, loga alto (não ativa
-  //     no escuro com falsa confiança).
+  // (3) Fallback por customer — linha ATIVA mais recente. Ambiguidade só conta entre
+  //     candidatos ATIVOS (cancelled/recovering não entram). Mesmo ambíguo, a ATIVAÇÃO
+  //     continua determinística (plan/cycle vem do valor da sub no handler); aqui o risco
+  //     é só de bookkeeping, por isso só logamos.
   if (!checkoutLink && customerId) {
     const { data: candidates } = await supabase
       .from('billing_checkouts')
       .select(COLS)
       .eq('asaas_customer_id', customerId)
-      .or(subscriptionId ? `asaas_subscription_id.eq.${subscriptionId},asaas_subscription_id.is.null` : 'asaas_subscription_id.is.null')
+      .in('status', ACTIVEISH)
       .order('created_at', { ascending: false })
       .limit(5)
 
     const rows = (candidates ?? []) as ResolvedCheckoutLink[]
-    if (rows.length > 1 && !refProfileId) {
+    if (rows.length > 1) {
       const distinct = new Set(rows.map((r) => `${r.plan}:${r.cycle}`))
       if (distinct.size > 1) {
-        logWarn('[asaas-webhook] resolveBillingContext AMBÍGUO — múltiplos checkouts recentes do customer com planos diferentes e sub nula; resolução por created_at pode pegar o errado', {
+        logWarn('[asaas-webhook] resolveBillingContext AMBÍGUO — múltiplos checkouts ATIVOS do customer com planos diferentes; bookkeeping pode pegar o errado (ativação segue determinística pelo valor da sub)', {
           customerId,
           subscriptionId: subscriptionId ?? null,
           candidates: rows.map((r) => ({ plan: r.plan, cycle: r.cycle, status: r.status, created_at: r.created_at })),
@@ -187,7 +181,6 @@ async function resolveBillingContext(params: {
 
   let user: ResolvedUser | null = null
 
-  // externalReference é AUTORITATIVO pro dono — prevalece sobre o customer-fallback.
   if (refProfileId) {
     user = await getProfileById(refProfileId)
   }
@@ -392,32 +385,6 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
-        // DIAGNÓSTICO SMOKE (sandbox): loga o externalReference do PAGAMENTO E o da própria
-        // ASSINATURA (getSubscription). Decide de vez se o Asaas propaga p/ o evento de
-        // pagamento e/ou se ao menos guardou no objeto da assinatura. (2026-06-07)
-        try {
-          let subExternalRef: string | null = null
-          let subValue: number | null = null
-          let subCycle: string | null = null
-          if (payment?.subscription) {
-            const s = (await getSubscription(payment.subscription)) as { externalReference?: string; value?: number; cycle?: string }
-            subExternalRef = s?.externalReference ?? null
-            subValue = typeof s?.value === 'number' ? s.value : null
-            subCycle = s?.cycle ?? null
-          }
-          log('[asaas-webhook][SMOKE] payment+subscription', {
-            event,
-            customerId,
-            subscription: payment?.subscription ?? null,
-            paymentExternalReference: payment?.externalReference ?? null,
-            subscriptionExternalReference: subExternalRef,
-            subValue,
-            subCycle,
-          })
-        } catch (e) {
-          logError('[asaas-webhook][SMOKE] falha ao ler a assinatura no diagnóstico', e, { subscription: payment?.subscription ?? null })
-        }
-
         // Fluxo de assinatura: TODO pagamento recorrente carrega payment.subscription.
         // Sem ela, não dá pra cancelar/reconciliar/corrigir a sub depois — ativar seria
         // criar um estado órfão. Manda pra DLQ (throw → failed) p/ revisão. (P2c round 3.)
@@ -425,10 +392,30 @@ export async function POST(req: NextRequest) {
           throw new Error(`PAYMENT_CONFIRMED/RECEIVED sem payment.subscription (customer ${customerId}) — não ativa; enviado p/ DLQ`)
         }
 
+        // FONTE DA VERDADE = a ASSINATURA PAGA. O Asaas NÃO persiste o nosso externalReference
+        // no checkout hospedado (smoke 2026-06-08: payment.externalReference e
+        // subscription.externalReference vêm null). Então lemos value+cycle da própria
+        // assinatura e mapeamos pro plano (preços são únicos → determinístico). Isso
+        // desambigua checkouts concorrentes E cobre renovações (que não têm checkout record).
+        // Em proration-checkout o value é prorateado (não mapeia) → cai no checkout record.
+        let subValue: number | null = null
+        let subCycle: string | null = null
+        try {
+          const s = (await getSubscription(payment.subscription)) as { value?: number; cycle?: string }
+          subValue = typeof s?.value === 'number' ? s.value : null
+          subCycle = s?.cycle ?? null
+        } catch (e) {
+          logError('[asaas-webhook] falha ao ler a assinatura paga (segue p/ fallbacks)', e, { subscription: payment.subscription })
+        }
+        const paid = subValue != null ? detectPlanAndCycle(subValue) : null
+        log('[asaas-webhook] assinatura paga', { subscription: payment.subscription, subValue, subCycle, resolvedFromValue: paid })
+
         const { user, checkoutLink } = await resolveBillingContext({
           customerId,
-          subscriptionId: payment?.subscription ?? null,
+          subscriptionId: payment.subscription,
           externalReference: payment?.externalReference ?? null,
+          intentPlan: paid?.plan ?? null,
+          intentCycle: paid?.cycle ?? null,
         })
         if (!user) {
           logWarn('[asaas-webhook] User not found for payment context', {
@@ -497,10 +484,12 @@ export async function POST(req: NextRequest) {
         }
 
         // Fonte da verdade pra plan/cycle, em ordem de confiabilidade:
-        //  1. INTENÇÃO no externalReference (`...|plan:..|cycle:..`): é o que foi REALMENTE
-        //     pago — desambigua múltiplos checkouts pendentes do mesmo profile (P1 round 3).
-        //  2. checkout record (linha casada) — lida com valores prorateados.
-        //  3. detecção por valor / metadados do Asaas — fallback legado.
+        //  1. INTENÇÃO no externalReference — legado; o Asaas não persiste no hosted checkout,
+        //     então quase sempre vazio. Mantido caso volte a funcionar / Caminho D via PUT.
+        //  2. VALOR DA ASSINATURA PAGA (`paid`) — fonte determinística: o preço da sub mapeia
+        //     1:1 pro plano. Desambigua checkouts concorrentes e cobre renovações. (Pivô 2026-06-08.)
+        //  3. checkout record (linha casada) — proration-checkout (valor prorateado não mapeia).
+        //  4. detecção por valor do pagamento / metadados do Asaas — último recurso.
         const intent = parseExternalReference(payment?.externalReference)
         let plan: string
         let cycle: 'MONTHLY' | 'YEARLY'
@@ -508,10 +497,14 @@ export async function POST(req: NextRequest) {
           plan = intent.plan
           cycle = intent.cycle as 'MONTHLY' | 'YEARLY'
           log('[asaas-webhook] Using plan/cycle from externalReference intent (autoritativo)', { plan, cycle })
+        } else if (paid) {
+          plan = paid.plan
+          cycle = paid.cycle
+          log('[asaas-webhook] Using plan/cycle from paid subscription value (determinístico)', { plan, cycle, subValue })
         } else if (checkoutLink?.plan && checkoutLink?.cycle) {
           plan = checkoutLink.plan
           cycle = checkoutLink.cycle as 'MONTHLY' | 'YEARLY'
-          log('[asaas-webhook] Using plan/cycle from checkout record', { plan, cycle })
+          log('[asaas-webhook] Using plan/cycle from checkout record (proration/fallback)', { plan, cycle })
         } else {
           const detected = detectPlanAndCycle(payment.value)
           if (detected) {

@@ -32,12 +32,22 @@ const cycleUp = computePlanChange({
 assert(cycleUp.action !== 'downgrade_scheduled', 'mensal→anual NÃO é downgrade')
 assert(cycleUp.shouldApplyProration === true, 'mensal→anual aplica proration (upgrade de ciclo)')
 
-// Downgrade de TIER (plus→starter, mesmo ciclo) = downgrade honesto
+// Downgrade de TIER (plus→starter) agora é LIBERADO (não mais downgrade_scheduled): flui pela
+// proration/Caminho D — o saldo do Plus vira tempo de Starter. (decisão Sidney 2026-06-08.)
 const tierDown = computePlanChange({
   currentPlan: 'plus', currentCycle: 'MONTHLY', planExpiresAt: future,
   hasActiveSubscription: true, newPlan: 'starter', newCycle: 'MONTHLY',
 })
-assert(tierDown.action === 'downgrade_scheduled', 'plus→starter = downgrade_scheduled')
+assert(tierDown.action !== 'downgrade_scheduled', 'plus→starter NÃO é mais bloqueado (downgrade liberado)')
+assert(tierDown.isPlanDowngrade === true, 'plus→starter é downgrade de tier (flag)')
+assert(tierDown.action === 'credit_covered', 'plus→starter com saldo = credit_covered (Caminho D)')
+
+// Downgrade de CICLO (anual→mensal MESMO plano) CONTINUA como mensagem honesta (não liberado)
+const cycleDownStill = computePlanChange({
+  currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: future,
+  hasActiveSubscription: true, newPlan: 'plus', newCycle: 'MONTHLY',
+})
+assert(cycleDownStill.action === 'downgrade_scheduled', 'anual→mensal mesmo plano segue downgrade_scheduled')
 
 // Upgrade de TIER (starter→plus) NÃO é downgrade
 const tierUp = computePlanChange({

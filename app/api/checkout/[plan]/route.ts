@@ -412,15 +412,23 @@ export async function POST(
       )
     }
 
-    // 4) Processar upgrade (despausar forms, etc.)
+    // 4) Reconciliar limites de forms: DOWNGRADE pausa os excedentes (handleDowngrade); upgrade
+    //    despausa (handleUpgrade). Best-effort (os gates de plano efetivo já protegem mesmo se
+    //    falhar). (downgrade liberado — decisão Sidney 2026-06-08.)
     try {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
       if (serviceKey) {
-        const upgrade = await (await import('@/lib/plan-limits')).handleUpgrade(profile.profileId, serviceKey)
-        log('[checkout] Caminho D — upgrade processado', { userId: profile.profileId, unpausedForms: upgrade.unpausedCount })
+        const pl = await import('@/lib/plan-limits')
+        if (change.isPlanDowngrade) {
+          const dg = await pl.handleDowngrade(profile.profileId, serviceKey)
+          log('[checkout] Caminho D — DOWNGRADE: forms excedentes pausados', { userId: profile.profileId, pausedForms: dg.pausedCount })
+        } else {
+          const up = await pl.handleUpgrade(profile.profileId, serviceKey)
+          log('[checkout] Caminho D — upgrade processado', { userId: profile.profileId, unpausedForms: up.unpausedCount })
+        }
       }
     } catch (err) {
-      logError('[checkout] handleUpgrade falhou (Caminho D)', err)
+      logError('[checkout] handleUpgrade/Downgrade falhou (Caminho D)', err)
     }
 
     // Reconciliar: limpa assinaturas órfãs do cliente, MANTENDO a editada (a sub

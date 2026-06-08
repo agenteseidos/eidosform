@@ -4,7 +4,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { PLAN_ORDER, normalizePlan } from '@/lib/plans'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Loader2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Loader2, AlertTriangle } from 'lucide-react'
 import { BillingFieldsDialog } from '@/components/billing/billing-fields-dialog'
 import { createClient } from '@/lib/supabase/client'
 
@@ -33,6 +34,7 @@ interface PreviewResponse {
   currentCycle: string | null
   newPlan: string
   newCycle: string
+  isPlanDowngrade?: boolean
   proration: { credit: number; originalPrice: number; finalPrice: number } | null
   amountDueNow: number
   coveredByCredit: boolean
@@ -82,6 +84,7 @@ function CheckoutContent() {
 
   const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing' | 'confirm' | 'downgrade' | 'covered'>('loading')
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
+  const [downgradeConfirmText, setDowngradeConfirmText] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [missingFields, setMissingFields] = useState<string[]>([])
   const [profileData, setProfileData] = useState<ProfileFields>(EMPTY_PROFILE)
@@ -323,12 +326,47 @@ function CheckoutContent() {
               </p>
             )}
           </div>
+
+          {/* DOWNGRADE: aviso de perdas + dupla-confirmação (digitar o nome do plano destino) */}
+          {preview.isPlanDowngrade && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-amber-900">
+                  <p className="font-semibold mb-1">Você está reduzindo de plano.</p>
+                  <p className="text-amber-800 leading-relaxed">
+                    Ao mudar para <strong>{cap(preview.newPlan)}</strong> você perde, na hora, os recursos
+                    exclusivos do {cap(preview.currentPlan)} — como rastreamento (Meta/Google&nbsp;Ads/TikTok&nbsp;Pixel),
+                    webhooks e remoção da marca d&apos;água. Formulários e respostas acima do limite do {cap(preview.newPlan)}
+                    podem ser <strong>pausados ou bloqueados</strong>.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-amber-900 mb-2">
+                  Para confirmar, digite <span className="font-mono bg-amber-100 px-1 rounded">{preview.newPlan.toUpperCase()}</span>:
+                </p>
+                <Input
+                  value={downgradeConfirmText}
+                  onChange={e => setDowngradeConfirmText(e.target.value)}
+                  placeholder={preview.newPlan.toUpperCase()}
+                  className="font-mono bg-white"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3">
             <Button variant="outline" onClick={() => router.push('/billing')} className="flex-1">
               Cancelar
             </Button>
-            <Button onClick={() => startCheckout()} className="flex-1 bg-[#F5B731] hover:bg-[#F5B731]/90 text-black font-semibold">
-              Confirmar
+            <Button
+              onClick={() => startCheckout()}
+              disabled={preview.isPlanDowngrade && downgradeConfirmText.trim().toUpperCase() !== preview.newPlan.toUpperCase()}
+              className="flex-1 bg-[#F5B731] hover:bg-[#F5B731]/90 text-black font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {preview.isPlanDowngrade ? 'Confirmar downgrade' : 'Confirmar'}
             </Button>
           </div>
         </div>

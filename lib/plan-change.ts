@@ -32,6 +32,7 @@ export interface PlanChangeResult {
   newPlan: string
   newCycle: BillingCycle
   isPlanUpgrade: boolean
+  isPlanDowngrade: boolean
   isCycleChange: boolean
   shouldApplyProration: boolean
   proration: { credit: number; originalPrice: number; finalPrice: number } | null
@@ -59,7 +60,12 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
   // (#5, decisão Sidney 2026-06-08.)
   const isCycleDowngrade = isCycleChange && currentCycle === 'YEARLY' && newCycle === 'MONTHLY'
   const isPlanUpgrade = currentPlan !== newPlan && isUpgrade(currentPlan as PlanId, newPlan)
-  const shouldApplyProration = (isCycleChange && !isCycleDowngrade) || isPlanUpgrade
+  // Downgrade de TIER (ex.: Plus→Starter) agora é LIBERADO (decisão Sidney 2026-06-08): aplica
+  // proration (o saldo do plano atual vira tempo do plano menor) e flui pelo Caminho D, como um
+  // upgrade. O usuário perde os recursos do plano superior NA HORA (pixels, webhooks, marca
+  // d'água, forms acima do limite pausam) — por isso a UI exige dupla-confirmação + aviso.
+  const isTierDowngrade = currentPlan !== newPlan && !isPlanUpgrade
+  const shouldApplyProration = (isCycleChange && !isCycleDowngrade) || isPlanUpgrade || isTierDowngrade
 
   const base = {
     currentPlan,
@@ -67,6 +73,7 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
     newPlan,
     newCycle,
     isPlanUpgrade,
+    isPlanDowngrade: isTierDowngrade,
     isCycleChange,
     shouldApplyProration,
     proration: null as PlanChangeResult['proration'],
@@ -81,8 +88,10 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
     return { ...base, action: 'already_subscribed' }
   }
 
-  // Downgrade → mensagem honesta (cancelar e reassinar): tier menor OU ciclo anual→mensal.
-  if (hasActiveSubscription && ((currentPlan !== newPlan && !isPlanUpgrade) || isCycleDowngrade)) {
+  // Downgrade de CICLO (anual→mensal do MESMO plano) segue como mensagem honesta — mid-annual→
+  // mensal não faz sentido financeiro (já pagou o ano); agendamento fica no backlog. O downgrade
+  // de TIER NÃO é mais interceptado aqui: flui pela proration/Caminho D abaixo (liberado).
+  if (hasActiveSubscription && isCycleDowngrade) {
     return { ...base, action: 'downgrade_scheduled' }
   }
 

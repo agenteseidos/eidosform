@@ -160,10 +160,14 @@ export function BillingPlans({ currentPlan, currentCycle, planStatus }: BillingP
           const isMonthlyToAnnualSamePlan = isCurrentPlan && isPaidPlan && currentCycle === 'MONTHLY' && currentBillingCycle === 'YEARLY'
           const isUnknownCyclePaidPlan = isCurrentPlan && isPaidPlan && !currentCycle
           const isFreeCurrentPlan = isCurrentPlan && plan.id === 'free'
+          // DOWNGRADE de tier liberado (decisão Sidney 2026-06-08): um plano PAGO menor que o
+          // atual é um alvo de downgrade clicável (Starter quando no Plus). Free só via
+          // cancelamento; troca de ciclo anual→mensal do mesmo plano segue desabilitada (mensagem).
+          const isLowerPaidPlan = isLowerPlan && isPaidPlan
           // Canceling: libera TODO plano pago (saldo aplica); só free fica desabilitado.
           const disabled = isCanceling
             ? plan.id === 'free'
-            : (isLowerPlan || isSamePlanAndCycle || isAnnualToMonthlySamePlan || isFreeCurrentPlan || isUnknownCyclePaidPlan)
+            : ((isLowerPlan && !isPaidPlan) || isSamePlanAndCycle || isAnnualToMonthlySamePlan || isFreeCurrentPlan || isUnknownCyclePaidPlan)
           // Badge "Mais Popular" só aparece no Plus para usuários no plano Free (social proof para conversão).
           // Quando o usuário já é pagante, o badge é ocultado intencionalmente.
           const shouldHighlight = !isCurrentPlan && plan.highlight && normalizedCurrentPlan === 'free' && plan.id === 'plus'
@@ -175,7 +179,7 @@ export function BillingPlans({ currentPlan, currentCycle, planStatus }: BillingP
               className={`relative flex h-full flex-col rounded-2xl border p-6 transition-all ${
                 isCurrentPlan
                   ? 'bg-[#1a1f35] border-[#F5B731]/50 shadow-lg shadow-[#F5B731]/10 ring-1 ring-[#F5B731]/20'
-                  : isLowerPlan && !isCanceling
+                  : isLowerPlan && !isCanceling && !isPaidPlan
                   ? 'bg-[#111827] border-white/[0.06] opacity-60'
                   : 'bg-[#111827] border-white/10 hover:border-white/20'
               }`}
@@ -202,7 +206,7 @@ export function BillingPlans({ currentPlan, currentCycle, planStatus }: BillingP
                   <h3 className="text-lg font-bold text-white">{plan.name}</h3>
                   <p className="text-sm text-slate-400">{plan.desc}</p>
                 </div>
-                {isLowerPlan && !isCanceling && (
+                {isLowerPlan && !isCanceling && !isPaidPlan && (
                   <Badge variant="secondary" className="bg-white/10 text-slate-300 border border-white/10">
                     Já incluso
                   </Badge>
@@ -258,6 +262,8 @@ export function BillingPlans({ currentPlan, currentCycle, planStatus }: BillingP
                     : isSamePlanAndCycle
                     ? `Reativar ${plan.name}`
                     : plan.cta)
+                  : isLowerPaidPlan
+                  ? `Mudar para ${plan.name}`
                   : isLowerPlan
                   ? 'Já incluso no seu plano'
                   : isFreeCurrentPlan

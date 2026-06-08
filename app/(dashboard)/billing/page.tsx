@@ -61,8 +61,8 @@ export default async function BillingPage() {
       <Card className="p-6 mb-8 bg-[#0F1629] border border-[#F5B731]/30 shadow-lg shadow-[#F5B731]/5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-semibold">Uso atual — Plano {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}</h2>
-            <p className="text-sm text-slate-500 mt-0.5">{currentPlan === 'free' ? 'Plano gratuito — sem ciclo de cobrança' : `Ciclo reinicia em ${cycleLabel}`}</p>
+            <h2 className="font-semibold text-white">Uso atual — Plano {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}</h2>
+            <p className="text-sm text-slate-300 mt-0.5">{currentPlan === 'free' ? 'Plano gratuito — sem ciclo de cobrança' : `Ciclo reinicia em ${cycleLabel}`}</p>
           </div>
           <Badge className="bg-[#F5B731]/15 text-[#F5B731] font-semibold border border-[#F5B731]/30">
             {PLAN_LABELS[currentPlan] || currentPlan}
@@ -70,8 +70,8 @@ export default async function BillingPage() {
         </div>
         <div>
           <div className="flex justify-between text-sm mb-1.5">
-            <span className="text-slate-400">Respostas recebidas</span>
-            <span className="font-semibold">{usedResponses} / {planLimit}</span>
+            <span className="text-slate-300">Respostas recebidas</span>
+            <span className="font-semibold text-white">{usedResponses} / {planLimit}</span>
           </div>
           <div className="w-full bg-slate-800 rounded-full h-2">
             <div
@@ -79,7 +79,7 @@ export default async function BillingPage() {
               style={{ width: `${Math.min((usedResponses / planLimit) * 100, 100)}%` }}
             />
           </div>
-          <p className="text-xs text-slate-500 mt-1">{planLimit - usedResponses} respostas restantes este mês</p>
+          <p className="text-xs text-slate-400 mt-1">{planLimit - usedResponses} respostas restantes este mês</p>
         </div>
       </Card>
 

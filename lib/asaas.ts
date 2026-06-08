@@ -83,10 +83,12 @@ export async function createCustomer(payload: AsaasCustomerPayload): Promise<{ i
 }
 
 /**
- * externalReference carrega a INTENÇÃO completa (dono + plano + ciclo), não só o dono.
- * Formato: `profile:{uuid}|plan:{plan}|cycle:{cycle}`. O Asaas propaga isso da assinatura
- * para os eventos PAYMENT_*, então o webhook resolve EXATAMENTE o que foi pago (mesmo que
- * o usuário tenha aberto vários checkouts e pago um link antigo). (P1 round 3, Codex 2026-06-07.)
+ * externalReference no formato `profile:{uuid}|plan:{plan}|cycle:{cycle}`.
+ * ⚠️ ATENÇÃO (smoke sandbox 2026-06-08): o Asaas NÃO persiste o externalReference quando a
+ * assinatura é criada via CHECKOUT HOSPEDADO — nem na assinatura nem nos eventos PAYMENT_*
+ * (ambos vêm null). Por isso o webhook NÃO depende mais disto: resolve plan/cycle pela
+ * própria ASSINATURA PAGA (valor cheio→plano, ou descrição em proration). Mantido como
+ * fallback legado e porque o Caminho D seta via PUT direto na sub (que pode persistir).
  */
 export function buildExternalReference(profileId: string, plan?: string, cycle?: string): string {
   let ref = `profile:${profileId}`
@@ -122,9 +124,9 @@ export async function createCheckout(params: {
   expiredUrl: string
   customerId: string
   customValue?: number
-  /** Ex.: `profile:{id}` — propaga p/ a assinatura e p/ os eventos de pagamento,
-   *  permitindo resolução INEQUÍVOCA do dono no webhook (não depende de adivinhar
-   *  o checkout certo por customer+created_at). Audit Codex 2026-06-07 (P2-5). */
+  /** `profile:{id}|plan:..|cycle:..` — ⚠️ o Asaas NÃO persiste isto no checkout hospedado
+   *  (smoke 2026-06-08). Enviado mesmo assim (inofensivo) por defesa/futuro; o webhook
+   *  resolve plan/cycle pela assinatura paga, não por aqui. */
   externalReference?: string
 }): Promise<{ id: string; url: string }> {
   const { plan, cycle, successUrl, cancelUrl, expiredUrl, customerId, customValue, externalReference } = params
@@ -143,10 +145,9 @@ export async function createCheckout(params: {
     customer: customerId,
     billingTypes: ['CREDIT_CARD'],
     chargeTypes: ['RECURRENT'],
-    // externalReference no topo (checkout) E na subscription: o Asaas propaga p/ a
-    // assinatura criada e p/ os eventos PAYMENT_* (payment.externalReference), tornando
-    // a resolução do dono inequívoca no webhook. Aditivo — se ignorado em um nível,
-    // o outro ainda vale. (P2-5, audit Codex 2026-06-07.)
+    // externalReference no topo e na subscription. ⚠️ Na prática o Asaas IGNORA isto no
+    // checkout hospedado (smoke 2026-06-08: vem null na sub e no pagamento). Enviado por
+    // defesa/futuro; o webhook resolve plan/cycle pela assinatura paga (valor/descrição).
     ...(externalReference ? { externalReference } : {}),
     subscription: {
       value: price,

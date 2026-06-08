@@ -407,8 +407,16 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           logError('[asaas-webhook] falha ao ler a assinatura paga (segue p/ fallbacks)', e, { subscription: payment.subscription })
         }
-        const paid = subValue != null ? detectPlanAndCycle(subValue) : null
-        log('[asaas-webhook] assinatura paga', { subscription: payment.subscription, subValue, subCycle, resolvedFromValue: paid })
+        let paid = subValue != null ? detectPlanAndCycle(subValue) : null
+        // Proration-checkout: o value da sub é prorateado (não mapeia pra um preço cheio) →
+        // `paid` fica null. Resolve então pela DESCRIÇÃO da própria assinatura ("Plano X
+        // (Anual)" + cycle), que carrega o PLANO-ALVO — determinístico, ANTES do checkout
+        // record. Fecha o P1 de dois proration-checkouts concorrentes. (Codex 2026-06-08.)
+        if (!paid) {
+          paid = await resolvePlanFromAsaasSubscription(payment.subscription)
+          if (paid) log('[asaas-webhook] plan/cycle da DESCRIÇÃO da assinatura (proration)', { subscription: payment.subscription, resolved: paid })
+        }
+        log('[asaas-webhook] assinatura paga', { subscription: payment.subscription, subValue, subCycle, resolved: paid })
 
         const { user, checkoutLink } = await resolveBillingContext({
           customerId,
@@ -486,9 +494,10 @@ export async function POST(req: NextRequest) {
         // Fonte da verdade pra plan/cycle, em ordem de confiabilidade:
         //  1. INTENÇÃO no externalReference — legado; o Asaas não persiste no hosted checkout,
         //     então quase sempre vazio. Mantido caso volte a funcionar / Caminho D via PUT.
-        //  2. VALOR DA ASSINATURA PAGA (`paid`) — fonte determinística: o preço da sub mapeia
-        //     1:1 pro plano. Desambigua checkouts concorrentes e cobre renovações. (Pivô 2026-06-08.)
-        //  3. checkout record (linha casada) — proration-checkout (valor prorateado não mapeia).
+        //  2. ASSINATURA PAGA (`paid`) — fonte determinística: valor cheio→plano (1:1) OU, em
+        //     proration (valor prorateado), a DESCRIÇÃO da sub (plano-alvo). Desambigua
+        //     concorrência e cobre renovações. (Pivô 2026-06-08 + fix proration Codex.)
+        //  3. checkout record (linha casada) — só se a sub não resolver de jeito nenhum.
         //  4. detecção por valor do pagamento / metadados do Asaas — último recurso.
         const intent = parseExternalReference(payment?.externalReference)
         let plan: string
@@ -500,7 +509,7 @@ export async function POST(req: NextRequest) {
         } else if (paid) {
           plan = paid.plan
           cycle = paid.cycle
-          log('[asaas-webhook] Using plan/cycle from paid subscription value (determinístico)', { plan, cycle, subValue })
+          log('[asaas-webhook] Using plan/cycle from paid subscription (valor cheio ou descrição/proration)', { plan, cycle, subValue })
         } else if (checkoutLink?.plan && checkoutLink?.cycle) {
           plan = checkoutLink.plan
           cycle = checkoutLink.cycle as 'MONTHLY' | 'YEARLY'

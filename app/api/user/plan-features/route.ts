@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { PLANS, PlanName, handleDowngrade } from '@/lib/plan-limits'
 import { getSubscription } from '@/lib/asaas'
-import { expiryFromNextDueDate } from '@/lib/billing-activation'
+import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
 import { log, logError, logWarn } from '@/lib/logger'
 
 /**
@@ -21,7 +21,7 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at, plan_status, asaas_subscription_id, responses_used, responses_limit')
+    .select('plan, plan_cycle, plan_expires_at, plan_status, asaas_subscription_id, responses_used, responses_limit')
     .eq('id', user.id)
     .single()
 
@@ -43,21 +43,31 @@ export async function GET() {
           const sub = (await getSubscription(profile.asaas_subscription_id)) as { status?: string; nextDueDate?: string }
           if (String(sub?.status ?? '').toUpperCase() === 'ACTIVE') {
             shouldRevert = false
-            // Sub ACTIVE → renovação a caminho. Estende a expiração pelo nextDueDate real.
-            const next = expiryFromNextDueDate(sub?.nextDueDate)
-            if (next) {
-              try {
-                const sc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-                await sc.from('profiles').update({ plan_expires_at: next }).eq('id', user.id)
-              } catch (e) {
-                logWarn('[plan-features] Falha ao estender plan_expires_at (não-bloqueante)', { error: e instanceof Error ? e.message : String(e) })
-              }
+            // Sub ACTIVE → renovação a caminho. Estende a expiração pelo nextDueDate real;
+            // se ele não der uma data futura válida, cai no fallback now+ciclo (P2, Codex):
+            // SEMPRE corrige plan_expires_at, pra outros gates (getEffectivePlan) não verem
+            // o plano como Free por causa de um expires_at vencido.
+            const next = expiryFromNextDueDate(sub?.nextDueDate) ?? calculateExpiryDate((profile.plan_cycle ?? 'MONTHLY') as BillingCycle)
+            try {
+              const sc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+              await sc.from('profiles').update({ plan_expires_at: next }).eq('id', user.id)
+            } catch (e) {
+              logWarn('[plan-features] Falha ao estender plan_expires_at (não-bloqueante)', { error: e instanceof Error ? e.message : String(e) })
             }
             log('[plan-features] Expiração local vencida, mas sub ACTIVE no Asaas — mantendo acesso (renovação atrasada)', { userId: user.id, subscriptionId: profile.asaas_subscription_id })
           }
         } catch (err) {
-          shouldRevert = false
-          logWarn('[plan-features] Falha ao consultar Asaas na expiração — NÃO reverte (conservador, não derruba pagante)', { userId: user.id, error: err instanceof Error ? err.message : String(err) })
+          const msg = err instanceof Error ? err.message : String(err)
+          // 404 = a sub NÃO existe mais no Asaas (cancelamento concluído) → reversão é o certo
+          // (senão o acesso continuaria pra sempre após o fim do período). Outro erro
+          // (5xx/rede) = transitório → conservador, não derruba o pagante agora. (P1, Codex 2026-06-08.)
+          if (/error 404/i.test(msg)) {
+            shouldRevert = true
+            logWarn('[plan-features] Sub 404 no Asaas (cancelada/inexistente) na expiração — revertendo p/ free', { userId: user.id, subscriptionId: profile.asaas_subscription_id })
+          } else {
+            shouldRevert = false
+            logWarn('[plan-features] Falha transitória ao consultar Asaas na expiração — NÃO reverte (conservador, não derruba pagante)', { userId: user.id, error: msg })
+          }
         }
       }
 

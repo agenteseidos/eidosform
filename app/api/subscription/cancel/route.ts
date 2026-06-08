@@ -12,17 +12,6 @@ export async function POST() {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
-  // Service-role para as ESCRITAS no profile: a RLS "safe profile fields" impede o client
-  // do usuário de alterar plan_status/plan_expires_at, então o update do usuário afetava 0
-  // linhas / 500 e o cancelamento pelo painel quebrava. (P1, audit Codex 2026-06-08.)
-  const serviceUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!serviceUrl || !serviceKey) {
-    logError('[subscription/cancel] SUPABASE service-role env ausente — não dá pra cancelar')
-    return NextResponse.json({ error: 'Configuração indisponível. Tente novamente mais tarde.' }, { status: 503 })
-  }
-  const admin = createServiceClient(serviceUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-
   const { data: profile } = await supabase
     .from('profiles')
     .select('asaas_subscription_id, plan_expires_at, plan_status')
@@ -36,6 +25,18 @@ export async function POST() {
   if (profile.plan_status === 'canceling') {
     return NextResponse.json({ error: 'Assinatura já está sendo cancelada' }, { status: 409 })
   }
+
+  // Service-role para as ESCRITAS no profile: a RLS "safe profile fields" impede o client
+  // do usuário de alterar plan_status/plan_expires_at, então o update do usuário afetava 0
+  // linhas / 500 e o cancelamento pelo painel quebrava. (P1, audit Codex 2026-06-08.)
+  // Validado DEPOIS dos checks de profile (400/409) pra esses casos não virarem 503. (P3.)
+  const serviceUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceUrl || !serviceKey) {
+    logError('[subscription/cancel] SUPABASE service-role env ausente — não dá pra cancelar')
+    return NextResponse.json({ error: 'Configuração indisponível. Tente novamente mais tarde.' }, { status: 503 })
+  }
+  const admin = createServiceClient(serviceUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
 
   // Marca 'canceling' primeiro (service-role); se o Asaas falhar, revertemos. Checa linhas.
   const { data: markRows, error: updateError } = await admin

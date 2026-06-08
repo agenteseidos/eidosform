@@ -79,6 +79,19 @@ export async function PATCH(
     const planConfig = PLANS[newPlan]
     const isDowngrade = PLAN_ORDER.indexOf(newPlan) < PLAN_ORDER.indexOf(currentPlan)
 
+    // P1 (audit Codex 2026-06-08): admin NÃO pode trocar PAGO→PAGO (plano diferente) de um
+    // usuário com assinatura no Asaas — o profile mudaria de plano mas a sub continuaria
+    // cobrando o valor antigo (divergência/subcobrança). Esta rota admin só deve: mover p/
+    // free (cancela a sub, tratado abaixo), conceder plano a quem NÃO tem sub (grant manual),
+    // ou ajustar o MESMO plano (ex.: expiresAt). Troca paga→paga de quem tem sub vai pelo
+    // fluxo normal de upgrade/downgrade do usuário (que edita a sub no Asaas).
+    if (newPlan !== 'free' && newPlan !== currentPlan && currentSub) {
+      return NextResponse.json(
+        { error: 'Usuário tem assinatura ativa no Asaas. Troca paga→paga pelo admin causaria divergência de cobrança. Mova para free primeiro (cancela a assinatura) ou use o fluxo de upgrade/downgrade do usuário.' },
+        { status: 409 }
+      )
+    }
+
     // P0 (audit Codex 2026-06-08): ao mover pra FREE, cancelar a assinatura no Asaas ANTES
     // de limpar o asaas_subscription_id local. Sem isto, o profile vira free/cancelled mas a
     // cobrança recorrente segue ATIVA no gateway (cobrança fantasma). FAIL-CLOSED: se o

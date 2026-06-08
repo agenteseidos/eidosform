@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { cancelSubscription, getSubscription } from '@/lib/asaas'
+import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
 import { logError, logWarn } from '@/lib/logger'
 
 export async function POST() {
@@ -14,7 +15,7 @@ export async function POST() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('asaas_subscription_id, plan_expires_at, plan_status')
+    .select('asaas_subscription_id, plan_cycle, plan_expires_at, plan_status')
     .eq('id', user.id)
     .single()
 
@@ -38,10 +39,29 @@ export async function POST() {
   }
   const admin = createServiceClient(serviceUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
 
-  // Marca 'canceling' primeiro (service-role); se o Asaas falhar, revertemos. Checa linhas.
+  // Resolve a expiração final ANTES do DELETE (P1, audit Codex 2026-06-08). Depois de
+  // removida, getSubscription dá 404 e perderíamos a data real (nextDueDate/endDate), caindo
+  // num plan_expires_at local possivelmente vencido — o webhook SUBSCRIPTION_DELETED então
+  // não manteria o acesso até o fim do período (quebra a promessa). Cadeia de fallback:
+  // nextDueDate/endDate do Asaas (fim-de-dia BRT) → valor local → now+ciclo (sempre futuro).
+  const cycle = (profile.plan_cycle ?? 'MONTHLY') as BillingCycle
+  let resolvedExpiresAt = profile.plan_expires_at as string | null
+  try {
+    const sub = (await getSubscription(profile.asaas_subscription_id)) as { endDate?: string; nextDueDate?: string }
+    const candidate = sub?.endDate ?? sub?.nextDueDate
+    resolvedExpiresAt = expiryFromNextDueDate(candidate) ?? resolvedExpiresAt ?? calculateExpiryDate(cycle)
+  } catch (err) {
+    resolvedExpiresAt = resolvedExpiresAt ?? calculateExpiryDate(cycle)
+    logWarn('[subscription/cancel] Não resolveu endDate do Asaas (pré-delete) — usando fallback local', { error: err instanceof Error ? err.message : String(err) })
+  }
+
+  // Persiste 'canceling' + a expiração resolvida ANTES do DELETE (service-role; checa linhas).
+  // Guarda os valores anteriores para rollback se o cancelamento no Asaas falhar.
+  const prevStatus = profile.plan_status ?? null
+  const prevExpires = profile.plan_expires_at as string | null
   const { data: markRows, error: updateError } = await admin
     .from('profiles')
-    .update({ plan_status: 'canceling' })
+    .update({ plan_status: 'canceling', plan_expires_at: resolvedExpiresAt })
     .eq('id', user.id)
     .select('id')
 
@@ -54,36 +74,21 @@ export async function POST() {
     await cancelSubscription(profile.asaas_subscription_id)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // 404 = já removida no Asaas → segue (idempotente). Outro erro → reverte e devolve 502.
+    // 404 = já removida no Asaas → segue (idempotente). Outro erro → rollback (status +
+    // expiração) e devolve 502.
     if (!/error 404/i.test(msg)) {
       logError('Asaas cancel failed', err, { subscriptionId: profile.asaas_subscription_id, userId: user.id })
       await admin
         .from('profiles')
-        .update({ plan_status: profile.plan_status ?? null })
+        .update({ plan_status: prevStatus, plan_expires_at: prevExpires })
         .eq('id', user.id)
       return NextResponse.json({ error: 'Erro ao cancelar assinatura no provedor de pagamento' }, { status: 502 })
     }
     logWarn('[subscription/cancel] Sub já removida no Asaas (404) — segue', { subscriptionId: profile.asaas_subscription_id, userId: user.id })
   }
 
-  // Mantém o acesso até o fim do período PAGO: resolve a expiração final do Asaas
-  // (endDate / nextDueDate), com fallback no valor local. A reversão p/ free acontece na
+  // Acesso mantido até resolvedExpiresAt (já persistido). A reversão p/ free acontece na
   // expiração (lib/plan-features). O webhook SUBSCRIPTION_DELETED, ao ver 'canceling' +
-  // período vigente, NÃO rebaixa na hora (mantém o acesso prometido até a data).
-  let resolvedExpiresAt = profile.plan_expires_at as string | null
-  try {
-    const sub = await getSubscription(profile.asaas_subscription_id)
-    const candidate = (sub?.endDate as string | undefined) ?? (sub?.nextDueDate as string | undefined)
-    if (candidate) {
-      resolvedExpiresAt = new Date(candidate).toISOString()
-      await admin
-        .from('profiles')
-        .update({ plan_expires_at: resolvedExpiresAt })
-        .eq('id', user.id)
-    }
-  } catch (err) {
-    logWarn('[subscription/cancel] Could not resolve endDate from Asaas (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
-  }
-
+  // período vigente, NÃO rebaixa na hora.
   return NextResponse.json({ success: true, expiresAt: resolvedExpiresAt })
 }

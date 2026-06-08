@@ -64,7 +64,7 @@ describe('POST /api/subscription/cancel', () => {
     vi.clearAllMocks()
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://localhost')
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'service-key')
-    mockGetSubscription.mockResolvedValue({ nextDueDate: '2025-12-31' } as never)
+    mockGetSubscription.mockResolvedValue({ nextDueDate: '2099-12-31' } as never)
   })
   afterEach(() => {
     vi.unstubAllEnvs()
@@ -104,7 +104,8 @@ describe('POST /api/subscription/cancel', () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ success: true })
-    expect(service._mocks.update).toHaveBeenCalledWith({ plan_status: 'canceling' })
+    // Mark agora inclui plan_expires_at resolvido ANTES do delete.
+    expect(service._mocks.update).toHaveBeenCalledWith(expect.objectContaining({ plan_status: 'canceling' }))
   })
 
   it('faz rollback do status e loga erro quando Asaas falha (≠404)', async () => {
@@ -118,9 +119,9 @@ describe('POST /api/subscription/cancel', () => {
     const res = await POST()
 
     expect(res.status).toBe(502)
-    // update via service-role chamado duas vezes: 1. set canceling, 2. rollback para active
-    expect(service._mocks.update).toHaveBeenNthCalledWith(1, { plan_status: 'canceling' })
-    expect(service._mocks.update).toHaveBeenNthCalledWith(2, { plan_status: 'active' })
+    // update via service-role chamado duas vezes: 1. set canceling (+expiração), 2. rollback
+    expect(service._mocks.update).toHaveBeenNthCalledWith(1, expect.objectContaining({ plan_status: 'canceling' }))
+    expect(service._mocks.update).toHaveBeenNthCalledWith(2, expect.objectContaining({ plan_status: 'active' }))
     expect(mockLogError).toHaveBeenCalledWith(
       'Asaas cancel failed',
       expect.any(Error),

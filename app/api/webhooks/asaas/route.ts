@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
+import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
 import { finalizeActivation } from '@/lib/billing-activation'
@@ -475,11 +475,19 @@ export async function POST(req: NextRequest) {
                     activeSubscriptionId: vigenteSub,
                     supersededCheckoutId: checkoutLink.id,
                   })
+                  await sendBillingOpsAlert({
+                    subject: 'Checkout antigo pago após um mais novo — sub órfã cancelada (AVALIAR REFUND da 1ª cobrança)',
+                    lines: { userId: user.id, orphanSubscriptionId: payment.subscription, activeSubscriptionId: vigenteSub, customerId },
+                  }).catch(() => {})
                 } catch (err) {
                   logError('[asaas-webhook] Falha ao cancelar assinatura órfã do checkout antigo (revisar manual)', err, {
                     userId: user.id,
                     orphanSubscriptionId: payment.subscription,
                   })
+                  await sendBillingOpsAlert({
+                    subject: 'FALHA ao cancelar sub órfã do checkout antigo — RISCO DE COBRANÇA DUPLA, cancelar manualmente no Asaas',
+                    lines: { userId: user.id, orphanSubscriptionId: payment.subscription, activeSubscriptionId: vigenteSub, customerId, error: err instanceof Error ? err.message : String(err) },
+                  }).catch(() => {})
                 }
                 await supabase
                   .from('billing_checkouts')
@@ -609,6 +617,10 @@ export async function POST(req: NextRequest) {
         // Correção de valor recorrente necessária mas falhou → DLQ (throw → catch marca
         // 'failed' → reprocessador retenta). NUNCA deixar a renovação subcobrar em silêncio.
         if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
+          await sendBillingOpsAlert({
+            subject: 'Correção de valor recorrente PENDENTE — risco de subcobrança na renovação (DLQ vai retentar)',
+            lines: { userId: user.id, subscriptionId: payment.subscription, plan, cycle, customerId },
+          }).catch(() => {})
           throw new Error(`Correção de valor recorrente pendente (sub ${payment.subscription}) — enviado p/ DLQ/retry`)
         }
         break

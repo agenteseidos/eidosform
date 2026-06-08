@@ -9,6 +9,8 @@ import { createHash } from 'crypto'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
+// Destino dos alertas operacionais de billing (sub órfã, subcobrança pendente etc.).
+const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL ?? 'sidney@institutoeidos.com.br'
 
 /** PII patterns to strip from email subjects (P1-N1) */
 const PII_PATTERNS = [
@@ -26,6 +28,28 @@ function sanitizeSubject(subject: string): string {
     s = s.replace(pattern, '***')
   }
   return s.length > 50 ? s.slice(0, 47) + '...' : s
+}
+
+/**
+ * Alerta operacional de BILLING para a equipe (não pro cliente). Usado em casos de dinheiro
+ * que exigem ação humana: sub órfã do caso A/B (avaliar refund), correção de valor recorrente
+ * pendente (risco de subcobrança na renovação), etc. Best-effort e não-bloqueante.
+ * Recomendação do audit Codex 2026-06-08 antes de produção.
+ */
+export async function sendBillingOpsAlert(params: {
+  subject: string
+  lines: Record<string, string | number | null | undefined>
+}): Promise<{ id?: string; error?: string }> {
+  const rows = Object.entries(params.lines)
+    .map(([k, v]) => `<tr><td style="padding:4px 10px;font-weight:600">${escapeHtml(k)}</td><td style="padding:4px 10px">${escapeHtml(String(v ?? '—'))}</td></tr>`)
+    .join('')
+  const html = `
+    <h2>⚠️ Alerta operacional — Billing</h2>
+    <p>${escapeHtml(params.subject)}</p>
+    <table style="border-collapse:collapse;border:1px solid #eee">${rows}</table>
+    <p style="color:#888;font-size:12px">EidosForm · alerta automático do webhook Asaas</p>
+  `
+  return sendEmailWithRetry({ to: ADMIN_ALERT_EMAIL, subject: `[EidosForm ALERTA] ${params.subject}`, html })
 }
 
 async function sendEmailWithRetry(payload: {

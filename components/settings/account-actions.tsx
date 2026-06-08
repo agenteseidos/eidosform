@@ -24,6 +24,7 @@ interface AccountActionsProps {
 export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlanStatus }: AccountActionsProps) {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [canceling, setCanceling] = useState(false)
+  const [cancelConfirmText, setCancelConfirmText] = useState('')
   const [cancelled, setCancelled] = useState(initialPlanStatus === 'canceling')
 
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -45,6 +46,7 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
         return
       }
       setCancelOpen(false)
+      setCancelConfirmText('')
       setCancelled(true)
       const expires = data.expiresAt
         ? new Date(data.expiresAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -86,6 +88,11 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
       setDeleteConfirmText('')
     }
     setDeleteOpen(open)
+  }
+
+  const handleCancelDialogClose = (open: boolean) => {
+    if (!open) setCancelConfirmText('')
+    setCancelOpen(open)
   }
 
   return (
@@ -131,7 +138,7 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
       </div>
 
       {/* Cancel subscription dialog */}
-      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+      <Dialog open={cancelOpen} onOpenChange={handleCancelDialogClose}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Cancelar assinatura</DialogTitle>
@@ -151,6 +158,18 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
                     Após o cancelamento, sua conta será movida para o plano Free ao fim do período atual.
                   </p>
                 )}
+                <div className="pt-2">
+                  <p className="mb-2 font-medium text-slate-700">
+                    Para confirmar, digite <span className="font-mono bg-slate-100 px-1 rounded">CANCELAR</span>:
+                  </p>
+                  <Input
+                    value={cancelConfirmText}
+                    onChange={e => setCancelConfirmText(e.target.value)}
+                    placeholder="CANCELAR"
+                    className="font-mono"
+                    autoComplete="off"
+                  />
+                </div>
               </div>
             </DialogDescription>
           </DialogHeader>
@@ -163,7 +182,7 @@ export function AccountActions({ planKey, planExpiresAt, planStatus: initialPlan
             <Button
               variant="destructive"
               onClick={handleConfirmCancel}
-              disabled={canceling}
+              disabled={canceling || cancelConfirmText !== 'CANCELAR'}
             >
               {canceling ? 'Cancelando...' : 'Confirmar cancelamento'}
             </Button>

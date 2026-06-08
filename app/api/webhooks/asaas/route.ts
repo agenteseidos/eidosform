@@ -392,6 +392,16 @@ export async function POST(req: NextRequest) {
         const customerId = payment?.customer
         if (!customerId) break
 
+        // DIAGNÓSTICO SMOKE (sandbox): imprime o externalReference CRU e a subscription pra
+        // confirmar a propagação subscription→payment do Asaas no webhook real. Após validar
+        // em produção, pode baixar pra debug. (2026-06-07)
+        log('[asaas-webhook][SMOKE] payment recebido', {
+          event,
+          customerId,
+          subscription: payment?.subscription ?? null,
+          externalReference: payment?.externalReference ?? null,
+        })
+
         // Fluxo de assinatura: TODO pagamento recorrente carrega payment.subscription.
         // Sem ela, não dá pra cancelar/reconciliar/corrigir a sub depois — ativar seria
         // criar um estado órfão. Manda pra DLQ (throw → failed) p/ revisão. (P2c round 3.)

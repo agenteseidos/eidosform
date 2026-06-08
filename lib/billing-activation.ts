@@ -66,6 +66,35 @@ export function buildActivePlanUpdate(params: {
   }
 }
 
+/**
+ * Reivindica ATOMICAMENTE os "efeitos de ativação" (e-mail "plano ativado" + handleUpgrade)
+ * para uma assinatura+plano+ciclo, via insert com unique constraint em asaas_webhook_events.
+ * Retorna true só para o PRIMEIRO chamador — os demais (PAYMENT_CONFIRMED+RECEIVED do mesmo
+ * pagamento; webhook × polling concorrentes) recebem false e PULAM os efeitos. Dedup durável
+ * e atômico (não depende de ler o profile já-atualizado). (#3, audit 2026-06-08.)
+ *
+ * Falha NÃO-conflito (DB transitório) → retorna true (melhor um e-mail duplicado do que pular
+ * o e-mail de uma ativação legítima).
+ */
+export async function claimActivationEffects(
+  db: SupabaseClient,
+  subscriptionId: string,
+  plan: string,
+  cycle: string,
+): Promise<boolean> {
+  const eventId = `effects:${subscriptionId}:${plan}:${cycle}`
+  const { error } = await (db as unknown as {
+    from: (t: string) => { insert: (v: unknown) => Promise<{ error: { code?: string } | null }> }
+  })
+    .from('asaas_webhook_events')
+    .insert({ event_id: eventId, event: 'ACTIVATION_EFFECTS', status: 'processed' })
+  if (!error) return true
+  if (error.code === '23505') return false // já reivindicado por outro evento/caminho
+  // Erro transitório (não-conflito): procede (não pular e-mail legítimo).
+  log('[billing] claimActivationEffects: erro não-conflito ao reivindicar — procede', { eventId, code: error.code })
+  return true
+}
+
 export interface FinalizeActivationResult {
   /** true se pulou tudo (sem newSub ou profile já aponta outra sub — fluxo concorrente venceu). */
   skipped: boolean

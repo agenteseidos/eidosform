@@ -32,15 +32,17 @@ const MAX_ATTEMPTS = 5
 
 // Espelha o switch do webhook (app/api/webhooks/asaas/route.ts).
 const ACTIVATION_EVENTS = new Set(['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED'])
+// #2 (audit 2026-06-08): REFUND/DELETE NÃO estão aqui — o webhook não rebaixa nesses eventos
+// (refund parcial/ambíguo não deve cancelar; vai p/ alerta manual). O reprocessador espelha:
+// PAYMENT_REFUNDED/PAYMENT_DELETED viram noop (não revertem). Só estes rebaixam:
 const REVERSION_EVENTS = new Set([
   'PAYMENT_OVERDUE',
   'SUBSCRIPTION_DELETED',
   'SUBSCRIPTION_INACTIVATED',
-  'PAYMENT_REFUNDED',
-  'PAYMENT_DELETED',
   'PAYMENT_CHARGEBACK_REQUESTED',
   'PAYMENT_CHARGEBACK_DISPUTE',
 ])
+const REFUND_NOOP_EVENTS = new Set(['PAYMENT_REFUNDED', 'PAYMENT_DELETED'])
 
 /**
  * Lê o status da assinatura no Asaas. Distingue 404 (definitivo → 'NOT_FOUND') de
@@ -215,16 +217,29 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     return 'activated'
   }
 
+  // ── REFUND/DELETE: NÃO reverte (#2) — espelha o webhook (refund parcial/ambíguo não
+  // cancela). Fica como noop p/ revisão manual; não derruba acesso.
+  if (REFUND_NOOP_EVENTS.has(ev)) {
+    log('[asaas-reprocess] refund/delete — acesso mantido, revisão manual (não reverte)', { event: ev, profileId: profile.id })
+    return 'noop_refund_manual'
+  }
+
   // ── EVENTO DE REVERSÃO ──────────────────────────────────────────────
-  // Eventos auto-descritivos de downgrade (overdue/deleted/refund/chargeback/
-  // inactivated): revertem p/ free, espelhando o webhook. Guards: já-free e mismatch
-  // de assinatura (não derrubar quem já re-assinou com OUTRA subscription).
+  // Downgrade auto-descritivo (overdue/deleted/chargeback/inactivated): reverte p/ free,
+  // espelhando o webhook. Guards: já-free e mismatch de assinatura (não derrubar quem já
+  // re-assinou com OUTRA subscription).
   if (!REVERSION_EVENTS.has(ev)) {
     // Evento não-mapeado (ex.: PAYMENT_UPDATED) — não ativa nem reverte. Fica visível p/ manual.
     log('[asaas-reprocess] evento não-mapeado p/ reprocesso — noop', { event: ev, profileId: profile.id })
     return 'noop_evento_nao_mapeado'
   }
-  if (profile.plan === 'free') return 'noop_already_free'
+  // #1: se já está free mas o downgrade pode ter falhado ao PAUSAR forms numa tentativa
+  // anterior (handleDowngrade agora lança), re-roda o downgrade (idempotente) p/ garantir a
+  // pausa. Só então retorna noop.
+  if (profile.plan === 'free') {
+    await handleDowngrade(profile.id, serviceKey)
+    return 'noop_already_free_repaused'
+  }
   // Match ESTRITO (igual ao webhook): só reverte se o evento TEM subscription E ela é a
   // ativa do profile. Reversão sem subscriptionId NÃO derruba por customer-fallback —
   // fica como skip (revisão manual via lista do admin). (P1-3, audit Codex 2026-06-07.)

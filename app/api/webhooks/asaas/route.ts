@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
-import { finalizeActivation } from '@/lib/billing-activation'
+import { finalizeActivation, claimActivationEffects } from '@/lib/billing-activation'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -628,15 +628,16 @@ export async function POST(req: NextRequest) {
           billingType,
         })
 
-        // handleUpgrade + e-mail SÓ em transição real (#1): renovação/duplicata não despausa
-        // de novo nem reenvia "plano ativado". (handleUpgrade roda antes do finalize p/ que um
-        // eventual DLQ da correção de valor não pule o despause no reprocesso.)
-        if (isPlanTransition) {
+        // handleUpgrade + e-mail SÓ em transição real (#1) E reivindicando os efeitos
+        // ATOMICAMENTE (#3): claimActivationEffects garante que apenas UM caminho/evento
+        // (PAYMENT_CONFIRMED ou RECEIVED; webhook ou polling) dispara e-mail+handleUpgrade,
+        // mesmo se dois lerem o estado antigo em paralelo. Renovação/duplicata pula.
+        if (isPlanTransition && await claimActivationEffects(supabase, payment.subscription, plan, cycle)) {
           const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
           log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
           await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
         } else {
-          log('[asaas-webhook] Renovação/evento duplicado — pulando e-mail e handleUpgrade (sem transição)', { userId: user.id, plan, cycle, subscriptionId: payment.subscription })
+          log('[asaas-webhook] Renovação/duplicata/efeitos já reivindicados — pulando e-mail e handleUpgrade', { userId: user.id, plan, cycle, subscriptionId: payment.subscription })
         }
 
         // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente.

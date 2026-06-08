@@ -81,6 +81,10 @@ export async function GET(req: NextRequest) {
 
     if (shouldRevert) {
       try {
+        // #1: PAUSA OS FORMS PRIMEIRO (handleDowngrade lança se falhar). Só DEPOIS marca free.
+        // Se o downgrade falhar, NÃO marca free → o profile segue 'pago/expirado' e o próximo
+        // tick do cron retenta (não some da query). Evita "free mas forms nunca pausados".
+        await handleDowngrade(p.id, key)
         const { error: revErr } = await admin
           .from('profiles')
           .update({
@@ -94,13 +98,14 @@ export async function GET(req: NextRequest) {
           })
           .eq('id', p.id)
         if (revErr) {
-          logError('[cron/expire-plans] falha ao reverter profile', revErr, { profileId: p.id })
+          logError('[cron/expire-plans] forms pausados mas falha ao marcar free (retenta no próximo tick)', revErr, { profileId: p.id })
         } else {
-          await handleDowngrade(p.id, key).catch((e) => logError('[cron/expire-plans] handleDowngrade falhou', e, { profileId: p.id }))
           reverted++
         }
       } catch (err) {
-        logError('[cron/expire-plans] erro ao reverter', err, { profileId: p.id })
+        // downgrade falhou (forms não pausados) → NÃO marca free → próximo tick retenta.
+        skipped++
+        logError('[cron/expire-plans] downgrade falhou; adiando reversão (retenta no próximo tick)', err, { profileId: p.id })
       }
     }
   }

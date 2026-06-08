@@ -27,6 +27,7 @@ export const PLAN_PRICES = {
 
 import { PlanId } from '@/lib/plans'
 import { log, logWarn, logError } from '@/lib/logger'
+import { sendBillingOpsAlert } from '@/lib/resend'
 
 /** @deprecated Use PlanId from lib/plans.ts */
 export type PlanName = PlanId
@@ -285,6 +286,12 @@ export async function reconcileActiveSubscriptions(
             await cancelSubscription(sub.id)
             cancelled.push(sub.id)
             log('[asaas] reconcile: duplicata mesmo-dia/MESMO-VALOR cancelada (#8)', { customerId, keepSubscriptionId, cancelledSubId: sub.id, value: subValue })
+            // #6 (audit 2026-06-08): alerta operacional — a 1ª cobrança da sub duplicada já
+            // pode ter ocorrido; avaliar refund manual (cancelar a sub só impede a recorrência).
+            await sendBillingOpsAlert({
+              subject: 'Duplicata de assinatura (mesmo plano/dia) cancelada — avaliar refund da 1ª cobrança',
+              lines: { customerId, keepSubscriptionId, cancelledDuplicateSubId: sub.id, value: subValue },
+            }).catch(() => {})
           } catch (err) {
             logError('[asaas] reconcile: falha ao cancelar duplicata mesmo-valor (segue)', err, { customerId, subId: sub.id })
           }

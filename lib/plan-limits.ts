@@ -270,7 +270,12 @@ export async function handleDowngrade(
     .in('id', idsToPause)
 
   if (error) {
+    // LANÇA (#1, audit 2026-06-08): pausar os forms é o efeito crítico do downgrade. Antes
+    // o erro era só logado e a função retornava "sucesso" aparente — o chamador (cron,
+    // plan-features, webhook) achava que pausou e nunca retentava. Agora o erro propaga:
+    // cron/plan-features NÃO marcam free (retentam no próximo tick); webhook→DLQ; reprocess retenta.
     logError('[handleDowngrade] Failed to pause forms', error)
+    throw new Error(`handleDowngrade: falha ao pausar forms: ${error.message ?? String(error)}`)
   }
 
   return { pausedCount: idsToPause.length }

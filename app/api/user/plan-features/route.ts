@@ -84,6 +84,12 @@ export async function GET() {
             process.env.SUPABASE_SERVICE_ROLE_KEY!
           )
 
+          // #1: PAUSA OS FORMS PRIMEIRO (handleDowngrade lança se falhar). Só DEPOIS marca free.
+          // Se falhar, NÃO marca free — o profile segue pago/expirado e a próxima visita retenta
+          // (o bloco de expiração roda de novo porque plan != 'free'). E o cron também pega.
+          const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+          log('[plan-features] Downgrade on expiry processed', { userId: user.id, pausedForms: downgrade.pausedCount })
+
           await serviceClient
             .from('profiles')
             .update({
@@ -96,16 +102,12 @@ export async function GET() {
             })
             .eq('id', user.id)
 
-          const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-          log('[plan-features] Downgrade on expiry processed', {
-            userId: user.id,
-            pausedForms: downgrade.pausedCount,
-          })
+          planName = 'free'
         } catch (err) {
-          logError('[plan-features] Erro ao reverter plano expirado', err)
+          // downgrade falhou → NÃO marca free → mantém acesso pago até retentar. Não derruba
+          // o usuário no meio (planName segue o plano pago nesta resposta).
+          logError('[plan-features] Falha ao pausar/reverter plano expirado — adiando (retenta na próxima visita/cron)', err)
         }
-
-        planName = 'free'
       }
     }
   }

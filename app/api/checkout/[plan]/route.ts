@@ -196,6 +196,31 @@ export async function POST(
       )
     }
 
+    // LOCK leve do Caminho D (#4, audit 2026-06-08): serializa a operação por profile via
+    // insert-do-nothing em asaas_webhook_events (sem migration). 2º POST simultâneo encontra o
+    // lock fresco → 409. Take-over de lock STALE (>2min) evita travar pra sempre se um request
+    // morrer. Liberado (release) antes de cada saída do Caminho D.
+    const planLockId = `planchange-lock:${profile.profileId}`
+    const lockTbl = () => (sSupa as unknown as { from: (t: string) => {
+      insert: (v: unknown) => Promise<{ error: { code?: string } | null }>
+      select: (c: string) => { eq: (k: string, v: string) => { maybeSingle: () => Promise<{ data: { processed_at?: string } | null }> } }
+      update: (v: unknown) => { eq: (k: string, v: string) => Promise<{ error: unknown }> }
+      delete: () => { eq: (k: string, v: string) => Promise<{ error: unknown }> }
+    } }).from('asaas_webhook_events')
+    const releasePlanLock = async () => { try { await lockTbl().delete().eq('event_id', planLockId) } catch { /* best-effort */ } }
+    const { error: planLockErr } = await lockTbl().insert({ event_id: planLockId, event: 'PLANCHANGE_LOCK', status: 'processing' })
+    if (planLockErr) {
+      const { data: held } = await lockTbl().select('processed_at').eq('event_id', planLockId).maybeSingle()
+      const heldAt = held?.processed_at ? new Date(held.processed_at).getTime() : 0
+      if (Date.now() - heldAt < 120_000) {
+        return NextResponse.json(
+          { error: 'Já estamos processando uma alteração da sua assinatura. Aguarde um instante e tente novamente.' },
+          { status: 409 }
+        )
+      }
+      await lockTbl().update({ processed_at: new Date().toISOString() }).eq('event_id', planLockId)
+    }
+
     // 1) RECUPERAÇÃO ANTES do PUT (P2a round 3, audit Codex 2026-06-07): grava em
     //    billing_checkouts o estado INTENCIONADO (sub → NOVO plano/ciclo) e CHECA o erro.
     //    Se falhar, aborta SEM tocar no Asaas — garante que, se o PUT acontecer, o mapa de
@@ -226,6 +251,7 @@ export async function POST(
         userId: profile.profileId,
         subscriptionId: profile.asaasSubscriptionId,
       })
+      await releasePlanLock()
       return NextResponse.json(
         { error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' },
         { status: 500 }
@@ -252,6 +278,7 @@ export async function POST(
         .from('billing_checkouts')
         .update({ status: 'cancelled', last_event: 'PLAN_CHANGE_PUT_FAILED' })
         .eq('checkout_id', recoveryCheckoutId)
+      await releasePlanLock()
       return NextResponse.json(
         { error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' },
         { status: 502 }
@@ -304,6 +331,7 @@ export async function POST(
       } catch (qErr) {
         logError('[checkout] Caminho D — falha ao enfileirar recuperação na DLQ', qErr, { userId: profile.profileId })
       }
+      await releasePlanLock()
       return NextResponse.json(
         { error: 'Sua assinatura foi alterada, mas houve um erro ao atualizar o plano. Atualize a página em instantes.' },
         { status: 500 }
@@ -334,6 +362,7 @@ export async function POST(
       .update({ status: 'paid', last_event: 'PLAN_CHANGE_CREDIT_TIME' })
       .eq('checkout_id', recoveryCheckoutId)
 
+    await releasePlanLock()
     return NextResponse.json({
       status: 'success',
       coveredByCredit: true,

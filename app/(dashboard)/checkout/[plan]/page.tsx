@@ -23,6 +23,8 @@ interface CheckoutResponse {
   isDowngrade?: boolean
   creditCoverageDays?: number
   nextChargeDate?: string
+  action?: string
+  message?: string
 }
 
 interface PreviewResponse {
@@ -78,7 +80,7 @@ function CheckoutContent() {
   const normalized = normalizePlan(plan)
   const isValid = normalized !== 'free' && PAID_PLANS.includes(normalized)
 
-  const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing' | 'confirm' | 'downgrade'>('loading')
+  const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing' | 'confirm' | 'downgrade' | 'covered'>('loading')
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [missingFields, setMissingFields] = useState<string[]>([])
@@ -141,8 +143,17 @@ function CheckoutContent() {
         return
       }
 
-      // Crédito cobriu o novo plano (Caminho D): plano ativado direto, SEM checkout.
-      // Reusa a tela de sucesso do billing (overlay) em vez de mostrar erro.
+      // Saldo cobre o plano mas NÃO há sub p/ recriar (cancelou, sem token salvo) → mensagem
+      // HONESTA, nada mudou. NÃO mostrar sucesso. (Quando há token, o POST muda o plano de
+      // verdade e cai no branch de sucesso abaixo.)
+      if (json.action === 'covered_no_charge') {
+        setErrorMsg(json.message || 'Seu saldo já cobre este plano e seu acesso atual está mantido.')
+        setState('covered')
+        return
+      }
+
+      // Crédito cobriu o novo plano (Caminho D ou reativação com token): plano ativado direto,
+      // SEM checkout. Reusa a tela de sucesso do billing (overlay).
       if (json.coveredByCredit || (res.ok && json.status === 'success' && !json.checkoutUrl)) {
         window.location.href = '/billing?checkout=success'
         return
@@ -227,6 +238,21 @@ function CheckoutContent() {
           <div className="text-5xl">🟡</div>
           <h1 className="text-2xl font-bold text-slate-900">Você já tem este plano</h1>
           <p className="text-slate-500">Você já possui uma assinatura ativa neste plano.</p>
+          <Button onClick={() => router.push('/billing')} className="bg-slate-900 hover:bg-slate-800 text-white">
+            Voltar ao billing
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (state === 'covered') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-6 max-w-md px-6">
+          <div className="text-5xl">💳</div>
+          <h1 className="text-2xl font-bold text-slate-900">Seu saldo cobre este plano</h1>
+          <p className="text-slate-500">{errorMsg}</p>
           <Button onClick={() => router.push('/billing')} className="bg-slate-900 hover:bg-slate-800 text-white">
             Voltar ao billing
           </Button>

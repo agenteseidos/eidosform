@@ -588,12 +588,13 @@ export async function POST(req: NextRequest) {
         const planConfig = PLANS[plan as PlanName]
         const planExpiresAt = calculateExpiryDate(cycle)
 
-        // GUARD de preço-cheio (Codex 2026-06-09): se o value da sub é CONHECIDO e NÃO é o preço
-        // cheio do plano/ciclo (prorateado), NÃO ativar — o Asaas prod bloqueia corrigir o valor
-        // recorrente → recriaria o desconto eterno. Vai p/ alerta + DLQ (revisão manual).
-        if (typeof subValue === 'number' && !isExpectedFullPrice(subValue, plan, cycle)) {
-          logError('[asaas-webhook] GUARD preço-cheio: sub PRORATEADA não ativada (value != cheio) — DLQ/manual', undefined, { userId: user.id, subscriptionId: payment.subscription ?? null, subValue, plan, cycle })
-          await sendBillingOpsAlert({ subject: 'Webhook: sub PRORATEADA NÃO ativada (value != preço cheio) — revisar manual', lines: { userId: user.id, subscriptionId: payment.subscription ?? null, subValue, plan, cycle } }).catch(() => {})
+        // GUARD de preço-cheio (Codex 2026-06-09): só ativa se PROVAR que o valor recorrente da sub
+        // é o preço CHEIO. Se o value é prorateado (!= cheio) OU não foi possível ler (subValue
+        // ausente), NÃO ativar — o Asaas prod bloqueia corrigir o valor recorrente → desconto
+        // eterno. Conservador (igual polling/backstop): sem prova de valor cheio → alerta + DLQ.
+        if (!isExpectedFullPrice(subValue, plan, cycle)) {
+          logError('[asaas-webhook] GUARD preço-cheio: sub NÃO ativada (value prorateado ou ausente, sem prova de preço cheio) — DLQ/manual', undefined, { userId: user.id, subscriptionId: payment.subscription ?? null, subValue, plan, cycle })
+          await sendBillingOpsAlert({ subject: 'Webhook: sub NÃO ativada (sem prova de valor recorrente cheio) — revisar manual', lines: { userId: user.id, subscriptionId: payment.subscription ?? null, subValue: subValue ?? null, plan, cycle } }).catch(() => {})
           await (supabase as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
             .from('asaas_webhook_events')
             .upsert({ event_id: `prorated-blocked:${payment.subscription}`, event: 'PRORATED_BLOCKED', status: 'failed', error: `sub prorateada R$${subValue} != cheio (${plan}/${cycle}) — não ativada`, subscription_id: payment.subscription ?? null, customer_id: customerId, last_attempt_at: new Date().toISOString() }, { onConflict: 'event_id' }).catch(() => {})

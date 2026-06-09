@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { getCustomerSubscriptions, hasConfirmedPaymentForSubscription, detectPlanAndCycleFromValue } from '@/lib/asaas'
+import { getCustomerSubscriptions, hasConfirmedPaymentForSubscription, detectPlanAndCycleFromValue, PLAN_PRICES } from '@/lib/asaas'
 import { activatePaidSubscription, type BillingCycle } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { sendBillingOpsAlert } from '@/lib/resend'
@@ -81,8 +81,24 @@ export async function GET(req: NextRequest) {
 
       // confirma pagamento (não basta ACTIVE)
       const pay = await hasConfirmedPaymentForSubscription(target.id)
-      if (!pay.ok) { results.skipped++; continue } // consulta falhou → conservador
+      if (!pay.ok) { alerts.push(`checkout ${ck.id}: consulta de pagamento FALHOU (sub ${target.id}) — não ativei`); results.alerted++; continue }
       if (!pay.confirmed) { results.skipped++; continue } // não pago ainda
+
+      // GUARD (Codex): só auto-ativar sub no PREÇO CHEIO. Valor prorateado (upgrade-proration) é
+      // INSEGURO — o Asaas bloqueia corrigir o valor recorrente em prod → recriaria o desconto
+      // eterno. Esses casos vão p/ alerta/manual, NUNCA auto-ativam.
+      const prices = PLAN_PRICES[ck.plan as keyof typeof PLAN_PRICES]
+      const fullPrice = prices ? (ck.cycle === 'YEARLY' ? prices.yearly : prices.monthly) : null
+      if (fullPrice == null || Math.abs(target.value - fullPrice) > 0.01) {
+        alerts.push(`checkout ${ck.id}: sub ${target.id} R$${target.value} != preço cheio R$${fullPrice ?? '?'} (${ck.plan}/${ck.cycle}) — PRORATEADO/INSEGURO, NÃO auto-ativo (manual)`)
+        results.alerted++
+        continue
+      }
+
+      // GUARD (Codex): existe checkout PAID mais novo p/ o mesmo profile? então este pending foi
+      // superseded → não ativar o antigo.
+      const { data: newerPaid } = await db.from('billing_checkouts').select('id').eq('profile_id', ck.profile_id).eq('status', 'paid').gt('created_at', ck.created_at).limit(1)
+      if (newerPaid && (newerPaid as unknown[]).length > 0) { results.skipped++; continue }
 
       // profile já ativado p/ essa sub?
       if (profile.plan === ck.plan && profile.plan_status === 'active' && profile.plan_cycle === ck.cycle && profile.asaas_subscription_id === target.id) {

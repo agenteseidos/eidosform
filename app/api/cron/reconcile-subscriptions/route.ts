@@ -83,7 +83,12 @@ export async function GET(req: NextRequest) {
         try {
           await cancelSubscription(cand.id)
           results.cancelled++
-          log('[cron/reconcile-subscriptions] órfã cancelada', { profileId: p.id, cancelled: cand.id, keep: keep.id })
+          const motivo = olderThanKeep ? 'mais-antiga-que-keep' : 'mesmo-valor-duplicata'
+          log('[cron/reconcile-subscriptions] órfã cancelada', { profileId: p.id, cancelled: cand.id, keep: keep.id, motivo })
+          // AUDITORIA (Codex): registra o cancelamento automático com motivo.
+          await (db as unknown as { from: (t: string) => { insert: (v: unknown) => Promise<unknown> } })
+            .from('asaas_webhook_events')
+            .insert({ event_id: `reconcile-cancel:${cand.id}`, event: 'RECONCILE_CANCEL', status: 'processed', error: `órfã cancelada (keep=${keep.id}, motivo=${motivo}, profile=${p.id})`, subscription_id: cand.id, last_attempt_at: new Date().toISOString() }).catch(() => {})
         } catch (e) {
           logError('[cron/reconcile-subscriptions] falha ao cancelar órfã', e, { profileId: p.id, sub: cand.id })
           alerts.push(`profile ${p.id}: falha ao cancelar órfã ${cand.id}`)

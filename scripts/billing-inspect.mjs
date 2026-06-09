@@ -67,9 +67,9 @@ async function snapshot() {
   const isCustomer = arg.startsWith('cus_')
   let profile
   if (isCustomer) {
-    ({ data: profile } = await db.from('profiles').select('id, email, plan, plan_cycle, plan_status, plan_expires_at, asaas_customer_id, asaas_subscription_id, responses_used, responses_limit').eq('asaas_customer_id', arg).maybeSingle())
+    ({ data: profile } = await db.from('profiles').select('id, email, plan, plan_cycle, plan_status, plan_expires_at, asaas_customer_id, asaas_subscription_id, asaas_card_token, responses_used, responses_limit').eq('asaas_customer_id', arg).maybeSingle())
   } else {
-    ({ data: profile } = await db.from('profiles').select('id, email, plan, plan_cycle, plan_status, plan_expires_at, asaas_customer_id, asaas_subscription_id, responses_used, responses_limit').eq(isEmail ? 'email' : 'id', arg).maybeSingle())
+    ({ data: profile } = await db.from('profiles').select('id, email, plan, plan_cycle, plan_status, plan_expires_at, asaas_customer_id, asaas_subscription_id, asaas_card_token, responses_used, responses_limit').eq(isEmail ? 'email' : 'id', arg).maybeSingle())
   }
 
   console.log(`\n${'═'.repeat(74)}\n  BILLING INSPECT ${ts()}  ·  env=${ASAAS_ENV.toUpperCase()}${ASAAS_ENV === 'production' ? '  💰 DINHEIRO REAL' : ''}\n${'═'.repeat(74)}`)
@@ -80,6 +80,7 @@ async function snapshot() {
   console.log(`    expira:  ${profile.plan_expires_at ?? '—'}`)
   console.log(`    cota:    ${profile.responses_used ?? 0} / ${profile.responses_limit ?? '—'}`)
   console.log(`    asaas:   customer=${profile.asaas_customer_id ?? '—'}  sub=${profile.asaas_subscription_id ?? '—'}`)
+  console.log(`    token:   ${profile.asaas_card_token ? '✅ ' + String(profile.asaas_card_token).slice(0, 12) + '…' : '— (sem cartão salvo)'}`)
 
   const { data: cks } = await db
     .from('billing_checkouts')
@@ -133,11 +134,13 @@ async function snapshot() {
 
   if (cleanup) {
     console.log(`  ${'─'.repeat(70)}`)
+    // Sem asaas_customer_id, não há o que consultar no Asaas → sem cliente = sem subs/pagamentos = limpo.
+    const noCustomer = !profile.asaas_customer_id
     const checks = [
       ['profile.plan = free', profile.plan === 'free'],
       ['profile.asaas_subscription_id = null', profile.asaas_subscription_id == null],
-      ['Asaas: 0 subs ACTIVE', asaasSubsActive === 0],
-      ['Asaas: 0 pagamentos PENDING/OVERDUE', asaasPendingCount === 0],
+      ['Asaas: 0 subs ACTIVE', asaasSubsActive === 0 || noCustomer],
+      ['Asaas: 0 pagamentos PENDING/OVERDUE', asaasPendingCount === 0 || noCustomer],
       ['0 eventos DLQ (failed)', failed.length === 0],
       ['0 locks ativos', locks.length === 0],
     ]

@@ -22,7 +22,9 @@ import { log, logError } from '@/lib/logger'
  *  - se o profile não está ativado p/ essa sub → ATIVA (activatePaidSubscription) ou alerta;
  *  - se a correção de valor recorrente falhar → alerta (nunca subcobrar em silêncio).
  */
-const ACTIONS_ON = process.env.BILLING_RECONCILE_ACTIONS === 'true'
+// Flag SEPARÁVEL (Codex): liga a ação do backstop independente do reconcile de subs (ativação tem
+// risco maior → liga depois). Fallback p/ a flag global por compat. Fail-closed.
+const ACTIONS_ON = (process.env.BILLING_RECONCILE_CHECKOUTS_ACTIONS ?? process.env.BILLING_RECONCILE_ACTIONS) === 'true'
 const MAX_ITEMS = 30
 
 export async function GET(req: NextRequest) {
@@ -60,6 +62,12 @@ export async function GET(req: NextRequest) {
       const { data: prof } = await db.from('profiles').select('id, plan, plan_status, plan_cycle, asaas_subscription_id').eq('id', ck.profile_id).single()
       const profile = prof as ProfileRow | null
       if (!profile) { results.skipped++; continue }
+      // GUARD (Codex): profile em 'canceling' tem intenção de SAIR — não auto-ativar (revisar manual).
+      if (profile.plan_status === 'canceling') {
+        alerts.push(`checkout ${ck.id} (profile ${ck.profile_id}, customer ${customerId}): profile em 'canceling' — não auto-ativo`)
+        results.alerted++
+        continue
+      }
 
       // resolve a sub ACTIVE do customer
       const subsResp = await getCustomerSubscriptions(customerId).catch(() => null)
@@ -90,7 +98,7 @@ export async function GET(req: NextRequest) {
       const prices = PLAN_PRICES[ck.plan as keyof typeof PLAN_PRICES]
       const fullPrice = prices ? (ck.cycle === 'YEARLY' ? prices.yearly : prices.monthly) : null
       if (fullPrice == null || Math.abs(target.value - fullPrice) > 0.01) {
-        alerts.push(`checkout ${ck.id}: sub ${target.id} R$${target.value} != preço cheio R$${fullPrice ?? '?'} (${ck.plan}/${ck.cycle}) — PRORATEADO/INSEGURO, NÃO auto-ativo (manual)`)
+        alerts.push(`checkout ${ck.id} (profile ${ck.profile_id}, customer ${customerId}): sub ${target.id} R$${target.value} != preço cheio R$${fullPrice ?? '?'} (${ck.plan}/${ck.cycle}) — PRORATEADO/INSEGURO, NÃO auto-ativo (manual)`)
         results.alerted++
         continue
       }
@@ -110,7 +118,7 @@ export async function GET(req: NextRequest) {
 
       // DIVERGÊNCIA: pago e ACTIVE mas profile não ativado → o buraco do incidente
       if (!ACTIONS_ON) {
-        alerts.push(`checkout ${ck.id} (profile ${ck.profile_id}): pago+ACTIVE (sub ${target.id}, ${ck.plan}/${ck.cycle}) mas profile NÃO ativado — [OBSERVE] não agi`)
+        alerts.push(`checkout ${ck.id} (profile ${ck.profile_id}, customer ${customerId}): pago+ACTIVE (sub ${target.id} R$${target.value}, ${ck.plan}/${ck.cycle}) mas profile NÃO ativado — [OBSERVE] não agi`)
         results.alerted++
         continue
       }

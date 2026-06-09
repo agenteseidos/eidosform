@@ -18,7 +18,9 @@ import { log, logError } from '@/lib/logger'
  *   - a candidata é MAIS ANTIGA que a keep (ou mesmo valor = duplicata).
  * Senão (profile sem sub / órfã mais nova / planos diferentes recentes / erro de leitura): ALERTA, não cancela.
  */
-const ACTIONS_ON = process.env.BILLING_RECONCILE_ACTIONS === 'true'
+// Flag SEPARÁVEL (Codex): liga a ação do reconcile de subs primeiro (risco menor — corrige cobrança
+// dupla, não ativa plano). Fallback p/ a flag global por compat. Fail-closed.
+const ACTIONS_ON = (process.env.BILLING_RECONCILE_SUBSCRIPTIONS_ACTIONS ?? process.env.BILLING_RECONCILE_ACTIONS) === 'true'
 const MAX_PROFILES = 50
 
 export async function GET(req: NextRequest) {
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest) {
           // AUDITORIA (Codex): registra o cancelamento automático com motivo.
           await (db as unknown as { from: (t: string) => { insert: (v: unknown) => Promise<unknown> } })
             .from('asaas_webhook_events')
-            .insert({ event_id: `reconcile-cancel:${cand.id}`, event: 'RECONCILE_CANCEL', status: 'processed', error: `órfã cancelada (keep=${keep.id}, motivo=${motivo}, profile=${p.id})`, subscription_id: cand.id, last_attempt_at: new Date().toISOString() }).catch(() => {})
+            .insert({ event_id: `reconcile-cancel:${customerId}:${cand.id}`, event: 'RECONCILE_CANCEL', status: 'processed', error: `órfã cancelada (keep=${keep.id}, motivo=${motivo}, profile=${p.id})`, subscription_id: cand.id, last_attempt_at: new Date().toISOString() }).catch(() => {})
         } catch (e) {
           logError('[cron/reconcile-subscriptions] falha ao cancelar órfã', e, { profileId: p.id, sub: cand.id })
           alerts.push(`profile ${p.id}: falha ao cancelar órfã ${cand.id}`)

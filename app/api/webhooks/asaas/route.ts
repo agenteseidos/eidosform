@@ -40,7 +40,14 @@ async function alertWebhookAuthFailure(reason: string, ctx: Record<string, strin
     if (error) return // conflito = já alertou nesta janela de 10 min
     await sendBillingOpsAlert({
       subject: '🚨 Webhook Asaas REJEITANDO eventos por auth (401) — verifique URL/token JÁ',
-      lines: { motivo: reason, ...ctx, ambiente: process.env.ASAAS_ENVIRONMENT ?? '?', quando: new Date().toISOString() },
+      lines: {
+        motivo: reason,
+        ...ctx,
+        ambiente: process.env.ASAAS_ENVIRONMENT ?? '?',
+        secretConfigured: String(!!(process.env.ASAAS_WEBHOOK_SECRET ?? process.env.ASAAS_WEBHOOK_TOKEN)),
+        dica: 'Cheque: (1) URL do webhook = domínio canônico (sem redirect 301/302), (2) hasAuthToken=true na config Asaas, (3) o ASAAS_WEBHOOK_SECRET na Vercel sem \\n/espaço no fim.',
+        quando: new Date().toISOString(),
+      },
     }).catch(() => {})
   } catch { /* best-effort: nunca quebra o handler */ }
 }
@@ -346,12 +353,18 @@ export async function POST(req: NextRequest) {
     logWarn('[asaas-webhook] Using deprecated ASAAS_WEBHOOK_TOKEN — migrate to ASAAS_WEBHOOK_SECRET')
   }
   const hmacHeader = req.headers.get('asaas-signature')
+  // O healthcheck (scripts/webhook-healthcheck.mjs) testa os caminhos de 401 de propósito —
+  // marca com este header p/ NÃO disparar o alerta operacional (evita falso alarme). Eventos
+  // reais do Asaas nunca mandam isso.
+  const isHealthcheckProbe = req.headers.get('x-healthcheck-probe') === '1'
 
   if (!webhookToken) {
     // Critical config issue, but respond 401 (not 500) so Asaas does not enter
     // an exponential retry storm against an endpoint that will never succeed.
     logError('[asaas-webhook] ASAAS_WEBHOOK_SECRET or ASAAS_WEBHOOK_TOKEN not configured')
-    await alertWebhookAuthFailure('ASAAS_WEBHOOK_SECRET/TOKEN não configurado no ambiente', {})
+    if (!isHealthcheckProbe) await alertWebhookAuthFailure('ASAAS_WEBHOOK_SECRET/TOKEN não configurado no ambiente', {
+      host: req.headers.get('host'), xForwardedHost: req.headers.get('x-forwarded-host'),
+    })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -372,9 +385,10 @@ export async function POST(req: NextRequest) {
       hasAccessTokenHeader: !!accessTokenHeader,
       tokenPrefix: webhookToken.slice(0, 8),
     })
-    await alertWebhookAuthFailure('token asaas-access-token (ou HMAC) não bateu com o secret', {
+    if (!isHealthcheckProbe) await alertWebhookAuthFailure('token asaas-access-token (ou HMAC) não bateu com o secret', {
       hasAccessTokenHeader: !!accessTokenHeader,
       hasHmacHeader: !!hmacHeader,
+      host: req.headers.get('host'), xForwardedHost: req.headers.get('x-forwarded-host'),
     })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

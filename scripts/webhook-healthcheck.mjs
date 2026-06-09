@@ -56,20 +56,34 @@ add(cfg.interrupted === false, 'interrupted = false (fila não penalizada)', `in
 add(cfg.hasAuthToken === true, 'hasAuthToken = true (token de auth salvo)', `hasAuthToken=${cfg.hasAuthToken}`)
 
 const url = cfg.url
+// URL final = domínio CANÔNICO, não .vercel.app (que redireciona → foi o bug do incidente).
+add(!/vercel\.app/i.test(url || ''), 'URL é domínio canônico (não .vercel.app)', url)
+
+// Ambiente de produção + chave de produção.
+add(ASAAS_ENV === 'production', 'ASAAS_ENVIRONMENT = production', ASAAS_ENV)
+add(/^\$aact_prod_/.test(ASAAS_KEY || ''), 'ASAAS_API_KEY é de produção ($aact_prod_)', (ASAAS_KEY || '').slice(0, 12) + '…')
+
+// Header de PROBE: o handler reconhece e NÃO dispara o alerta de 401 nos testes abaixo (anti
+// falso-alarme). Evento WEBHOOK_HEALTHCHECK não está no switch → handler ignora (sem efeito colateral).
+const PROBE = { 'Content-Type': 'application/json', 'x-healthcheck-probe': '1' }
 const body = JSON.stringify({ event: 'WEBHOOK_HEALTHCHECK', payment: { id: 'healthcheck', customer: 'healthcheck', value: 1, status: 'CONFIRMED' } })
 
 // 2) a URL NÃO redireciona (POST direto, sem seguir redirect)
-const rNoFollow = await fetch(url, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/json' }, body })
+const rNoFollow = await fetch(url, { method: 'POST', redirect: 'manual', headers: PROBE, body })
 const is3xx = rNoFollow.status >= 300 && rNoFollow.status < 400
 add(!is3xx, 'URL não redireciona (sem 3xx)', `HTTP ${rNoFollow.status}${is3xx ? ' → ' + (rNoFollow.headers.get('location') || '?') : ''}`)
 
 // 3) sem token → 401 (handler vivo)
-const rNoTok = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+const rNoTok = await fetch(url, { method: 'POST', headers: PROBE, body })
 add(rNoTok.status === 401, 'Sem token → 401 (handler ativo, rejeita)', `HTTP ${rNoTok.status}`)
 
-// 4) com o secret do app → 200 (auth casa)
+// 4) token ERRADO → 401 (não aceita qualquer coisa)
+const rBadTok = await fetch(url, { method: 'POST', headers: { ...PROBE, 'asaas-access-token': 'token-errado-de-proposito' }, body })
+add(rBadTok.status === 401, 'Token errado → 401 (rejeita)', `HTTP ${rBadTok.status}`)
+
+// 5) com o secret do app → 200 (auth casa)
 if (SECRET) {
-  const rTok = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'asaas-access-token': SECRET }, body })
+  const rTok = await fetch(url, { method: 'POST', headers: { ...PROBE, 'asaas-access-token': SECRET }, body })
   add(rTok.status === 200, 'Com ASAAS_WEBHOOK_SECRET → 200 (auth do app casa)', `HTTP ${rTok.status}`)
 } else {
   add(false, 'ASAAS_WEBHOOK_SECRET presente no ambiente', 'AUSENTE — não dá p/ validar auth')

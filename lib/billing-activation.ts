@@ -4,7 +4,7 @@
  * (app/api/checkout/status) e pelo reprocessador de webhooks (lib/asaas-reprocess).
  * Mantém o payload de update em um lugar só para não divergir.
  */
-import { PLANS } from '@/lib/plan-limits'
+import { PLANS, handleUpgrade } from '@/lib/plan-limits'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   PLAN_PRICES,
@@ -133,7 +133,7 @@ export async function finalizeActivation(params: {
   previousSubscriptionId?: string | null
   plan: string
   cycle: BillingCycle
-  source: 'webhook' | 'polling' | 'reprocess'
+  source: 'webhook' | 'polling' | 'reprocess' | 'backstop'
 }): Promise<FinalizeActivationResult> {
   const { db, userId, customerId, newSubscriptionId, previousSubscriptionId, plan, cycle, source } = params
   const tag = `[${source}] finalizeActivation`
@@ -236,4 +236,83 @@ export function buildFreePlanUpdate(newStatus: 'overdue' | 'cancelled' | 'charge
     responses_limit: PLANS.free.maxResponses,
     responses_used: 0,
   }
+}
+
+export interface ActivatePaidResult {
+  activated: boolean
+  alreadyActive: boolean
+  recurringValueNeeded: boolean
+  recurringValueFixed: boolean
+  error?: string
+}
+
+/**
+ * activatePaidSubscription — rotina ÚNICA de ativação de uma assinatura PAGA, IDEMPOTENTE.
+ * Usada pelo BACKSTOP (cron reconcile-checkouts) p/ recuperar "pagamento confirmado mas o app NÃO
+ * ativou" (o buraco do incidente 2026-06-09: webhook fora do ar + navegador fechado). Modelada na
+ * rotina PROVADA do polling (persistPlanFromAsaas): update profile + checkout paid + handleUpgrade
+ * + finalizeActivation. (Consolidar polling/webhook nesta função é follow-up recomendado pelo Codex.)
+ *
+ * Idempotente: se o profile já está no plano+ciclo+sub corretos, retorna alreadyActive sem mutar.
+ * O CALLER deve envolver em lock (acquireLock) p/ evitar corrida com webhook/polling.
+ * NUNCA marca sucesso silencioso quando a correção de valor recorrente falha (retorna
+ * recurringValueFixed=false → o caller alerta + registra DLQ).
+ */
+export async function activatePaidSubscription(params: {
+  db: SupabaseClient
+  userId: string
+  customerId: string | null
+  subscriptionId: string
+  plan: string
+  cycle: BillingCycle
+  checkoutId?: string | null
+  previousSubscriptionId?: string | null
+  source: 'webhook' | 'polling' | 'reprocess' | 'backstop'
+  currentProfile?: { plan?: string | null; plan_status?: string | null; plan_cycle?: string | null; asaas_subscription_id?: string | null } | null
+}): Promise<ActivatePaidResult> {
+  const { db, userId, customerId, subscriptionId, plan, cycle, checkoutId, source } = params
+  const tag = `[${source}] activatePaidSubscription`
+
+  let cur = params.currentProfile ?? null
+  if (cur === null) {
+    const { data } = await db.from('profiles').select('plan, plan_status, plan_cycle, asaas_subscription_id').eq('id', userId).single()
+    cur = (data as typeof cur) ?? null
+  }
+  const previousSubId = params.previousSubscriptionId ?? cur?.asaas_subscription_id ?? null
+
+  // IDEMPOTENTE: já ativo no plano+ciclo+sub corretos → noop.
+  if (cur?.plan === plan && cur?.plan_status === 'active' && cur?.plan_cycle === cycle && cur?.asaas_subscription_id === subscriptionId) {
+    return { activated: false, alreadyActive: true, recurringValueNeeded: false, recurringValueFixed: true }
+  }
+
+  // 1) persiste o plano (service-role) — só conta como ativado se gravar 1 linha.
+  const { data: rows, error: upErr } = await db
+    .from('profiles')
+    .update(buildActivePlanUpdate({ plan, cycle, customerId, subscriptionId }) as never)
+    .eq('id', userId)
+    .select('id')
+  if (upErr || !rows || (rows as unknown[]).length !== 1) {
+    logError(`${tag}: falha ao persistir plano (0 linhas/erro)`, upErr, { userId, subscriptionId, rows: (rows as unknown[] | null)?.length ?? 0 })
+    return { activated: false, alreadyActive: false, recurringValueNeeded: false, recurringValueFixed: true, error: 'persist_failed' }
+  }
+
+  // 2) checkout → paid.
+  if (checkoutId) {
+    const { error: ckErr } = await db.from('billing_checkouts').update({ asaas_subscription_id: subscriptionId, status: 'paid', last_event: 'BACKSTOP_CONFIRMED' } as never).eq('id', checkoutId)
+    if (ckErr) logError(`${tag}: falha ao marcar checkout paid (não-bloqueante)`, ckErr, { checkoutId })
+  }
+
+  // 3) handleUpgrade (despausa forms) — não-bloqueante.
+  try {
+    const sk = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (sk) await handleUpgrade(userId, sk)
+  } catch (e) {
+    log(`${tag}: handleUpgrade falhou (não-bloqueante)`, { error: e instanceof Error ? e.message : String(e) })
+  }
+
+  // 4) finalizeActivation: cancel-previous + reconcile + correção de valor recorrente.
+  const fin = await finalizeActivation({ db, userId, customerId, newSubscriptionId: subscriptionId, previousSubscriptionId: previousSubId, plan, cycle, source })
+
+  log(`${tag}: ativado`, { userId, subscriptionId, plan, cycle, recurringValueNeeded: fin.recurringValueNeeded, recurringValueFixed: fin.recurringValueFixed })
+  return { activated: true, alreadyActive: false, recurringValueNeeded: fin.recurringValueNeeded, recurringValueFixed: fin.recurringValueFixed }
 }

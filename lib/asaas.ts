@@ -256,6 +256,23 @@ export async function createSubscriptionWithToken(params: {
  * pendente é a data de cobertura real) quanto p/ renovação paga (o pendente é a próxima cobrança).
  * Evita o `subscription.nextDueDate` INFLADO (próximo ciclo) das subs deferidas. (P0, Codex.)
  */
+/**
+ * Há pagamento CONFIRMED/RECEIVED para esta assinatura? Usado pelo BACKSTOP (cron) p/ confirmar
+ * que o dinheiro entrou ANTES de ativar (não basta a sub estar ACTIVE). `ok:false` = consulta
+ * falhou (o backstop deve ser conservador e NÃO ativar nesse tick).
+ */
+export async function hasConfirmedPaymentForSubscription(subscriptionId: string): Promise<{ confirmed: boolean; ok: boolean }> {
+  try {
+    const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&limit=20`)
+    const pays: Array<{ status?: string }> = data?.data ?? []
+    const confirmed = pays.some((p) => p.status === 'CONFIRMED' || p.status === 'RECEIVED' || p.status === 'RECEIVED_IN_CASH')
+    return { confirmed, ok: true }
+  } catch (err) {
+    logError('[asaas] hasConfirmedPaymentForSubscription: consulta falhou (ok=false)', err, { subscriptionId })
+    return { confirmed: false, ok: false }
+  }
+}
+
 export async function getEarliestPendingDueDate(subscriptionId: string): Promise<{ dueDate: string | null; ok: boolean }> {
   try {
     // PAGINA TODOS os pendentes (o mais antigo pode estar além dos 100 primeiros) e tira o min.

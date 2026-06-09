@@ -4,7 +4,8 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Form, QuestionConfig, ConditionalGroup, ConditionalRule, ThemePreset, FormStatus } from '@/lib/database.types'
+import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
+import { normalizeConditional } from '@/lib/form-logic-engine'
 import { questionTypes, createDefaultQuestion, getQuestionTypeInfo } from '@/lib/questions'
 import { themes, themeList } from '@/lib/themes'
 import { Button } from '@/components/ui/button'
@@ -389,21 +390,16 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           next = { ...next, jumpRules: valid }
         }
       }
-      // 3) conditionalLogic — dropa regras incompletas (sem questionId), que o engine
-      //    ignoraria de qualquer forma. FASE A: preserva o formato de entrada (legado
-      //    sai legado; grupo sai grupo) — NÃO canoniza legado→grupo aqui, senão o
-      //    autosave passaria a escrever grupo e o rollback desta fase ficaria inseguro.
-      //    A canonicalização legado→grupo entra na Fase B (editor multi-regra).
+      // 3) conditionalLogic — normaliza p/ grupo canônico e dropa regras incompletas
+      //    (sem questionId), que o engine ignoraria de qualquer forma. FASE B: a UI já
+      //    emite grupo, então gravamos sempre no formato canônico (legado é convertido
+      //    para grupo de 1 regra na leitura). Sem regra válida → limpa a condição.
       if (next.conditionalLogic) {
-        const cl = next.conditionalLogic
-        if (Array.isArray((cl as ConditionalGroup).rules)) {
-          const rules = (cl as ConditionalGroup).rules.filter(r => r && r.questionId)
-          next = {
-            ...next,
-            conditionalLogic: rules.length ? { ...(cl as ConditionalGroup), rules } : undefined,
-          }
-        } else if (!(cl as ConditionalRule).questionId) {
-          next = { ...next, conditionalLogic: undefined }
+        const group = normalizeConditional(next.conditionalLogic)
+        const rules = group.rules.filter(r => r && r.questionId)
+        next = {
+          ...next,
+          conditionalLogic: rules.length ? { conjunction: group.conjunction, rules } : undefined,
         }
       }
       return next

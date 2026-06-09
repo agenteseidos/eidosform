@@ -116,7 +116,13 @@ export function getNextQuestionId(
 
   if (jumpAction?.type === 'submit') return null
   if (jumpAction?.type === 'jump' && jumpAction.targetQuestionId) {
-    return jumpAction.targetQuestionId
+    // Só salta se o alvo está na lista recebida. Em buildQuestionPath a lista já vem
+    // filtrada por visibilidade, então um alvo escondido por condição cai no sequencial
+    // (não some o fluxo nem encerra o form). Com lista completa o alvo existe → idêntico
+    // ao comportamento anterior (exceto alvo órfão/deletado, que passa a cair no sequencial).
+    if (questions.some((question) => question.id === jumpAction.targetQuestionId)) {
+      return jumpAction.targetQuestionId
+    }
   }
 
   const currentIndex = questions.findIndex((question) => question.id === currentQuestionId)

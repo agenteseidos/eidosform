@@ -158,6 +158,51 @@ describe('condições múltiplas (grupo E/OU)', () => {
   })
 })
 
+describe('R7 — salto para alvo oculto por condição (T10/T11)', () => {
+  const questions = [
+    q('start', {
+      jumpRules: [
+        { id: 'r1', condition: { questionId: 'start', operator: 'equals', value: 'pular' },
+          action: { type: 'jump', targetQuestionId: 'alvo' } },
+      ],
+    }),
+    q('meio'),
+    // 'alvo' só aparece se idade > 18; se não, está oculto
+    q('alvo', { conditionalLogic: { questionId: 'idade', operator: 'greater_than', value: '18' } }),
+    q('fim'),
+  ]
+
+  it('T10 — alvo oculto não entra no buildQuestionPath; segue sequencial', () => {
+    // start manda pular pra "alvo", mas "alvo" está oculto (idade ausente) → o path
+    // não pode incluir o alvo escondido; cai no próximo visível.
+    const path = buildQuestionPath(questions, { start: 'pular' })
+    expect(path).not.toContain('alvo')
+    expect(path[0]).toBe('start')
+  })
+
+  it('T10b — quando o alvo está visível, o salto funciona normalmente', () => {
+    const path = buildQuestionPath(questions, { start: 'pular', idade: '30' })
+    expect(path).toContain('alvo')
+  })
+
+  it('T11 — não-regressão: lista completa, alvo existente → salta normal', () => {
+    // getNextQuestionId com a lista inteira (não filtrada) e alvo presente: comportamento idêntico ao anterior
+    const next = getNextQuestionId('start', questions, { start: 'pular', idade: '30' })
+    expect(next).toBe('alvo')
+  })
+
+  it('T11b — alvo órfão/deletado cai no sequencial (antes retornava id inexistente)', () => {
+    const orfas = [
+      q('a', { jumpRules: [
+        { id: 'r', condition: { questionId: 'a', operator: 'not_empty', value: '' },
+          action: { type: 'jump', targetQuestionId: 'zzz' } }, // 'zzz' não existe
+      ] }),
+      q('b'),
+    ]
+    expect(getNextQuestionId('a', orfas, { a: 'x' })).toBe('b')
+  })
+})
+
 describe('normalizeConditional (T8/T15)', () => {
   it('undefined/null → grupo vazio AND', () => {
     expect(normalizeConditional(undefined)).toEqual({ conjunction: 'and', rules: [] })

@@ -4,6 +4,7 @@
 
 import { QuestionConfig } from '@/lib/database.types'
 import { JUMP_OPERATORS } from '@/lib/jump-logic'
+import { normalizeConditional } from '@/lib/form-logic-engine'
 import type { PixelEventRule } from '@/types/pixel-events'
 
 export type LogicNodeKind = 'start' | 'end' | 'question'
@@ -178,13 +179,22 @@ export function buildLogicGraph(
   questions.forEach((q) => {
     const nodeWarnings: { severity: WarningSeverity; message: string }[] = []
     let conditionLabel: string | undefined
-    if (q.conditionalLogic) {
-      if (!q.conditionalLogic.questionId) {
-        nodeWarnings.push({ severity: 'warning', message: 'Condição de exibição sem pergunta escolhida — será ignorada.' })
-      } else if (!byId.has(q.conditionalLogic.questionId)) {
-        nodeWarnings.push({ severity: 'error', message: 'Condição de exibição aponta para uma pergunta que não existe mais.' })
-      } else {
-        conditionLabel = conditionText(q.conditionalLogic, questions, true)
+    const condGroup = normalizeConditional(q.conditionalLogic)
+    if (condGroup.rules.length > 0) {
+      const labels: string[] = []
+      for (const rule of condGroup.rules) {
+        if (!rule || !rule.questionId) {
+          // regra nula/malformada (JSONB sujo) ou sem pergunta-base — o motor a ignora;
+          // o `!rule` evita crash ao acessar .questionId (espelha o guard do engine).
+          nodeWarnings.push({ severity: 'warning', message: 'Condição de exibição sem pergunta escolhida — será ignorada.' })
+        } else if (!byId.has(rule.questionId)) {
+          nodeWarnings.push({ severity: 'error', message: 'Condição de exibição aponta para uma pergunta que não existe mais.' })
+        } else {
+          labels.push(conditionText(rule, questions, true))
+        }
+      }
+      if (labels.length) {
+        conditionLabel = labels.join(condGroup.conjunction === 'or' ? ' OU ' : ' E ')
       }
     }
     const hasJumps = !!(q.jumpRules && q.jumpRules.length > 0)

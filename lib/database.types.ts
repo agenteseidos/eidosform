@@ -43,6 +43,16 @@ export interface ConditionalRule {
   value?: string
 }
 
+// Conjunção entre múltiplas regras de visibilidade
+export type ConditionalConjunction = 'and' | 'or'
+
+// Grupo de regras de visibilidade (formato novo). O formato legado é uma
+// ConditionalRule única; normalizeConditional() converte os dois para grupo.
+export interface ConditionalGroup {
+  conjunction: ConditionalConjunction
+  rules: ConditionalRule[]
+}
+
 // Form status
 export type FormStatus = 'draft' | 'published' | 'closed'
 
@@ -96,7 +106,7 @@ export interface QuestionConfig {
   calendlyUrl?: string // Calendly embed URL for calendly type
   htmlContent?: string // HTML for html_block — sanitizado (allowlist de iframes) em sanitizeContentBlocksServer na escrita e no render
   htmlBlockNote?: string // Optional rich-text instruction shown below the iframe in html_block (e.g. "After scheduling, click Send")
-  conditionalLogic?: ConditionalRule
+  conditionalLogic?: ConditionalRule | ConditionalGroup // legado (objeto) ou novo (grupo)
   pixelEvents?: PixelEventRule[]
   jumpRules?: JumpRule[]
   // Content block fields

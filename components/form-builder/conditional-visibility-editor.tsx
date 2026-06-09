@@ -1,6 +1,7 @@
 'use client'
 
 import { QuestionConfig, ConditionalRule, ConditionalOperator } from '@/lib/database.types'
+import { normalizeConditional } from '@/lib/form-logic-engine'
 import { isChoiceType, answerOptions } from '@/lib/branching'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,7 +30,10 @@ function questionLabel(q: QuestionConfig): string {
 }
 
 export function ConditionalVisibilityEditor({ question, allQuestions, onChange }: ConditionalVisibilityEditorProps) {
-  const rule = question.conditionalLogic
+  // FASE A (read-compat): lê o formato legado (regra única) OU o novo (grupo) via
+  // normalizeConditional, mas a UI ainda edita/emite só a regra única legada — sem
+  // múltiplas regras. A UI multi-regra (emite grupo) entra na Fase B.
+  const rule = normalizeConditional(question.conditionalLogic).rules[0]
   const others = allQuestions.filter(q => q.id !== question.id)
 
   return (

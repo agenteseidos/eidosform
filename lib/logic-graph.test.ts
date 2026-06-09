@@ -66,6 +66,51 @@ describe('buildLogicGraph', () => {
     expect(g.warnings).toBeDefined()
   })
 
+  it('T13 — grupo de condições: label com E/OU + warning por regra incompleta + erro por pergunta deletada', () => {
+    // grupo E com 2 regras válidas → label junta com " E "
+    const gAnd = buildLogicGraph([
+      q('idade'), q('plano'),
+      q('alvo', { conditionalLogic: { conjunction: 'and', rules: [
+        { questionId: 'idade', operator: 'greater_than', value: '18' },
+        { questionId: 'plano', operator: 'equals', value: 'pro' },
+      ] } } as Partial<QuestionConfig>),
+    ])
+    const alvoAnd = gAnd.nodes.find(n => n.id === 'alvo')!
+    expect(alvoAnd.data.conditionLabel).toMatch(/ E /)
+
+    // grupo OU → label junta com " OU "
+    const gOr = buildLogicGraph([
+      q('idade'), q('plano'),
+      q('alvo', { conditionalLogic: { conjunction: 'or', rules: [
+        { questionId: 'idade', operator: 'greater_than', value: '18' },
+        { questionId: 'plano', operator: 'equals', value: 'pro' },
+      ] } } as Partial<QuestionConfig>),
+    ])
+    expect(gOr.nodes.find(n => n.id === 'alvo')!.data.conditionLabel).toMatch(/ OU /)
+
+    // regra incompleta (sem questionId) → warning; pergunta deletada → erro
+    const gWarn = buildLogicGraph([
+      q('plano'),
+      q('alvo', { conditionalLogic: { conjunction: 'and', rules: [
+        { questionId: '', operator: 'equals', value: '' },
+        { questionId: 'inexistente', operator: 'equals', value: 'x' },
+      ] } } as Partial<QuestionConfig>),
+    ])
+    expect(gWarn.warnings.some(w => w.nodeId === 'alvo' && /ignorada/.test(w.message))).toBe(true)
+    expect(gWarn.warnings.some(w => w.nodeId === 'alvo' && /não existe/.test(w.message))).toBe(true)
+
+    // regra null/malformada dentro do grupo (JSONB sujo) não pode quebrar o grafo
+    const buildWithNull = () => buildLogicGraph([
+      q('plano'),
+      q('alvo', { conditionalLogic: { conjunction: 'and', rules: [
+        null,
+        { questionId: 'plano', operator: 'equals', value: 'pro' },
+      ] } } as unknown as Partial<QuestionConfig>),
+    ])
+    expect(buildWithNull).not.toThrow()
+    expect(buildWithNull().nodes.find(n => n.id === 'alvo')!.data.conditionLabel).toBeDefined()
+  })
+
   it('cada aresta de saída tem um ponto de saída (handle) próprio', () => {
     const g = buildLogicGraph([
       q('a', { type: 'yes_no', jumpRules: [

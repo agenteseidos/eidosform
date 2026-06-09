@@ -53,6 +53,20 @@ const ConditionalRuleSchema = z
   })
   .strict()
 
+// Grupo de regras de visibilidade (formato novo). Limite próprio de 20 regras
+// por grupo (jumpRules/pixelEvents usam .max(40), mas condição não precisa de tanto).
+const ConditionalGroupSchema = z
+  .object({
+    conjunction: z.enum(['and', 'or']),
+    rules: z.array(ConditionalRuleSchema).max(20),
+  })
+  .strict()
+
+// Aceita o formato legado (regra única) e o novo (grupo). Os dois .strict()
+// discriminam limpo: grupo tem chaves extras p/ o rule schema e vice-versa.
+// Grupo primeiro para a união casar o formato novo antes do legado.
+const ConditionalLogicSchema = z.union([ConditionalGroupSchema, ConditionalRuleSchema])
+
 // Pixel event rule (one entry inside QuestionConfig.pixelEvents)
 const PixelEventRuleSchema = z
   .object({
@@ -111,7 +125,7 @@ const QuestionBaseShape = {
   required: z.boolean().default(false),
   placeholder: z.string().max(500).optional().nullable(),
   defaultCountry: z.string().max(8).optional().nullable(),
-  conditionalLogic: ConditionalRuleSchema.optional().nullable(),
+  conditionalLogic: ConditionalLogicSchema.optional().nullable(),
   pixelEvents: z.array(PixelEventRuleSchema).max(40).optional(),
   jumpRules: z.array(JumpRuleSchema).max(40).optional(),
   imageUrl: optionalSafeUrl.optional(),

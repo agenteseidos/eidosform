@@ -1,5 +1,5 @@
-import { ConditionalRule, QuestionConfig } from '@/lib/database.types'
-import { JumpRule } from '@/lib/jump-logic'
+import { ConditionalRule, ConditionalGroup, QuestionConfig } from '@/lib/database.types'
+import type { JumpRule } from '@/lib/jump-logic'
 
 export type LogicOperator =
   | 'equals'
@@ -56,13 +56,32 @@ export function evaluateLogicRule(rule: EvaluatableRule, answers: LogicAnswersMa
   }
 }
 
+// Converte o formato legado (ConditionalRule única) e o novo (ConditionalGroup)
+// para um grupo canônico. Discrimina por Array.isArray(rules) — não por 'rules' in raw
+// — porque o dado vem do JSONB sem validação na leitura do motor: um objeto malformado
+// com chave `rules` mas sem `conjunction` seria tratado como grupo de outra forma.
+// Conjunção inválida cai para 'and'.
+export function normalizeConditional(
+  raw: ConditionalRule | ConditionalGroup | null | undefined,
+): ConditionalGroup {
+  if (!raw) return { conjunction: 'and', rules: [] }
+  if (Array.isArray((raw as ConditionalGroup).rules)) {
+    const group = raw as ConditionalGroup
+    return { conjunction: group.conjunction === 'or' ? 'or' : 'and', rules: group.rules }
+  }
+  return { conjunction: 'and', rules: [raw as ConditionalRule] }
+}
+
 export function isQuestionVisible(question: QuestionConfig, answers: LogicAnswersMap): boolean {
-  const rule = question.conditionalLogic
-  // Condição incompleta (pergunta-base não escolhida no editor) → ignora a
-  // condição e mantém a pergunta visível, em vez de fazê-la sumir/aparecer
-  // por uma comparação contra um id vazio.
-  if (!rule || !rule.questionId) return true
-  return evaluateLogicRule(rule, answers)
+  const group = normalizeConditional(question.conditionalLogic)
+  // Ignora regras incompletas (pergunta-base não escolhida no editor): avaliá-las
+  // contra um id vazio faria o bloco sumir/aparecer sem querer. Se TODAS forem
+  // incompletas, não há condição efetiva → mantém visível (igual ao comportamento legado).
+  const valid = group.rules.filter((r) => r && r.questionId)
+  if (valid.length === 0) return true
+  return group.conjunction === 'or'
+    ? valid.some((r) => evaluateLogicRule(r, answers))
+    : valid.every((r) => evaluateLogicRule(r, answers))
 }
 
 export function getVisibleQuestions(questions: QuestionConfig[], answers: LogicAnswersMap): QuestionConfig[] {

@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
+import { Form, QuestionConfig, ConditionalGroup, ConditionalRule, ThemePreset, FormStatus } from '@/lib/database.types'
 import { questionTypes, createDefaultQuestion, getQuestionTypeInfo } from '@/lib/questions'
 import { themes, themeList } from '@/lib/themes'
 import { Button } from '@/components/ui/button'
@@ -389,10 +389,22 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           next = { ...next, jumpRules: valid }
         }
       }
-      // 3) conditionalLogic com questionId vazio — sem base de comparação, o engine
-      //    ignora a regra (sempre visível); persistir o estado vazio é só lixo.
-      if (next.conditionalLogic && !next.conditionalLogic.questionId) {
-        next = { ...next, conditionalLogic: undefined }
+      // 3) conditionalLogic — dropa regras incompletas (sem questionId), que o engine
+      //    ignoraria de qualquer forma. FASE A: preserva o formato de entrada (legado
+      //    sai legado; grupo sai grupo) — NÃO canoniza legado→grupo aqui, senão o
+      //    autosave passaria a escrever grupo e o rollback desta fase ficaria inseguro.
+      //    A canonicalização legado→grupo entra na Fase B (editor multi-regra).
+      if (next.conditionalLogic) {
+        const cl = next.conditionalLogic
+        if (Array.isArray((cl as ConditionalGroup).rules)) {
+          const rules = (cl as ConditionalGroup).rules.filter(r => r && r.questionId)
+          next = {
+            ...next,
+            conditionalLogic: rules.length ? { ...(cl as ConditionalGroup), rules } : undefined,
+          }
+        } else if (!(cl as ConditionalRule).questionId) {
+          next = { ...next, conditionalLogic: undefined }
+        }
       }
       return next
     }),

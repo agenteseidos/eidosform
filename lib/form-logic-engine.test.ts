@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { getVisibleQuestions, getNextQuestionId, buildQuestionPath, evaluateJumpRules } from './form-logic-engine'
-import type { QuestionConfig } from './database.types'
+import { getVisibleQuestions, getNextQuestionId, buildQuestionPath, evaluateJumpRules, isQuestionVisible, normalizeConditional } from './form-logic-engine'
+import type { QuestionConfig, ConditionalGroup } from './database.types'
 
 // Cenário: pergunta-alvo de um salto só fica visível por causa da resposta
 // recém-dada (bug do salto que caía na lista de visíveis defasada).
@@ -81,5 +81,102 @@ describe('regras incompletas (questionId/targetQuestionId vazios)', () => {
       {},
     )
     expect(action).toEqual({ type: 'submit' })
+  })
+})
+
+// Grupo de regras (formato novo) com conjunção E/OU.
+const group = (conjunction: 'and' | 'or', rules: ConditionalGroup['rules']): ConditionalGroup =>
+  ({ conjunction, rules })
+
+describe('condições múltiplas (grupo E/OU)', () => {
+  const ans = { idade: '30', plano: 'pro' }
+
+  it('T1 — E: todas verdadeiras → visível', () => {
+    const alvo = q('alvo', { conditionalLogic: group('and', [
+      { questionId: 'idade', operator: 'greater_than', value: '18' },
+      { questionId: 'plano', operator: 'equals', value: 'pro' },
+    ]) })
+    expect(isQuestionVisible(alvo, ans)).toBe(true)
+  })
+
+  it('T2 — E: uma verdadeira + uma falsa → oculto', () => {
+    const alvo = q('alvo', { conditionalLogic: group('and', [
+      { questionId: 'idade', operator: 'greater_than', value: '18' },
+      { questionId: 'plano', operator: 'equals', value: 'free' },
+    ]) })
+    expect(isQuestionVisible(alvo, ans)).toBe(false)
+  })
+
+  it('T3 — OU: uma verdadeira + uma falsa → visível', () => {
+    const alvo = q('alvo', { conditionalLogic: group('or', [
+      { questionId: 'idade', operator: 'less_than', value: '18' },
+      { questionId: 'plano', operator: 'equals', value: 'pro' },
+    ]) })
+    expect(isQuestionVisible(alvo, ans)).toBe(true)
+  })
+
+  it('T4 — OU: todas falsas → oculto', () => {
+    const alvo = q('alvo', { conditionalLogic: group('or', [
+      { questionId: 'idade', operator: 'less_than', value: '18' },
+      { questionId: 'plano', operator: 'equals', value: 'free' },
+    ]) })
+    expect(isQuestionVisible(alvo, ans)).toBe(false)
+  })
+
+  it('T5 — regra incompleta ignorada num grupo E válido', () => {
+    // a regra sem questionId não conta; sobra só a válida (verdadeira) → visível
+    const alvo = q('alvo', { conditionalLogic: group('and', [
+      { questionId: '', operator: 'equals', value: 'x' },
+      { questionId: 'plano', operator: 'equals', value: 'pro' },
+    ]) })
+    expect(isQuestionVisible(alvo, ans)).toBe(true)
+    // e se a única válida for falsa → oculto
+    const alvo2 = q('alvo2', { conditionalLogic: group('and', [
+      { questionId: '', operator: 'equals', value: 'x' },
+      { questionId: 'plano', operator: 'equals', value: 'free' },
+    ]) })
+    expect(isQuestionVisible(alvo2, ans)).toBe(false)
+  })
+
+  it('T6 — todas as regras incompletas → visível', () => {
+    const alvo = q('alvo', { conditionalLogic: group('and', [
+      { questionId: '', operator: 'equals', value: 'x' },
+      { questionId: '', operator: 'not_equals', value: 'y' },
+    ]) })
+    expect(isQuestionVisible(alvo, ans)).toBe(true)
+    // grupo vazio também é visível
+    expect(isQuestionVisible(q('vazio', { conditionalLogic: group('and', []) }), ans)).toBe(true)
+  })
+
+  it('T7 — retrocompat: regra única legada idêntica ao baseline', () => {
+    const legada = q('legada', { conditionalLogic: { questionId: 'plano', operator: 'equals', value: 'pro' } })
+    expect(isQuestionVisible(legada, ans)).toBe(true)
+    expect(isQuestionVisible(legada, { plano: 'free' })).toBe(false)
+    // o getVisibleQuestions também segue funcionando com o formato legado
+    expect(getVisibleQuestions([legada], ans).map(x => x.id)).toEqual(['legada'])
+    expect(getVisibleQuestions([legada], { plano: 'free' }).map(x => x.id)).toEqual([])
+  })
+})
+
+describe('normalizeConditional (T8/T15)', () => {
+  it('undefined/null → grupo vazio AND', () => {
+    expect(normalizeConditional(undefined)).toEqual({ conjunction: 'and', rules: [] })
+    expect(normalizeConditional(null)).toEqual({ conjunction: 'and', rules: [] })
+  })
+
+  it('regra única legada → grupo AND de 1 regra', () => {
+    const r = { questionId: 'a', operator: 'equals' as const, value: 'x' }
+    expect(normalizeConditional(r)).toEqual({ conjunction: 'and', rules: [r] })
+  })
+
+  it('grupo válido é preservado', () => {
+    const g = group('or', [{ questionId: 'a', operator: 'equals', value: 'x' }])
+    expect(normalizeConditional(g)).toEqual(g)
+  })
+
+  it('T15 — endurecimento: rules sem conjunction válida → AND; conjunção inválida → AND', () => {
+    expect(normalizeConditional({ rules: [] } as unknown as ConditionalGroup).conjunction).toBe('and')
+    const bad = { conjunction: 'xor', rules: [{ questionId: 'a', operator: 'equals', value: 'x' }] } as unknown as ConditionalGroup
+    expect(normalizeConditional(bad).conjunction).toBe('and')
   })
 })

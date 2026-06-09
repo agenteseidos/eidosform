@@ -94,6 +94,24 @@ const credit360 = calculateProrationCredit({
 })
 assert(approx(credit360, 343.23), `360 dias starter anual ≈ R$343.23 (got ${credit360})`)
 
+// TETO do crédito (Sidney 2026-06-09): dias restantes > ciclo (fim-do-dia + deriva de mudanças
+// repetidas) NÃO podem inflar o crédito acima do preço pago. min(credito, preço).
+const creditCapMonthly = calculateProrationCredit({
+  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(35),
+})
+assert(approx(creditCapMonthly, 49.0), `35 dias starter mensal = TETO R$49.00 (não infla; got ${creditCapMonthly})`)
+
+const creditCapYearly = calculateProrationCredit({
+  currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(400),
+})
+assert(approx(creditCapYearly, 1164.0), `400 dias plus anual = TETO R$1164.00 (não infla; got ${creditCapYearly})`)
+
+// Borda: exatamente o ciclo cheio (30 dias) ainda dá o preço cheio (não corta a menos).
+const creditFullCycle = calculateProrationCredit({
+  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(30),
+})
+assert(creditFullCycle <= 49.0 && creditFullCycle >= 48.5, `30 dias starter mensal ≈ R$49 sem estourar (got ${creditFullCycle})`)
+
 // ============================================================
 // 3. calculateUpgradePrice — cenários de upgrade anual
 // ============================================================

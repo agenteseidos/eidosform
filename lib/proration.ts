@@ -70,8 +70,15 @@ export function calculateProrationCredit(params: ProrationCreditParams): number 
 
   const credit = (price / totalDays) * remainingDays
 
+  // TETO (Sidney 2026-06-09): o crédito do tempo NÃO-USADO nunca pode exceder o preço pago pelo
+  // ciclo — você não tem mais valor não-usado do que pagou. Sem o teto, quando os dias restantes
+  // passam de totalDays (expiração no fim-do-dia + deriva de mudanças repetidas), o crédito
+  // inflava acima do preço e, via "saldo vira tempo", EMPILHAVA tempo grátis a cada
+  // cancel+reativa de mesmo plano. min(credito, preço) fecha a inflação e o empilhamento.
+  const capped = Math.min(credit, price)
+
   // Arredonda para 2 casas decimais
-  return Math.round(credit * 100) / 100
+  return Math.round(capped * 100) / 100
 }
 
 /**

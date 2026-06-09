@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields } from '@/lib/billing-profile'
 import { computePlanChange } from '@/lib/plan-change'
+import { checkLaunchScope } from '@/lib/billing-launch-guard'
 import { type BillingCycle } from '@/lib/asaas'
 
 const VALID_PLANS = new Set<string>(PLAN_ORDER.filter((p) => p !== 'free'))
@@ -39,6 +40,11 @@ export async function GET(
   if (!profile) {
     return NextResponse.json({ error: 'Perfil não encontrado' }, { status: 404 })
   }
+
+  // TRAVA DE SEGURANÇA (Codex): bloqueia o preview de mudança de plano/ciclo bloqueada — o usuário
+  // não vê um resumo enganoso de um fluxo que o POST vai recusar. Mesma fonte da verdade do POST.
+  const launchBlock = checkLaunchScope({ currentPlan: profile.plan ?? 'free', targetPlan: plan, cycle })
+  if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })
 
   const missingFields = getMissingBillingFields(profile)
 

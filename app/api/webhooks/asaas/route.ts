@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
-import { finalizeActivation, claimActivationEffects } from '@/lib/billing-activation'
+import { finalizeActivation, claimActivationEffects, isExpectedFullPrice } from '@/lib/billing-activation'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -587,6 +587,18 @@ export async function POST(req: NextRequest) {
         }
         const planConfig = PLANS[plan as PlanName]
         const planExpiresAt = calculateExpiryDate(cycle)
+
+        // GUARD de preço-cheio (Codex 2026-06-09): se o value da sub é CONHECIDO e NÃO é o preço
+        // cheio do plano/ciclo (prorateado), NÃO ativar — o Asaas prod bloqueia corrigir o valor
+        // recorrente → recriaria o desconto eterno. Vai p/ alerta + DLQ (revisão manual).
+        if (typeof subValue === 'number' && !isExpectedFullPrice(subValue, plan, cycle)) {
+          logError('[asaas-webhook] GUARD preço-cheio: sub PRORATEADA não ativada (value != cheio) — DLQ/manual', undefined, { userId: user.id, subscriptionId: payment.subscription ?? null, subValue, plan, cycle })
+          await sendBillingOpsAlert({ subject: 'Webhook: sub PRORATEADA NÃO ativada (value != preço cheio) — revisar manual', lines: { userId: user.id, subscriptionId: payment.subscription ?? null, subValue, plan, cycle } }).catch(() => {})
+          await (supabase as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+            .from('asaas_webhook_events')
+            .upsert({ event_id: `prorated-blocked:${payment.subscription}`, event: 'PRORATED_BLOCKED', status: 'failed', error: `sub prorateada R$${subValue} != cheio (${plan}/${cycle}) — não ativada`, subscription_id: payment.subscription ?? null, customer_id: customerId, last_attempt_at: new Date().toISOString() }, { onConflict: 'event_id' }).catch(() => {})
+          break
+        }
 
         log('[asaas-webhook] Activating plan', { userId: user.id, plan, cycle, expiresAt: planExpiresAt })
 

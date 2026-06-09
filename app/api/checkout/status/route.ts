@@ -4,7 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
 import { handleUpgrade } from '@/lib/plan-limits'
-import { buildActivePlanUpdate, finalizeActivation } from '@/lib/billing-activation'
+import { buildActivePlanUpdate, finalizeActivation, isExpectedFullPrice } from '@/lib/billing-activation'
+import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
 
 /**
@@ -123,6 +124,20 @@ export async function GET() {
     if (profile?.plan === checkoutPlan && profile?.plan_status === 'active' && profile?.plan_cycle === cycle) {
       log('[checkout/status] Plan+cycle already active locally, skipping persist')
       return true
+    }
+
+    // GUARD de preço-cheio (Codex 2026-06-09): NÃO auto-ativar sub PRORATEADA (value != preço cheio).
+    // O Asaas prod bloqueia corrigir o valor recorrente → recriaria o desconto eterno. Vai p/ alerta.
+    try {
+      const subForGuard = (await getSubscription(subscriptionId)) as { value?: number }
+      if (!isExpectedFullPrice(subForGuard?.value, checkoutPlan, cycle)) {
+        logError('[checkout/status] GUARD preço-cheio: sub prorateada NÃO auto-ativada (revisar manual)', undefined, { userId: user!.id, subscriptionId, value: subForGuard?.value ?? null, plan: checkoutPlan, cycle })
+        await sendBillingOpsAlert({ subject: 'Polling: sub prorateada NÃO auto-ativada (value != preço cheio) — revisar', lines: { userId: user!.id, subscriptionId, value: subForGuard?.value ?? null, plan: checkoutPlan, cycle } }).catch(() => {})
+        return false
+      }
+    } catch (e) {
+      logError('[checkout/status] GUARD preço-cheio: falha ao ler sub — não ativa neste tick (conservador)', e, { subscriptionId })
+      return false
     }
 
     let admin: ReturnType<typeof createAdminClient>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { getCustomerSubscriptions, hasConfirmedPaymentForSubscription, detectPlanAndCycleFromValue, PLAN_PRICES } from '@/lib/asaas'
-import { activatePaidSubscription, type BillingCycle } from '@/lib/billing-activation'
+import { getCustomerSubscriptions, hasConfirmedPaymentForSubscription, detectPlanAndCycleFromValue } from '@/lib/asaas'
+import { activatePaidSubscription, isExpectedFullPrice, type BillingCycle } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
@@ -95,10 +95,8 @@ export async function GET(req: NextRequest) {
       // GUARD (Codex): só auto-ativar sub no PREÇO CHEIO. Valor prorateado (upgrade-proration) é
       // INSEGURO — o Asaas bloqueia corrigir o valor recorrente em prod → recriaria o desconto
       // eterno. Esses casos vão p/ alerta/manual, NUNCA auto-ativam.
-      const prices = PLAN_PRICES[ck.plan as keyof typeof PLAN_PRICES]
-      const fullPrice = prices ? (ck.cycle === 'YEARLY' ? prices.yearly : prices.monthly) : null
-      if (fullPrice == null || Math.abs(target.value - fullPrice) > 0.01) {
-        alerts.push(`checkout ${ck.id} (profile ${ck.profile_id}, customer ${customerId}): sub ${target.id} R$${target.value} != preço cheio R$${fullPrice ?? '?'} (${ck.plan}/${ck.cycle}) — PRORATEADO/INSEGURO, NÃO auto-ativo (manual)`)
+      if (!isExpectedFullPrice(target.value, ck.plan, ck.cycle as BillingCycle)) {
+        alerts.push(`checkout ${ck.id} (profile ${ck.profile_id}, customer ${customerId}): sub ${target.id} R$${target.value} != preço cheio (${ck.plan}/${ck.cycle}) — PRORATEADO/INSEGURO, NÃO auto-ativo (manual)`)
         results.alerted++
         continue
       }

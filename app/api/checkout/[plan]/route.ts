@@ -14,6 +14,7 @@ import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
 import { expiryFromNextDueDate } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
+import { checkLaunchScope } from '@/lib/billing-launch-guard'
 import { log, logError, logWarn } from '@/lib/logger'
 import { sendBillingOpsAlert } from '@/lib/resend'
 
@@ -110,6 +111,11 @@ export async function POST(
   if (!profile.email) {
     return NextResponse.json({ error: 'Email obrigatório para o checkout' }, { status: 400 })
   }
+
+  // TRAVA DE SEGURANÇA (P0, Codex 2026-06-09): bloqueia mudança de plano/ciclo p/ pagante e
+  // planos/ciclo não-liberados no escopo atual (fluxos que editam valor de sub quebram em prod).
+  const launchBlock = checkLaunchScope({ currentPlan: profile.plan ?? 'free', targetPlan: plan, cycle })
+  if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })
 
   const missingFields = getMissingBillingFields(profile)
   if (missingFields.length > 0) {

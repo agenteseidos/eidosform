@@ -238,6 +238,20 @@ export function buildFreePlanUpdate(newStatus: 'overdue' | 'cancelled' | 'charge
   }
 }
 
+/**
+ * GUARD de preço-cheio (Codex 2026-06-09): uma sub só é segura p/ AUTO-ativar se o `value` for o
+ * preço CHEIO esperado do plano/ciclo. Valor prorateado (upgrade-proration) é inseguro — o Asaas
+ * prod bloqueia corrigir o valor recorrente → recriaria o desconto eterno. Usado por webhook,
+ * polling E backstop (defesa em profundidade nos 3 caminhos de ativação).
+ */
+export function isExpectedFullPrice(value: number | null | undefined, plan: string, cycle: BillingCycle): boolean {
+  if (typeof value !== 'number') return false
+  const prices = PLAN_PRICES[plan as keyof typeof PLAN_PRICES]
+  if (!prices) return false
+  const full = cycle === 'YEARLY' ? prices.yearly : prices.monthly
+  return Math.abs(value - full) <= 0.01
+}
+
 export interface ActivatePaidResult {
   activated: boolean
   alreadyActive: boolean

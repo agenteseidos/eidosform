@@ -112,6 +112,18 @@ const creditFullCycle = calculateProrationCredit({
 })
 assert(creditFullCycle <= 49.0 && creditFullCycle >= 48.5, `30 dias starter mensal ≈ R$49 sem estourar (got ${creditFullCycle})`)
 
+// SEQUÊNCIA anti-farming (sugestão Codex 2026-06-09): prova explícita de que cancel+reativa
+// repetido NÃO empilha cobertura. Mesmo com expiração derivada p/ now+35d, o crédito capado (R$49)
+// gera cobertura de no MÁX ~1 ciclo (30d), nunca 35 — e repetir não cresce.
+const STARTER_M = 49
+const driftedCredit = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(35) })
+const driftedCoverage = calculateCreditCoverageDays(driftedCredit, STARTER_M, 'MONTHLY')
+assert(driftedCoverage <= 30, `cobertura com 35d derivados ≤ 30d (teto mata o farming; sem teto daria 35; got ${driftedCoverage})`)
+// 2ª reativação (agora ~30d restantes): crédito = teto R$49 → cobertura 30, NÃO cresce.
+const round2Credit = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(30) })
+const round2Coverage = calculateCreditCoverageDays(round2Credit, STARTER_M, 'MONTHLY')
+assert(round2Coverage <= 30, `2ª reativação: cobertura ≤ 30d (não empilha; got ${round2Coverage})`)
+
 // ============================================================
 // 3. calculateUpgradePrice — cenários de upgrade anual
 // ============================================================

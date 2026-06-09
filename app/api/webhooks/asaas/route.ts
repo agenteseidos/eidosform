@@ -20,6 +20,31 @@ function getSupabase() {
   )
 }
 
+/**
+ * HARDENING (2026-06-09): o webhook rejeitando eventos por auth (401) NÃO pode ser silencioso —
+ * foi o que mascarou o incidente (URL/token errados → eventos morriam sem ninguém saber).
+ * Dispara alerta operacional, mas com RATE-LIMIT de 1 por janela de 10 min (via marker
+ * insert-do-nothing em asaas_webhook_events) p/ não virar storm/DoS num retry do Asaas.
+ */
+async function alertWebhookAuthFailure(reason: string, ctx: Record<string, string | number | boolean | null>) {
+  try {
+    const db = getSupabase()
+    const bucket = Math.floor(Date.now() / 600_000) // janela de 10 minutos
+    const { error } = await db.from('asaas_webhook_events').insert({
+      event_id: `webhook-401-alert:${bucket}`,
+      event: 'WEBHOOK_AUTH_401',
+      status: 'processed',
+      error: reason,
+      processed_at: new Date().toISOString(),
+    })
+    if (error) return // conflito = já alertou nesta janela de 10 min
+    await sendBillingOpsAlert({
+      subject: '🚨 Webhook Asaas REJEITANDO eventos por auth (401) — verifique URL/token JÁ',
+      lines: { motivo: reason, ...ctx, ambiente: process.env.ASAAS_ENVIRONMENT ?? '?', quando: new Date().toISOString() },
+    }).catch(() => {})
+  } catch { /* best-effort: nunca quebra o handler */ }
+}
+
 function detectPlanAndCycle(value: number): { plan: string; cycle: 'MONTHLY' | 'YEARLY' } | null {
   for (const [plan, prices] of Object.entries(PLAN_PRICES)) {
     if (value === prices.yearly) return { plan, cycle: 'YEARLY' }
@@ -326,6 +351,7 @@ export async function POST(req: NextRequest) {
     // Critical config issue, but respond 401 (not 500) so Asaas does not enter
     // an exponential retry storm against an endpoint that will never succeed.
     logError('[asaas-webhook] ASAAS_WEBHOOK_SECRET or ASAAS_WEBHOOK_TOKEN not configured')
+    await alertWebhookAuthFailure('ASAAS_WEBHOOK_SECRET/TOKEN não configurado no ambiente', {})
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -345,6 +371,10 @@ export async function POST(req: NextRequest) {
       hasHmacHeader: !!hmacHeader,
       hasAccessTokenHeader: !!accessTokenHeader,
       tokenPrefix: webhookToken.slice(0, 8),
+    })
+    await alertWebhookAuthFailure('token asaas-access-token (ou HMAC) não bateu com o secret', {
+      hasAccessTokenHeader: !!accessTokenHeader,
+      hasHmacHeader: !!hmacHeader,
     })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

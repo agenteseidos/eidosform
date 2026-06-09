@@ -886,9 +886,20 @@ export async function POST(req: NextRequest) {
           logError('[asaas-webhook] REFUND/PAYMENT_DELETED — acesso MANTIDO; revisar manualmente (refund total → cancelar manual; parcial → manter)', undefined, {
             userId: user.id, subscriptionId, event, value: payment?.value ?? null,
           })
+          const refundValueFmt = `R$${Number(payment?.value ?? 0).toFixed(2)}`
           await sendBillingOpsAlert({
-            subject: 'Refund/pagamento deletado — revisar manualmente (acesso NÃO foi derrubado automaticamente)',
-            lines: { userId: user.id, subscriptionId, event, value: payment?.value ?? null, plan: refundProfile?.plan ?? null, customerId },
+            subject: `⚠️ Estorno de ${refundValueFmt} — a ASSINATURA CONTINUA ATIVA (cancele se o cliente está saindo)`,
+            lines: {
+              '🔴 ATENÇÃO': 'O estorno devolveu o dinheiro, mas NÃO cancelou a assinatura — ela vai COBRAR DE NOVO no próximo ciclo.',
+              'AÇÃO se o cliente está SAINDO': 'Cancele a assinatura no painel Asaas (ou peça o cancelamento no app) para parar cobranças futuras.',
+              'AÇÃO se foi CORTESIA (mês grátis)': 'Não faça nada — a assinatura segue ativa e o cliente continua.',
+              cliente: user.email,
+              plano: refundProfile?.plan ?? null,
+              valorEstornado: refundValueFmt,
+              assinatura: subscriptionId,
+              evento: event,
+              customerId,
+            },
           }).catch(() => {})
           break
         }

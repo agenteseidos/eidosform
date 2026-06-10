@@ -78,7 +78,9 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
     }
     if (options.phone) {
       const digitsOnly = options.phone.replace(/\D/g, '')
-      if (digitsOnly.length >= 6) {
+      // E.164 plausível: 8–15 dígitos (P3). Abaixo de 8 é quase sempre lixo
+      // (campo vazio, "0", máscara incompleta) e só polui o matching do Meta.
+      if (digitsOnly.length >= 8 && digitsOnly.length <= 15) {
         userData.ph = [await sha256Normalize(digitsOnly)]
       }
     }

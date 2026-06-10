@@ -348,7 +348,9 @@ function ResponseDetailDialog({
               {filePreview.type?.startsWith('image/') ? (
                 <Image src={getFileUrl(filePreview)} alt={filePreview.name} width={800} height={600} className="max-w-full h-auto rounded-lg mx-auto" />
               ) : filePreview.type === 'application/pdf' ? (
-                <iframe src={getFileUrl(filePreview)} className="w-full h-[60vh] rounded-lg border" title={filePreview.name} />
+                // sandbox sem allow-scripts: se o anexo for um HTML disfarçado de
+                // PDF (MIME confusion), nada executa no contexto do dashboard.
+                <iframe src={getFileUrl(filePreview)} sandbox="" className="w-full h-[60vh] rounded-lg border" title={filePreview.name} />
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-400">
                   <File className="w-16 h-16 mb-4 opacity-40" />

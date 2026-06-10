@@ -36,9 +36,16 @@ export default async function BillingPage() {
   const usedResponses = profile?.responses_used ?? 0
   const planLimit = profile?.responses_limit ?? 100
   const planExpiresAt = profile?.plan_expires_at ? new Date(profile.plan_expires_at) : null
+  // Exibição em BRT: a expiração é gravada como fim-de-dia BRT (02:59Z do dia seguinte) —
+  // formatar em UTC mostraria um dia a mais.
   const cycleLabel = planExpiresAt
-    ? planExpiresAt.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })
+    ? planExpiresAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: 'numeric', month: 'long' })
     : '—'
+  const expiresLabel = planExpiresAt
+    ? planExpiresAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: 'numeric', month: 'long', year: 'numeric' })
+    : '—'
+  const cycleName = currentPlan === 'free' ? '' : currentCycle === 'YEARLY' ? ' Anual' : currentCycle === 'MONTHLY' ? ' Mensal' : ''
+  const isCanceling = planStatus === 'canceling' && currentPlan !== 'free'
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
@@ -62,8 +69,14 @@ export default async function BillingPage() {
       <Card className="p-6 mb-8 bg-[#0F1629] border border-[#F5B731]/30 shadow-lg shadow-[#F5B731]/5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-semibold text-white">Uso atual — Plano {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}</h2>
-            <p className="text-sm text-slate-300 mt-0.5">{currentPlan === 'free' ? 'Plano gratuito — sem ciclo de cobrança' : `Ciclo reinicia em ${cycleLabel}`}</p>
+            <h2 className="font-semibold text-white">Uso atual — Plano {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}{cycleName}</h2>
+            <p className="text-sm text-slate-300 mt-0.5">
+              {currentPlan === 'free'
+                ? 'Plano gratuito — sem ciclo de cobrança'
+                : isCanceling
+                  ? `Plano cancelado — você mantém o acesso até ${expiresLabel}`
+                  : `Ciclo reinicia em ${cycleLabel}`}
+            </p>
           </div>
           <Badge className="bg-[#F5B731]/15 text-[#F5B731] font-semibold border border-[#F5B731]/30">
             {PLAN_LABELS[currentPlan] || currentPlan}

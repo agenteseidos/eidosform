@@ -202,6 +202,5 @@ plan 'free' + status 'active').
   access-token nativo; depois remover o código do fallback HMAC.
 - PIX/Boleto no checkout: decisão de 2026-06-10 = NÃO implementar agora.
 - Multi-user: REMOVIDO da oferta em 2026-06-10 (não existe no produto).
-- `ADMIN_ALERT_EMAIL`: setar na Vercel (Production) — sem ela os alertas
-  operacionais de billing (estorno/cancel falho, DLQ) NÃO são entregues; o log
-  acusa em erro alto a cada cold start. Não bloqueia venda, mas é a rede de alertas.
+- ✅ `ADMIN_ALERT_EMAIL` SETADA na Vercel pelo Sidney (2026-06-10) — rede de alertas
+  operacionais de billing (estorno/cancel falho, DLQ) ativa.

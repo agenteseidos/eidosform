@@ -150,8 +150,42 @@ npm run lint     # ESLint
 4. Downgrade Plus→Starter → R$0 agora, sub nova R$49, saldo vira tempo.
 5. Cancelar/estornar/limpar. Tudo ok → está vendendo (sem flags pra virar).
 
+### 🔜 PRÓXIMA FEATURE (decidida 2026-06-10) — Fallback: troca de plano com cartão salvo MORTO
+> Cenário: cliente quer upgrade PAGO mas o `asaas_card_token` salvo expirou/foi
+> recusado/cartão virtual de 24h (ou nunca teve token — pré-tokenização). Hoje o
+> fluxo é fail-closed e devolve `CHARGE_FAILED`/`CARD_TOKEN_REQUIRED` mandando "fale
+> com o suporte" — e NÃO existe tela de atualizar cartão. Lacuna real ("quero te
+> pagar e não consigo").
+>
+> **Solução escolhida (Sidney): abrir o checkout hospedado do Asaas cobrando SÓ a
+> diferença como pagamento AVULSO (one-time, chargeTypes DETACHED), capturar o cartão
+> NOVO, e seguir o MESMO fluxo interno — sub recriada no preço CHEIO via token novo +
+> cancel da antiga (`executePlanSwitch`/backstop).** NÃO é a volta do `customValue`
+> removido: aquele criava a SUB recorrente no valor prorateado (quebra em prod). Aqui
+> o avulso é único; a recorrência nasce sempre cheia. Isso mata a armadilha sem perder
+> a ergonomia do sandbox.
+>
+> Reusa ~80%: `executePlanSwitch`, `runPlanChangeBackstop`, linha `recovering` em
+> `billing_checkouts`, polling `/api/checkout/status`, captura de token no webhook.
+> Bônus: resolve de quebra o assinante pré-tokenização.
+>
+> **2 confirmações com o gateway ANTES de codar o caminho todo (gates da arquitetura):**
+>  1. Correlação SEM `externalReference`: o checkout hospedado NÃO persiste o
+>     externalReference (achado `lib/asaas.ts:172`, vem null) → o marcador
+>     `kind:planchange` se perde. Precisa casar o pagamento à troca pendente por
+>     OUTRO fio (id da sessão de checkout salvo na linha de recuperação + lookup no
+>     webhook).
+>  2. Token no avulso: confirmar via SMOKE TEST que um pagamento ÚNICO por cartão no
+>     checkout hospedado devolve `creditCardToken` reutilizável (no recorrente devolve;
+>     no avulso é incerto). Se NÃO devolver, o desenho muda — descobrir isto PRIMEIRO.
+> Esforço: ~1 sessão + smoke. Risco no dinheiro: baixo (fail-closed; não pago = nada muda).
+> Sequência acordada: terminar o teste atual → smoke do ponto 2 → implementar.
+
 ### Pendências menores correlatas (não bloqueantes)
 - `ASAAS_ALLOW_HMAC_FALLBACK=0` quando confirmado que prod autentica só pelo
   access-token nativo; depois remover o código do fallback HMAC.
 - PIX/Boleto no checkout: decisão de 2026-06-10 = NÃO implementar agora.
 - Multi-user: REMOVIDO da oferta em 2026-06-10 (não existe no produto).
+- `ADMIN_ALERT_EMAIL`: setar na Vercel (Production) — sem ela os alertas
+  operacionais de billing (estorno/cancel falho, DLQ) NÃO são entregues; o log
+  acusa em erro alto a cada cold start. Não bloqueia venda, mas é a rede de alertas.

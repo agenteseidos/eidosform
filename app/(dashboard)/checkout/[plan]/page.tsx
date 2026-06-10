@@ -351,9 +351,11 @@ function CheckoutContent() {
                 <div className="text-sm text-amber-900">
                   <p className="font-semibold mb-1">Você está reduzindo de plano.</p>
                   <p className="text-amber-800 leading-relaxed">
+                    {/* {' '} explícitos: o JSX REMOVE a quebra de linha entre {expressão} e texto
+                        (não vira espaço como entre textos) — sem eles renderiza "Starterpodem". */}
                     Ao mudar para <strong>{cap(preview.newPlan)}</strong> você perde, na hora, os recursos
-                    exclusivos do {cap(preview.currentPlan)} — como rastreamento (Meta/Google&nbsp;Ads/TikTok&nbsp;Pixel),
-                    webhooks e remoção da marca d&apos;água. Formulários e respostas acima do limite do {cap(preview.newPlan)}
+                    exclusivos do {cap(preview.currentPlan)}{' '}— como rastreamento (Meta/Google&nbsp;Ads/TikTok&nbsp;Pixel),
+                    webhooks e remoção da marca d&apos;água. Formulários e respostas acima do limite do {cap(preview.newPlan)}{' '}
                     podem ser <strong>pausados ou bloqueados</strong>.
                   </p>
                 </div>

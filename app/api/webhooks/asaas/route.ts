@@ -289,10 +289,13 @@ async function updateCheckoutLink(params: {
 }
 
 interface AsaasPayment {
+  id?: string
   customer?: string
   value: number
   subscription?: string
   externalReference?: string
+  /** YYYY-MM-DD — data da cobrança. Usada p/ distinguir renovação de entrega tardia (P2-c). */
+  dueDate?: string
 }
 
 interface AsaasSubscription {
@@ -627,9 +630,11 @@ export async function POST(req: NextRequest) {
         // This is the explicit "old subscription" signal needed to cancel same-day plan
         // changes, where Asaas dateCreated has day-level granularity and reconcile alone
         // intentionally treats same-day duplicates as ambiguous.
+        // (P2-c) plan/status/cycle/expiry também: detectam re-entrega de evento p/ um
+        // profile JÁ ativo na mesma sub (RECEIVED tardio da liquidação do cartão, ~D+32).
         const { data: previousProfile } = await supabase
           .from('profiles')
-          .select('asaas_subscription_id')
+          .select('asaas_subscription_id, plan, plan_status, plan_cycle, plan_expires_at')
           .eq('id', user.id)
           .single()
         const previousSubId = previousProfile?.asaas_subscription_id ?? null
@@ -657,27 +662,58 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const { data: activatedRows, error: activateError } = await supabase
-          .from('profiles')
-          .update({
-            plan,
-            plan_cycle: cycle,
-            plan_status: 'active',
-            plan_expires_at: planExpiresAt,
-            limit_alert_sent: false,
-            responses_limit: planConfig?.maxResponses ?? 100,
-            responses_used: 0,
-            asaas_customer_id: customerId,
-            ...(payment.subscription ? { asaas_subscription_id: payment.subscription } : {}),
-          })
-          .eq('id', user.id)
-          .select('id')
+        // (P2-c, audit 2026-06-09) Profile JÁ ativo no MESMO plano+ciclo+sub: este evento é
+        // re-entrega — ou a RENOVAÇÃO do ciclo (CONFIRMED da nova cobrança), ou o RECEIVED
+        // TARDIO da liquidação do cartão (~D+32, pagamento do ciclo ANTERIOR). A renovação
+        // DEVE resetar a cota (novo ciclo); o RECEIVED tardio NÃO pode zerar responses_used
+        // no meio do ciclo vigente. Distinção pelo dueDate do pagamento: cobrança do período
+        // CORRENTE tem dueDate > (expiração − 1 ciclo); pagamento do ciclo anterior fica
+        // atrás dessa linha. Sem dueDate/expiry legíveis → assume renovação (comportamento
+        // anterior, conservador p/ não quebrar a virada de ciclo).
+        const alreadyActiveSamePlan =
+          previousProfile?.plan === plan &&
+          previousProfile?.plan_status === 'active' &&
+          previousProfile?.plan_cycle === cycle &&
+          previousSubId === payment.subscription
+        let skipProfileUpdate = false
+        if (alreadyActiveSamePlan) {
+          const dueMs = payment.dueDate ? Date.parse(`${payment.dueDate}T00:00:00-03:00`) : NaN
+          const expMs = previousProfile?.plan_expires_at ? Date.parse(previousProfile.plan_expires_at) : NaN
+          const cycleMs = (cycle === 'YEARLY' ? 365 : 30) * 86_400_000
+          const isCurrentPeriodPayment = Number.isNaN(dueMs) || Number.isNaN(expMs)
+            ? true
+            : dueMs > expMs - cycleMs
+          skipProfileUpdate = !isCurrentPeriodPayment
+          if (skipProfileUpdate) {
+            log('[asaas-webhook] Re-entrega tardia p/ profile já ativo (mesma sub/plano/ciclo) — NÃO reseta cota nem mexe na expiração; segue p/ finalize', {
+              userId: user.id, subscriptionId: payment.subscription, dueDate: payment.dueDate ?? null, planExpiresAt: previousProfile?.plan_expires_at ?? null,
+            })
+          }
+        }
 
-        // Se a ativação NÃO persistiu, abortar ANTES de cancelar sub antiga,
-        // rodar handleUpgrade ou mandar e-mail. O throw cai no catch → evento
-        // marcado 'failed' (DLQ) p/ reprocesso manual. Nunca confirmar venda fantasma.
-        if (activateError || !activatedRows || activatedRows.length !== 1) {
-          throw new Error(`Falha ao ativar plano no profile (rows=${activatedRows?.length ?? 0}): ${activateError?.message ?? 'sem erro DB'}`)
+        if (!skipProfileUpdate) {
+          const { data: activatedRows, error: activateError } = await supabase
+            .from('profiles')
+            .update({
+              plan,
+              plan_cycle: cycle,
+              plan_status: 'active',
+              plan_expires_at: planExpiresAt,
+              limit_alert_sent: false,
+              responses_limit: planConfig?.maxResponses ?? 100,
+              responses_used: 0,
+              asaas_customer_id: customerId,
+              ...(payment.subscription ? { asaas_subscription_id: payment.subscription } : {}),
+            })
+            .eq('id', user.id)
+            .select('id')
+
+          // Se a ativação NÃO persistiu, abortar ANTES de cancelar sub antiga,
+          // rodar handleUpgrade ou mandar e-mail. O throw cai no catch → evento
+          // marcado 'failed' (DLQ) p/ reprocesso manual. Nunca confirmar venda fantasma.
+          if (activateError || !activatedRows || activatedRows.length !== 1) {
+            throw new Error(`Falha ao ativar plano no profile (rows=${activatedRows?.length ?? 0}): ${activateError?.message ?? 'sem erro DB'}`)
+          }
         }
 
         const billingType = (body as unknown as Record<string, unknown>).billingType as string | undefined

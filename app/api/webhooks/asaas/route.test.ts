@@ -258,4 +258,57 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
       && (c.args[0] as { status?: string })?.status === 'processed')
     expect(promote).toBeTruthy()
   })
+
+  // ── P2-c (audit 2026-06-09): re-entrega p/ profile já ativo na mesma sub ──
+
+  const DAY = 86_400_000
+  const dateStr = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+
+  it('RENOVAÇÃO (cobrança do período corrente) reseta a cota normalmente', async () => {
+    const now = Date.now()
+    const results = baseResults()
+    results.profiles = [
+      { data: USER_ROW, error: null },
+      // previousProfile: já ativo na MESMA sub; expira amanhã (virada de ciclo)
+      { data: { asaas_subscription_id: 'sub_1', plan: 'starter', plan_status: 'active', plan_cycle: 'MONTHLY', plan_expires_at: new Date(now + 1 * DAY).toISOString() }, error: null },
+      { data: [{ id: 'user-1' }], error: null }, // update de ativação
+    ]
+    const { db, calls } = makeRecordingDb(results)
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+
+    const body = { ...CONFIRMED_BODY, id: 'evt_renewal', payment: { ...CONFIRMED_BODY.payment, dueDate: dateStr(now + 1 * DAY) } }
+    await POST(makeReq(body))
+
+    const activation = calls.find((c) => c.table === 'profiles' && c.method === 'update'
+      && (c.args[0] as { plan_status?: string })?.plan_status === 'active')
+    expect(activation).toBeTruthy()
+    expect((activation!.args[0] as { responses_used: number }).responses_used).toBe(0)
+  })
+
+  it('RECEIVED TARDIO (pagamento do ciclo anterior, ~D+32) NÃO reseta a cota nem reescreve o profile', async () => {
+    const now = Date.now()
+    const results = baseResults()
+    results.profiles = [
+      { data: USER_ROW, error: null },
+      // previousProfile: ciclo novo já ativo (expira em +28d); o pagamento é da cobrança de −32d
+      { data: { asaas_subscription_id: 'sub_1', plan: 'starter', plan_status: 'active', plan_cycle: 'MONTHLY', plan_expires_at: new Date(now + 28 * DAY).toISOString() }, error: null },
+    ]
+    const { db, calls } = makeRecordingDb(results)
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+
+    const body = { id: 'evt_late_received', event: 'PAYMENT_RECEIVED', payment: { ...CONFIRMED_BODY.payment, dueDate: dateStr(now - 32 * DAY) } }
+    const res = await POST(makeReq(body))
+    const out = await res.json() as { received: boolean; processed?: boolean }
+
+    expect(out.received).toBe(true)
+    expect(out.processed).toBeUndefined() // fluxo normal, não DLQ
+    // Pré-fix: o update rodava e zerava responses_used no meio do ciclo vigente.
+    const activation = calls.find((c) => c.table === 'profiles' && c.method === 'update'
+      && (c.args[0] as { plan_status?: string })?.plan_status === 'active')
+    expect(activation).toBeUndefined()
+    // finalizeActivation ainda roda (estende expiração pelo nextDueDate real etc.).
+    expect(mockFinalize).toHaveBeenCalled()
+  })
 })

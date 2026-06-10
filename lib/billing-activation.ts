@@ -190,6 +190,16 @@ export async function finalizeActivation(params: {
       const { error: tokErr } = await db.from('profiles').update({ asaas_card_token: cardToken }).eq('id', userId)
       if (tokErr) logError(`${tag}: falha ao salvar card token (não-bloqueante)`, tokErr, { userId })
       else log(`${tag}: card token capturado`, { userId, newSubscriptionId })
+    } else {
+      // Token AUSENTE: torna o teste de validação da tokenização em prod conclusivo.
+      // Sem este log, uma captura que falha é silenciosa (asaas_card_token fica vazio
+      // sem rastro). Sinaliza se a sub não trouxe creditCard.creditCardToken — pré-
+      // requisito do redesenho cancelar+recriar (protocolo Asaas 1238651).
+      logError(`${tag}: card token AUSENTE na sub (tokenização não retornou creditCardToken)`, null, {
+        userId,
+        newSubscriptionId,
+        hasCreditCard: !!sub?.creditCard,
+      })
     }
 
     // (4a) Expiração a partir do nextDueDate REAL do Asaas (fim do dia BRT), com guarda de

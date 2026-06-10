@@ -444,11 +444,16 @@ export async function POST(req: NextRequest) {
         // Em proration-checkout o value é prorateado (não mapeia) → cai no checkout record.
         let subValue: number | null = null
         let subCycle: string | null = null
+        // Distingue "li a sub e o valor é X" de "NÃO consegui ler" (rede/5xx). O guard de
+        // preço-cheio trata os dois de formas OPOSTAS: prorateado = bloqueio manual;
+        // falha de leitura = transitório → DLQ retry-ável. (P1, audit 2026-06-09.)
+        let subReadFailed = false
         try {
           const s = (await getSubscription(payment.subscription)) as { value?: number; cycle?: string }
           subValue = typeof s?.value === 'number' ? s.value : null
           subCycle = s?.cycle ?? null
         } catch (e) {
+          subReadFailed = true
           logError('[asaas-webhook] falha ao ler a assinatura paga (segue p/ fallbacks)', e, { subscription: payment.subscription })
         }
         let paid = subValue != null ? detectPlanAndCycle(subValue) : null
@@ -593,8 +598,18 @@ export async function POST(req: NextRequest) {
         // ausente), NÃO ativar — o Asaas prod bloqueia corrigir o valor recorrente → desconto
         // eterno. Conservador (igual polling/backstop): sem prova de valor cheio → alerta + DLQ.
         if (!isExpectedFullPrice(subValue, plan, cycle)) {
-          logError('[asaas-webhook] GUARD preço-cheio: sub NÃO ativada (value prorateado ou ausente, sem prova de preço cheio) — DLQ/manual', undefined, { userId: user.id, subscriptionId: payment.subscription ?? null, subValue, plan, cycle })
-          await sendBillingOpsAlert({ subject: 'Webhook: sub NÃO ativada (sem prova de valor recorrente cheio) — revisar manual', lines: { userId: user.id, subscriptionId: payment.subscription ?? null, subValue: subValue ?? null, plan, cycle } }).catch(() => {})
+          // TRANSITÓRIO ≠ PRORATEADO (P1, audit 2026-06-09): se o valor NÃO foi lido (falha de
+          // rede/5xx no getSubscription), isto NÃO é prova de proration — é falta de prova.
+          // Lança → catch marca o evento 'failed' (DLQ) → o reprocessador relê a sub e ativa
+          // se for preço cheio. Antes, o break marcava 'processed' e uma compra legítima com
+          // um soluço de rede ficava paga-sem-ativar dependendo de ação manual.
+          if (subReadFailed || subValue == null) {
+            throw new Error(`GUARD preço-cheio: não foi possível LER o valor da sub ${payment.subscription} (transitório) — DLQ/retry`)
+          }
+          // Li o valor e ele NÃO é o preço cheio → prorateado de verdade → bloqueio manual
+          // (o Asaas prod não deixa corrigir o valor recorrente → seria desconto eterno).
+          logError('[asaas-webhook] GUARD preço-cheio: sub NÃO ativada (value prorateado, sem prova de preço cheio) — manual', undefined, { userId: user.id, subscriptionId: payment.subscription ?? null, subValue, plan, cycle })
+          await sendBillingOpsAlert({ subject: 'Webhook: sub NÃO ativada (valor recorrente prorateado != cheio) — revisar manual', lines: { userId: user.id, subscriptionId: payment.subscription ?? null, subValue: subValue ?? null, plan, cycle } }).catch(() => {})
           await (supabase as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
             .from('asaas_webhook_events')
             .upsert({ event_id: `prorated-blocked:${payment.subscription}`, event: 'PRORATED_BLOCKED', status: 'failed', error: `sub prorateada R$${subValue} != cheio (${plan}/${cycle}) — não ativada`, subscription_id: payment.subscription ?? null, customer_id: customerId, last_attempt_at: new Date().toISOString() }, { onConflict: 'event_id' }).catch(() => {})

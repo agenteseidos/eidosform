@@ -24,7 +24,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
-import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, type BillingCycle } from '@/lib/billing-activation'
+import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, type BillingCycle } from '@/lib/billing-activation'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
 
@@ -200,6 +200,19 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     const resolved = resolvePlanCycleFromSubscription(subData)
     const plan = resolved?.plan ?? checkout.plan
     const cycle = (resolved?.cycle ?? checkout.cycle ?? 'MONTHLY') as BillingCycle
+
+    // GUARD de preço-cheio (P1, audit 2026-06-09): o retry da DLQ NÃO pode ser porta dos
+    // fundos — webhook/polling/backstop só ativam sub no preço CHEIO (Asaas prod bloqueia
+    // corrigir o valor recorrente → sub prorateada ativada = desconto eterno). Sem valor
+    // lido = transitório → relança (retry); valor lido != cheio = prorateado → relança com
+    // mensagem explícita (vira 'dead' após MAX_ATTEMPTS e fica visível p/ revisão manual).
+    const subVal = typeof subData?.value === 'number' ? subData.value : null
+    if (subVal === null) {
+      throw new Error(`não foi possível ler o valor da sub ${subscriptionId} (transitório) — mantém failed p/ retry`)
+    }
+    if (!isExpectedFullPrice(subVal, plan, cycle)) {
+      throw new Error(`sub ${subscriptionId} prorateada (R$${subVal} != preço cheio ${plan}/${cycle}) — NÃO ativa automaticamente; revisar manual`)
+    }
 
     const { data: actRows, error: actErr } = await supabase
       .from('profiles')

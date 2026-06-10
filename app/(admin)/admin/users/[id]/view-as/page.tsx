@@ -67,6 +67,8 @@ export default async function AdminViewAsUserPage({ params }: { params: Promise<
   }
 
   const planExpiresAt = profile.plan_expires_at ? new Date(profile.plan_expires_at) : null
+  // Server Component: roda uma vez por request — ler o relógio aqui é seguro.
+  // eslint-disable-next-line react-hooks/purity
   const planExpired = planExpiresAt ? planExpiresAt.getTime() <= Date.now() : false
 
   return (
@@ -82,7 +84,7 @@ export default async function AdminViewAsUserPage({ params }: { params: Promise<
         <div className="flex items-start gap-3">
           <Shield className="mt-0.5 h-5 w-5 shrink-0" />
           <div className="space-y-1">
-            <p className="font-semibold">Modo "Ver como dono" (read-only)</p>
+            <p className="font-semibold">Modo &quot;Ver como dono&quot; (read-only)</p>
             <p>
               Você está visualizando os dados de <strong>{profile.email}</strong> no painel de admin. Esta página é
               somente leitura — para editar os formulários como o dono, abra o formulário direto pela ação à direita.
@@ -135,7 +137,7 @@ export default async function AdminViewAsUserPage({ params }: { params: Promise<
         <CardHeader>
           <CardTitle>Formulários do usuário</CardTitle>
           <CardDescription>
-            Acesso rápido aos formulários e respostas. Os botões "Ver" abrem as páginas reais do app — você verá tudo
+            Acesso rápido aos formulários e respostas. Os botões &quot;Ver&quot; abrem as páginas reais do app — você verá tudo
             que o dono veria, e qualquer edição valerá como se fosse feita pelo admin.
           </CardDescription>
         </CardHeader>

@@ -380,11 +380,25 @@ export async function POST(req: NextRequest) {
   //     no webhook é enviado nesse header e comparado por igualdade. É o que o
   //     Asaas realmente manda. Sem isto, todo webhook real toma 401 e o Asaas
   //     entra em retry storm (consumiu a cota de 30k req do sandbox).
-  //  2. asaas-signature — HMAC-SHA256 do payload (esquema custom). Mantido por
-  //     compatibilidade/defesa, mas o Asaas padrão NÃO assina o payload.
+  //  2. asaas-signature — HMAC-SHA256 do payload (esquema custom). DEPRECATED
+  //     (B3, auditoria 2026-06-10): o Asaas padrão NÃO assina o payload, então
+  //     este caminho só existe por compatibilidade legada. Desative com
+  //     ASAAS_ALLOW_HMAC_FALLBACK=0 assim que confirmado que produção só usa o
+  //     access token; remoção definitiva no próximo ciclo.
+  const allowHmacFallback = process.env.ASAAS_ALLOW_HMAC_FALLBACK !== '0'
   const accessTokenHeader = req.headers.get('asaas-access-token')
-  const hmacMatch = !!(hmacHeader && verifyAsaasSignature(rawBody, hmacHeader, webhookToken))
+  const hmacMatch = allowHmacFallback && !!(hmacHeader && verifyAsaasSignature(rawBody, hmacHeader, webhookToken))
   const tokenMatch = verifyAsaasAccessToken(accessTokenHeader, webhookToken)
+
+  // Visibilidade da deprecação: autenticou SÓ pelo HMAC (sem access token
+  // válido) — não deveria acontecer com o Asaas real. Loga alto para detectar
+  // uso inesperado do caminho legado antes de removê-lo.
+  if (hmacMatch && !tokenMatch) {
+    logWarn('[asaas-webhook] Autenticado APENAS pelo HMAC legado (asaas-signature) — investigar origem; este caminho será removido', {
+      hasAccessTokenHeader: !!accessTokenHeader,
+      host: req.headers.get('host'),
+    })
+  }
 
   if (!hmacMatch && !tokenMatch) {
     logWarn('[asaas-webhook] Auth failed', {
@@ -685,12 +699,21 @@ export async function POST(req: NextRequest) {
           previousSubId === payment.subscription
         let skipProfileUpdate = false
         if (alreadyActiveSamePlan) {
-          const dueMs = payment.dueDate ? Date.parse(`${payment.dueDate}T00:00:00-03:00`) : NaN
-          const expMs = previousProfile?.plan_expires_at ? Date.parse(previousProfile.plan_expires_at) : NaN
+          // Comparação por DIA (UTC), não por ms (P3, auditoria 2026-06-10):
+          // dueDate é data-sem-hora e a expiração costuma cair no fim do dia —
+          // comparar timestamps brutos era ambíguo exatamente na virada de
+          // ciclo, o caso que esta checagem precisa acertar. Truncar ambos
+          // para meia-noite UTC remove a sensibilidade a hora/timezone.
+          const dayUtc = (iso: string): number => {
+            const d = new Date(iso)
+            return Number.isNaN(d.getTime()) ? NaN : Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+          }
+          const dueDay = payment.dueDate ? dayUtc(`${payment.dueDate}T12:00:00Z`) : NaN
+          const expDay = previousProfile?.plan_expires_at ? dayUtc(previousProfile.plan_expires_at) : NaN
           const cycleMs = (cycle === 'YEARLY' ? 365 : 30) * 86_400_000
-          const isCurrentPeriodPayment = Number.isNaN(dueMs) || Number.isNaN(expMs)
+          const isCurrentPeriodPayment = Number.isNaN(dueDay) || Number.isNaN(expDay)
             ? true
-            : dueMs > expMs - cycleMs
+            : dueDay > expDay - cycleMs
           skipProfileUpdate = !isCurrentPeriodPayment
           if (skipProfileUpdate) {
             log('[asaas-webhook] Re-entrega tardia p/ profile já ativo (mesma sub/plano/ciclo) — NÃO reseta cota nem mexe na expiração; segue p/ finalize', {

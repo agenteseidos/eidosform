@@ -10,7 +10,12 @@ import { createHash } from 'crypto'
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
 // Destino dos alertas operacionais de billing (sub órfã, subcobrança pendente etc.).
-const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL ?? 'sidney@institutoeidos.com.br'
+// Sem fallback hardcoded (P3, auditoria 2026-06-10): se a env sumir, loga erro
+// alto em vez de mandar alertas de dinheiro para um endereço fixo no código.
+const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL ?? ''
+if (!ADMIN_ALERT_EMAIL) {
+  logError('[resend] ADMIN_ALERT_EMAIL não configurado — alertas operacionais de billing NÃO serão entregues')
+}
 
 /** PII patterns to strip from email subjects (P1-N1) */
 const PII_PATTERNS = [
@@ -49,6 +54,10 @@ export async function sendBillingOpsAlert(params: {
     <table style="border-collapse:collapse;border:1px solid #eee">${rows}</table>
     <p style="color:#888;font-size:12px">EidosForm · alerta automático do webhook Asaas</p>
   `
+  if (!ADMIN_ALERT_EMAIL) {
+    logError('[resend] Alerta de billing DESCARTADO — ADMIN_ALERT_EMAIL ausente', undefined, { subject: params.subject })
+    return { error: 'ADMIN_ALERT_EMAIL not configured' }
+  }
   return sendEmailWithRetry({ to: ADMIN_ALERT_EMAIL, subject: `[EidosForm ALERTA] ${params.subject}`, html })
 }
 

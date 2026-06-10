@@ -254,6 +254,8 @@ export function AdminWhatsAppPanel() {
               ) : (
                 <>
                   <div className="flex justify-center">
+                    {/* QR é data:URL gerada em runtime — next/image não otimiza base64 inline */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={`data:image/png;base64,${qrBase64}`}
                       alt="QR Code WhatsApp"

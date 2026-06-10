@@ -2008,7 +2008,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           <DialogHeader>
             <DialogTitle>Excluir pergunta?</DialogTitle>
             <DialogDescription>
-              A pergunta <strong>"{deleteDialog.label}"</strong> será removida permanentemente. Esta ação não pode ser desfeita.
+              A pergunta <strong>&quot;{deleteDialog.label}&quot;</strong> será removida permanentemente. Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

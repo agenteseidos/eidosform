@@ -27,12 +27,15 @@ const store = new Map<string, RateLimitEntry>()
 
 // Cleanup stale entries periodically (prevents memory leak in long-running processes)
 if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
+  // unref(): o timer de limpeza não pode segurar o processo vivo — sem isto a
+  // suíte vitest inteira travava ao final (P3-7, auditoria 2026-05-18).
+  const cleanupTimer = setInterval(() => {
     const now = Date.now()
     for (const [key, entry] of store) {
       if (now - entry.windowStart > WINDOW_MS) store.delete(key)
     }
   }, 60_000)
+  if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref()
 }
 
 function checkMemoryFallback(key: string): { allowed: boolean; remaining: number; resetIn: number } {

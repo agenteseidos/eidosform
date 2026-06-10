@@ -5,6 +5,7 @@ import { addDomain, removeDomain, checkDomainStatus } from '@/lib/custom-domain'
 import { logError } from '@/lib/logger'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 // POST /api/domains — adicionar domínio personalizado
 // Body: { domain: string, form_id: string }
@@ -49,13 +50,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
-  // Prevent domain takeover: check if domain already belongs to another user
-  const { data: existingDomain } = await supabase
+  // Prevent domain takeover: check if domain already belongs to another user.
+  // B7 (auditoria 2026-06-10): lista TODAS as linhas em vez de .single() — com
+  // registros duplicados, .single() erra silenciosamente e o check era pulado.
+  const { data: existingDomains, error: existingError } = await supabase
     .from('custom_domains')
     .select('id, user_id')
     .eq('domain', domain)
-    .single()
-  if (existingDomain && existingDomain.user_id !== user.id) {
+  if (existingError) {
+    logError('Failed to check existing domain ownership:', existingError)
+    return NextResponse.json({ error: 'Failed to verify domain availability' }, { status: 500 })
+  }
+  if ((existingDomains ?? []).some((d) => d.user_id !== user.id)) {
     return NextResponse.json(
       { error: 'This domain is already registered by another user' },
       { status: 409 }
@@ -139,6 +145,15 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // B8 (auditoria 2026-06-10): rate limit em ação destrutiva.
+  const { allowed } = await checkRateLimitAsync(`domains:delete:${user.id}`, {
+    maxAttempts: 5,
+    windowMs: 60_000,
+  })
+  if (!allowed) {
+    return NextResponse.json({ error: 'Muitas tentativas. Tente novamente mais tarde.' }, { status: 429 })
+  }
+
   // P1 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
@@ -166,7 +181,7 @@ export async function DELETE(req: NextRequest) {
     .select('id')
     .eq('domain', domain)
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!existing) {
     return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
@@ -218,7 +233,7 @@ export async function PATCH(req: NextRequest) {
     .select('id')
     .eq('domain', domain)
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!existing) {
     return NextResponse.json({ error: 'Domain not found' }, { status: 404 })

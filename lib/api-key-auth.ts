@@ -17,7 +17,7 @@ type ApiKeyProfile = { id: string; plan: string; api_key_hash?: string | null }
  * Validates:
  *   1. Key format (must start with 'ek_' prefix)
  *   2. Key exists in profiles table
- *   3. User has professional or enterprise plan
+ *   3. User has professional plan
  *   4. Rate limit not exceeded (100 req/min per key)
  */
 export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResult> {
@@ -66,7 +66,7 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
     .single()
   const effectivePlan = getEffectivePlan(planRow ?? { plan: resolvedProfile.plan })
 
-  if (effectivePlan !== 'professional' && (effectivePlan as string) !== 'enterprise') {
+  if (effectivePlan !== 'professional') {
     return { ok: false, status: 401, error: 'Unauthorized. Professional plan required for API access.' }
   }
 

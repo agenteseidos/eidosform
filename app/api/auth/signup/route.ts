@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     // confirmation. Real errors (e.g. invalid format, weak password) are still
     // surfaced because they apply equally to any caller.
     const supabase = await createClient()
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
       options: {

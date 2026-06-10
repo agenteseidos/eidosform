@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useMemo } from 'react'
 import { QuestionConfig, ThemeConfig, Json } from '@/lib/database.types'
 import { Input } from '@/components/ui/input'
 import { formatCPF, validateCPF } from '@/lib/validators'
@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
 import { Star, Upload, Check, X, FileText, Image as ImageIcon, Loader2, AlertCircle, ExternalLink, ChevronDown } from 'lucide-react'
 import { renderContentBlockHtml } from '@/lib/content-block'
-import { sanitizeHtml, sanitizeRichHtml, isSafeUrl } from '@/lib/html'
+import { sanitizeRichHtml, isSafeUrl } from '@/lib/html'
 import { sanitizeEmbedHtml } from '@/lib/html-server'
 import { renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
 
@@ -36,10 +36,12 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
   const handleFileSelect = useCallback(async (file: File) => {
     setUploadError(null)
 
-    // Validate file size client-side before sending (server also enforces 10MB)
-    const MAX_SIZE = 10 * 1024 * 1024
-    if (file.size > MAX_SIZE) {
-      setUploadError('Arquivo muito grande. Tamanho máximo: 10MB')
+    // Valida o limite da pergunta client-side antes de enviar (o servidor
+    // também aplica em sign-url — B6). Cap global de 10MB.
+    const questionLimitMb = Math.min(question.maxFileSize || 10, 10)
+    const maxSize = questionLimitMb * 1024 * 1024
+    if (file.size > maxSize) {
+      setUploadError(`Arquivo muito grande. Tamanho máximo: ${questionLimitMb}MB`)
       return
     }
 
@@ -50,7 +52,7 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
       const signRes = await fetch('/api/upload/sign-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ form_id: formId, mime: file.type, size: file.size }),
+        body: JSON.stringify({ form_id: formId, mime: file.type, size: file.size, question_id: question.id }),
       })
 
       const signData = await signRes.json()
@@ -84,7 +86,7 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
     } finally {
       setIsUploading(false)
     }
-  }, [onChange])
+  }, [onChange, formId, question.id, question.maxFileSize])
 
   return (
     <div>
@@ -232,10 +234,13 @@ interface AddressQuestionProps {
   error?: string
 }
 
-const AddressQuestion = React.memo(function AddressQuestion({ question, value, onChange, theme, error }: AddressQuestionProps) {
+const AddressQuestion = React.memo(function AddressQuestion({ value, onChange, theme }: AddressQuestionProps) {
   const [isLoadingCep, setIsLoadingCep] = useState(false)
   const [cepError, setCepError] = useState<string | null>(null)
-  const addr = value || { cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '' }
+  const addr = useMemo(
+    () => value || { cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '' },
+    [value]
+  )
 
   const updateField = useCallback((field: string, val: string) => {
     const updated = { ...addr, [field]: val }
@@ -271,7 +276,7 @@ const AddressQuestion = React.memo(function AddressQuestion({ question, value, o
         setIsLoadingCep(false)
       }
     }
-  }, [addr, onChange])
+  }, [addr, onChange, updateField])
 
   const fieldStyle = {
     borderColor: `${theme.textColor}30`,
@@ -483,7 +488,7 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
     return () => {
       window.removeEventListener('message', handleMessage)
     }
-  }, [calendlyUrl, onChange])
+  }, [calendlyUrl, onChange, onSubmit])
 
   if (!calendlyUrl) {
     return (

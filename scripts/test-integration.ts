@@ -77,7 +77,7 @@ async function runTests() {
     { id: 'q3', type: 'multiple_choice', title: 'Como nos encontrou?', required: false, options: ['Google', 'Indicação', 'Redes sociais'] },
   ]
 
-  const { status: s2, body: b2 } = await apiFetch(`/api/forms/${formId}`, {
+  const { status: s2 } = await apiFetch(`/api/forms/${formId}`, {
     method: 'PATCH',
     body: JSON.stringify({ questions }),
   })
@@ -125,14 +125,20 @@ async function runTests() {
   }
 
   const partialResponseId = b4.response_id
+  // A1: prova de posse exigida pra atualizar parcial anônima.
+  const partialToken = b4.partial_token as string | undefined
 
   // ============================================================
   // 5. Completar resposta (upsert)
   // ============================================================
-  log('5. Completar resposta (upsert via x-response-id)')
+  log('5. Completar resposta (upsert via x-response-id + x-partial-token)')
   const { status: s5, body: b5 } = await fetch(`${BASE_URL}/api/responses`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-response-id': partialResponseId },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-response-id': partialResponseId,
+      ...(partialToken ? { 'x-partial-token': partialToken } : {}),
+    },
     body: JSON.stringify({
       form_id: formId,
       answers: { q1: 'Test User', q2: 'test@example.com', q3: 'Google' },

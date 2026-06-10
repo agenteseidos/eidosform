@@ -33,8 +33,6 @@ const QUESTION_TYPES = [
 
 import { isSafeUrl } from '@/lib/html'
 
-const SAFE_PROTOCOLS = ['https:', 'http:', 'mailto:', 'tel:', 'sms:'] as const
-
 const safeUrl = z
   .string()
   .max(2048, 'URL muito longa')

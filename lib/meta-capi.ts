@@ -71,7 +71,9 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
     // Build hashed user_data (snake_case keys per Meta CAPI spec)
     const userData: MetaCAPIPayload['user_data'] = {}
 
-    if (options.email) {
+    // Valida o formato antes do hash (P3): lixo hasheado vira hash "válido"
+    // que polui o matching do Meta sem nunca casar com usuário real.
+    if (options.email && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(options.email.trim())) {
       userData.em = [await sha256Normalize(options.email)]
     }
     if (options.phone) {

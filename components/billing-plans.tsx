@@ -152,7 +152,6 @@ export function BillingPlans({ currentPlan, currentCycle, planStatus }: BillingP
           const isCurrentPlan = plan.id === normalizedCurrentPlan
           const thisPlanIndex = PLAN_ORDER.indexOf(plan.id)
           const isLowerPlan = thisPlanIndex < currentPlanIndex
-          const isHigherPlan = thisPlanIndex > currentPlanIndex
           const currentBillingCycle = billing === 'annual' ? 'YEARLY' : 'MONTHLY'
           const isSamePlanAndCycle = isCurrentPlan && currentCycle === currentBillingCycle
           const isPaidPlan = plan.id !== 'free'

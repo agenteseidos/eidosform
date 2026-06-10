@@ -37,7 +37,9 @@ export async function sendEmailNotification({
       body: JSON.stringify({
         from: FROM_EMAIL,
         to: toEmail,
-        subject: `Nova resposta em "${safeFormTitle}"`,
+        // Subject é texto puro, não HTML — usar o título cru (escapeHtml aqui
+        // fazia "&" virar "&amp;" no assunto do email).
+        subject: `Nova resposta em "${formTitle}"`,
         html: `
           <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
             <h2 style="color: #1E3A5F;">Nova resposta recebida!</h2>

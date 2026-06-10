@@ -33,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .select('id')
     .eq('id', id)
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!existing) {
     return NextResponse.json({ error: 'Pasta não encontrada' }, { status: 404 })
@@ -70,7 +70,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     .select('id')
     .eq('id', id)
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!existing) {
     return NextResponse.json({ error: 'Pasta não encontrada' }, { status: 404 })

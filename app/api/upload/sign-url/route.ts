@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { form_id, mime, size } = body
+    const { form_id, mime, size, question_id } = body
 
     // Validate required fields
     if (!form_id || !mime || size === undefined) {
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient()
     const { data: form, error: formError } = await admin
       .from('forms')
-      .select('id, user_id, status')
+      .select('id, user_id, status, questions')
       .eq('id', form_id)
       .eq('status', 'published')
       .single()
@@ -81,6 +81,24 @@ export async function POST(request: NextRequest) {
         { error: 'Formulário não encontrado ou não publicado' },
         { status: 404, headers: CORS_HEADERS }
       )
+    }
+
+    // B6 (auditoria 2026-06-10): aplica o maxFileSize configurado na pergunta
+    // ANTES de assinar — sem isto o arquivo subia ao Storage até 10MB e só era
+    // rejeitado no submit final (storage já consumido). Cap em 25MB espelha
+    // validateFileUpload (field-validators.ts).
+    if (typeof question_id === 'string' && question_id) {
+      const questions = (form.questions ?? []) as Array<{ id: string; maxFileSize?: number }>
+      const question = questions.find((q) => q.id === question_id)
+      if (question?.maxFileSize) {
+        const limitBytes = Math.min(question.maxFileSize, 25) * 1024 * 1024
+        if (size > limitBytes) {
+          return NextResponse.json(
+            { error: `Arquivo excede o limite desta pergunta (${Math.min(question.maxFileSize, 25)}MB)` },
+            { status: 400, headers: CORS_HEADERS }
+          )
+        }
+      }
     }
 
     // Generate storage path
@@ -102,7 +120,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { signedUrl, token, path: signedPath } = signedData
+    const { signedUrl, token } = signedData
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const publicUrl = `${supabaseUrl}/storage/v1/object/public/form-uploads/${path}`
 

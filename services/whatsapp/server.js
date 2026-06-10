@@ -15,7 +15,10 @@ const execFileAsync = promisify(execFile);
 // Hash phone for logging — first 8 hex chars of SHA-256 (PII safe)
 const hashPhone = (p) => p ? crypto.createHash('sha256').update(String(p)).digest('hex').slice(0, 8) : 'null';
 
-const WACLI = '/home/linuxbrew/.linuxbrew/bin/wacli';
+// Caminhos da infra (P4-1): configuráveis via env, defaults = VPS atual.
+const WACLI = process.env.WACLI_PATH || '/home/linuxbrew/.linuxbrew/bin/wacli';
+const SQLITE3 = process.env.SQLITE3_PATH || '/home/linuxbrew/.linuxbrew/bin/sqlite3';
+const WACLI_SESSION_DB = process.env.WACLI_SESSION_DB || path.join(require('os').homedir(), '.wacli', 'session.db');
 const LOG_FILE = path.join(__dirname, 'server.log');
 const QR_FILE = path.join(__dirname, 'latest-qr.txt');
 const QR_PNG_FILE = path.join(__dirname, 'latest-qr.png');
@@ -38,7 +41,6 @@ const log = async (msg) => {
 // Convert ASCII QR to PNG base64
 async function asciiToPngBase64(ascii) {
   const lines = ascii.split('\n').filter(l => l.length > 0);
-  const size = lines.length;
   const cols = Math.max(...lines.map(l => [...l].length));
   const rows = lines.length;
   const cellW = 10;
@@ -109,7 +111,6 @@ async function startWacli() {
 
   log('[wacli] Starting persistent process...');
   wacliChild = spawn(WACLI, ['auth', '--json']);
-  let rawAscii = '';
   let qrDetected = false;
   let stderrBuffer = '';
   let stderrTimer = null;
@@ -413,7 +414,7 @@ async function writeStatus() {
 function getPhoneFromDb() {
   try {
     const { execFileSync } = require('child_process');
-    const result = execFileSync('/home/linuxbrew/.linuxbrew/bin/sqlite3', ['/home/sidney/.wacli/session.db', 'SELECT jid FROM whatsmeow_device LIMIT 1;'], { timeout: 3000 }).toString().trim();
+    const result = execFileSync(SQLITE3, [WACLI_SESSION_DB, 'SELECT jid FROM whatsmeow_device LIMIT 1;'], { timeout: 3000 }).toString().trim();
     if (result) {
       const match = result.match(/^55(\d+):/);
       if (match) return '+55 ' + match[1].replace(/(\d{2})(\d{4,5})(\d{4})/, '$1 $2-$3');
@@ -461,9 +462,19 @@ const fastify = Fastify({ logger: false });
 const rateLimitStore = new Map(); // ip -> { count, windowStart }
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+// B5 (auditoria 2026-06-10): teto GLOBAL além do per-IP — neutraliza bypass
+// via múltiplos IPs (botnet/proxies). O serviço atende um único app; 60 envios
+// por minuto no agregado é folga ampla para o tráfego legítimo.
+const RATE_LIMIT_GLOBAL_MAX = parseInt(process.env.RATE_LIMIT_GLOBAL_MAX || '60', 10);
+let globalWindow = { count: 0, windowStart: 0 };
 
 function rateLimitByIp(ip) {
   const now = Date.now();
+  if (now - globalWindow.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    globalWindow = { count: 0, windowStart: now };
+  }
+  globalWindow.count++;
+  if (globalWindow.count > RATE_LIMIT_GLOBAL_MAX) return false;
   let entry = rateLimitStore.get(ip);
   if (!entry || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
     entry = { count: 0, windowStart: now };
@@ -483,12 +494,19 @@ function rateLimitByIp(ip) {
 fastify.get('/health', async () => ({ status: 'ok' }));
 
 async function requireAuth(req, reply) {
+  // Fail-closed: sem secret configurado, nenhuma requisição é aceita.
+  // (Antes, API_KEY vazio + "Bearer " com token vazio passava: '' === ''.)
+  if (!API_KEY) {
+    return reply.code(503).send({ error: 'Service not configured' });
+  }
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
   }
   const token = authHeader.slice(7);
-  if (token !== API_KEY) {
+  const a = Buffer.from(token);
+  const b = Buffer.from(API_KEY);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
     return reply.code(403).send({ error: 'Forbidden' });
   }
 }
@@ -656,7 +674,11 @@ fastify.post('/api/whatsapp/disconnect', { onRequest: requireAuth }, async (req,
 const start = async () => {
   try {
     const port = parseInt(process.env.PORT || '3457', 10);
-    await fastify.listen({ port, host: '0.0.0.0' });
+    // B4 (auditoria 2026-06-10): bind em loopback por padrão — o nginx da VPS
+    // é quem expõe o serviço (wpp.eidosform.com.br). Para expor diretamente
+    // (não recomendado), defina BIND_HOST=0.0.0.0 no .env.
+    const host = process.env.BIND_HOST || '127.0.0.1';
+    await fastify.listen({ port, host });
     log(`WhatsApp API server running on port ${port}`);
     statusRefreshTimer = setInterval(refreshStatus, STATUS_REFRESH_S * 1000);
     // On boot, check if wacli is already authenticated and start the sync daemon

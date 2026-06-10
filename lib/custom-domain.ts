@@ -26,7 +26,7 @@ export interface DomainResult {
 /**
  * Adiciona um domínio personalizado ao projeto Vercel e associa ao formSlug.
  */
-export async function addDomain(domain: string, formSlug: string): Promise<DomainResult> {
+export async function addDomain(domain: string, _formSlug: string): Promise<DomainResult> {
   const { token, projectId } = getVercelConfig()
 
   const res = await fetch(`${VERCEL_API}/v10/projects/${projectId}/domains`, {

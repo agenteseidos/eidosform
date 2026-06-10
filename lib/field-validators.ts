@@ -3,7 +3,7 @@
  * Garante consistência de dados independente do frontend.
  */
 
-import { QuestionConfig, QuestionType } from './database.types'
+import { QuestionConfig } from './database.types'
 import { validateCPF, isValidLooseUrl } from './validators'
 
 export interface FieldValidationResult {

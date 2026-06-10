@@ -4,6 +4,7 @@ import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { upsertSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { pruneOrphanAnswers, validateAllAnswers } from '@/lib/field-validators'
+import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import type { QuestionConfig, ResponseInsert } from '@/lib/database.types'
 
 // POST /api/responses/partial
@@ -35,7 +36,7 @@ const MAX_ANSWER_KEYS = 200
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Response-Id',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Response-Id, X-Partial-Token',
   'Access-Control-Max-Age': '86400',
 }
 
@@ -144,10 +145,21 @@ export async function POST(req: NextRequest) {
   const headerResponseId = req.headers.get('x-response-id')
   const bodyResponseId = typeof body.response_id === 'string' ? body.response_id : null
   const existingResponseId = headerResponseId || bodyResponseId
+  // A1 (auditoria 2026-06-10): UPDATE exige prova de posse — o partial_token
+  // emitido na criação. Sem token válido, o id sozinho não autoriza sobrescrever.
+  const headerPartialToken = req.headers.get('x-partial-token')
+  const bodyPartialToken = typeof body.partial_token === 'string' ? body.partial_token : null
+  const partialToken = headerPartialToken || bodyPartialToken
   let responseId: string
   let currentRowIndex: number | null = null
 
   if (existingResponseId) {
+    if (!verifyPartialToken(partialToken, existingResponseId)) {
+      // Sem prova de posse (token ausente/ inválido) — trata como nova response
+      // em vez de atualizar a existente. Não vaza se o id existe ou não.
+      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions })
+    }
+
     // UPDATE
     const { data: existing } = await supabase
       .from('responses')
@@ -193,7 +205,10 @@ export async function POST(req: NextRequest) {
     currentRowIndex,
   })
 
-  return NextResponse.json({ response_id: responseId }, { status: 200, headers: CORS_HEADERS })
+  return NextResponse.json(
+    { response_id: responseId, partial_token: signPartialToken(responseId) },
+    { status: 200, headers: CORS_HEADERS }
+  )
 }
 
 async function createPartialResponse(opts: {
@@ -238,7 +253,10 @@ async function createPartialResponse(opts: {
     currentRowIndex: null,
   })
 
-  return NextResponse.json({ response_id: created.id }, { status: 201, headers: CORS_HEADERS })
+  return NextResponse.json(
+    { response_id: created.id, partial_token: signPartialToken(created.id) },
+    { status: 201, headers: CORS_HEADERS }
+  )
 }
 
 async function syncToSheetsIfEnabled(opts: {

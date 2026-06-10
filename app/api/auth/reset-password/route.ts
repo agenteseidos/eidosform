@@ -24,6 +24,16 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 })
     }
+
+    // Rate limit por usuário (5/15min) — endpoint troca senha sem a antiga.
+    const { allowed } = await checkRateLimitAsync(`reset-password:${user.id}`, {
+      maxAttempts: 5,
+      windowMs: 15 * 60 * 1000,
+    })
+    if (!allowed) {
+      return NextResponse.json({ error: 'Muitas tentativas. Tente novamente mais tarde.' }, { status: 429 })
+    }
+
     const recoveryCookie = req.cookies.get(RECOVERY_COOKIE_NAME)?.value
     if (!verifyRecoveryToken(recoveryCookie, user.id)) {
       return NextResponse.json(

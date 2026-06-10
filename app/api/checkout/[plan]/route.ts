@@ -246,16 +246,26 @@ export async function POST(
         }
         // P1 (Codex): aplica os LIMITES DE FORMS do plano-alvo (pausa excedentes se for downgrade;
         // despausa se ilimitado). Sem isto, Plus canceling → Starter deixava forms acima do limite.
-        try {
+        // B2 (auditoria 2026-06-10): a sub nova já está criada/commitada — não dá
+        // pra abortar sem negar um plano devido. Mas a pausa de forms excedentes
+        // não pode ficar só na DLQ (janela de acesso indevido): retry imediato
+        // antes de enfileirar.
+        {
           const sk = process.env.SUPABASE_SERVICE_ROLE_KEY
-          if (sk) {
-            const fl = await (await import('@/lib/plan-limits')).handleDowngrade(profile.profileId, sk, plan as PlanId)
-            log('[checkout] Reativação — limites de forms do plano-alvo aplicados', { userId: profile.profileId, pausedForms: fl.pausedCount, targetPlan: plan })
+          let downgradeApplied = !sk // sem service key não há o que aplicar
+          for (let attempt = 1; sk && !downgradeApplied && attempt <= 2; attempt++) {
+            try {
+              const fl = await (await import('@/lib/plan-limits')).handleDowngrade(profile.profileId, sk, plan as PlanId)
+              log('[checkout] Reativação — limites de forms do plano-alvo aplicados', { userId: profile.profileId, pausedForms: fl.pausedCount, targetPlan: plan, attempt })
+              downgradeApplied = true
+            } catch (e) {
+              logError(`[checkout] Reativação — handleDowngrade falhou (tentativa ${attempt}/2)`, e, { userId: profile.profileId, targetPlan: plan })
+            }
           }
-        } catch (e) {
-          // P1-5 (Codex): falha de pausa é CRÍTICA no downgrade → DLQ FORMLIMIT (reprocessável) + alerta.
-          logError('[checkout] Reativação — handleDowngrade falhou; enfileirando FORMLIMIT', e, { userId: profile.profileId, targetPlan: plan })
-          await enqueueFormLimitDLQ(sSupa, profile.profileId, newSub.id)
+          if (!downgradeApplied) {
+            // P1-5 (Codex): falha de pausa é CRÍTICA no downgrade → DLQ FORMLIMIT (reprocessável) + alerta.
+            await enqueueFormLimitDLQ(sSupa, profile.profileId, newSub.id)
+          }
         }
         await reconcileActiveSubscriptions(profile.asaasCustomerId, newSub.id)
         // Marca um checkout 'paid' p/ o overlay de sucesso casar (senão pega o último cancelado).

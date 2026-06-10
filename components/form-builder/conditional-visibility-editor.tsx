@@ -77,8 +77,9 @@ export function ConditionalVisibilityEditor({ question, allQuestions, onChange }
           {/* Seletor E/OU — só faz sentido com 2+ regras */}
           {rules.length >= 2 && (
             <div className="flex items-center gap-2 text-xs text-slate-600">
-              <span>Combinar:</span>
+              <label htmlFor={`cve-conjunction-${question.id}`}>Combinar:</label>
               <select
+                id={`cve-conjunction-${question.id}`}
                 value={group.conjunction}
                 onChange={(e) => setConjunction(e.target.value as ConditionalConjunction)}
                 className="text-xs rounded-md border px-2 py-1 bg-white text-slate-800 font-medium"
@@ -102,6 +103,7 @@ export function ConditionalVisibilityEditor({ question, allQuestions, onChange }
                 )}
 
                 <select
+                  aria-label={`Condição ${idx + 1}: pergunta de referência`}
                   value={rule.questionId}
                   onChange={(e) => updateRule(idx, { questionId: e.target.value })}
                   className="w-full text-sm rounded-md border px-2 py-1.5 bg-white text-slate-800"
@@ -111,6 +113,7 @@ export function ConditionalVisibilityEditor({ question, allQuestions, onChange }
                 </select>
 
                 <select
+                  aria-label={`Condição ${idx + 1}: operador de comparação`}
                   value={rule.operator}
                   onChange={(e) => updateRule(idx, { operator: e.target.value as ConditionalOperator })}
                   className="w-full text-sm rounded-md border px-2 py-1.5 bg-white text-slate-800"
@@ -121,6 +124,7 @@ export function ConditionalVisibilityEditor({ question, allQuestions, onChange }
                 {!noValue && (
                   choiceValues && choiceValues.length > 0 ? (
                     <select
+                      aria-label={`Condição ${idx + 1}: resposta esperada`}
                       value={rule.value}
                       onChange={(e) => updateRule(idx, { value: e.target.value })}
                       className="w-full text-sm rounded-md border px-2 py-1.5 bg-white text-slate-800"
@@ -130,6 +134,7 @@ export function ConditionalVisibilityEditor({ question, allQuestions, onChange }
                     </select>
                   ) : (
                     <Input
+                      aria-label={`Condição ${idx + 1}: resposta esperada`}
                       value={rule.value ?? ''}
                       onChange={(e) => updateRule(idx, { value: e.target.value })}
                       placeholder="Resposta esperada"

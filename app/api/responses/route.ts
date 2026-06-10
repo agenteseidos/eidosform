@@ -10,12 +10,13 @@ import { extractLead } from '@/lib/lead-extraction'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers } from '@/lib/field-validators'
-import { buildQuestionPath } from '@/lib/form-logic-engine'
+import { isResponseComplete } from '@/lib/form-response-security'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { upsertSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import { sendNewResponseNotification } from '@/lib/resend'
 
 // Maximum payload size (1MB — covers long text forms with URLs; file uploads go to R2)
@@ -43,7 +44,7 @@ const MAX_ANSWER_KEYS = 200
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Response-Id',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Response-Id, X-Partial-Token',
   'Access-Control-Max-Age': '86400',
 }
 
@@ -75,35 +76,6 @@ function serializeAnswerValue(value: unknown): string {
   if (Array.isArray(value)) return value.join(', ')
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
-}
-
-// Check if all required questions are answered, considerando o caminho que o
-// respondente efetivamente percorreu (lógica condicional pode esconder ramos
-// inteiros do formulário — exigi-los marcaria como incompleto um lead que
-// terminou o fluxo dele).
-function isResponseComplete(
-  answers: Record<string, unknown>,
-  questions: Array<{ id: string; type?: string; required?: boolean }>
-): boolean {
-  const path = buildQuestionPath(
-    questions as unknown as Parameters<typeof buildQuestionPath>[0],
-    answers,
-  )
-  const pathSet = path.length > 0 ? new Set(path) : null
-  const required = questions.filter((q) => q.required && q.type !== 'content_block')
-  // Se nenhum required existe no form, ou nenhum required cai no caminho
-  // percorrido, considera completo (o respondente terminou o fluxo dele).
-  if (required.length === 0) return true
-  const requiredInPath = pathSet
-    ? required.filter((q) => pathSet.has(q.id))
-    : required
-  if (requiredInPath.length === 0) return true
-  return requiredInPath.every((q) => {
-    const val = answers[q.id]
-    if (val === undefined || val === null || val === '') return false
-    if (Array.isArray(val) && val.length === 0) return false
-    return true
-  })
 }
 
 // POST /api/responses — submeter resposta (completa ou parcial)
@@ -253,8 +225,55 @@ export async function POST(req: NextRequest) {
   // Bug #5: Auto-detect completed based on required questions
   const completed = isResponseComplete(answers, form.questions ?? [])
 
+  // Resolve primeiro o alvo de UPDATE (se houver) e a autorização sobre ele;
+  // só depois o limite de respostas — um UPDATE não consome cota nova.
+  let existingResponseId: string | null = req.headers.get('x-response-id')
+  // A1 (auditoria 2026-06-10): prova de posse da parcial anônima.
+  const partialToken = req.headers.get('x-partial-token')
+    || (typeof body.partial_token === 'string' ? body.partial_token : null)
+  let existingResponse: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null } | null = null
+
+  if (existingResponseId) {
+    // P0-2: Verify ownership — respondent_id from cookie must match the response's respondent_id
+    // Fetch the existing response to check ownership
+    const { data: fetched } = await supabase
+      .from('responses')
+      .select('id, respondent_id, completed, sheets_row_index')
+      .eq('id', existingResponseId)
+      .eq('form_id', form_id as string)
+      .single() as { data: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null } | null; error: unknown }
+
+    if (!fetched) {
+      return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
+    }
+
+    // Há dois caminhos legítimos de UPDATE:
+    //  (a) Autenticado: a row tem respondent_id e bate com o cookie/header do
+    //      lado do cliente — fluxo de partial-response Plus+ pra logados.
+    //  (b) Anônimo partial→final: a row foi criada por /api/responses/partial
+    //      sem respondent_id (anônima), ainda não foi finalizada E o cliente
+    //      apresenta o partial_token emitido na criação (A1). O id sozinho
+    //      não autoriza mais — UUIDs podem vazar via logs/Sheets/webhooks.
+    const bodyRespondentId = typeof respondent_id === 'string' ? respondent_id : null
+    const isAnonymousPartialUpgrade =
+      fetched.respondent_id === null &&
+      fetched.completed === false &&
+      verifyPartialToken(partialToken, existingResponseId)
+    const isAuthenticatedOwner =
+      !!fetched.respondent_id && fetched.respondent_id === bodyRespondentId
+    if (isAnonymousPartialUpgrade || isAuthenticatedOwner) {
+      existingResponse = fetched
+    } else if (fetched.respondent_id === null && fetched.completed === false) {
+      // Parcial anônima sem token válido (cliente antigo em voo ou id forjado):
+      // não sobrescreve — degrada para criar uma resposta nova. Não perde lead
+      // legítimo e não permite corromper a resposta de terceiros.
+      existingResponseId = null
+    } else {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 403, headers: CORS_HEADERS })
+    }
+  }
+
   // Bug #1: ALWAYS check response limit before accepting (not just completed)
-  const existingResponseId = req.headers.get('x-response-id')
   let newResponseLimitCheck: Awaited<ReturnType<typeof checkAndIncrementResponseCount>> | null = null
   if (!existingResponseId) {
     newResponseLimitCheck = await checkAndIncrementResponseCount(form.user_id)
@@ -270,36 +289,7 @@ export async function POST(req: NextRequest) {
   let responseMetaEvents: string[] = []
   let existingSheetsRowIndex: number | null = null
 
-  if (existingResponseId) {
-    // P0-2: Verify ownership — respondent_id from cookie must match the response's respondent_id
-    // Fetch the existing response to check ownership
-    const { data: existingResponse } = await supabase
-      .from('responses')
-      .select('id, respondent_id, completed, sheets_row_index')
-      .eq('id', existingResponseId)
-      .eq('form_id', form_id as string)
-      .single() as { data: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null } | null; error: unknown }
-
-    if (!existingResponse) {
-      return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
-    }
-
-    // Há dois caminhos legítimos de UPDATE:
-    //  (a) Autenticado: a row tem respondent_id e bate com o cookie/header do
-    //      lado do cliente — fluxo de partial-response Plus+ pra logados.
-    //  (b) Anônimo partial→final: a row foi criada por /api/responses/partial
-    //      sem respondent_id (anônima) e ainda não foi finalizada. O id é
-    //      sigiloso (UUID v4 ~122 bits de entropia) e está no localStorage do
-    //      navegador do próprio respondente — ninguém mais consegue forjar.
-    const bodyRespondentId = typeof respondent_id === 'string' ? respondent_id : null
-    const isAnonymousPartialUpgrade =
-      existingResponse.respondent_id === null && existingResponse.completed === false
-    const isAuthenticatedOwner =
-      !!existingResponse.respondent_id && existingResponse.respondent_id === bodyRespondentId
-    if (!isAnonymousPartialUpgrade && !isAuthenticatedOwner) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 403, headers: CORS_HEADERS })
-    }
-
+  if (existingResponseId && existingResponse) {
     const { data: updated, error: updateError } = await supabase
       .from('responses')
       .update({ answers, meta_events: metaEvents, completed, last_question_answered: last_question_answered ?? null, ...utmData } as ResponseUpdate)
@@ -324,7 +314,8 @@ export async function POST(req: NextRequest) {
       .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string } | null }
 
     if (insertError || !newResponse) {
-      logError('Failed to insert response:', insertError, { form_id: form_id, respondent_id })
+      // PII fora dos logs (P3): respondent_id identifica o usuário — loga só presença.
+      logError('Failed to insert response:', insertError, { form_id: form_id, has_respondent: Boolean(respondent_id) })
       return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
     }
 
@@ -527,14 +518,24 @@ export async function POST(req: NextRequest) {
     await Promise.allSettled(postSubmitTasks)
   }
 
-  return NextResponse.json({ response_id: responseId, completed }, {
-    status: existingResponseId ? 200 : 201,
-    headers: {
-      ...CORS_HEADERS,
-      'X-RateLimit-Limit': '10',
-      'X-RateLimit-Remaining': String(rateCheck.remaining),
+  // Resposta anônima incompleta: devolve a prova de posse (A1) para o cliente
+  // poder completar via upsert depois — o response_id sozinho não autoriza mais.
+  const issuePartialToken = !completed && typeof respondent_id !== 'string'
+  return NextResponse.json(
+    {
+      response_id: responseId,
+      completed,
+      ...(issuePartialToken ? { partial_token: signPartialToken(responseId) } : {}),
     },
-  })
+    {
+      status: existingResponseId ? 200 : 201,
+      headers: {
+        ...CORS_HEADERS,
+        'X-RateLimit-Limit': '10',
+        'X-RateLimit-Remaining': String(rateCheck.remaining),
+      },
+    }
+  )
   } catch (err) {
     logError('POST /api/responses crashed:', err)
     return NextResponse.json({ error: 'Erro interno do servidor', detail: err instanceof Error ? err.message : String(err) }, { status: 500, headers: CORS_HEADERS })

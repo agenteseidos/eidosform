@@ -1,3 +1,7 @@
+// Nota (auditoria 2026-06-10): o mesmo NOME de chave em sessionStorage e
+// localStorage não colide — são storages independentes. Session = atribuição
+// da visita atual; local = last-touch com TTL de 30 dias, compartilhado entre
+// forms da mesma origem POR DESIGN (atribuição da campanha que trouxe o lead).
 const SESSION_STORAGE_KEY = 'eidosform_utm'
 const LOCAL_STORAGE_KEY = 'eidosform_utm'
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000

@@ -2,12 +2,11 @@
 
 import { QuestionConfig } from '@/lib/database.types'
 import { getQuestionTypeInfo } from '@/lib/questions'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { X, CalendarClock, Code, Plus } from 'lucide-react'
+import { CalendarClock, Code } from 'lucide-react'
 import { countries } from '@/lib/countries'
 import { PixelBranchingEditor } from './pixel-branching-editor'
 import { ConditionalVisibilityEditor } from './conditional-visibility-editor'

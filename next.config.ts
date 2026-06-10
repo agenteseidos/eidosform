@@ -47,23 +47,11 @@ const protectedAppHeaders = [
   ...commonSecurityHeaders,
 ];
 
+// A2 (auditoria 2026-06-10): a CSP do player público é gerada por request no
+// middleware (nonce + strict-dynamic) — ver buildFormPlayerCsp em middleware.ts.
+// Definir uma segunda CSP estática aqui faria o browser aplicar a interseção
+// das duas, quebrando o nonce. Apenas os headers comuns ficam aqui.
 const embeddableFormHeaders = [
-  {
-    key: 'Content-Security-Policy',
-    value: [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://*.googletagmanager.com https://www.google-analytics.com https://ssl.google-analytics.com https://www.facebook.com https://connect.facebook.net https://snap.licdn.com https://www.googleadservices.com https://www.google.com https://analytics.tiktok.com https://*.doubleclick.net https://assets.calendly.com",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: https: blob:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.asaas.com https://www.facebook.com https://connect.facebook.net https://*.facebook.net https://*.facebook.com https://analytics.tiktok.com https://*.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.google.com https://*.googleadservices.com https://www.google.com/pagead https://*.doubleclick.net https://viacep.com.br https://calendly.com https://*.calendly.com",
-      "frame-src 'self' https:",
-      "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://assets.calendly.com",
-      'frame-ancestors *',
-      "form-action 'self'",
-      "base-uri 'self'",
-    ].join('; '),
-  },
   ...commonSecurityHeaders,
 ];
 

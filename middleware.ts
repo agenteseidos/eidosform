@@ -22,6 +22,47 @@ function isWriteRequest(request: NextRequest): boolean {
   return method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE'
 }
 
+// A2 (auditoria 2026-06-10): CSP estrita com nonce + strict-dynamic para o
+// player público /f/:slug. Browsers modernos passam a exigir nonce em scripts
+// inline (qualquer regressão de sanitização deixa de ser XSS executável);
+// browsers antigos (sem suporte a nonce) caem no comportamento anterior via
+// 'unsafe-inline' + allowlist de hosts, que o CSP3 ignora quando há nonce.
+// Os <Script> de pixels recebem o nonce via header x-nonce (lido na page).
+const PIXEL_SCRIPT_HOSTS =
+  'https://*.googletagmanager.com https://www.google-analytics.com https://ssl.google-analytics.com https://www.facebook.com https://connect.facebook.net https://snap.licdn.com https://www.googleadservices.com https://www.google.com https://analytics.tiktok.com https://*.doubleclick.net https://assets.calendly.com'
+
+function buildFormPlayerCsp(nonce: string): string {
+  return [
+    "default-src 'self'",
+    `script-src 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'self' ${PIXEL_SCRIPT_HOSTS}`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https: blob:",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.asaas.com https://www.facebook.com https://connect.facebook.net https://*.facebook.net https://*.facebook.com https://analytics.tiktok.com https://*.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.google.com https://*.googleadservices.com https://www.google.com/pagead https://*.doubleclick.net https://viacep.com.br https://calendly.com https://*.calendly.com",
+    "frame-src 'self' https:",
+    "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://assets.calendly.com",
+    'frame-ancestors *',
+    "form-action 'self'",
+    "base-uri 'self'",
+  ].join('; ')
+}
+
+/** Resposta com nonce por request para páginas do player público. */
+function formPlayerResponse(request: NextRequest, rewriteUrl?: URL): NextResponse {
+  const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
+  const csp = buildFormPlayerCsp(nonce)
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-nonce', nonce)
+  // O Next lê o nonce do header CSP do request para aplicá-lo aos próprios
+  // scripts inline do framework (hidratação/RSC payload).
+  requestHeaders.set('Content-Security-Policy', csp)
+  const response = rewriteUrl
+    ? NextResponse.rewrite(rewriteUrl, { request: { headers: requestHeaders } })
+    : NextResponse.next({ request: { headers: requestHeaders } })
+  response.headers.set('Content-Security-Policy', csp)
+  return response
+}
+
 /**
  * Resolve a custom domain to a form slug.
  * Uses in-memory cache with TTL to avoid hitting DB on every request.
@@ -110,9 +151,15 @@ export async function middleware(request: NextRequest) {
       const rewritePath = originalPath === '/' ? `/f/${slug}` : `/f/${slug}${originalPath}`
       const url = request.nextUrl.clone()
       url.pathname = rewritePath
-      return NextResponse.rewrite(url)
+      // Conteúdo servido é o player público — aplica a CSP com nonce (A2).
+      return formPlayerResponse(request, url)
     }
     // API / _next paths fall through to normal middleware (session + CSRF)
+  }
+
+  // Player público /f/:slug — só CSP com nonce; sem sessão/CSRF (rota pública).
+  if (request.nextUrl.pathname.startsWith('/f/')) {
+    return formPlayerResponse(request)
   }
 
   const response = await updateSession(request)
@@ -151,9 +198,10 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
-     * - f/ (public form pages)
+     * Nota: /f/ (player público) AGORA passa pelo middleware — apenas para
+     * receber a CSP com nonce (A2); retorna antes de sessão/CSRF.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|f/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
 

@@ -17,8 +17,16 @@ const TTL_MS = 15 * 60 * 1000
 export const RECOVERY_COOKIE_NAME = COOKIE_NAME
 
 function signingSecret(): string {
-  // Segredos sempre presentes server-side; nunca expostos ao client.
-  return process.env.INTERNAL_API_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  // Preferir um secret DEDICADO ao contexto de recovery (P3, auditoria
+  // 2026-06-10 — evita reusar a mesma chave para fins diferentes). A cadeia
+  // de fallback mantém compatibilidade com ambientes sem a env nova; todos
+  // são server-side e nunca expostos ao client.
+  return (
+    process.env.RECOVERY_TOKEN_SECRET ||
+    process.env.INTERNAL_API_SECRET ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    ''
+  )
 }
 
 /** Gera o valor do cookie de recovery para um userId. */

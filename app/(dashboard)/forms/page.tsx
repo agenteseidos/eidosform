@@ -36,10 +36,11 @@ export default async function DashboardPage() {
 
   // P2-G: Use aggregate RPC for response counts instead of loading all responses
   const formIds = forms.map(f => f.id)
-  let responseCountsByForm: Record<string, number> = {}
+  const responseCountsByForm: Record<string, number> = {}
   if (formIds.length > 0) {
-    const { data: counts, error: countsError } = await (supabase as any)
-      .rpc('get_response_counts_by_forms', { p_form_ids: formIds })
+    const { data: counts, error: countsError } = await (supabase as unknown as {
+      rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: Array<{ form_id: string; response_count: number }> | null; error: unknown }>
+    }).rpc('get_response_counts_by_forms', { p_form_ids: formIds })
     if (countsError) {
       console.error('[forms/page] get_response_counts_by_forms failed:', countsError)
     } else if (counts) {

@@ -27,12 +27,15 @@ const memoryStore = new Map<string, RateLimitEntry>()
 
 // Cleanup old in-memory entries every 60s (only relevant if long-running)
 if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
+  // unref(): o timer de limpeza não pode segurar o processo vivo — sem isto a
+  // suíte vitest inteira travava ao final (P3-7, auditoria 2026-05-18).
+  const cleanupTimer = setInterval(() => {
     const now = Date.now()
     for (const [key, entry] of memoryStore) {
       if (now - entry.windowStart > WINDOW_MS) memoryStore.delete(key)
     }
   }, 60_000)
+  if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref()
 }
 
 function checkMemoryFallback(ip: string): { allowed: boolean; remaining: number; resetIn: number } {

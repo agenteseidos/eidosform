@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
 import Script from 'next/script'
 import { createPublicClient } from '@/lib/supabase/public'
 import { FormPlayer } from '@/components/form-player/form-player'
@@ -99,6 +100,9 @@ export async function generateMetadata({ params }: FormPageProps) {
 export default async function FormPage({ params }: FormPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
+  // Nonce da CSP por request (A2) — gerado no middleware, exigido pelos
+  // browsers modernos em qualquer script inline desta página.
+  const nonce = (await headers()).get('x-nonce') ?? undefined
 
   const data = await fetchPublishedForm(supabase, slug)
   const form = data as Form | null
@@ -173,6 +177,7 @@ export default async function FormPage({ params }: FormPageProps) {
         <Script
           id="meta-pixel"
           strategy="afterInteractive"
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${metaPixelId}');fbq('track','PageView');`,
           }}
@@ -185,6 +190,7 @@ export default async function FormPage({ params }: FormPageProps) {
           <Script
             id="gtm"
             strategy="afterInteractive"
+            nonce={nonce}
             dangerouslySetInnerHTML={{
               __html: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${gtmId}');`,
             }}
@@ -206,11 +212,13 @@ export default async function FormPage({ params }: FormPageProps) {
           <Script
             id="google-ads-lib"
             strategy="afterInteractive"
+            nonce={nonce}
             src={`https://www.googletagmanager.com/gtag/js?id=${googleAdsId}`}
           />
           <Script
             id="google-ads-init"
             strategy="afterInteractive"
+            nonce={nonce}
             dangerouslySetInnerHTML={{
               __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${googleAdsId}');`,
             }}

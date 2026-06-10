@@ -198,7 +198,7 @@ export function BranchingEditor({ question, allQuestions, onChange }: BranchingE
           <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
             ⚠️ Como o respondente pode marcar várias, o destino que dispara é o da
             <strong> primeira opção marcada que tiver caminho definido</strong> (de cima pra baixo).
-            Use ramificação aqui só pra opções "exclusivas" (ex.: "Outro" → pergunta de detalhe).
+            Use ramificação aqui só pra opções &quot;exclusivas&quot; (ex.: &quot;Outro&quot; → pergunta de detalhe).
           </div>
         )}
 

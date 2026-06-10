@@ -22,9 +22,9 @@ export async function POST() {
     .single() as { data: { plan: string; plan_expires_at: string | null } | null }
 
   const effectivePlan = getEffectivePlan(profile)
-  if (effectivePlan !== 'professional' && (effectivePlan as string) !== 'enterprise') {
+  if (effectivePlan !== 'professional') {
     return NextResponse.json(
-      { error: 'Acesso à API key requer plano Professional ou Enterprise' },
+      { error: 'Acesso à API key requer plano Professional' },
       { status: 403 }
     )
   }
@@ -125,6 +125,15 @@ export async function DELETE() {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
+  // B8 (auditoria 2026-06-10): rate limit em ação destrutiva.
+  const { allowed } = await checkRateLimitAsync(`apikey:delete:${user.id}`, {
+    maxAttempts: 5,
+    windowMs: 15 * 60 * 1000,
+  })
+  if (!allowed) {
+    return NextResponse.json({ error: 'Muitas tentativas. Tente novamente mais tarde.' }, { status: 429 })
+  }
+
   // P1 FIX: Verify plan before allowing revocation
   const { data: profile } = await supabase
     .from('profiles')
@@ -133,9 +142,9 @@ export async function DELETE() {
     .single() as { data: { plan: string; plan_expires_at: string | null } | null }
 
   const effectivePlan = getEffectivePlan(profile)
-  if (effectivePlan !== 'professional' && (effectivePlan as string) !== 'enterprise') {
+  if (effectivePlan !== 'professional') {
     return NextResponse.json(
-      { error: 'Acesso à API key requer plano Professional ou Enterprise' },
+      { error: 'Acesso à API key requer plano Professional' },
       { status: 403 }
     )
   }

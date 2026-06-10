@@ -6,7 +6,7 @@ import { questionTypes } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ArrowRight, FileText, X } from 'lucide-react'
+import { ArrowRight, FileText } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 const categories = ['Todos', 'Marketing', 'Vendas', 'Feedback', 'Eventos', 'Pesquisa', 'Engajamento', 'Agência', 'Geral']

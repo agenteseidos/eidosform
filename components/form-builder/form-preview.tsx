@@ -8,6 +8,7 @@ import DOMPurify from 'dompurify'
 import { Star, CalendarClock, Code, Plus, X, ChevronDown } from 'lucide-react'
 import { getCountryByCode } from '@/lib/countries'
 import { renderContentBlockHtml } from '@/lib/content-block'
+import { sanitizeEmbedHtml } from '@/lib/html-server'
 import { TiptapEditor, renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
 
 interface FormPreviewProps {
@@ -712,14 +713,16 @@ export function FormPreview({
                     </div>
                     <div
                       className="p-3"
-                      dangerouslySetInnerHTML={{ __html: question.htmlContent }}
+                      // Mesma sanitização do player (allowlist de embed) — o
+                      // preview não deve executar script que o player bloqueia.
+                      dangerouslySetInnerHTML={{ __html: sanitizeEmbedHtml(question.htmlContent) }}
                     />
                   </div>
                   {question.htmlBlockNote?.trim() && (
                     <div
                       className="html-block-note text-sm leading-relaxed"
                       style={{ color: theme.textColor }}
-                      dangerouslySetInnerHTML={{ __html: renderTiptapHtml(question.htmlBlockNote, renderContentBlockHtml) }}
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderTiptapHtml(question.htmlBlockNote, renderContentBlockHtml)) }}
                     />
                   )}
                 </div>

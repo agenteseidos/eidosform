@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -382,7 +382,7 @@ function ResponseDetailDialog({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ResponsesDashboard({ form, responses: initialResponses, userPlan = 'free', totalResponseCount, hasMoreResponses }: ResponsesDashboardProps) {
+export function ResponsesDashboard({ form, responses: initialResponses, userPlan = 'free', totalResponseCount }: ResponsesDashboardProps) {
   const supabase = createClient()
   const questions = (form.questions as QuestionConfig[]) || []
 
@@ -447,9 +447,12 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
   const totalPages = Math.ceil(filteredResponses.length / PAGE_SIZE)
   const paginatedResponses = filteredResponses.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // Reset page when filters change
-  // P1-6: Reset page when filters change (moved from useMemo to useEffect)
-  useEffect(() => { setPage(1) }, [statusFilter, dateFilter, searchQuery])
+  // Reset da página acontece nos handlers de filtro (updateSearchQuery etc.) —
+  // setState num useEffect disparava render em cascata (lint react-hooks).
+  const updateSearchQuery = (v: string) => { setSearchQuery(v); setPage(1) }
+  const updateStatusFilter = (v: typeof statusFilter) => { setStatusFilter(v); setPage(1) }
+  const updateDateFilter = (v: typeof dateFilter) => { setDateFilter(v); setPage(1) }
+  const clearFilters = () => { setSearchQuery(''); setStatusFilter('all'); setDateFilter('all'); setPage(1) }
 
   const handleDelete = async () => {
     if (!responseToDelete) return
@@ -464,34 +467,6 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
     setIsDeleting(false)
     setDeleteDialogOpen(false)
     setResponseToDelete(null)
-  }
-
-  const exportToCSV = () => {
-    if (filteredResponses.length === 0) { toast.error('Nenhuma resposta para exportar'); return }
-    const headers = ['Enviado em', 'Status', ...questions.map(q => q.title || 'Sem título')]
-    const rows = filteredResponses.map(r => {
-      const ans = r.answers as Record<string, Json>
-      return [
-        formatDate(r.submitted_at),
-        r.completed ? 'Completa' : 'Parcial',
-        ...questions.map(q => formatAnswer(ans[q.id]))
-      ]
-    })
-    const csv = [
-      headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
-      ...rows.map(row => row.map(cell => {
-        const raw = String(cell)
-        const safe = /^[=+\-@\t\r]/.test(raw) ? "'" + raw : raw
-        return `"${safe.replace(/"/g, '""')}"`
-      }).join(','))
-    ].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = `${form.title || 'form'}-respostas-${new Date().toISOString().split('T')[0]}.csv`
-    link.click()
-    URL.revokeObjectURL(link.href)
-    toast.success('CSV exportado com sucesso')
   }
 
   const exportCSVFromAPI = () => {
@@ -655,12 +630,12 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
               <Input
                 placeholder="Buscar nas respostas…"
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => updateSearchQuery(e.target.value)}
                 className="pl-9"
               />
             </div>
 
-            <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
+            <Select value={statusFilter} onValueChange={v => updateStatusFilter(v as typeof statusFilter)}>
               <SelectTrigger className="w-full sm:w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -671,7 +646,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
               </SelectContent>
             </Select>
 
-            <Select value={dateFilter} onValueChange={v => setDateFilter(v as typeof dateFilter)}>
+            <Select value={dateFilter} onValueChange={v => updateDateFilter(v as typeof dateFilter)}>
               <SelectTrigger className="w-full sm:w-40">
                 <SelectValue placeholder="Período" />
               </SelectTrigger>
@@ -687,7 +662,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setSearchQuery(''); setStatusFilter('all'); setDateFilter('all') }}
+                onClick={clearFilters}
                 className="text-slate-500"
               >
                 <X className="w-4 h-4 mr-1" />Limpar
@@ -844,7 +819,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
           {filteredResponses.length === 0 && (
             <div className="text-center py-12">
               <p className="text-slate-500 text-sm">Nenhuma resposta encontrada para os filtros atuais</p>
-              <Button variant="link" className="mt-2 text-sm" onClick={() => { setSearchQuery(''); setStatusFilter('all'); setDateFilter('all') }}>
+              <Button variant="link" className="mt-2 text-sm" onClick={clearFilters}>
                 Limpar filtros
               </Button>
             </div>

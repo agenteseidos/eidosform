@@ -39,7 +39,7 @@ export default async function SettingsPage() {
   const fullName = profile?.full_name || user.user_metadata?.full_name || ''
   const planKey = (profile?.plan ?? 'free') as string
   const currentPlan = planKey.charAt(0).toUpperCase() + planKey.slice(1)
-  const isProfessional = planKey === 'professional' || planKey === 'enterprise'
+  const isProfessional = planKey === 'professional'
   const defaultDomainFormId = forms?.[0]?.id ?? null
 
   return (

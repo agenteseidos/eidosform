@@ -129,8 +129,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   // chamadas subsequentes em /api/responses/partial quanto pro submit final.
   const PUBLIC_PARTIAL_IDLE_MS = 60_000
   const PUBLIC_PARTIAL_STORAGE_KEY = `eidosform_partial_response_id_${form.id}`
+  const PUBLIC_PARTIAL_TOKEN_STORAGE_KEY = `eidosform_partial_token_${form.id}`
   const publicPartialTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const publicResponseIdRef = useRef<string | null>(null)
+  // Prova de posse da parcial anônima (A1): emitida pelo servidor na criação,
+  // exigida em qualquer UPDATE — o response_id sozinho não autoriza mais.
+  const publicPartialTokenRef = useRef<string | null>(null)
   const pendingPartialPayloadRef = useRef<{ answers: Record<string, Json>; lastQuestionId: string } | null>(null)
 
   // Lista de perguntas visíveis com base nas respostas atuais
@@ -175,7 +179,6 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     if (currentQuestion?.id && errors[currentQuestion.id] && errorRef.current) {
       errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [errors, currentQuestion?.id])
   const isLastQuestion = currentIndex >= 0 && currentIndex === visibleQuestions.length - 1
   const isFirstQuestion = navigationHistory.length === 0 && !form.welcome_enabled
@@ -327,6 +330,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     try {
       const stored = window.localStorage.getItem(PUBLIC_PARTIAL_STORAGE_KEY)
       if (stored) publicResponseIdRef.current = stored
+      const storedToken = window.localStorage.getItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY)
+      if (storedToken) publicPartialTokenRef.current = storedToken
     } catch { /* ignore storage failures */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicPartialEnabled])
@@ -338,6 +343,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (publicResponseIdRef.current) headers['x-response-id'] = publicResponseIdRef.current
+      if (publicPartialTokenRef.current) headers['x-partial-token'] = publicPartialTokenRef.current
       const utms = getUtms()
       const res = await fetch('/api/responses/partial', {
         method: 'POST',
@@ -355,6 +361,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           publicResponseIdRef.current = data.response_id
           try { window.localStorage.setItem(PUBLIC_PARTIAL_STORAGE_KEY, data.response_id) } catch { /* ignore */ }
         }
+        if (data?.partial_token) {
+          publicPartialTokenRef.current = data.partial_token
+          try { window.localStorage.setItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY, data.partial_token) } catch { /* ignore */ }
+        }
       }
     } catch { /* fire-and-forget, log no servidor */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -369,7 +379,6 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       publicPartialTimerRef.current = null
       runPublicPartialSave()
     }, PUBLIC_PARTIAL_IDLE_MS)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicPartialEnabled, runPublicPartialSave])
 
   // Flush imediato quando a aba fica oculta/fechada — cobre "lead abandonou
@@ -391,6 +400,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           // sendBeacon não suporta headers — incluímos o response_id no body
           // e o endpoint aceita ambos (header tem prioridade).
           response_id: publicResponseIdRef.current ?? undefined,
+          partial_token: publicPartialTokenRef.current ?? undefined,
         }
         const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
         navigator.sendBeacon('/api/responses/partial', blob)
@@ -403,7 +413,6 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', flush)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicPartialEnabled, form.id])
 
   // Salva resposta parcial com debounce (2s) — só se autenticado e plano permitir
@@ -536,6 +545,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       // O /api/responses aceita ambos os caminhos de UPDATE.
       const effectiveResponseId = responseId || publicResponseIdRef.current
       if (effectiveResponseId) headers['x-response-id'] = effectiveResponseId
+      // Upgrade de parcial anônima exige a prova de posse (A1).
+      if (!responseId && publicResponseIdRef.current && publicPartialTokenRef.current) {
+        headers['x-partial-token'] = publicPartialTokenRef.current
+      }
 
       const utms = getUtms()
 
@@ -604,7 +617,11 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       // contagem no Events Manager.
       // Limpa o response_id do partial público — submit final consumou a row.
       publicResponseIdRef.current = null
-      try { window.localStorage.removeItem(PUBLIC_PARTIAL_STORAGE_KEY) } catch { /* ignore */ }
+      publicPartialTokenRef.current = null
+      try {
+        window.localStorage.removeItem(PUBLIC_PARTIAL_STORAGE_KEY)
+        window.localStorage.removeItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY)
+      } catch { /* ignore */ }
       setIsSubmitted(true)
       if (form.redirect_url) {
         const redirectDelay = form.redirect_delay != null ? Number(form.redirect_delay) : 2800

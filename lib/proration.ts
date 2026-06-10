@@ -77,7 +77,9 @@ export function calculateProrationCredit(params: ProrationCreditParams): number 
   // cancel+reativa de mesmo plano. min(credito, preço) fecha a inflação e o empilhamento.
   const capped = Math.min(credit, price)
 
-  // Arredonda para 2 casas decimais
+  // Arredondamento monetário via centavos: ×100 → round (inteiro seguro) →
+  // ÷100. Uma única operação por cálculo (não acumula erro de float entre
+  // chamadas) e o resultado vai ao Asaas já com 2 casas exatas.
   return Math.round(capped * 100) / 100
 }
 

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { cancelSubscription } from '@/lib/asaas'
 import { logError, logWarn } from '@/lib/logger'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 export async function POST() {
   const supabase = await createClient()
@@ -10,6 +11,16 @@ export async function POST() {
 
   if (!user) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  }
+
+  // B8 (auditoria 2026-06-10): rate limit em ação destrutiva — limita abuso
+  // por sessão sequestrada/automatizada (3 tentativas / 15 min).
+  const { allowed } = await checkRateLimitAsync(`account:delete:${user.id}`, {
+    maxAttempts: 3,
+    windowMs: 15 * 60 * 1000,
+  })
+  if (!allowed) {
+    return NextResponse.json({ error: 'Muitas tentativas. Tente novamente mais tarde.' }, { status: 429 })
   }
 
   const { data: profile } = await supabase

@@ -5,7 +5,6 @@ const META_EVENTS_COLUMN = 'meta_events'
 const UTM_COLUMNS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
 const RESPONSE_ID_COLUMN = 'response_id'
 const STATUS_COLUMN = 'status'
-const STATUS_PARTIAL = 'Parcial'
 const STATUS_COMPLETE = 'Completo'
 
 /**

@@ -12,6 +12,7 @@ import { createCheckout, createCustomer, updateCustomer, buildExternalReference,
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
+import { addDaysToTodayBRT } from '@/lib/proration'
 import { executePlanSwitch, nextDueDateAfterFullCycle } from '@/lib/plan-switch'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { checkLaunchScope } from '@/lib/billing-launch-guard'
@@ -220,9 +221,7 @@ export async function POST(
         let coverageNextDue = change.nextChargeDate
         if (!coverageNextDue) {
           // Defensivo: computePlanChange sempre define p/ credit_covered.
-          const d = new Date()
-          d.setDate(d.getDate() + (change.creditCoverageDays ?? 1))
-          coverageNextDue = d.toISOString().split('T')[0]
+          coverageNextDue = addDaysToTodayBRT(change.creditCoverageDays ?? 1)
         }
         const result = await executePlanSwitch({
           db: sSupa,

@@ -100,5 +100,28 @@ const cancelCovered = computePlanChange({
 assert(cancelCovered.action === 'credit_covered', 'canceling: saldo cobre tudo = credit_covered')
 assert(cancelCovered.coveredByCredit === true && cancelCovered.amountDueNow === 0, 'canceling coberto: paga R$0 agora')
 
+// ── REATIVAÇÃO do MESMO plano+ciclo = identidade exata (Sidney 2026-06-10) ──
+// Caso do teste de produção: canceling Starter mensal com 78 dias pagos restantes. O modelo
+// antigo (teto + tempo→crédito→tempo) clipava p/ 30 dias — perda de ~48 dias pagos. Agora a
+// cobertura É os dias restantes e a próxima cobrança cai exatamente no dia da expiração.
+const future78 = new Date(Date.now() + 78 * 24 * 3600 * 1000).toISOString()
+const brtDateOf = (ms: number) => new Date(ms - 3 * 3600 * 1000).toISOString().split('T')[0]
+const reactivate = computePlanChange({
+  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: future78,
+  hasActiveSubscription: false, hasPaidPeriodRemaining: true, newPlan: 'starter', newCycle: 'MONTHLY',
+})
+assert(reactivate.action === 'credit_covered', 'reativação mesmo plano = credit_covered (R$0)')
+assert(reactivate.creditCoverageDays === 78, `reativação: cobertura = 78 dias EXATOS, sem teto nem conversão (got ${reactivate.creditCoverageDays})`)
+assert(reactivate.nextChargeDate === brtDateOf(Date.now() + 78 * 24 * 3600 * 1000), `reativação: próxima cobrança no dia exato da expiração (got ${reactivate.nextChargeDate})`)
+
+// Cancelar+reativar DE NOVO (expiração regravada como fim-de-dia BRT do nextDueDate, como o
+// webhook faz via expiryFromNextDueDate): a data NÃO anda — farming impossível por construção.
+const round2 = computePlanChange({
+  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: `${reactivate.nextChargeDate}T23:59:59-03:00`,
+  hasActiveSubscription: false, hasPaidPeriodRemaining: true, newPlan: 'starter', newCycle: 'MONTHLY',
+})
+assert(round2.nextChargeDate === reactivate.nextChargeDate, `cancel+reativa repetido não move a data (${reactivate.nextChargeDate} → ${round2.nextChargeDate})`)
+assert(round2.creditCoverageDays === 78, `2ª reativação: cobertura segue 78 (got ${round2.creditCoverageDays})`)
+
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed > 0 ? 1 : 0)

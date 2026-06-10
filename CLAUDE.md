@@ -141,14 +141,24 @@ npm run lint     # ESLint
 - P2-1 (crédito no anual) DECIDIDO: crédito = desconto no fluxo pago; vira tempo só
   quando cobre o preço inteiro. Transparente via preview. Sem mudança de código.
 - Captura do token loga AUSÊNCIA explicitamente (validação conclusiva).
+- MODELO DE CRÉDITO JUSTO (decisão Sidney 2026-06-10, sessão 3 — "dias pagos são o
+  ativo"): teto `min(crédito, preço)` REMOVIDO de `calculateProrationCredit`; contagem
+  em dias INTEIROS de calendário BRT (`remainingPaidDays`/`addDaysToTodayBRT` em
+  `lib/proration.ts`). Reativação de MESMO plano+ciclo = identidade exata (cobertura =
+  dias restantes; cancel+reativa N vezes NÃO move a data — anti-farming por construção,
+  o teto ficou desnecessário). Entre planos, ceil concede ≤1 dia por conversão (decisão
+  antiga, favorece o cliente) e a ida-e-volta converge. Motivo: no teste de produção a
+  reativação clipou 78 dias pagos → 30 (perda ~R$78 do cliente).
 
-### Próximo passo (Sidney, operacional — compras reais, estornar no fim)
-1. Conferir que prod NÃO tem `BILLING_MVP_ONLY` nem `BILLING_RECONCILE_*` setados.
-2. Compra Starter mensal → `profiles.asaas_card_token` preenchido?
-3. Upgrade Starter→Plus → avulso da diferença + sub nova R$127 cheia
-   (🚦 GATE P0-2: conferir que a sub nova NÃO gerou cobrança imediata).
-4. Downgrade Plus→Starter → R$0 agora, sub nova R$49, saldo vira tempo.
-5. Cancelar/estornar/limpar. Tudo ok → está vendendo (sem flags pra virar).
+### ✅ TESTE DE PRODUÇÃO CONCLUÍDO (2026-06-10) — falta só a LIMPEZA
+Passos validados com compras reais: (1) compra Starter mensal + token capturado;
+(2) upgrade Starter→Plus — avulso R$78 + sub nova R$127 cheia, GATE P0-2 PASSOU (sem
+cobrança imediata); (3) downgrade Plus→Starter — R$0, saldo virou tempo (27/08);
+(4) cancelamento — soft-cancel ok, UI corrigida (ciclo no título + msg de cancelado);
+(5) reativação — R$0, sub recriada via token (`reactivate` validado). ESTÁ VENDENDO.
+**Limpeza pendente (Sidney, no Asaas):** estornar R$49 + R$78, deletar a sub
+`sub_r1yw8uvf2gb5c4b1`, e resetar o profile de teste no Supabase p/ free
+(user `c3aadb97-5da0-40e8-aaed-f471a1299ef3`).
 
 ### 🔜 PRÓXIMA FEATURE (decidida 2026-06-10) — Fallback: troca de plano com cartão salvo MORTO
 > Cenário: cliente quer upgrade PAGO mas o `asaas_card_token` salvo expirou/foi

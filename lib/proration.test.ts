@@ -9,7 +9,7 @@
  * 4. Edge cases — crédito cobre plano inteiro, 0 dias restantes, plano expirado
  */
 
-import { calculateProrationCredit, calculateUpgradePrice, calculateCreditCoverageDays, isUpgrade } from './proration'
+import { calculateProrationCredit, calculateUpgradePrice, calculateCreditCoverageDays, remainingPaidDays, addDaysToTodayBRT, isUpgrade } from './proration'
 
 let passed = 0
 let failed = 0
@@ -94,35 +94,58 @@ const credit360 = calculateProrationCredit({
 })
 assert(approx(credit360, 343.23), `360 dias starter anual ≈ R$343.23 (got ${credit360})`)
 
-// TETO do crédito (Sidney 2026-06-09): dias restantes > ciclo (fim-do-dia + deriva de mudanças
-// repetidas) NÃO podem inflar o crédito acima do preço pago. min(credito, preço).
-const creditCapMonthly = calculateProrationCredit({
+// SEM TETO de dinheiro (Sidney 2026-06-10, substitui o teto de 2026-06-09): dias restantes
+// acima de 1 ciclo são saldo LEGÍTIMO — o "saldo vira tempo" cria isso (ex.: downgrade
+// Plus→Starter empurra a cobrança 2+ meses) — e valem integralmente na diária do plano.
+// O teto antigo clipava esse saldo pago (perda real, vista no teste de produção 2026-06-10).
+const credit35 = calculateProrationCredit({
   currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(35),
 })
-assert(approx(creditCapMonthly, 49.0), `35 dias starter mensal = TETO R$49.00 (não infla; got ${creditCapMonthly})`)
+assert(approx(credit35, 57.17), `35 dias starter mensal = R$57.17 (dias reais, sem teto; got ${credit35})`)
 
-const creditCapYearly = calculateProrationCredit({
+const credit400 = calculateProrationCredit({
   currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(400),
 })
-assert(approx(creditCapYearly, 1164.0), `400 dias plus anual = TETO R$1164.00 (não infla; got ${creditCapYearly})`)
+assert(approx(credit400, 1275.62), `400 dias plus anual = R$1275.62 (sem teto; got ${credit400})`)
 
-// Borda: exatamente o ciclo cheio (30 dias) ainda dá o preço cheio (não corta a menos).
+// Borda: exatamente o ciclo cheio (30 dias) dá exatamente o preço do ciclo.
 const creditFullCycle = calculateProrationCredit({
   currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(30),
 })
 assert(creditFullCycle <= 49.0 && creditFullCycle >= 48.5, `30 dias starter mensal ≈ R$49 sem estourar (got ${creditFullCycle})`)
 
-// SEQUÊNCIA anti-farming (sugestão Codex 2026-06-09): prova explícita de que cancel+reativa
-// repetido NÃO empilha cobertura. Mesmo com expiração derivada p/ now+35d, o crédito capado (R$49)
-// gera cobertura de no MÁX ~1 ciclo (30d), nunca 35 — e repetir não cresce.
+// ============================================================
+// remainingPaidDays / addDaysToTodayBRT — a régua de dias inteiros (BRT)
+// ============================================================
+console.log('\n=== remainingPaidDays / addDaysToTodayBRT ===')
+
+// Dias INTEIROS de calendário: a fração do fim-de-dia não infla a contagem (era a fonte
+// da deriva que motivou o teto antigo).
+assert(remainingPaidDays(daysFromNow(78)) === 78, `78 dias à frente = 78 dias inteiros (got ${remainingPaidDays(daysFromNow(78))})`)
+assert(remainingPaidDays(daysFromNow(1)) === 1, '1 dia à frente = 1 dia')
+assert(remainingPaidDays(daysFromNow(0)) === 0, 'expira agora = 0 dias')
+assert(remainingPaidDays(daysFromNow(-5)) === 0, 'expirado = 0 dias')
+assert(remainingPaidDays('data-invalida') === 0, 'data inválida = 0 dias')
+
+// Ida-e-volta exata: hoje + remainingPaidDays(exp) cai exatamente no dia de exp (BRT).
+const brtDateOf = (ms: number) => new Date(ms - 3 * 3600 * 1000).toISOString().split('T')[0]
+const target78 = Date.now() + 78 * 24 * 3600 * 1000
+assert(addDaysToTodayBRT(remainingPaidDays(daysFromNow(78))) === brtDateOf(target78), 'ida-e-volta: hoje + dias restantes = dia exato da expiração')
+
+// SEQUÊNCIA anti-farming do modelo SEM teto: entre planos, o ceil concede no máx ~1 dia POR
+// conversão (decisão antiga: favorece o cliente) e a ida-e-volta CONVERGE — repetir NÃO
+// cresce sem limite. (Mesmo plano+ciclo nem converte: identidade exata em plan-change.)
 const STARTER_M = 49
-const driftedCredit = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(35) })
-const driftedCoverage = calculateCreditCoverageDays(driftedCredit, STARTER_M, 'MONTHLY')
-assert(driftedCoverage <= 30, `cobertura com 35d derivados ≤ 30d (teto mata o farming; sem teto daria 35; got ${driftedCoverage})`)
-// 2ª reativação (agora ~30d restantes): crédito = teto R$49 → cobertura 30, NÃO cresce.
-const round2Credit = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(30) })
-const round2Coverage = calculateCreditCoverageDays(round2Credit, STARTER_M, 'MONTHLY')
-assert(round2Coverage <= 30, `2ª reativação: cobertura ≤ 30d (não empilha; got ${round2Coverage})`)
+const c1 = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(35) })
+const d1 = calculateCreditCoverageDays(c1, STARTER_M, 'MONTHLY')
+assert(d1 >= 35 && d1 <= 36, `35 dias reais → cobertura 35–36 (ceil ≤ +1; got ${d1})`)
+const c2 = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(d1) })
+const d2 = calculateCreditCoverageDays(c2, STARTER_M, 'MONTHLY')
+assert(d2 === d1, `ida-e-volta estabiliza: ${d1} → ${d2} (não empilha)`)
+
+// Epsilon do ceil: conta exata com ruído de float NÃO ganha +1 dia espúrio.
+// 58.80 × 30 / 49 = 36.000000000000007 em float64 → deve dar 36, não 37.
+assert(calculateCreditCoverageDays(58.8, STARTER_M, 'MONTHLY') === 36, `coverage exato com ruído de float = 36 (got ${calculateCreditCoverageDays(58.8, STARTER_M, 'MONTHLY')})`)
 
 // ============================================================
 // 3. calculateUpgradePrice — cenários de upgrade anual

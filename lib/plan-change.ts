@@ -4,7 +4,7 @@
  * (POST /api/checkout/[plan]), para os dois NUNCA divergirem (o que o usuário confirma
  * é o que é executado). Recebe só dados do profile + plano/ciclo desejados.
  */
-import { calculateUpgradePrice, calculateCreditCoverageDays, isUpgrade, type BillingCycle } from '@/lib/proration'
+import { calculateUpgradePrice, calculateCreditCoverageDays, remainingPaidDays, addDaysToTodayBRT, isUpgrade, type BillingCycle } from '@/lib/proration'
 import { PLAN_PRICES } from '@/lib/asaas'
 import { type PlanId } from '@/lib/plans'
 
@@ -110,9 +110,13 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
     if (prorationC.finalPrice <= 0) {
       // Saldo cobre TODO o novo plano. Criar a sub sem cobrar exige token/reactivate (a sub foi
       // deletada no cancelamento) — a EXECUÇÃO trata esse caso à parte. Aqui só sinaliza coberto.
-      const coverageDays = Math.max(1, calculateCreditCoverageDays(prorationC.credit, prorationC.originalPrice, newCycle))
-      const nextDue = new Date()
-      nextDue.setDate(nextDue.getDate() + coverageDays)
+      // REATIVAÇÃO do MESMO plano+ciclo: identidade exata — os dias pagos restantes são a
+      // cobertura, sem converter tempo→crédito→tempo (cancelar+reativar N vezes não move a
+      // data um dia sequer). Modelo "dias pagos são o ativo" (Sidney 2026-06-10).
+      const samePlanCycle = currentPlan === newPlan && (currentCycle ?? 'MONTHLY') === newCycle
+      const coverageDays = samePlanCycle
+        ? Math.max(1, remainingPaidDays(planExpiresAt))
+        : Math.max(1, calculateCreditCoverageDays(prorationC.credit, prorationC.originalPrice, newCycle))
       return {
         ...base,
         action: 'credit_covered',
@@ -121,7 +125,7 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
         amountDueNow: 0,
         coveredByCredit: true,
         creditCoverageDays: coverageDays,
-        nextChargeDate: nextDue.toISOString().split('T')[0],
+        nextChargeDate: addDaysToTodayBRT(coverageDays),
       }
     }
     return { ...base, action: 'checkout', shouldApplyProration: true, proration: prorationC, amountDueNow: prorationC.finalPrice }
@@ -140,11 +144,11 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
     proration = { credit: r.credit, originalPrice: r.originalPrice, finalPrice: r.finalPrice }
   }
 
-  // Crédito cobre todo o novo plano → Caminho D (edita a assinatura, sem cobrança agora)
+  // Crédito cobre todo o novo plano → sub recriada via token, sem cobrança agora.
+  // (Mesmo plano+ciclo com sub ativa já retornou 'already_subscribed' acima, então aqui é
+  // sempre conversão entre planos/ciclos diferentes — coverage via crédito.)
   if (proration && proration.finalPrice <= 0) {
     const coverageDays = Math.max(1, calculateCreditCoverageDays(proration.credit, proration.originalPrice, newCycle))
-    const nextDue = new Date()
-    nextDue.setDate(nextDue.getDate() + coverageDays)
     return {
       ...base,
       action: 'credit_covered',
@@ -152,7 +156,7 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
       amountDueNow: 0,
       coveredByCredit: true,
       creditCoverageDays: coverageDays,
-      nextChargeDate: nextDue.toISOString().split('T')[0],
+      nextChargeDate: addDaysToTodayBRT(coverageDays),
     }
   }
 

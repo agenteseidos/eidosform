@@ -282,10 +282,10 @@ export async function GET() {
   //    up unrelated active subscriptions.
   if (asaasCustomerId) {
     try {
-      // getCustomerSubscriptions já retorna só ACTIVE de cartão (limit=100). Ordena por
-      // mais nova primeiro p/ desempate determinístico.
-      const activeSubs = ((await getCustomerSubscriptions(asaasCustomerId)) as Array<{ id: string; status: string; description?: string; dateCreated?: string; cycle?: string }>)
-        .filter((s) => (s.status as string)?.toUpperCase() === 'ACTIVE')
+      // getCustomerSubscriptions já retorna só ACTIVE de cartão (limit=100), como ARRAY
+      // direto (tipado na lib). Ordena por mais nova primeiro p/ desempate determinístico.
+      const activeSubs = (await getCustomerSubscriptions(asaasCustomerId))
+        .filter((s) => s.status?.toUpperCase() === 'ACTIVE')
         .sort((a, b) => {
           const ta = a.dateCreated ? new Date(a.dateCreated).getTime() : 0
           const tb = b.dateCreated ? new Date(b.dateCreated).getTime() : 0

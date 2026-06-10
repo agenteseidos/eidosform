@@ -51,8 +51,10 @@ export async function GET(req: NextRequest) {
     const lockKey = `activation:${p.id}` // mesmo lock da ativação — não mexer enquanto ativa
     if (!(await acquireLock(db, lockKey))) continue
     try {
+      // getCustomerSubscriptions retorna o ARRAY direto (P0, audit 2026-06-09: ler `.data`
+      // aqui produzia [] → o cron reportava "clean" p/ sempre e nunca detectava duplicatas).
       const resp = await getCustomerSubscriptions(customerId).catch(() => null)
-      const active = ((resp as { data?: AsaasSub[] } | null)?.data ?? []).filter((s) => s.status === 'ACTIVE')
+      const active = (resp ?? []).filter((s) => s.status === 'ACTIVE')
       if (active.length <= 1) { results.clean++; continue }
 
       const keepId = p.asaas_subscription_id
@@ -115,4 +117,3 @@ export async function GET(req: NextRequest) {
 }
 
 type ProfileRow = { id: string; asaas_customer_id: string | null; asaas_subscription_id: string | null }
-type AsaasSub = { id: string; status: string; value: number; dateCreated?: string }

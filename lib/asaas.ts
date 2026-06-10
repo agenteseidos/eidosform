@@ -207,8 +207,23 @@ export async function createCheckout(params: {
   return { id: data.id, url: checkoutUrl }
 }
 
-/** Lista assinaturas ATIVAS de cartão de um customer (até 100). */
-export async function getCustomerSubscriptions(customerId: string) {
+/** Resumo de assinatura retornado pela listagem do Asaas (campos usados pelo app). */
+export interface AsaasSubscriptionSummary {
+  id: string
+  status: string
+  value: number
+  cycle?: string
+  description?: string
+  dateCreated?: string
+}
+
+/**
+ * Lista assinaturas ATIVAS de cartão de um customer (até 100).
+ * ⚠️ Retorna o ARRAY direto (já desembrulha o envelope `{ data: [...] }` da API).
+ * NÃO acessar `.data` no retorno — fazer isso silenciosamente produz `[]` (P0, audit 2026-06-09:
+ * os dois crons de reconcile faziam exatamente isso e viraram no-ops).
+ */
+export async function getCustomerSubscriptions(customerId: string): Promise<AsaasSubscriptionSummary[]> {
   const data = await asaasFetch(`/subscriptions?customer=${encodeURIComponent(customerId)}&status=ACTIVE&billingType=CREDIT_CARD&limit=100`)
   return data.data ?? []
 }

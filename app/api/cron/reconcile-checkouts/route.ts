@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { getCustomerSubscriptions, hasConfirmedPaymentForSubscription, detectPlanAndCycleFromValue } from '@/lib/asaas'
+import { getCustomerSubscriptions, hasConfirmedPaymentForSubscription, detectPlanAndCycleFromValue, type AsaasSubscriptionSummary } from '@/lib/asaas'
 import { activatePaidSubscription, isExpectedFullPrice, type BillingCycle } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { sendBillingOpsAlert } from '@/lib/resend'
@@ -69,10 +69,11 @@ export async function GET(req: NextRequest) {
         continue
       }
 
-      // resolve a sub ACTIVE do customer
+      // resolve a sub ACTIVE do customer. getCustomerSubscriptions retorna o ARRAY direto
+      // (P0, audit 2026-06-09: ler `.data` aqui produzia [] e o backstop virava no-op).
       const subsResp = await getCustomerSubscriptions(customerId).catch(() => null)
-      const active = ((subsResp as { data?: AsaasSub[] } | null)?.data ?? []).filter((s) => s.status === 'ACTIVE')
-      let target: AsaasSub | null = null
+      const active = (subsResp ?? []).filter((s) => s.status === 'ACTIVE')
+      let target: AsaasSubscriptionSummary | null = null
       if (ck.asaas_subscription_id) target = active.find((s) => s.id === ck.asaas_subscription_id) ?? null
       if (!target && active.length === 1) target = active[0]
       if (!target && active.length > 1) {
@@ -157,4 +158,3 @@ export async function GET(req: NextRequest) {
 
 type PendingRow = { id: string; profile_id: string; plan: string; cycle: string; status: string; asaas_customer_id: string | null; asaas_subscription_id: string | null; created_at: string }
 type ProfileRow = { id: string; plan: string | null; plan_status: string | null; plan_cycle: string | null; asaas_subscription_id: string | null }
-type AsaasSub = { id: string; status: string; value: number; cycle: string }

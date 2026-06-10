@@ -121,3 +121,54 @@ npm run build    # Production build
 npm run lint     # ESLint
 ```
 
+
+## ⏳ PENDÊNCIA ATIVA — Billing/Asaas: tokenização e cadeia de destrave
+
+> Registrado em 2026-06-10 (decisão Sidney). Esta é a ÚNICA pendência externa
+> bloqueante do projeto. Detalhes completos: `docs/redesenho-upgrade-downgrade.md`.
+
+### Estado atual (seguro, fail-closed)
+- O billing em produção atende SÓ **primeira compra (free→pago) do Starter MENSAL**.
+- Tudo o mais (upgrade, downgrade, troca de ciclo, anual, Plus/Professional na
+  primeira compra) está travado pelo launch guard (`lib/billing-launch-guard.ts`,
+  `BILLING_MVP_ONLY` ON por padrão) e retorna 409 com mensagem amigável.
+- Motivo: o Asaas de PRODUÇÃO bloqueia alterar valor de assinatura-cartão já paga
+  (`400 invalid_value`) — qualquer fluxo que edita valor (proration, Caminho D,
+  auto-correção) cobraria errado. O sandbox NÃO reproduz esse bloqueio.
+
+### Bloqueador externo (fora das nossas mãos)
+- **Tokenização de cartão em produção** — protocolo Asaas **1238651**, aguardando
+  liberação. Sem `creditCardToken` retornado em prod, não há como "cancelar +
+  recriar" assinatura, que é o único modelo válido de mudança de plano.
+- Também aguardando resposta do Asaas (chamado aberto): a regra de
+  `invalid_value` vale para downgrade? Existe alternativa oficial?
+
+### Cadeia de destrave QUANDO a tokenização ligar (nesta ordem)
+1. **Implementar** o redesenho cancelar+recriar via token
+   (`docs/redesenho-upgrade-downgrade.md` é PROJETO, não implementação):
+   upgrade = diferença como pagamento avulso → no webhook de confirmação,
+   cancelar sub antiga + criar nova no preço CHEIO com `creditCardToken` e
+   `nextDueDate` = fim do ciclo pago. Downgrade/ciclo: mesma ideia.
+   NÃO usar `discount` nem edição de valor (provado que falha em prod).
+2. **Testar em produção** com o plano de teste do doc: compra Starter →
+   upgrade Starter→Plus (recorrente deve ficar R$127) → downgrade Plus→Starter
+   (recorrente R$49, saldo vira tempo) → cancelar/estornar/limpar.
+3. **Virar as flags**, uma de cada vez, validando entre elas:
+   `BILLING_MVP_ONLY=false` → `BILLING_ALLOWED_PLANS=starter,plus,professional`
+   → liberar ciclo anual → `BILLING_RECONCILE_ACTIONS=true` (crons saem do
+   modo alert-only).
+
+### O que JÁ existe e deve ser REUSADO (não reimplementar)
+- Captura do `creditCardToken` pós-ativação → `profiles.asaas_card_token`
+  (`lib/billing-activation.ts`).
+- Reativação via token (caminho `credit_covered` no checkout) — padrão de
+  referência de "criar sub nova com token salvo" (`app/api/checkout/[plan]/route.ts`).
+- Idempotência, guards out-of-order, DLQ e reconcile crons do webhook Asaas.
+
+### Pendências menores correlatas (não bloqueantes)
+- `ASAAS_ALLOW_HMAC_FALLBACK=0` quando confirmado que prod autentica só pelo
+  access-token nativo; depois remover o código do fallback HMAC.
+- PIX/Boleto no checkout: decisão de 2026-06-10 = NÃO implementar agora
+  (timing de confirmação diferente exigiria re-testar todo o webhook).
+- Multi-user: REMOVIDO da oferta em 2026-06-10 (não existe no produto).
+  Se um dia for implementado, reintroduzir na pricing page + `maxUsers`.

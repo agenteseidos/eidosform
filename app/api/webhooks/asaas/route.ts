@@ -409,8 +409,16 @@ export async function POST(req: NextRequest) {
 
   const { event, payment, subscription } = body
 
-  // Idempotency: use body.id if present, else hash of (event + customerId + subscriptionId)
-  const eventId = body.id ?? `${event}:${payment?.customer ?? subscription?.customer ?? ''}:${payment?.subscription ?? subscription?.id ?? ''}`
+  // Idempotency: body.id quando presente. Chave SINTÉTICA de fallback inclui payment.id e
+  // dueDate (P2-d, audit 2026-06-09): sem eles, a renovação do mês seguinte do MESMO sub
+  // gerava a MESMA chave do mês anterior → 'duplicate' → renovação silenciosamente ignorada.
+  const eventId = body.id ?? [
+    event,
+    payment?.customer ?? subscription?.customer ?? '',
+    payment?.subscription ?? subscription?.id ?? '',
+    payment?.id ?? '',
+    payment?.dueDate ?? '',
+  ].join(':')
 
   const idempotencyResult = await checkAndMarkIdempotent(eventId, event, {
     customerId: payment?.customer ?? subscription?.customer ?? null,

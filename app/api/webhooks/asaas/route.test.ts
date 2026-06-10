@@ -311,4 +311,26 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
     // finalizeActivation ainda roda (estende expiração pelo nextDueDate real etc.).
     expect(mockFinalize).toHaveBeenCalled()
   })
+
+  // ── P2-d (audit 2026-06-09): chave de idempotência fallback não colide entre renovações ──
+
+  it('sem body.id, a chave sintética inclui payment.id/dueDate (renovações não colidem)', async () => {
+    const { db, calls } = makeRecordingDb(baseResults())
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+
+    const body = {
+      event: 'PAYMENT_CONFIRMED', // sem body.id → fallback sintético
+      payment: { ...CONFIRMED_BODY.payment, id: 'pay_77', dueDate: '2026-07-09' },
+    }
+    await POST(makeReq(body))
+
+    const idemInsert = calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'insert'
+      && String((c.args[0] as { event_id?: string })?.event_id ?? '').startsWith('PAYMENT_CONFIRMED:'))
+    expect(idemInsert).toBeTruthy()
+    const key = (idemInsert!.args[0] as { event_id: string }).event_id
+    // Pré-fix a chave era 'PAYMENT_CONFIRMED:cus_1:sub_1' — idêntica em TODA renovação do sub.
+    expect(key).toContain('pay_77')
+    expect(key).toContain('2026-07-09')
+  })
 })

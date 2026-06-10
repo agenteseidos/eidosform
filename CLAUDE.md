@@ -182,6 +182,12 @@ npm run lint     # ESLint
 > Sequência acordada: terminar o teste atual → smoke do ponto 2 → implementar.
 
 ### Pendências menores correlatas (não bloqueantes)
+- POLISH (decidido 2026-06-10) — modal de sucesso da troca de plano: numa operação
+  de R$0 (downgrade/credit_covered) o modal mostra "Pagamento confirmado! / Sua
+  assinatura foi ativada". Como não houve cobrança, o texto deve variar conforme o
+  caso: troca coberta pelo saldo → algo como "Plano alterado!" / "Seu plano foi
+  alterado com sucesso"; só compra/upgrade pago mantém "Pagamento confirmado!".
+  Executar DEPOIS de fechar 100% o teste atual. (Componente do overlay de /billing.)
 - `ASAAS_ALLOW_HMAC_FALLBACK=0` quando confirmado que prod autentica só pelo
   access-token nativo; depois remover o código do fallback HMAC.
 - PIX/Boleto no checkout: decisão de 2026-06-10 = NÃO implementar agora.

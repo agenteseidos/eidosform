@@ -220,4 +220,42 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
     expect(mockFinalize).toHaveBeenCalledWith(expect.objectContaining({ newSubscriptionId: 'sub_1', plan: 'starter', cycle: 'MONTHLY' }))
     expect(mockPlanActivated).toHaveBeenCalled()
   })
+
+  // ── P2-a (audit 2026-06-09): eventos de dinheiro nunca morrem como 'processed' ──
+
+  it('user não resolvido em PAYMENT_CONFIRMED → DLQ (failed), não processed', async () => {
+    const results = baseResults()
+    results.profiles = [{ data: null, error: null }] // profile não encontrado (ou erro de DB)
+    results.billing_checkouts = [
+      { data: { ...CK_ROW, profile_id: 'user-1' }, error: null },
+      { data: null, error: null },
+    ]
+    const { db, calls } = makeRecordingDb(results)
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+
+    const res = await POST(makeReq(CONFIRMED_BODY))
+    const body = await res.json() as { processed?: boolean }
+
+    expect(body.processed).toBe(false)
+    const dlqUpdate = calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'failed')
+    expect(dlqUpdate).toBeTruthy()
+  })
+
+  it('idempotência insere como received e o final feliz promove p/ processed', async () => {
+    const { db, calls } = makeRecordingDb(baseResults())
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+
+    await POST(makeReq(CONFIRMED_BODY))
+
+    const idemInsert = calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'insert'
+      && (c.args[0] as { event_id?: string })?.event_id === 'evt_1')
+    expect(idemInsert).toBeTruthy()
+    expect((idemInsert!.args[0] as { status: string }).status).toBe('received')
+    const promote = calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'processed')
+    expect(promote).toBeTruthy()
+  })
 })

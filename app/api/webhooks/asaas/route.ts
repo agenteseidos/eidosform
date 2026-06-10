@@ -328,6 +328,10 @@ async function checkAndMarkIdempotent(
     .insert({
       event_id: eventId,
       event,
+      // 'received' (não o default 'processed'): se a função morrer no meio (timeout 30s),
+      // o evento NÃO some como "processado" — fica visível como received-órfão p/ ops/
+      // backstop. O final feliz do handler promove p/ 'processed'. (P2-a, audit 2026-06-09.)
+      status: 'received',
       customer_id: keys?.customerId ?? null,
       subscription_id: keys?.subscriptionId ?? null,
     })
@@ -475,11 +479,12 @@ export async function POST(req: NextRequest) {
           intentCycle: paid?.cycle ?? null,
         })
         if (!user) {
-          logWarn('[asaas-webhook] User not found for payment context', {
-            customerId,
-            subscriptionId: payment?.subscription ?? null,
-          })
-          break
+          // EVENTO DE DINHEIRO não morre como 'processed' (P2-a, audit 2026-06-09): user não
+          // resolvido pode ser erro transitório de DB (single() devolve null em falha). Lança
+          // → DLQ → o reprocessador re-resolve por customer/subscription e ativa. Antes, o
+          // break marcava processed e o pagamento ficava perdido (sem retry do Asaas: 200 +
+          // idempotência fariam o retry virar 'duplicate').
+          throw new Error(`PAYMENT_CONFIRMED/RECEIVED sem profile resolvido (customer ${customerId}, sub ${payment.subscription}) — DLQ/retry`)
         }
 
         // "Checkout mais recente vence": se já existe um checkout PAGO mais NOVO que este
@@ -1061,6 +1066,17 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true, processed: false, error: 'Logged for manual reprocess' })
   }
+
+  // Promove o registro de idempotência 'received' → 'processed' (só o desta rota; o filtro
+  // por status evita clobber de markers/locks e do 'failed' setado no catch). Best-effort:
+  // se falhar, o evento fica como received-órfão (visível), nunca como falso-processed.
+  try {
+    await supabase
+      .from('asaas_webhook_events')
+      .update({ status: 'processed', processed_at: new Date().toISOString() })
+      .eq('event_id', eventId)
+      .eq('status', 'received')
+  } catch { /* best-effort */ }
 
   await logWebhookEvent({ event, status: 'processed' })
   return NextResponse.json({ received: true })

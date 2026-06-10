@@ -9,6 +9,7 @@ import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
 import { finalizeActivation, claimActivationEffects, isExpectedFullPrice } from '@/lib/billing-activation'
+import { runPlanChangeBackstop } from '@/lib/plan-switch'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -461,7 +462,20 @@ export async function POST(req: NextRequest) {
         // Fluxo de assinatura: TODO pagamento recorrente carrega payment.subscription.
         // Sem ela, não dá pra cancelar/reconciliar/corrigir a sub depois — ativar seria
         // criar um estado órfão. Manda pra DLQ (throw → failed) p/ revisão. (P2c round 3.)
+        // EXCEÇÃO (redesenho 2026-06-10): o AVULSO de mudança de plano (kind:planchange no
+        // externalReference) não tem subscription por design — é o BACKSTOP da troca.
         if (!payment?.subscription) {
+          const pcRef = parseExternalReference(payment?.externalReference)
+          if (pcRef.kind === 'planchange' && pcRef.profileId && pcRef.plan && pcRef.cycle) {
+            await runPlanChangeBackstop(getSupabase(), {
+              profileId: pcRef.profileId,
+              plan: pcRef.plan,
+              cycle: pcRef.cycle as 'MONTHLY' | 'YEARLY',
+              paymentId: String(payment?.id ?? ''),
+              source: 'webhook',
+            })
+            break
+          }
           throw new Error(`PAYMENT_CONFIRMED/RECEIVED sem payment.subscription (customer ${customerId}) — não ativa; enviado p/ DLQ`)
         }
 

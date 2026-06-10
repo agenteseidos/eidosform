@@ -25,6 +25,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, type BillingCycle } from '@/lib/billing-activation'
+import { runPlanChangeBackstop } from '@/lib/plan-switch'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
 
@@ -103,6 +104,8 @@ interface CheckoutRow {
   profile_id: string
   plan: string
   cycle: string | null
+  payment_method: string | null
+  status: string | null
 }
 
 async function findCheckout(
@@ -113,7 +116,7 @@ async function findCheckout(
   if (subscriptionId) {
     const { data } = await supabase
       .from('billing_checkouts')
-      .select('id, profile_id, plan, cycle')
+      .select('id, profile_id, plan, cycle, payment_method, status')
       .eq('asaas_subscription_id', subscriptionId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -123,7 +126,7 @@ async function findCheckout(
   if (customerId) {
     const { data } = await supabase
       .from('billing_checkouts')
-      .select('id, profile_id, plan, cycle')
+      .select('id, profile_id, plan, cycle, payment_method, status')
       .eq('asaas_customer_id', customerId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -181,7 +184,22 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
   // NUNCA reverte aqui (Codex ponto 1): profile 'free' pode ser o próprio sintoma do
   // bug que impediu a ativação, então 'free' NÃO bloqueia ativar.
   if (ACTIVATION_EVENTS.has(ev)) {
-    if (!subscriptionId) return 'noop_activation_sem_subscription'
+    if (!subscriptionId) {
+      // AVULSO de mudança de plano (redesenho 2026-06-10): PAYMENT_CONFIRMED sem
+      // subscription cujo checkout é plan_switch_token ainda não-pago = o backstop da
+      // troca falhou no webhook → re-roda aqui (idempotente; lança p/ retry se falhar).
+      if (checkout.payment_method === 'plan_switch_token' && checkout.status !== 'paid') {
+        const r = await runPlanChangeBackstop(supabase, {
+          profileId: checkout.profile_id,
+          plan: checkout.plan,
+          cycle: (checkout.cycle ?? 'MONTHLY') as BillingCycle,
+          paymentId: row.event_id,
+          source: 'reprocess',
+        })
+        return r === 'switched' ? 'planchange_backstop_aplicado' : 'planchange_ja_aplicado'
+      }
+      return 'noop_activation_sem_subscription'
+    }
     const asaasStatus = await getAsaasStatus(subscriptionId) // relança em erro transitório → retry
     if (asaasStatus !== 'ACTIVE') return 'noop_activation_nao_active'
 

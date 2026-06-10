@@ -8,14 +8,14 @@ import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, buildExternalReference, createSubscriptionWithToken, cancelSubscription, alignPendingPaymentsDueDate, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, updateCustomer, buildExternalReference, buildPlanChangeReference, createPaymentWithToken, refundPayment, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
-import { expiryFromNextDueDate } from '@/lib/billing-activation'
+import { executePlanSwitch, nextDueDateAfterFullCycle } from '@/lib/plan-switch'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { checkLaunchScope } from '@/lib/billing-launch-guard'
-import { log, logError, logWarn } from '@/lib/logger'
+import { log, logError } from '@/lib/logger'
 import { sendBillingOpsAlert } from '@/lib/resend'
 
 function hashCustomerPayload(payload: Record<string, unknown>): string {
@@ -39,31 +39,6 @@ function getServiceSupabase() {
 
 const VALID_PLANS = new Set<string>(PLAN_ORDER.filter((p) => p !== 'free'))
 const VALID_CYCLES = new Set<string>(['MONTHLY', 'YEARLY'])
-
-/**
- * P1-5 (Codex): no DOWNGRADE, pausar os forms excedentes é crítico. Se handleDowngrade falhar,
- * enfileira DLQ `formlimit:{profileId}` (event FORMLIMIT) — o reprocessador re-roda
- * handleDowngrade(plano-alvo) — e dispara alerta operacional. NÃO silencioso.
- */
-async function enqueueFormLimitDLQ(db: ReturnType<typeof getServiceSupabase>, profileId: string, subscriptionId: string | null) {
-  try {
-    await (db as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
-      .from('asaas_webhook_events')
-      .upsert({
-        event_id: `formlimit:${profileId}`,
-        event: 'FORMLIMIT',
-        status: 'failed',
-        error: 'handleDowngrade falhou — re-aplicar limites de forms do plano-alvo',
-        attempts: 0,
-        subscription_id: subscriptionId,
-        last_attempt_at: new Date().toISOString(),
-      }, { onConflict: 'event_id' })
-  } catch { /* best-effort */ }
-  await sendBillingOpsAlert({
-    subject: 'Downgrade: falha ao pausar forms excedentes — DLQ FORMLIMIT (reprocessar)',
-    lines: { profileId, subscriptionId },
-  }).catch(() => {})
-}
 
 export async function POST(
   req: NextRequest,
@@ -188,194 +163,51 @@ export async function POST(
 
   const proration = change.proration
 
-  // CANCELING + saldo cobre TODO o novo plano: não há sub p/ editar (foi deletada no cancelamento).
-  // #2b — REATIVAÇÃO via token: recria a assinatura com o creditCardToken salvo + nextDueDate =
-  // data de cobertura do saldo → NÃO cobra agora, troca o plano de verdade. Sem token (legado/
-  // captura falhou) → mensagem honesta (A), sem cobrar errado.
-  if (change.action === 'credit_covered' && !profile.asaasSubscriptionId) {
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // REDESENHO 2026-06-10 (docs/redesenho-upgrade-downgrade.md): mudança de plano/ciclo
+  // NUNCA edita assinatura (Asaas prod → 400 invalid_value em sub-cartão já paga).
+  // Modelo único: cancelar + recriar a sub no preço CHEIO via creditCardToken
+  // (lib/plan-switch.ts), p/ upgrade, downgrade, troca de ciclo e reativação:
+  //  - credit_covered (saldo cobre tudo, COM ou SEM sub ativa): sub nova com
+  //    nextDueDate = data de cobertura do saldo ("saldo vira tempo") — R$0 agora.
+  //  - checkout com proration (diferença a pagar): cobra a DIFERENÇA como pagamento
+  //    AVULSO no token; confirmado, troca a sub (ciclo novo começa hoje; recorrência
+  //    em +1 ciclo). Se o processo morrer entre cobrar e trocar, o webhook completa
+  //    (backstop via kind:planchange no externalReference do avulso).
+  // Sem token salvo (assinante pré-tokenização): mensagem honesta — nunca cobra errado.
+  // ═══════════════════════════════════════════════════════════════════════════════
+  const isTokenPlanChange =
+    change.action === 'credit_covered' ||
+    (change.action === 'checkout' && !!proration && (Boolean(profile.asaasSubscriptionId) || hasPaidPeriodRemaining))
+
+  if (isTokenPlanChange && proration) {
     const token = profile.asaasCardToken
-    const coverageNextDue = change.nextChargeDate // YYYY-MM-DD (saldo em tempo)
-    if (token && profile.asaasCustomerId && coverageNextDue && proration) {
-      const sSupa = getServiceSupabase() ?? supabase
-      // P1 (Codex): LOCK por profile — 2 POSTs simultâneos no canceling não podem criar 2 subs.
-      const reactLockKey = `planchange:${profile.profileId}`
-      if (!(await acquireLock(sSupa, reactLockKey))) {
-        return NextResponse.json(
-          { error: 'Já estamos processando uma alteração da sua assinatura. Aguarde um instante e tente novamente.' },
-          { status: 409 }
-        )
-      }
-      try {
-        // CAS: aborta se outro fluxo já vinculou uma sub (não está mais "sem sub").
-        const { data: casRow } = await sSupa.from('profiles').select('asaas_subscription_id').eq('id', profile.profileId).single()
-        if ((casRow as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id) {
-          return NextResponse.json({ error: 'Sua assinatura já foi reativada. Recarregue a página.' }, { status: 409 })
-        }
-        const newSub = await createSubscriptionWithToken({
-          customerId: profile.asaasCustomerId,
-          value: proration.originalPrice, // preço CHEIO do novo plano (recorrente)
-          cycle,
-          nextDueDate: coverageNextDue,
-          creditCardToken: token,
-          description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
-          externalReference: buildExternalReference(profile.profileId, plan, cycle),
-        })
-        const planConfig = (await import('@/lib/plan-definitions')).PLANS[plan as PlanId]
-        const expiry = expiryFromNextDueDate(coverageNextDue) ?? new Date(`${coverageNextDue}T00:00:00.000Z`).toISOString()
-        // CAS ATÔMICO no banco: só vincula se asaas_subscription_id AINDA é null (ninguém venceu).
-        const { data: rows, error: upErr } = await sSupa
-          .from('profiles')
-          .update({
-            plan: plan as PlanId,
-            plan_cycle: cycle,
-            plan_status: 'active',
-            plan_expires_at: expiry,
-            asaas_subscription_id: newSub.id,
-            responses_limit: planConfig?.maxResponses ?? 100,
-            responses_used: 0,
-            limit_alert_sent: false,
-          })
-          .eq('id', profile.profileId)
-          .is('asaas_subscription_id', null)
-          .select('id')
-        if (upErr || !rows || rows.length !== 1) {
-          // Outro fluxo venceu (CAS=0 linhas) OU erro → cancela a sub nova p/ NÃO cobrar fantasma.
-          logError('[checkout] Reativação: CAS falhou/profile não persistiu — cancelando a sub nova', upErr, { userId: profile.profileId, newSub: newSub.id, rows: rows?.length ?? 0 })
-          await cancelSubscription(newSub.id).catch(() => {})
-          return NextResponse.json({ error: 'Não foi possível reativar agora. Recarregue e tente novamente.' }, { status: 409 })
-        }
-        // P1 (Codex): aplica os LIMITES DE FORMS do plano-alvo (pausa excedentes se for downgrade;
-        // despausa se ilimitado). Sem isto, Plus canceling → Starter deixava forms acima do limite.
-        // B2 (auditoria 2026-06-10): a sub nova já está criada/commitada — não dá
-        // pra abortar sem negar um plano devido. Mas a pausa de forms excedentes
-        // não pode ficar só na DLQ (janela de acesso indevido): retry imediato
-        // antes de enfileirar.
-        {
-          const sk = process.env.SUPABASE_SERVICE_ROLE_KEY
-          let downgradeApplied = !sk // sem service key não há o que aplicar
-          for (let attempt = 1; sk && !downgradeApplied && attempt <= 2; attempt++) {
-            try {
-              const fl = await (await import('@/lib/plan-limits')).handleDowngrade(profile.profileId, sk, plan as PlanId)
-              log('[checkout] Reativação — limites de forms do plano-alvo aplicados', { userId: profile.profileId, pausedForms: fl.pausedCount, targetPlan: plan, attempt })
-              downgradeApplied = true
-            } catch (e) {
-              logError(`[checkout] Reativação — handleDowngrade falhou (tentativa ${attempt}/2)`, e, { userId: profile.profileId, targetPlan: plan })
-            }
-          }
-          if (!downgradeApplied) {
-            // P1-5 (Codex): falha de pausa é CRÍTICA no downgrade → DLQ FORMLIMIT (reprocessável) + alerta.
-            await enqueueFormLimitDLQ(sSupa, profile.profileId, newSub.id)
-          }
-        }
-        await reconcileActiveSubscriptions(profile.asaasCustomerId, newSub.id)
-        // Marca um checkout 'paid' p/ o overlay de sucesso casar (senão pega o último cancelado).
-        const { error: ckErr } = await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<{ error: unknown }> } })
-          .from('billing_checkouts')
-          .upsert({
-            profile_id: profile.profileId,
-            checkout_id: `reactivate-${profile.profileId}-${newSub.id}`,
-            asaas_customer_id: profile.asaasCustomerId,
-            asaas_subscription_id: newSub.id,
-            plan,
-            cycle,
-            status: 'paid',
-            last_event: 'REACTIVATE_COVERED',
-            payment_method: 'reactivate_credit_time',
-          }, { onConflict: 'checkout_id' })
-        if (ckErr) logError('[checkout] Reativação — falha ao gravar checkout paid (overlay pode mostrar estado antigo)', ckErr, { userId: profile.profileId })
-        log('[checkout] Reativação via token — plano trocado SEM cobrança agora', { userId: profile.profileId, plan, cycle, newSub: newSub.id, nextDueDate: coverageNextDue })
-        return NextResponse.json({ status: 'success', coveredByCredit: true, reactivated: true, nextChargeDate: coverageNextDue, proration })
-      } catch (err) {
-        logError('[checkout] Reativação via token falhou — caindo na mensagem (sem cobrar)', err, { userId: profile.profileId, plan, cycle })
-        // segue p/ a mensagem (não cobra errado)
-      } finally {
-        await releaseLock(sSupa, reactLockKey)
-      }
-    }
-    const expiresFmt = profile.plan_expires_at
-      ? new Date(profile.plan_expires_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      : null
-    return NextResponse.json({
-      message: expiresFmt
-        ? `Seu saldo atual já cobre este plano. Você mantém o acesso até ${expiresFmt} — a reativação automática estará disponível em breve.`
-        : 'Seu saldo atual já cobre este plano. A reativação automática estará disponível em breve.',
-      coveredByCredit: true,
-      action: 'covered_no_charge',
-    })
-  }
-
-  let checkoutValue: number | undefined
-
-  if (proration) {
-    log('[checkout] Proration calculada', {
-      currentPlan: profile.plan,
-      newPlan: plan,
-      credit: proration.credit,
-      originalPrice: proration.originalPrice,
-      finalPrice: proration.finalPrice,
-    })
-  }
-
-  // CAMINHO D: o crédito cobre todo o novo plano. Em vez de CANCELAR a assinatura
-  // (perdendo a recorrência — bug antigo), EDITAMOS a assinatura existente para o
-  // novo plano e empurramos a próxima cobrança (nextDueDate) pelo tempo que o
-  // crédito cobre ("saldo em tempo"). A assinatura segue ACTIVE e recorrente;
-  // depois do nextDueDate a cobrança volta ao normal. Não cancela, não pede cartão.
-  if (change.action === 'credit_covered' && proration && profile.asaasSubscriptionId) {
-    const coverageDays = change.creditCoverageDays ?? 1
-    // nextDueDate vem de change.nextChargeDate — a MESMA fonte do preview — eliminando a
-    // última divergência preview×POST perto da virada do dia. plan_expires_at é derivado
-    // do mesmo valor (00:00 UTC do dia da cobrança), mantendo Asaas e profile coerentes.
-    // Fallback defensivo (recalcula) só se nextChargeDate vier nulo (não ocorre p/ credit_covered).
-    let nextDueDate = change.nextChargeDate
-    if (!nextDueDate) {
-      const d = new Date()
-      d.setDate(d.getDate() + coverageDays)
-      nextDueDate = d.toISOString().split('T')[0]
-    }
-    const nextDue = new Date(`${nextDueDate}T00:00:00.000Z`)
-
-    log('[checkout] Caminho D — crédito cobre o novo plano; editando assinatura existente', {
-      userId: profile.profileId,
-      subscriptionId: profile.asaasSubscriptionId,
-      newPlan: plan,
-      newCycle: cycle,
-      credit: proration.credit,
-      coverageDays,
-      nextDueDate,
-    })
-
+    const customerId = profile.asaasCustomerId
     const sSupa = getServiceSupabase() ?? supabase
 
-    // CAS (#4, audit 2026-06-08): re-lê o profile IMEDIATAMENTE antes de tocar no Asaas e
-    // aborta se a sub/plano/ciclo divergirem do que computePlanChange assumiu. Evita que 2
-    // POSTs simultâneos (duplo-clique / 2 abas) editem a MESMA assinatura cruzando plano/valor.
-    const { data: casRow } = await sSupa
-      .from('profiles')
-      .select('asaas_subscription_id, plan, plan_cycle')
-      .eq('id', profile.profileId)
-      .single()
-    const cas = casRow as { asaas_subscription_id?: string | null; plan?: string | null; plan_cycle?: string | null } | null
-    if (
-      !cas ||
-      cas.asaas_subscription_id !== profile.asaasSubscriptionId ||
-      cas.plan !== profile.plan ||
-      (cas.plan_cycle ?? null) !== (profile.plan_cycle ?? null)
-    ) {
-      logWarn('[checkout] Caminho D — estado do profile mudou desde a decisão (CAS); abortando p/ evitar troca concorrente', {
-        userId: profile.profileId,
-        expectedSub: profile.asaasSubscriptionId,
-        gotSub: cas?.asaas_subscription_id ?? null,
-      })
+    if (!token || !customerId) {
+      // Pré-tokenização (sem token salvo) não tem como recriar a sub sem pedir o cartão.
+      // credit_covered mantém a mensagem honesta antiga; mudança paga orienta o suporte.
+      if (change.action === 'credit_covered') {
+        const expiresFmt = profile.plan_expires_at
+          ? new Date(profile.plan_expires_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+          : null
+        return NextResponse.json({
+          message: expiresFmt
+            ? `Seu saldo atual já cobre este plano. Você mantém o acesso até ${expiresFmt} — para concluir a troca agora, fale com o suporte.`
+            : 'Seu saldo atual já cobre este plano. Para concluir a troca agora, fale com o suporte.',
+          coveredByCredit: true,
+          action: 'covered_no_charge',
+        })
+      }
       return NextResponse.json(
-        { error: 'Sua assinatura mudou enquanto processávamos. Recarregue a página e tente novamente.' },
+        { error: 'Sua assinatura foi criada antes da troca automática de planos. Fale com o suporte para concluir a mudança sem custo extra.', code: 'CARD_TOKEN_REQUIRED' },
         { status: 409 }
       )
     }
 
-    // LOCK leve do Caminho D (#4, audit 2026-06-08): serializa a operação por profile
-    // (lib/billing-lock — insert-do-nothing + take-over ATÔMICO de lock stale). 2º POST
-    // simultâneo → 409. Liberado (releaseLock) antes de cada saída do Caminho D.
+    // LOCK por profile em volta de TODA a operação (inclusive a cobrança avulsa) — o
+    // executor não adquire lock (não-reentrante). 2º POST simultâneo → 409.
     const lockKey = `planchange:${profile.profileId}`
     if (!(await acquireLock(sSupa, lockKey))) {
       return NextResponse.json(
@@ -383,204 +215,151 @@ export async function POST(
         { status: 409 }
       )
     }
-
-    // 1) RECUPERAÇÃO ANTES do PUT (P2a round 3, audit Codex 2026-06-07): grava em
-    //    billing_checkouts o estado INTENCIONADO (sub → NOVO plano/ciclo) e CHECA o erro.
-    //    Se falhar, aborta SEM tocar no Asaas — garante que, se o PUT acontecer, o mapa de
-    //    recuperação pro reprocessador JÁ existe. status='pending' até confirmar o profile
-    //    (não dá falso-sucesso no /status). checkout_id estável (por sub) p/ o flip→'paid'.
-    const recoveryCheckoutId = `plan-change-${profile.profileId}-${profile.asaasSubscriptionId}`
-    const { error: recErr } = await sSupa
-      .from('billing_checkouts')
-      .upsert({
-        profile_id: profile.profileId,
-        checkout_id: recoveryCheckoutId,
-        asaas_customer_id: profile.asaasCustomerId ?? null,
-        asaas_subscription_id: profile.asaasSubscriptionId,
-        plan,
-        cycle,
-        // status='recovering' (não 'pending'): o /api/checkout/status IGNORA essa linha
-        // interna, então durante a janela antes do PUT ela não pode fazer o polling ativar
-        // o novo plano cedo (vendo a sub atual como ACTIVE). (P2 round 4, Codex 2026-06-07.)
-        status: 'recovering',
-        last_event: 'PLAN_CHANGE_CREDIT_TIME_PENDING',
-        payment_method: 'proration_credit_time',
-        original_price: proration.originalPrice,
-        proration_credit: proration.credit,
-        final_price: 0,
-      }, { onConflict: 'checkout_id' })
-    if (recErr) {
-      logError('[checkout] Caminho D — falha ao gravar linha de recuperação; abortando ANTES de tocar no Asaas', recErr, {
-        userId: profile.profileId,
-        subscriptionId: profile.asaasSubscriptionId,
-      })
-      await releaseLock(sSupa, lockKey)
-      return NextResponse.json(
-        { error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' },
-        { status: 500 }
-      )
-    }
-
-    // 2) Editar a assinatura no Asaas (PUT). Se falhar, reverter a linha de recuperação
-    //    (a sub NÃO mudou) e abortar SEM alterar o profile.
     try {
-      await updateSubscription(profile.asaasSubscriptionId, {
-        value: proration.originalPrice,
+      // ── Caso 1: saldo cobre tudo (Caminho D novo + reativação canceling) — R$0 agora ──
+      if (change.action === 'credit_covered') {
+        let coverageNextDue = change.nextChargeDate
+        if (!coverageNextDue) {
+          // Defensivo: computePlanChange sempre define p/ credit_covered.
+          const d = new Date()
+          d.setDate(d.getDate() + (change.creditCoverageDays ?? 1))
+          coverageNextDue = d.toISOString().split('T')[0]
+        }
+        const result = await executePlanSwitch({
+          db: sSupa,
+          profileId: profile.profileId,
+          customerId,
+          cardToken: token,
+          expectedOldSubscriptionId: profile.asaasSubscriptionId ?? null,
+          plan: plan as PlanId,
+          cycle,
+          nextDueDate: coverageNextDue,
+          reason: profile.asaasSubscriptionId ? 'credit_covered' : 'reactivate',
+          isPlanDowngrade: change.isPlanDowngrade,
+          proration,
+        })
+        if (!result.ok) {
+          return NextResponse.json({ error: result.error }, { status: result.status })
+        }
+        log('[checkout] Troca coberta pelo saldo — sub recriada via token, sem cobrança agora', {
+          userId: profile.profileId, plan, cycle, newSub: result.newSubscriptionId, nextChargeDate: coverageNextDue,
+        })
+        return NextResponse.json({
+          status: 'success',
+          coveredByCredit: true,
+          reactivated: !profile.asaasSubscriptionId,
+          creditCoverageDays: change.creditCoverageDays,
+          nextChargeDate: coverageNextDue,
+          proration,
+        })
+      }
+
+      // ── Caso 2: mudança PAGA — avulso da diferença no token + troca ──
+      // Linha de recuperação ANTES de cobrar: se o processo morrer depois da cobrança,
+      // o webhook (backstop) e a auditoria têm o mapa da intenção.
+      const recoveryCheckoutId = `planchange-pay-${profile.profileId}`
+      const { error: recErr } = await sSupa
+        .from('billing_checkouts')
+        .upsert({
+          profile_id: profile.profileId,
+          checkout_id: recoveryCheckoutId,
+          asaas_customer_id: customerId,
+          asaas_subscription_id: profile.asaasSubscriptionId ?? null,
+          plan,
+          cycle,
+          status: 'recovering',
+          last_event: 'PLAN_CHANGE_PAID_PENDING',
+          payment_method: 'plan_switch_token',
+          original_price: proration.originalPrice,
+          proration_credit: proration.credit,
+          final_price: proration.finalPrice,
+        }, { onConflict: 'checkout_id' })
+      if (recErr) {
+        logError('[checkout] Mudança paga — falha ao gravar linha de recuperação; abortando ANTES de cobrar', recErr, { userId: profile.profileId })
+        return NextResponse.json({ error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' }, { status: 500 })
+      }
+
+      let payment: { id: string; status: string }
+      try {
+        payment = await createPaymentWithToken({
+          customerId,
+          value: proration.finalPrice,
+          creditCardToken: token,
+          description: `EidosForm — Mudança para Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'}) — diferença prorateada`,
+          externalReference: buildPlanChangeReference(profile.profileId, plan, cycle),
+        })
+      } catch (err) {
+        logError('[checkout] Mudança paga — cobrança avulsa no token FALHOU (nada foi alterado)', err, { userId: profile.profileId, plan, cycle, value: proration.finalPrice })
+        await sSupa.from('billing_checkouts').update({ status: 'cancelled', last_event: 'PLAN_CHANGE_CHARGE_FAILED' }).eq('checkout_id', recoveryCheckoutId)
+        return NextResponse.json(
+          { error: 'Não conseguimos cobrar no seu cartão salvo. Verifique o cartão nas configurações ou fale com o suporte.', code: 'CHARGE_FAILED' },
+          { status: 402 }
+        )
+      }
+
+      const paidNow = payment.status === 'CONFIRMED' || payment.status === 'RECEIVED'
+      if (!paidNow) {
+        // PENDING (raro em cartão+token): o webhook PAYMENT_CONFIRMED do avulso completa
+        // a troca (backstop kind:planchange). O overlay de /billing acompanha pelo status.
+        await sSupa.from('billing_checkouts').update({ status: 'pending', last_event: `PLAN_CHANGE_AWAITING_PAYMENT:${payment.id}` }).eq('checkout_id', recoveryCheckoutId)
+        log('[checkout] Mudança paga — avulso PENDING; webhook completará a troca', { userId: profile.profileId, paymentId: payment.id, plan, cycle })
+        return NextResponse.json({ status: 'success', processing: true, proration })
+      }
+
+      const nextDueDate = nextDueDateAfterFullCycle(cycle)
+      const result = await executePlanSwitch({
+        db: sSupa,
+        profileId: profile.profileId,
+        customerId,
+        cardToken: token,
+        expectedOldSubscriptionId: profile.asaasSubscriptionId ?? null,
+        plan: plan as PlanId,
         cycle,
         nextDueDate,
-        description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
-        externalReference: buildExternalReference(profile.profileId, plan, cycle),
-        updatePendingPayments: true,
+        reason: 'upgrade_paid',
+        isPlanDowngrade: change.isPlanDowngrade,
+        proration,
       })
-    } catch (err) {
-      logError('[checkout] Caminho D — falha ao editar assinatura no Asaas; abortando sem alterar plano', err, {
-        userId: profile.profileId,
-        subscriptionId: profile.asaasSubscriptionId,
-      })
-      await sSupa
-        .from('billing_checkouts')
-        .update({ status: 'cancelled', last_event: 'PLAN_CHANGE_PUT_FAILED' })
-        .eq('checkout_id', recoveryCheckoutId)
-      await releaseLock(sSupa, lockKey)
-      return NextResponse.json(
-        { error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' },
-        { status: 502 }
-      )
-    }
-
-    // 2b) Alinhar a data dos pagamentos PENDING ao nextDueDate. O updateSubscription move o
-    //     nextDueDate da assinatura mas mantém a data dos pagamentos já gerados → sem isto, um
-    //     pagamento antigo cobraria ANTES do fim da cobertura do saldo. (P0, Codex 2026-06-08:)
-    //     se NÃO alinhar tudo, é money-path → alerta operacional + registro p/ reprocesso (NÃO
-    //     silencioso). A troca de plano em si está OK; só a data da cobrança precisa de correção.
-    const align = await alignPendingPaymentsDueDate(profile.asaasSubscriptionId, nextDueDate).catch((e) => {
-      logError('[checkout] Caminho D — alinhamento de pagamentos LANÇOU', e, { userId: profile.profileId })
-      return { moved: 0, failed: -1 }
-    })
-    if (align.failed !== 0) {
-      logError('[checkout] Caminho D — pagamentos pendentes NÃO totalmente alinhados (risco de cobrança cedo)', undefined, { userId: profile.profileId, subscriptionId: profile.asaasSubscriptionId, nextDueDate, moved: align.moved, failed: align.failed })
-      await sendBillingOpsAlert({
-        subject: 'Caminho D: pagamento pendente NÃO alinhado — risco de cobrança antes do fim do crédito',
-        lines: { userId: profile.profileId, subscriptionId: profile.asaasSubscriptionId, nextDueDate, moved: align.moved, failed: align.failed },
-      }).catch(() => {})
-      await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
-        .from('asaas_webhook_events')
-        .upsert({
-          event_id: `align-pending:${profile.asaasSubscriptionId}`,
-          event: 'ALIGN_PENDING',
-          status: 'failed',
-          error: 'pagamentos pendentes não alinhados ao nextDueDate (risco de cobrança cedo)',
-          attempts: 0,
-          subscription_id: profile.asaasSubscriptionId,
-          last_attempt_at: new Date().toISOString(),
-        }, { onConflict: 'event_id' }).catch(() => {})
-    } else if (align.moved) {
-      log('[checkout] Caminho D — pagamentos pendentes movidos p/ nextDueDate', { userId: profile.profileId, moved: align.moved, nextDueDate })
-    }
-
-    // 3) Atualizar o profile pro novo plano, MANTENDO o asaas_subscription_id.
-    //    plan_expires_at = nextDueDate: acesso garantido durante o período coberto
-    //    pelo crédito; cada cobrança futura estende via webhook PAYMENT_CONFIRMED.
-    const planConfig = (await import('@/lib/plan-definitions')).PLANS[plan as PlanId]
-    const { data: dRows, error: dErr } = await sSupa
-      .from('profiles')
-      .update({
-        plan: plan as PlanId,
-        plan_cycle: cycle,
-        plan_status: 'active',
-        // Fim do dia BRT do nextDueDate (não T00:00:00Z, que em BRT cortaria acesso na
-        // véspera à noite). Fallback p/ o ISO cru se a conversão falhar. (P2-7)
-        plan_expires_at: expiryFromNextDueDate(nextDueDate) ?? nextDue.toISOString(),
-        responses_limit: planConfig?.maxResponses ?? 100,
-        responses_used: 0,
-        limit_alert_sent: false,
-        // asaas_subscription_id MANTIDO — a assinatura é a mesma, só foi editada.
-      })
-      .eq('id', profile.profileId)
-      .select('id')
-
-    if (dErr || !dRows || dRows.length !== 1) {
-      // A assinatura JÁ foi editada; só o profile não persistiu. Enfileira DLQ: o
-      // reprocessador acha o mapeamento sub→novo-plano (gravado no passo 2) e reconcilia
-      // o profile. NÃO deixar a divergência sub↔profile silenciosa. (P1-4)
-      logError('[checkout] Caminho D — assinatura editada mas falha ao atualizar profile (enfileirando recuperação)', dErr, {
-        userId: profile.profileId,
-        rows: dRows?.length ?? 0,
-      })
-      try {
-        // asaas_webhook_events fora do database.types.ts (DLQ via migration) → cast.
-        await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
-          .from('asaas_webhook_events')
-          .upsert({
-            event_id: `planchange-recover:${profile.asaasSubscriptionId}`,
-            event: 'PAYMENT_CONFIRMED',
-            status: 'failed',
-            error: 'Caminho D: sub editada mas profile não persistiu — reconciliar profile',
-            attempts: 0,
-            customer_id: profile.asaasCustomerId ?? null,
-            subscription_id: profile.asaasSubscriptionId,
-            last_attempt_at: new Date().toISOString(),
-          }, { onConflict: 'event_id' })
-      } catch (qErr) {
-        logError('[checkout] Caminho D — falha ao enfileirar recuperação na DLQ', qErr, { userId: profile.profileId })
-      }
-      await releaseLock(sSupa, lockKey)
-      return NextResponse.json(
-        { error: 'Sua assinatura foi alterada, mas houve um erro ao atualizar o plano. Atualize a página em instantes.' },
-        { status: 500 }
-      )
-    }
-
-    // 4) Reconciliar limites de forms: DOWNGRADE pausa os excedentes (handleDowngrade); upgrade
-    //    despausa (handleUpgrade). Best-effort (os gates de plano efetivo já protegem mesmo se
-    //    falhar). (downgrade liberado — decisão Sidney 2026-06-08.)
-    try {
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-      if (serviceKey) {
-        const pl = await import('@/lib/plan-limits')
-        if (change.isPlanDowngrade) {
-          // P1 (Codex): passa o PLANO-ALVO — handleDowngrade aplica o limite do alvo (Starter=100,
-          // Plus/Pro=ilimitado→nada), não o de free(3). Sem isto, Pro→Plus pausava quase tudo.
-          const dg = await pl.handleDowngrade(profile.profileId, serviceKey, plan as PlanId)
-          log('[checkout] Caminho D — DOWNGRADE: forms excedentes pausados', { userId: profile.profileId, pausedForms: dg.pausedCount, targetPlan: plan })
-        } else {
-          const up = await pl.handleUpgrade(profile.profileId, serviceKey)
-          log('[checkout] Caminho D — upgrade processado', { userId: profile.profileId, unpausedForms: up.unpausedCount })
+      if (!result.ok) {
+        // FAIL-CLOSED: cobramos e a troca não concluiu → ESTORNA o avulso. Nunca ficar
+        // com dinheiro sem o plano correspondente.
+        try {
+          await refundPayment(payment.id)
+          await sSupa.from('billing_checkouts').update({ status: 'cancelled', last_event: `PLAN_CHANGE_REFUNDED:${payment.id}` }).eq('checkout_id', recoveryCheckoutId)
+          logError('[checkout] Mudança paga — troca falhou após cobrança; avulso ESTORNADO', undefined, { userId: profile.profileId, paymentId: payment.id, code: result.code })
+        } catch (refErr) {
+          // Dinheiro cobrado, troca falhou E estorno falhou → CRÍTICO: alerta + DLQ p/ ação manual.
+          logError('[checkout] CRÍTICO: avulso cobrado, troca E estorno falharam — intervenção manual', refErr, { userId: profile.profileId, paymentId: payment.id })
+          await (sSupa as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+            .from('asaas_webhook_events')
+            .upsert({
+              event_id: `planchange-refund:${payment.id}`,
+              event: 'PLANCHANGE_REFUND',
+              status: 'failed',
+              error: 'avulso cobrado; troca e estorno falharam — estornar/concluir manualmente',
+              attempts: 0,
+              customer_id: customerId,
+              last_attempt_at: new Date().toISOString(),
+            }, { onConflict: 'event_id' }).catch(() => {})
+          await sendBillingOpsAlert({
+            subject: 'CRÍTICO billing: avulso de mudança de plano cobrado SEM troca e SEM estorno',
+            lines: { userId: profile.profileId, paymentId: payment.id, plan, cycle, value: proration.finalPrice },
+          }).catch(() => {})
         }
+        return NextResponse.json(
+          { error: 'Não foi possível concluir a mudança de plano. A cobrança foi estornada — tente novamente em instantes.' },
+          { status: result.status }
+        )
       }
-    } catch (err) {
-      logError('[checkout] handleUpgrade/Downgrade falhou (Caminho D)', err, { userId: profile.profileId })
-      // P1-5 (Codex): se era DOWNGRADE, a pausa de forms é crítica → DLQ FORMLIMIT + alerta.
-      if (change.isPlanDowngrade) await enqueueFormLimitDLQ(sSupa, profile.profileId, profile.asaasSubscriptionId)
+
+      await sSupa.from('billing_checkouts').update({ status: 'paid', last_event: `PLAN_CHANGE_PAID:${payment.id}` }).eq('checkout_id', recoveryCheckoutId)
+      log('[checkout] Mudança de plano PAGA concluída (avulso + cancelar/recriar via token)', {
+        userId: profile.profileId, plan, cycle, paymentId: payment.id, newSub: result.newSubscriptionId, nextDueDate,
+      })
+      return NextResponse.json({ status: 'success', changed: true, nextChargeDate: nextDueDate, proration })
+    } finally {
+      await releaseLock(sSupa, lockKey)
     }
-
-    // Reconciliar: limpa assinaturas órfãs do cliente, MANTENDO a editada (a sub
-    // é a mesma; aqui só garantimos que não sobrou nenhuma órfã de fluxos antigos).
-    const reconD = await reconcileActiveSubscriptions(profile.asaasCustomerId ?? null, profile.asaasSubscriptionId)
-    if (reconD.cancelled.length) {
-      log('[checkout] Caminho D — assinaturas órfãs canceladas (reconcile)', { userId: profile.profileId, kept: reconD.kept, cancelled: reconD.cancelled })
-    }
-
-    // 5) Confirma a auditoria: profile persistiu → flip da MESMA linha pra 'paid'.
-    await sSupa
-      .from('billing_checkouts')
-      .update({ status: 'paid', last_event: 'PLAN_CHANGE_CREDIT_TIME' })
-      .eq('checkout_id', recoveryCheckoutId)
-
-    await releaseLock(sSupa, lockKey)
-    return NextResponse.json({
-      status: 'success',
-      coveredByCredit: true,
-      creditCoverageDays: coverageDays,
-      nextChargeDate: nextDueDate,
-      proration,
-    })
-  }
-
-  // Proration-checkout: crédito NÃO cobre tudo → cobra a diferença agora (customValue).
-  // O webhook depois corrige o valor recorrente da assinatura pro preço cheio.
-  if (proration) {
-    checkoutValue = proration.finalPrice
   }
 
   try {
@@ -640,7 +419,7 @@ export async function POST(
     const basePrice = cycle === 'MONTHLY'
       ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
       : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
-    const price = checkoutValue ?? basePrice
+    const price = basePrice
     // Allowlist do origin (P3, audit 2026-06-09): o header vem do cliente — sem validar,
     // qualquer origin spoofado viraria successUrl/cancelUrl do checkout. Só aceita o
     // canônico/app; senão cai no NEXT_PUBLIC_APP_URL.
@@ -654,7 +433,7 @@ export async function POST(
     const successUrl = `${origin}/billing?checkout=success`
     const cancelUrl = `${origin}/billing?checkout=cancelled`
     const expiredUrl = `${origin}/billing?checkout=expired`
-    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId, profileId: profile.profileId, isProrated: !!checkoutValue })
+    log('[checkout] Criando checkout hospedado', { plan, cycle, value: price, customerId, profileId: profile.profileId })
     const checkout = await createCheckout({
       plan: plan as Exclude<PlanId, 'free'>,
       cycle,
@@ -663,9 +442,8 @@ export async function POST(
       expiredUrl,
       customerId,
       externalReference: buildExternalReference(profile.profileId, plan, cycle),
-      ...(checkoutValue ? { customValue: checkoutValue } : {}),
     })
-    log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: checkoutValue ? 'prorated_checkout' : 'checkout', checkoutId: checkout.id, profileId: profile.profileId })
+    log('[checkout] Checkout hospedado criado', { plan, cycle, value: price, flow: 'checkout', checkoutId: checkout.id, profileId: profile.profileId })
 
     // Insert billing_checkouts via service_role (RLS de cookie do user não cobre).
     const ckSupa = serviceSupabase ?? supabase
@@ -680,11 +458,6 @@ export async function POST(
         status: 'pending',
         last_event: 'CHECKOUT_CREATED',
         payment_method: null,
-        ...(proration ? {
-          original_price: proration.originalPrice,
-          proration_credit: proration.credit,
-          final_price: proration.finalPrice,
-        } : {}),
       }, { onConflict: 'checkout_id' })
 
     if (ckInsertError) {
@@ -697,7 +470,6 @@ export async function POST(
       plan,
       cycle,
       value: price,
-      ...(proration ? { proration } : {}),
     })
   } catch (err) {
     logError('[checkout] Erro ao processar checkout', err)

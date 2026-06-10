@@ -1,63 +1,79 @@
 # Redesenho de upgrade/downgrade (pós-tokenização) — EidosForm/Asaas
 
-> Status: **PROJETO** (aguardando tokenização prod — protocolo Asaas 1238651). Implementar + testar
-> quando a tokenização ligar. Base: parecer do Codex 2026-06-09 + achado de produção.
+> Status: **IMPLEMENTADO em 2026-06-10** (tokenização prod liberada — protocolo Asaas 1238651).
+> Aguardando o **teste único em produção** (roteiro abaixo) antes de virar as flags.
+> Base: parecer do Codex 2026-06-09 + achado de produção + decisão Sidney 2026-06-10
+> (modelo conservador p/ TUDO, sem depender de exceção de downgrade não confirmada).
 
 ## O problema (achado em produção 2026-06-09)
 O Asaas de **produção** retorna `400 invalid_value` em `PUT /subscriptions/{id}` mudando `value`:
 > *"Não é possível alterar o valor de assinaturas via cartão de crédito que já possuam faturas pagas."*
 
 No **sandbox** isso NÃO é bloqueado → o bug ficou invisível. Implicação: **todo fluxo que edita o
-valor de uma sub-cartão já paga é inválido em produção** — incluindo:
-- **upgrade via proration-checkout** (cria a sub no valor prorateado e a auto-correção p/ o preço
-  cheio falha → desconto eterno);
-- **downgrade / Caminho D** (edita o valor da sub via `updateSubscription`);
-- qualquer "corrigir valor recorrente depois".
+valor de uma sub-cartão já paga é inválido em produção**. Por decisão de 2026-06-10, assumimos o
+modelo conservador: a regra vale para QUALQUER mudança (upgrade E downgrade) — nenhum fluxo edita
+valor de assinatura, nunca. (Não há chamado aberto com o Asaas sobre isso; não é necessário.)
 
-⚠️ **Validar com o Asaas** (chamado aberto): a regra vale para downgrade também? Há alguma forma
-oficial de alterar o valor recorrente? (Se houver, simplifica o redesenho.)
+## Modelo implementado — cancelar + recriar via token
 
-## Modelo CORRETO (Codex) — depende de tokenização
-Não editar o valor da sub. **Cancelar a antiga e criar uma NOVA no preço certo, com o cartão salvo
-(`creditCardToken`).** A diferença vira um **pagamento avulso** (não assinatura).
+**Nunca editar o valor da sub.** Toda mudança de plano/ciclo cancela a assinatura antiga e cria
+uma NOVA no preço CHEIO com o cartão salvo (`creditCardToken`). A diferença, quando existe, é
+cobrada como **pagamento avulso** (não assinatura).
 
-### Upgrade pago (ex.: Starter → Plus)
-1. Cobrar a **diferença** (proration) como **pagamento avulso** (`POST /payments`, `creditCardToken`).
-2. Quando o avulso **confirmar** (webhook):
-   - cancelar a assinatura antiga;
-   - criar **nova assinatura no preço CHEIO** (R$127) com `creditCardToken` e `nextDueDate` = fim do
-     ciclo atual (o crédito/tempo já pago cobre até lá);
-   - ativar o plano novo (reusar `activatePaidSubscription`);
-   - reconcile (1 sub ACTIVE).
-3. **Sem token → NÃO oferecer upgrade prorateado.** Alternativas (com texto honesto):
-   - cobrar **preço cheio** via novo checkout (pior CX, mas válido); ou
-   - **agendar** o upgrade p/ o próximo ciclo (sem cobrança agora, seguro).
+### Onde está no código
+| Peça | Arquivo |
+|---|---|
+| Executor único (cancelar+recriar, CAS, limites, reconcile) | `lib/plan-switch.ts` → `executePlanSwitch` |
+| Backstop (webhook + DLQ) | `lib/plan-switch.ts` → `runPlanChangeBackstop` |
+| Avulso no token + estorno fail-closed | `lib/asaas.ts` → `createPaymentWithToken`, `refundPayment` |
+| Marcador do avulso (`kind:planchange`) | `lib/asaas.ts` → `buildPlanChangeReference` |
+| Orquestração (lock, cobrança, refund-on-failure) | `app/api/checkout/[plan]/route.ts` |
+| Gancho do webhook (avulso sem subscription) | `app/api/webhooks/asaas/route.ts` |
+| Retry do backstop na DLQ | `lib/asaas-reprocess.ts` (checkout `plan_switch_token` não-pago) |
+| Testes | `lib/plan-switch.test.ts` (12) + `lib/asaas-external-ref.test.ts` |
 
-### Downgrade (ex.: Plus → Starter)
-- Mesma ideia: cancelar a sub Plus + criar sub Starter no preço cheio (R$49) com `creditCardToken`,
-  `nextDueDate` = fim do período já pago (saldo vira tempo). **NÃO editar o valor da sub Plus.**
-- Sem token → agendar p/ o próximo ciclo (cancela no fim do período + cria a nova).
+### Fluxos
+1. **Mudança PAGA** (upgrade, downgrade raro com diferença, ciclo mensal→anual):
+   cobra `proration.finalPrice` como avulso no token (`kind:planchange` no externalReference)
+   → confirmado, `executePlanSwitch` cria a sub nova no preço CHEIO com `nextDueDate` = hoje
+   + 1 ciclo (o avulso comprou um ciclo cheio começando agora) → profile trocado (CAS) →
+   reconcile cancela a antiga. **Falhou a troca depois de cobrar → ESTORNA o avulso**
+   (fail-closed); estorno falhou → alerta CRÍTICO + DLQ.
+2. **Saldo cobre tudo** (Caminho D novo — downgrade típico — e reativação canceling):
+   sem cobrança; sub nova no preço cheio com `nextDueDate` = data de cobertura do saldo
+   ("saldo vira tempo", mesma fonte do preview).
+3. **Backstop**: se o processo morrer entre cobrar o avulso e trocar, o `PAYMENT_CONFIRMED`
+   do avulso (webhook) ou o retry da DLQ completa a troca — idempotente, serializado pelo
+   mesmo lock `planchange:{profileId}`.
+4. **Sem token salvo** (assinante pré-tokenização): mensagem honesta orientando o suporte —
+   nunca cobra errado, nunca edita sub.
+5. **Downgrade de ciclo anual→mensal**: segue a mensagem honesta (cancelar e reassinar) — sem
+   mudança.
 
-### Troca de ciclo (mensal ↔ anual)
-- Idem: cancelar + criar nova no ciclo/preço certo via token.
+### O que foi REMOVIDO (provado que falha em prod)
+- Caminho D antigo (`updateSubscription` value/nextDueDate em sub existente).
+- Proration-checkout (`customValue` no hosted checkout → sub criada prorateada + auto-correção).
+- O hosted checkout agora é SEMPRE preço cheio (primeira compra). A auto-correção de valor (4b
+  em `billing-activation`) permanece como sentinela: se disparar, é bug — alerta/DLQ.
 
-## Caminho D (crédito cobre tudo)
-Hoje edita a sub existente (`updateSubscription` value + nextDueDate) → **provavelmente bloqueado em
-prod** (mesma regra). Redesenhar p/ cancelar+recriar via token também. **Bloquear até confirmar.**
+## Roteiro do TESTE ÚNICO em produção (compras reais; estornar no fim)
 
-## NÃO usar
-- `discount` na 1ª cobrança (sem prova oficial de que aplica 1× e a recorrência volta ao cheio —
-  vira outra versão do desconto eterno).
-- Auto-correção de valor recorrente pós-pagamento (provado que falha em prod).
+Pré: env de prod com `BILLING_MVP_ONLY=false` e `BILLING_ALLOWED_PLANS=starter,plus`
+(anual continua travado; `BILLING_RECONCILE_ACTIONS` continua false durante o teste).
 
-## Dependências / pré-requisitos
-1. **Tokenização prod ativa** (`creditCardToken` retornado) — protocolo 1238651.
-2. **Backstop + reconcile crons** rodando (já implementados, ativar com `BILLING_RECONCILE_ACTIONS=true`).
-3. Confirmação do Asaas sobre o alcance da regra (downgrade? alternativa oficial?).
+1. **Compra Starter mensal** (cartão real) → conferir:
+   `profiles.asaas_card_token` PREENCHIDO (log `card token capturado`; se aparecer
+   `card token AUSENTE`, parar aqui — tokenização não está funcional).
+2. **Upgrade Starter→Plus** → conferir: avulso da diferença cobrado; sub antiga DELETADA no
+   Asaas; sub nova ACTIVE com **value = R$127** e `nextDueDate` = hoje+30d; profile plan=plus.
+3. **Downgrade Plus→Starter** (saldo cobre → R$0 agora) → conferir: sub Plus deletada; sub nova
+   ACTIVE com **value = R$49** e `nextDueDate` = data de cobertura mostrada no preview
+   (saldo vira tempo); forms excedentes pausados.
+4. **Cancelar** a assinatura, **estornar** o avulso e a compra inicial no painel Asaas, e
+   limpar o profile de teste.
+5. Tudo ok → flags em produção na ordem: `BILLING_ALLOWED_PLANS=starter,plus,professional` →
+   liberar anual (testar 1 ciclo anual depois) → `BILLING_RECONCILE_ACTIONS=true`.
 
-## Plano de teste (quando tokenização ligar)
-1. Compra Starter mensal → confirmar `asaas_card_token` capturado.
-2. Upgrade Starter→Plus (avulso da diferença + sub nova cheia) → confirmar **recorrente = R$127**.
-3. Downgrade Plus→Starter → confirmar **recorrente = R$49**, saldo vira tempo.
-4. Cancelar + estornar + limpar.
-5. Religar os fluxos (remover qualquer bloqueio temporário, se houver).
+## NÃO usar (decidido e mantido)
+- `discount` na 1ª cobrança (risco de desconto eterno sem prova oficial).
+- Edição de valor recorrente pós-pagamento (provado que falha em prod).

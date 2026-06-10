@@ -129,9 +129,20 @@ export function buildExternalReference(profileId: string, plan?: string, cycle?:
   return ref
 }
 
+/**
+ * externalReference do PAGAMENTO AVULSO de mudança de plano (redesenho cancelar+recriar,
+ * 2026-06-10). O `kind:planchange` permite ao webhook distinguir este avulso de um pagamento
+ * de assinatura — é o gatilho do BACKSTOP que completa a troca se o fluxo síncrono morrer
+ * entre cobrar e recriar a sub. Pagamentos criados via API persistem o externalReference
+ * (ao contrário do hosted checkout — smoke 2026-06-08).
+ */
+export function buildPlanChangeReference(profileId: string, plan: string, cycle: string): string {
+  return `${buildExternalReference(profileId, plan, cycle)}|kind:planchange`
+}
+
 /** Faz o parse de um externalReference no formato acima (campos ausentes → null). */
-export function parseExternalReference(ref?: string | null): { profileId: string | null; plan: string | null; cycle: string | null } {
-  const out = { profileId: null as string | null, plan: null as string | null, cycle: null as string | null }
+export function parseExternalReference(ref?: string | null): { profileId: string | null; plan: string | null; cycle: string | null; kind: string | null } {
+  const out = { profileId: null as string | null, plan: null as string | null, cycle: null as string | null, kind: null as string | null }
   if (!ref) return out
   for (const part of ref.split('|')) {
     const idx = part.indexOf(':')
@@ -143,6 +154,8 @@ export function parseExternalReference(ref?: string | null): { profileId: string
     // campo venha truncado/editado → cairia em erro de DB). (P3 round 4, Codex 2026-06-07.)
     else if (k === 'plan' && v && Object.prototype.hasOwnProperty.call(PLAN_PRICES, v)) out.plan = v
     else if (k === 'cycle' && (v === 'MONTHLY' || v === 'YEARLY')) out.cycle = v
+    // kind restrito a valores conhecidos (hoje só 'planchange') — mesmo racional do plan.
+    else if (k === 'kind' && v === 'planchange') out.kind = v
   }
   return out
 }
@@ -256,6 +269,44 @@ export async function createSubscriptionWithToken(params: {
   }
   const data = await asaasFetch('/subscriptions', { method: 'POST', body: JSON.stringify(payload) })
   return { id: data.id }
+}
+
+/**
+ * Cobra um PAGAMENTO AVULSO (não-assinatura) no cartão salvo via creditCardToken.
+ * Usado pela mudança de plano (redesenho 2026-06-10): a DIFERENÇA prorateada é cobrada
+ * como avulso; a assinatura nova é criada à parte no preço CHEIO (nunca editamos valor
+ * de sub — `400 invalid_value` em produção). dueDate=hoje → cobrança imediata no cartão.
+ * Retorna id+status (CONFIRMED/RECEIVED = pago; PENDING = aguardar webhook).
+ */
+export async function createPaymentWithToken(params: {
+  customerId: string
+  value: number
+  creditCardToken: string
+  description: string
+  externalReference: string
+}): Promise<{ id: string; status: string }> {
+  const { customerId, value, creditCardToken, description, externalReference } = params
+  const payload = {
+    customer: customerId,
+    billingType: 'CREDIT_CARD',
+    value,
+    dueDate: new Date().toISOString().split('T')[0],
+    description,
+    creditCardToken,
+    externalReference,
+  }
+  const data = await asaasFetch('/payments', { method: 'POST', body: JSON.stringify(payload) })
+  return { id: data.id, status: String(data.status ?? '') }
+}
+
+/**
+ * Estorna um pagamento. FAIL-CLOSED da mudança de plano: se o avulso foi cobrado mas a
+ * recriação da assinatura falhou definitivamente, devolvemos o dinheiro — nunca ficar
+ * com cobrança sem o plano correspondente.
+ */
+export async function refundPayment(paymentId: string): Promise<{ id: string; status: string }> {
+  const data = await asaasFetch(`/payments/${paymentId}/refund`, { method: 'POST', body: JSON.stringify({}) })
+  return { id: data.id ?? paymentId, status: String(data.status ?? '') }
 }
 
 /**

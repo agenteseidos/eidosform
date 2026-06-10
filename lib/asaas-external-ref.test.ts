@@ -5,7 +5,7 @@
  * O externalReference carrega a INTENÇÃO (dono + plano + ciclo) e é a fonte da verdade do
  * webhook pra resolver EXATAMENTE o que foi pago. (P1 round 3, audit Codex 2026-06-07.)
  */
-import { buildExternalReference, parseExternalReference } from './asaas'
+import { buildExternalReference, buildPlanChangeReference, parseExternalReference } from './asaas'
 
 let passed = 0
 let failed = 0
@@ -45,6 +45,14 @@ assert(pReorder.profileId === UUID && pReorder.plan === 'starter' && pReorder.cy
 // Plano DESCONHECIDO é rejeitado (P3): evita persistir plano inválido
 const pBadPlan = parseExternalReference(`profile:${UUID}|plan:enterprise|cycle:MONTHLY`)
 assert(pBadPlan.profileId === UUID && pBadPlan.plan === null && pBadPlan.cycle === 'MONTHLY', 'plano desconhecido → plan null (dono e ciclo ok)')
+
+// kind:planchange (redesenho 2026-06-10) — marcador do AVULSO de mudança de plano
+const refPC = buildPlanChangeReference(UUID, 'plus', 'MONTHLY')
+assert(refPC === `profile:${UUID}|plan:plus|cycle:MONTHLY|kind:planchange`, `build planchange (got ${refPC})`)
+const ppc = parseExternalReference(refPC)
+assert(ppc.profileId === UUID && ppc.plan === 'plus' && ppc.cycle === 'MONTHLY' && ppc.kind === 'planchange', 'parse planchange round-trip')
+assert(parseExternalReference(`profile:${UUID}|plan:plus`).kind === null, 'ref sem kind → kind null')
+assert(parseExternalReference(`profile:${UUID}|kind:outracoisa`).kind === null, 'kind desconhecido → null (restrito a planchange)')
 
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed > 0 ? 1 : 0)

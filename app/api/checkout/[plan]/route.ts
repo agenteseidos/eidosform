@@ -10,7 +10,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { createCheckout, createCustomer, updateSubscription, reconcileActiveSubscriptions, updateCustomer, buildExternalReference, createSubscriptionWithToken, cancelSubscription, alignPendingPaymentsDueDate, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
-import { PLAN_ORDER, type PlanId } from '@/lib/plans'
+import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
 import { expiryFromNextDueDate } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
@@ -114,7 +114,12 @@ export async function POST(
 
   // TRAVA DE SEGURANÇA (P0, Codex 2026-06-09): bloqueia mudança de plano/ciclo p/ pagante e
   // planos/ciclo não-liberados no escopo atual (fluxos que editam valor de sub quebram em prod).
-  const launchBlock = checkLaunchScope({ currentPlan: profile.plan ?? 'free', targetPlan: plan, cycle })
+  // Plano EFETIVO (P2-b, audit 2026-06-09): plano pago já EXPIRADO conta como 'free' — sem isto,
+  // um cliente vencido que o cron diário ainda não reverteu tomava 409 ao tentar COMPRAR de novo
+  // (perda de venda por até 24h). Pagante vigente (inclui canceling com período restante) segue
+  // bloqueado p/ mudança de plano enquanto BILLING_MVP_ONLY estiver ON.
+  const effectiveCurrentPlan = getEffectivePlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
+  const launchBlock = checkLaunchScope({ currentPlan: effectiveCurrentPlan, targetPlan: plan, cycle })
   if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })
 
   const missingFields = getMissingBillingFields(profile)

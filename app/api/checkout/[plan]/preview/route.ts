@@ -7,7 +7,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { PLAN_ORDER, type PlanId } from '@/lib/plans'
+import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields } from '@/lib/billing-profile'
 import { computePlanChange } from '@/lib/plan-change'
 import { checkLaunchScope } from '@/lib/billing-launch-guard'
@@ -42,8 +42,10 @@ export async function GET(
   }
 
   // TRAVA DE SEGURANÇA (Codex): bloqueia o preview de mudança de plano/ciclo bloqueada — o usuário
-  // não vê um resumo enganoso de um fluxo que o POST vai recusar. Mesma fonte da verdade do POST.
-  const launchBlock = checkLaunchScope({ currentPlan: profile.plan ?? 'free', targetPlan: plan, cycle })
+  // não vê um resumo enganoso de um fluxo que o POST vai recusar. Mesma fonte da verdade do POST,
+  // inclusive o plano EFETIVO (P2-b: plano expirado conta como free → recompra liberada).
+  const effectiveCurrentPlan = getEffectivePlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
+  const launchBlock = checkLaunchScope({ currentPlan: effectiveCurrentPlan, targetPlan: plan, cycle })
   if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })
 
   const missingFields = getMissingBillingFields(profile)

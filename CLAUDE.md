@@ -150,15 +150,17 @@ npm run lint     # ESLint
   antiga, favorece o cliente) e a ida-e-volta converge. Motivo: no teste de produção a
   reativação clipou 78 dias pagos → 30 (perda ~R$78 do cliente).
 
-### ✅ TESTE DE PRODUÇÃO CONCLUÍDO (2026-06-10) — falta só a LIMPEZA
+### ✅ BILLING NO AR — teste de produção + limpeza CONCLUÍDOS (2026-06-10)
 Passos validados com compras reais: (1) compra Starter mensal + token capturado;
 (2) upgrade Starter→Plus — avulso R$78 + sub nova R$127 cheia, GATE P0-2 PASSOU (sem
 cobrança imediata); (3) downgrade Plus→Starter — R$0, saldo virou tempo (27/08);
 (4) cancelamento — soft-cancel ok, UI corrigida (ciclo no título + msg de cancelado);
 (5) reativação — R$0, sub recriada via token (`reactivate` validado). ESTÁ VENDENDO.
-**Limpeza pendente (Sidney, no Asaas):** estornar R$49 + R$78, deletar a sub
-`sub_r1yw8uvf2gb5c4b1`, e resetar o profile de teste no Supabase p/ free
-(user `c3aadb97-5da0-40e8-aaed-f471a1299ef3`).
+Também validado o MODELO DE CRÉDITO JUSTO no fluxo real (Starter→Plus coberto por saldo
+R$0 → cancel → Plus→Starter R$0 com modal "Plano alterado!"). **Limpeza FEITA:** estornados
+R$49 + R$78, sub deletada, profile de teste resetado p/ free no Supabase (lembrete: o reset
+usa `plan_status='active'`, NÃO null — a coluna é NOT NULL DEFAULT 'active'; free legítimo =
+plan 'free' + status 'active').
 
 ### 🔜 PRÓXIMA FEATURE (decidida 2026-06-10) — Fallback: troca de plano com cartão salvo MORTO
 > Cenário: cliente quer upgrade PAGO mas o `asaas_card_token` salvo expirou/foi

@@ -308,6 +308,10 @@ export async function GET() {
       let active = byPlanAndCycle ?? byPlan
       if (!active) {
         if (activeSubs.length === 1) {
+          // ⚠️ Sub única SEM match de plano pela descrição: quem impede ativar o plano errado
+          // aqui é o GUARD de preço-cheio dentro do persistPlanFromAsaas (preços únicos por
+          // plano/ciclo → sub de outro plano tem value diferente → bloqueia + alerta). Se os
+          // preços deixarem de ser únicos, este fallback precisa de validação própria.
           active = activeSubs[0]
         } else if (activeSubs.length > 1) {
           log('[checkout/status] Múltiplas assinaturas ACTIVE sem match claro — ambíguo, retornando pending', {

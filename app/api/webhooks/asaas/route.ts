@@ -799,7 +799,7 @@ export async function POST(req: NextRequest) {
         const overdueSubId = payment?.subscription ?? null
         const { data: overdueProfile } = await supabase
           .from('profiles')
-          .select('asaas_subscription_id, plan')
+          .select('asaas_subscription_id, plan, plan_status, plan_expires_at')
           .eq('id', user.id)
           .single()
 
@@ -818,6 +818,25 @@ export async function POST(req: NextRequest) {
             eventSubscriptionId: overdueSubId,
             activeSubscriptionId: overdueProfile?.asaas_subscription_id ?? null,
           })
+          break
+        }
+
+        // CANCELING com período pago vigente (P3, audit 2026-06-09): mesma promessa do
+        // soft-cancel do SUBSCRIPTION_DELETED — um overdue da sub na janela entre o cancel
+        // e o DELETED não pode tirar o acesso que o usuário já pagou. Só desvincula a sub;
+        // a reversão p/ free acontece na expiração.
+        if (
+          overdueProfile?.plan_status === 'canceling' &&
+          overdueProfile?.plan_expires_at &&
+          new Date(overdueProfile.plan_expires_at).getTime() > Date.now()
+        ) {
+          const { error: softErr } = await supabase
+            .from('profiles')
+            .update({ asaas_subscription_id: null })
+            .eq('id', user.id)
+          if (softErr) logError('[asaas-webhook] PAYMENT_OVERDUE (canceling) — falha ao desvincular sub', softErr, { userId: user.id })
+          await updateCheckoutLink({ customerId, subscriptionId: overdueSubId, externalReference: payment?.externalReference ?? null, event, status: 'overdue' })
+          log('[asaas-webhook] PAYMENT_OVERDUE — cancelamento do usuário em curso; acesso mantido até o fim do período', { userId: user.id, expiresAt: overdueProfile.plan_expires_at })
           break
         }
 

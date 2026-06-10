@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   const nowIso = new Date().toISOString()
   const { data: expired, error } = await admin
     .from('profiles')
-    .select('id, plan, plan_cycle, plan_expires_at, asaas_subscription_id')
+    .select('id, plan, plan_status, plan_cycle, plan_expires_at, asaas_subscription_id')
     .neq('plan', 'free')
     .lt('plan_expires_at', nowIso)
     .limit(500)
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
   let skipped = 0
 
   for (const row of expired ?? []) {
-    const p = row as { id: string; plan: string | null; plan_cycle: string | null; plan_expires_at: string | null; asaas_subscription_id: string | null }
+    const p = row as { id: string; plan: string | null; plan_status: string | null; plan_cycle: string | null; plan_expires_at: string | null; asaas_subscription_id: string | null }
     let shouldRevert = true
 
     if (p.asaas_subscription_id) {
@@ -89,7 +89,9 @@ export async function GET(req: NextRequest) {
           .from('profiles')
           .update({
             plan: 'free',
-            plan_status: 'expired',
+            // Usuário que CANCELOU e chegou ao fim do período termina como 'cancelled'
+            // (não 'expired') — preserva a semântica/métrica de churn. (P3, audit 2026-06-09.)
+            plan_status: p.plan_status === 'canceling' ? 'cancelled' : 'expired',
             plan_expires_at: null,
             asaas_subscription_id: null,
             limit_alert_sent: false,

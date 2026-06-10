@@ -631,7 +631,16 @@ export async function POST(
       ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
       : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
     const price = checkoutValue ?? basePrice
-    const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
+    // Allowlist do origin (P3, audit 2026-06-09): o header vem do cliente — sem validar,
+    // qualquer origin spoofado viraria successUrl/cancelUrl do checkout. Só aceita o
+    // canônico/app; senão cai no NEXT_PUBLIC_APP_URL.
+    const requestOrigin = req.headers.get('origin')
+    const allowedOrigins = new Set(
+      [process.env.NEXT_PUBLIC_APP_URL, 'https://eidosform.com.br', 'https://www.eidosform.com.br'].filter(Boolean)
+    )
+    const origin = (requestOrigin && allowedOrigins.has(requestOrigin))
+      ? requestOrigin
+      : (process.env.NEXT_PUBLIC_APP_URL ?? '')
     const successUrl = `${origin}/billing?checkout=success`
     const cancelUrl = `${origin}/billing?checkout=cancelled`
     const expiredUrl = `${origin}/billing?checkout=expired`

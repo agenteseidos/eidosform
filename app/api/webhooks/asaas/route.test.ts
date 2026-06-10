@@ -333,4 +333,38 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
     expect(key).toContain('pay_77')
     expect(key).toContain('2026-07-09')
   })
+
+  // ── P3 (audit 2026-06-09): OVERDUE durante canceling com período pago vigente ──
+
+  it('PAYMENT_OVERDUE em canceling com período vigente: desvincula a sub, NÃO rebaixa p/ free', async () => {
+    const future = new Date(Date.now() + 10 * 86_400_000).toISOString()
+    const { db, calls } = makeRecordingDb({
+      asaas_webhook_events: [{ error: null }],
+      billing_checkouts: [
+        { data: CK_ROW, error: null }, // resolveBillingContext
+        { data: CK_ROW, error: null }, // updateCheckoutLink re-resolve
+        { error: null },               // update do checkout p/ overdue
+      ],
+      profiles: [
+        { data: USER_ROW, error: null }, // getProfileById
+        { data: { asaas_subscription_id: 'sub_1', plan: 'starter', plan_status: 'canceling', plan_expires_at: future }, error: null },
+        { error: null },                 // unlink da sub
+      ],
+    })
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_overdue', event: 'PAYMENT_OVERDUE', payment: { customer: 'cus_1', value: 49, subscription: 'sub_1' } }
+    const res = await POST(makeReq(body))
+    expect((await res.json() as { received: boolean }).received).toBe(true)
+
+    // Desvinculou a sub…
+    const unlink = calls.find((c) => c.table === 'profiles' && c.method === 'update'
+      && (c.args[0] as { asaas_subscription_id?: string | null })?.asaas_subscription_id === null
+      && !(c.args[0] as { plan?: string })?.plan)
+    expect(unlink).toBeTruthy()
+    // …e NÃO rebaixou p/ free (pré-fix: match estrito batia e revertia, tirando acesso pago).
+    const downgrade = calls.find((c) => c.table === 'profiles' && c.method === 'update'
+      && (c.args[0] as { plan?: string })?.plan === 'free')
+    expect(downgrade).toBeUndefined()
+  })
 })

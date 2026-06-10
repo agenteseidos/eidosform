@@ -163,9 +163,17 @@ function CheckoutContent() {
         return
       }
 
-      // Crédito cobriu o novo plano (Caminho D ou reativação com token): plano ativado direto,
-      // SEM checkout. Reusa a tela de sucesso do billing (overlay).
-      if (json.coveredByCredit || (res.ok && json.status === 'success' && !json.checkoutUrl)) {
+      // Crédito cobriu o novo plano (troca R$0 ou reativação com token): plano alterado direto,
+      // SEM cobrança → overlay próprio ("Plano alterado!"), não o de pagamento. (POLISH 2026-06-10:
+      // numa operação de R$0 dizer "Pagamento confirmado!" confunde — não houve pagamento.)
+      if (json.coveredByCredit) {
+        window.location.href = '/billing?checkout=plan_changed'
+        return
+      }
+
+      // Troca PAGA via token (cobrou a diferença no cartão salvo, sem checkout hospedado):
+      // houve pagamento de verdade → overlay de pagamento confirmado.
+      if (res.ok && json.status === 'success' && !json.checkoutUrl) {
         window.location.href = '/billing?checkout=success'
         return
       }

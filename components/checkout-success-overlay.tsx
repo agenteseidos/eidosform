@@ -36,7 +36,9 @@ export function CheckoutSuccessOverlay() {
     }
 
     async function resolveStatus() {
-      if (status === 'cancelled' || status === 'expired') {
+      // plan_changed = troca de plano R$0 (coberta pelo saldo) já EXECUTADA de forma síncrona
+      // pelo POST — não há pagamento pra aguardar, então nada de polling: mostra direto.
+      if (status === 'cancelled' || status === 'expired' || status === 'plan_changed') {
         if (!mounted) return
         setResolvedStatus(status)
         setVisible(true)
@@ -178,6 +180,18 @@ export function CheckoutSuccessOverlay() {
       }
     }
 
+    // Troca de plano coberta pelo saldo (R$0): não houve pagamento — o texto diz o que
+    // de fato aconteceu. (POLISH 2026-06-10, visto no teste de produção.)
+    if (resolvedStatus === 'plan_changed') {
+      return {
+        icon: <CheckCircle2 className="w-12 h-12 text-emerald-400" />,
+        iconWrap: 'bg-emerald-500/15',
+        title: 'Plano alterado!',
+        description: 'Seu plano foi alterado com sucesso — seu saldo cobriu a mudança, sem nenhuma cobrança agora. 🎉',
+        buttonLabel: 'Voltar ao EidosForm',
+      }
+    }
+
     if (resolvedStatus === 'network_error') {
       return {
         icon: <WifiOff className="w-12 h-12 text-red-400" />,
@@ -215,7 +229,7 @@ export function CheckoutSuccessOverlay() {
       return
     }
 
-    if (resolvedStatus === 'success' && pathname === '/billing') {
+    if ((resolvedStatus === 'success' || resolvedStatus === 'plan_changed') && pathname === '/billing') {
       setVisible(false)
       router.refresh()
       return

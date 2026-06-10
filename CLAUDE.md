@@ -192,12 +192,10 @@ cobrança imediata); (3) downgrade Plus→Starter — R$0, saldo virou tempo (27
 > Sequência acordada: terminar o teste atual → smoke do ponto 2 → implementar.
 
 ### Pendências menores correlatas (não bloqueantes)
-- POLISH (decidido 2026-06-10) — modal de sucesso da troca de plano: numa operação
-  de R$0 (downgrade/credit_covered) o modal mostra "Pagamento confirmado! / Sua
-  assinatura foi ativada". Como não houve cobrança, o texto deve variar conforme o
-  caso: troca coberta pelo saldo → algo como "Plano alterado!" / "Seu plano foi
-  alterado com sucesso"; só compra/upgrade pago mantém "Pagamento confirmado!".
-  Executar DEPOIS de fechar 100% o teste atual. (Componente do overlay de /billing.)
+- ✅ POLISH FEITO (2026-06-10, sessão 3) — modal de sucesso da troca de plano: operação
+  R$0 (coveredByCredit) agora redireciona p/ `?checkout=plan_changed` → overlay "Plano
+  alterado!" sem polling (a troca é síncrona). Só pagamento real mantém o fluxo
+  `?checkout=success` / "Pagamento confirmado!".
 - `ASAAS_ALLOW_HMAC_FALLBACK=0` quando confirmado que prod autentica só pelo
   access-token nativo; depois remover o código do fallback HMAC.
 - PIX/Boleto no checkout: decisão de 2026-06-10 = NÃO implementar agora.

@@ -22,7 +22,7 @@
  * tratamento MANUAL — o evento permanece visível na lista de failed/dead do admin.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate } from '@/lib/asaas'
+import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, type BillingCycle } from '@/lib/billing-activation'
 import { runPlanChangeBackstop } from '@/lib/plan-switch'
@@ -153,6 +153,19 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     if (r.failed > 0) throw new Error(`ALIGN_PENDING: ${r.failed} pagamentos ainda não alinhados — mantém failed p/ retry`)
     log('[asaas-reprocess] ALIGN_PENDING: pagamentos pendentes alinhados', { subscriptionId, moved: r.moved, nextDueDate: subA.nextDueDate })
     return 'aligned'
+  }
+
+  // ── CANCEL_OLDSUB (P0-1, revisão 2026-06-10): a sub ANTIGA de uma troca de plano não foi
+  // cancelada (cancel falhou no executePlanSwitch e o reconcile não pega same-day/valor≠).
+  // Confere o status REAL: não-ACTIVE → noop (já estava cancelada); ACTIVE → cancela (lança
+  // em falha → retry). Money-path: deixar ACTIVE = cobrança dupla no próximo ciclo.
+  if (ev === 'CANCEL_OLDSUB') {
+    if (!subscriptionId) return 'noop_canceloldsub_sem_subscription'
+    const st = await getAsaasStatus(subscriptionId) // relança em erro transitório → retry
+    if (st !== 'ACTIVE') return 'noop_canceloldsub_ja_inativa'
+    await cancelSubscription(subscriptionId) // lança se falhar → retry
+    log('[asaas-reprocess] CANCEL_OLDSUB: sub antiga cancelada (evita cobrança dupla)', { subscriptionId })
+    return 'oldsub_cancelada'
   }
 
   // ── FORMLIMIT (DLQ do downgrade, P1-5 Codex): re-aplica os limites de forms do PLANO ATUAL do

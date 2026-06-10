@@ -23,13 +23,14 @@ cobrada como **pagamento avulso** (não assinatura).
 ### Onde está no código
 | Peça | Arquivo |
 |---|---|
-| Executor único (cancelar+recriar, CAS, limites, reconcile) | `lib/plan-switch.ts` → `executePlanSwitch` |
+| Executor único (cancelar+recriar, CAS, cancel explícito da antiga, limites, reconcile) | `lib/plan-switch.ts` → `executePlanSwitch` |
 | Backstop (webhook + DLQ) | `lib/plan-switch.ts` → `runPlanChangeBackstop` |
 | Avulso no token + estorno fail-closed | `lib/asaas.ts` → `createPaymentWithToken`, `refundPayment` |
 | Marcador do avulso (`kind:planchange`) | `lib/asaas.ts` → `buildPlanChangeReference` |
 | Orquestração (lock, cobrança, refund-on-failure) | `app/api/checkout/[plan]/route.ts` |
 | Gancho do webhook (avulso sem subscription) | `app/api/webhooks/asaas/route.ts` |
 | Retry do backstop na DLQ | `lib/asaas-reprocess.ts` (checkout `plan_switch_token` não-pago) |
+| Retry do cancel da sub antiga (anti cobrança dupla) | `lib/asaas-reprocess.ts` → evento `CANCEL_OLDSUB` |
 | Testes | `lib/plan-switch.test.ts` (12) + `lib/asaas-external-ref.test.ts` |
 
 ### Fluxos
@@ -37,7 +38,9 @@ cobrada como **pagamento avulso** (não assinatura).
    cobra `proration.finalPrice` como avulso no token (`kind:planchange` no externalReference)
    → confirmado, `executePlanSwitch` cria a sub nova no preço CHEIO com `nextDueDate` = hoje
    + 1 ciclo (o avulso comprou um ciclo cheio começando agora) → profile trocado (CAS) →
-   reconcile cancela a antiga. **Falhou a troca depois de cobrar → ESTORNA o avulso**
+   **cancel EXPLÍCITO da sub antiga** (P0-1 da revisão: o reconcile não cancela sub same-day
+   de valor diferente — ambígua por design; falhou o cancel → DLQ `CANCEL_OLDSUB` + alerta)
+   → reconcile varre órfãs restantes. **Falhou a troca depois de cobrar → ESTORNA o avulso**
    (fail-closed); estorno falhou → alerta CRÍTICO + DLQ.
 2. **Saldo cobre tudo** (Caminho D novo — downgrade típico — e reativação canceling):
    sem cobrança; sub nova no preço cheio com `nextDueDate` = data de cobertura do saldo
@@ -66,6 +69,13 @@ Pré: env de prod com `BILLING_MVP_ONLY=false` e `BILLING_ALLOWED_PLANS=starter,
    `card token AUSENTE`, parar aqui — tokenização não está funcional).
 2. **Upgrade Starter→Plus** → conferir: avulso da diferença cobrado; sub antiga DELETADA no
    Asaas; sub nova ACTIVE com **value = R$127** e `nextDueDate` = hoje+30d; profile plan=plus.
+
+   **🚦 GATE P0-2 (PARE AQUI E CONFIRA ANTES DE SEGUIR):** o modelo assume que sub criada
+   com `nextDueDate` FUTURO **não gera cobrança imediata** (o sandbox pode não reproduzir
+   o comportamento de prod, como no `invalid_value`). No painel Asaas, confirme que a sub
+   nova **NÃO tem nenhuma cobrança gerada para hoje** — só o avulso da diferença deve ter
+   sido cobrado. Se houver cobrança imediata na sub nova: **PARAR o teste e estornar tudo**
+   — o modelo precisa de redesign (1ª cobrança via avulso apenas, sub criada depois).
 3. **Downgrade Plus→Starter** (saldo cobre → R$0 agora) → conferir: sub Plus deletada; sub nova
    ACTIVE com **value = R$49** e `nextDueDate` = data de cobertura mostrada no preview
    (saldo vira tempo); forms excedentes pausados.
@@ -73,6 +83,16 @@ Pré: env de prod com `BILLING_MVP_ONLY=false` e `BILLING_ALLOWED_PLANS=starter,
    limpar o profile de teste.
 5. Tudo ok → flags em produção na ordem: `BILLING_ALLOWED_PLANS=starter,plus,professional` →
    liberar anual (testar 1 ciclo anual depois) → `BILLING_RECONCILE_ACTIONS=true`.
+
+## Pendência de produto ANTES de liberar o ciclo ANUAL (P2-1 da revisão)
+
+No fluxo PAGO, `nextDueDate` = hoje+1 ciclo. Se o plano ATUAL for ANUAL com muitos meses
+restantes e o crédito for MENOR que o preço do plano novo (ex.: Starter anual com ~4 meses
+restantes → Plus mensal), o cliente paga a diferença pequena e a janela "pago até" ENCURTA
+(o crédito virou desconto, não tempo). Valor preservado matematicamente, mas a semântica
+precisa de decisão do dono (manter como desconto × converter em tempo) ANTES de liberar o
+anual. **Enquanto o anual está travado (mensal→mensal), o cenário é inalcançável** — a
+janela restante mensal (≤30d) nunca excede os +30d da sub nova.
 
 ## NÃO usar (decidido e mantido)
 - `discount` na 1ª cobrança (risco de desconto eterno sem prova oficial).

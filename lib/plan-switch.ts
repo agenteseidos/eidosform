@@ -190,13 +190,53 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
   // 3) Limites de forms (downgrade pausa excedentes — crítico, com DLQ).
   await applyFormLimits(db, profileId, plan, isPlanDowngrade, newSub.id, tag)
 
-  // 4) Reconcile: cancela a sub ANTIGA e qualquer órfã, mantendo SÓ a nova.
+  // 4a) Cancela a sub ANTIGA **explicitamente** (P0-1, revisão adversarial 2026-06-10):
+  //     o reconcile NÃO cancela sub de MESMO DIA com VALOR diferente (ambígua por design —
+  //     dateCreated do Asaas tem granularidade de dia), e TODA troca de plano same-day cai
+  //     exatamente nesse caso → ficariam 2 subs ACTIVE = cobrança dupla em ~30d. Aqui é
+  //     seguro cancelar sem ambiguidade: o CAS provou que o profile apontava p/ ela e agora
+  //     aponta p/ a nova. Retry 1x; persistindo, DLQ CANCEL_OLDSUB + alerta (money-path,
+  //     nunca silencioso) — espelha o cancel explícito do finalizeActivation.
+  if (expectedOldSubscriptionId && expectedOldSubscriptionId !== newSub.id) {
+    let oldCancelled = false
+    for (let attempt = 1; !oldCancelled && attempt <= 2; attempt++) {
+      try {
+        await cancelSubscription(expectedOldSubscriptionId)
+        oldCancelled = true
+        log(`${tag}: sub antiga cancelada explicitamente`, { profileId, oldSub: expectedOldSubscriptionId, newSub: newSub.id, attempt })
+      } catch (e) {
+        // Pode falhar porque a sub JÁ estava cancelada (o cancel lança em já-deletada) —
+        // o reprocessador do CANCEL_OLDSUB confere o status real e dá noop se não-ACTIVE.
+        logError(`${tag}: falha ao cancelar a sub antiga (tentativa ${attempt}/2)`, e, { profileId, oldSub: expectedOldSubscriptionId })
+      }
+    }
+    if (!oldCancelled) {
+      try {
+        await (db as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+          .from('asaas_webhook_events')
+          .upsert({
+            event_id: `cancel-oldsub:${expectedOldSubscriptionId}`,
+            event: 'CANCEL_OLDSUB',
+            status: 'failed',
+            error: 'sub antiga não cancelada após troca de plano — cancelar p/ evitar cobrança dupla',
+            attempts: 0,
+            subscription_id: expectedOldSubscriptionId,
+            customer_id: customerId,
+            last_attempt_at: new Date().toISOString(),
+          }, { onConflict: 'event_id' })
+      } catch { /* best-effort */ }
+      await sendBillingOpsAlert({
+        subject: 'Troca de plano: sub ANTIGA não cancelada — risco de cobrança dupla (DLQ CANCEL_OLDSUB)',
+        lines: { profileId, oldSubscriptionId: expectedOldSubscriptionId, newSubscriptionId: newSub.id, plan, cycle },
+      }).catch(() => {})
+    }
+  }
+
+  // 4b) Reconcile: varre órfãs restantes, mantendo SÓ a nova.
   const recon = await reconcileActiveSubscriptions(customerId, newSub.id)
   if (recon.cancelled.length || recon.ambiguous.length) {
     log(`${tag}: reconcile pós-troca`, { profileId, kept: recon.kept, cancelled: recon.cancelled, ambiguous: recon.ambiguous })
   }
-  // Sub antiga fora da lista do reconcile (já não-ACTIVE) é ok; se segue ACTIVE e não foi
-  // cancelada, o reconcile a marca ambígua e os crons/alertas pegam — não silencioso.
 
   // 5) Auditoria/overlay: marca um checkout 'paid' p/ o /status e o overlay de sucesso.
   const { error: ckErr } = await (db as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<{ error: unknown }> } })

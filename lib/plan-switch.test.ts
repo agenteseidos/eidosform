@@ -91,7 +91,9 @@ describe('executePlanSwitch', () => {
     expect(callArgs.value).toBe(127) // cheio, NÃO 102.5
     expect(callArgs.creditCardToken).toBe('tok_1')
     expect(callArgs.nextDueDate).toBe('2026-07-10')
-    // reconcile mantém a nova (cancela a antiga)
+    // P0-1 (revisão 2026-06-10): a sub ANTIGA é cancelada EXPLICITAMENTE — o reconcile
+    // não cancela sub same-day com valor diferente (ambígua), que é toda troca de plano.
+    expect(asaasMocks.cancelSubscription).toHaveBeenCalledWith('sub_old')
     expect(asaasMocks.reconcileActiveSubscriptions).toHaveBeenCalledWith('cus_1', 'sub_new')
     // profile trocado + checkout paid de auditoria
     expect(state.calls.some(c => c.table === 'profiles' && c.op === 'update')).toBe(true)
@@ -122,10 +124,25 @@ describe('executePlanSwitch', () => {
     expect(state.calls.some(c => c.table === 'profiles' && c.op === 'update')).toBe(false)
   })
 
-  it('reativação (canceling): expectedOldSubscriptionId null funciona com .is(null)', async () => {
+  it('reativação (canceling): expectedOldSubscriptionId null funciona com .is(null) e NÃO cancela nada', async () => {
     state.profileRow = { asaas_subscription_id: null }
     const r = await executePlanSwitch({ db: makeDb(), ...baseParams, expectedOldSubscriptionId: null, reason: 'reactivate' })
     expect(r.ok).toBe(true)
+    expect(asaasMocks.cancelSubscription).not.toHaveBeenCalled()
+  })
+
+  it('cancel da sub antiga falha 2x → troca CONCLUI, mas DLQ CANCEL_OLDSUB + alerta (anti cobrança dupla)', async () => {
+    asaasMocks.cancelSubscription
+      .mockRejectedValueOnce(new Error('asaas 500'))
+      .mockRejectedValueOnce(new Error('asaas 500'))
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams })
+    expect(r.ok).toBe(true) // o plano do cliente troca mesmo assim (ele pagou)
+    const dlq = state.calls.find(c => c.table === 'asaas_webhook_events' && c.op === 'upsert')
+    expect(dlq).toBeTruthy()
+    expect((dlq!.payload as { event: string }).event).toBe('CANCEL_OLDSUB')
+    expect((dlq!.payload as { subscription_id: string }).subscription_id).toBe('sub_old')
+    const { sendBillingOpsAlert } = await import('@/lib/resend')
+    expect(vi.mocked(sendBillingOpsAlert)).toHaveBeenCalled()
   })
 })
 

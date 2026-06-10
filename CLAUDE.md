@@ -124,28 +124,31 @@ npm run lint     # ESLint
 
 ## ⏳ PENDÊNCIA ATIVA — Billing/Asaas: teste único de produção da troca de plano
 
-> Atualizado em 2026-06-10: a tokenização em produção FOI LIBERADA (protocolo Asaas
-> 1238651) e o redesenho cancelar+recriar via token FOI IMPLEMENTADO no mesmo dia.
-> O que falta é OPERACIONAL: o teste único em produção e a virada das flags.
-> Roteiro completo: `docs/redesenho-upgrade-downgrade.md`.
+> Atualizado em 2026-06-10 (sessão 2): código alinhado p/ VENDA 100% por decisão do
+> Sidney — sem rollout gradual. Kill-switch OFF por padrão, todos os planos/ciclos
+> liberados, reconcile com ação ligada. O que falta é só o teste único em produção
+> (compras reais, estornar no fim). Roteiro: `docs/redesenho-upgrade-downgrade.md`.
 
 ### Estado atual
-- Código do redesenho COMPLETO: `lib/plan-switch.ts` (executor + backstop),
-  `createPaymentWithToken`/`refundPayment` em `lib/asaas.ts`, orquestração no
-  checkout, gancho no webhook (`kind:planchange`), retry na DLQ. Nenhum fluxo
-  edita valor de assinatura (modelo conservador p/ upgrade E downgrade —
-  decisão Sidney 2026-06-10, sem chamado ao Asaas).
+- Código do redesenho COMPLETO e no ESTADO FINAL DE VENDA: `lib/plan-switch.ts`
+  (executor + backstop), `createPaymentWithToken`/`refundPayment` em `lib/asaas.ts`,
+  orquestração no checkout, gancho no webhook (`kind:planchange`), retry na DLQ.
+  Nenhum fluxo edita valor de assinatura.
 - Caminho D antigo (editar sub) e proration-checkout (customValue) REMOVIDOS.
-- Launch guard segue ON (`BILLING_MVP_ONLY` default true) até o teste passar.
+- `BILLING_MVP_ONLY` virou KILL-SWITCH: OFF por padrão, liga só com `=true` explícito
+  (emergência). `BILLING_RECONCILE_*` ações ON por padrão (desliga com `=false`).
+  Produção NÃO deve ter essas vars setadas.
+- P2-1 (crédito no anual) DECIDIDO: crédito = desconto no fluxo pago; vira tempo só
+  quando cobre o preço inteiro. Transparente via preview. Sem mudança de código.
 - Captura do token loga AUSÊNCIA explicitamente (validação conclusiva).
 
 ### Próximo passo (Sidney, operacional — compras reais, estornar no fim)
-1. Prod com `BILLING_MVP_ONLY=false` + `BILLING_ALLOWED_PLANS=starter,plus`.
+1. Conferir que prod NÃO tem `BILLING_MVP_ONLY` nem `BILLING_RECONCILE_*` setados.
 2. Compra Starter mensal → `profiles.asaas_card_token` preenchido?
-3. Upgrade Starter→Plus → avulso da diferença + sub nova R$127 cheia.
+3. Upgrade Starter→Plus → avulso da diferença + sub nova R$127 cheia
+   (🚦 GATE P0-2: conferir que a sub nova NÃO gerou cobrança imediata).
 4. Downgrade Plus→Starter → R$0 agora, sub nova R$49, saldo vira tempo.
-5. Cancelar/estornar/limpar → virar flags na ordem (professional → anual →
-   `BILLING_RECONCILE_ACTIONS=true`).
+5. Cancelar/estornar/limpar. Tudo ok → está vendendo (sem flags pra virar).
 
 ### Pendências menores correlatas (não bloqueantes)
 - `ASAAS_ALLOW_HMAC_FALLBACK=0` quando confirmado que prod autentica só pelo

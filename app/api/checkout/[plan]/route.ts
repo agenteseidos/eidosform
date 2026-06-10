@@ -87,12 +87,11 @@ export async function POST(
     return NextResponse.json({ error: 'Email obrigatório para o checkout' }, { status: 400 })
   }
 
-  // TRAVA DE SEGURANÇA (P0, Codex 2026-06-09): bloqueia mudança de plano/ciclo p/ pagante e
-  // planos/ciclo não-liberados no escopo atual (fluxos que editam valor de sub quebram em prod).
+  // KILL-SWITCH (OFF por padrão desde 2026-06-10): com BILLING_MVP_ONLY=true volta ao modo
+  // restrito de emergência (só primeira compra mensal; mudança de plano → 409).
   // Plano EFETIVO (P2-b, audit 2026-06-09): plano pago já EXPIRADO conta como 'free' — sem isto,
   // um cliente vencido que o cron diário ainda não reverteu tomava 409 ao tentar COMPRAR de novo
-  // (perda de venda por até 24h). Pagante vigente (inclui canceling com período restante) segue
-  // bloqueado p/ mudança de plano enquanto BILLING_MVP_ONLY estiver ON.
+  // (perda de venda por até 24h).
   const effectiveCurrentPlan = getEffectivePlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
   const launchBlock = checkLaunchScope({ currentPlan: effectiveCurrentPlan, targetPlan: plan, cycle })
   if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })

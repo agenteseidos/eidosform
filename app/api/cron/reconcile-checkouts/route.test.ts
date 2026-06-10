@@ -101,7 +101,8 @@ describe('GET /api/cron/reconcile-checkouts (backstop)', () => {
   })
 
   it('DETECTA pago+ACTIVE sem ativação em alert-only (não skip) — regressão do no-op', async () => {
-    const mods = await load()
+    // Desde 2026-06-10 a ação é ON por padrão; alert-only agora exige =false explícito.
+    const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'false' })
     setupHappyPath(mods)
 
     const res = await mods.GET(REQ)

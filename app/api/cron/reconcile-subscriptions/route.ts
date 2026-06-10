@@ -9,8 +9,8 @@ import { log, logError } from '@/lib/logger'
  * GET /api/cron/reconcile-subscriptions — garante NO MÁXIMO 1 sub ACTIVE por cliente (cron, ~30min).
  *
  * HARDENING pós-incidente 2026-06-09 (ficaram 2 subs ACTIVE quando a ativação não rodou). Protegido
- * por CRON_SECRET. MODO SEGURO: alert-only por padrão (BILLING_RECONCILE_ACTIONS=true habilita o
- * cancelamento automático). Fail-closed.
+ * por CRON_SECRET. Ação LIGADA por padrão desde 2026-06-10 (código alinhado p/ venda 100%);
+ * BILLING_RECONCILE_SUBSCRIPTIONS_ACTIONS=false (ou a global =false) volta ao alert-only.
  *
  * Critérios CONSERVADORES (Codex): só cancela a órfã quando é CLARO —
  *   - o profile aponta p/ outra sub ACTIVE (a "keep"), E
@@ -18,9 +18,9 @@ import { log, logError } from '@/lib/logger'
  *   - a candidata é MAIS ANTIGA que a keep (ou mesmo valor = duplicata).
  * Senão (profile sem sub / órfã mais nova / planos diferentes recentes / erro de leitura): ALERTA, não cancela.
  */
-// Flag SEPARÁVEL (Codex): liga a ação do reconcile de subs primeiro (risco menor — corrige cobrança
-// dupla, não ativa plano). Fallback p/ a flag global por compat. Fail-closed.
-const ACTIONS_ON = (process.env.BILLING_RECONCILE_SUBSCRIPTIONS_ACTIONS ?? process.env.BILLING_RECONCILE_ACTIONS) === 'true'
+// Flag SEPARÁVEL (Codex): permite desligar só este cron sem afetar o de checkouts.
+// ON por padrão; os critérios de cancelamento continuam conservadores (ambíguo → só alerta).
+const ACTIONS_ON = (process.env.BILLING_RECONCILE_SUBSCRIPTIONS_ACTIONS ?? process.env.BILLING_RECONCILE_ACTIONS) !== 'false'
 const MAX_PROFILES = 50
 
 export async function GET(req: NextRequest) {

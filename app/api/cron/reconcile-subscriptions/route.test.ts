@@ -80,7 +80,8 @@ describe('GET /api/cron/reconcile-subscriptions', () => {
   })
 
   it('DETECTA 2 subs ACTIVE em alert-only (não reporta clean) — regressão do no-op', async () => {
-    const { GET, asaas, lock, supa, resend } = await load()
+    // Desde 2026-06-10 a ação é ON por padrão; alert-only agora exige =false explícito.
+    const { GET, asaas, lock, supa, resend } = await load({ BILLING_RECONCILE_SUBSCRIPTIONS_ACTIONS: 'false' })
     vi.mocked(lock.acquireLock).mockResolvedValue(true)
     // Contrato real da lib: ARRAY direto (não { data: [...] }).
     vi.mocked(asaas.getCustomerSubscriptions).mockResolvedValue(TWO_ACTIVE as never)

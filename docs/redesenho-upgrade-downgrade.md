@@ -1,7 +1,8 @@
 # Redesenho de upgrade/downgrade (pós-tokenização) — EidosForm/Asaas
 
 > Status: **IMPLEMENTADO em 2026-06-10** (tokenização prod liberada — protocolo Asaas 1238651).
-> Aguardando o **teste único em produção** (roteiro abaixo) antes de virar as flags.
+> Código no ESTADO FINAL DE VENDA (kill-switch OFF, tudo liberado). Aguardando o **teste
+> único em produção** (roteiro abaixo) para validar com cartão real.
 > Base: parecer do Codex 2026-06-09 + achado de produção + decisão Sidney 2026-06-10
 > (modelo conservador p/ TUDO, sem depender de exceção de downgrade não confirmada).
 
@@ -61,8 +62,12 @@ cobrada como **pagamento avulso** (não assinatura).
 
 ## Roteiro do TESTE ÚNICO em produção (compras reais; estornar no fim)
 
-Pré: env de prod com `BILLING_MVP_ONLY=false` e `BILLING_ALLOWED_PLANS=starter,plus`
-(anual continua travado; `BILLING_RECONCILE_ACTIONS` continua false durante o teste).
+> **Decisão Sidney 2026-06-10 (sessão 2): o teste valida o ESTADO FINAL DE VENDA, sem rollout
+> gradual.** O código foi alinhado: kill-switch OFF por padrão (`BILLING_MVP_ONLY` agora só
+> liga com `=true` explícito), todos os planos e ciclos liberados, reconcile com ação LIGADA
+> por padrão. **Nenhuma env nova é necessária** — apenas garanta que produção NÃO tem
+> `BILLING_MVP_ONLY=true` nem `BILLING_RECONCILE_*=false` setados (remova se existirem).
+> Depois do teste passar NÃO há flag pra virar: o que foi testado é o que vende.
 
 1. **Compra Starter mensal** (cartão real) → conferir:
    `profiles.asaas_card_token` PREENCHIDO (log `card token capturado`; se aparecer
@@ -81,18 +86,17 @@ Pré: env de prod com `BILLING_MVP_ONLY=false` e `BILLING_ALLOWED_PLANS=starter,
    (saldo vira tempo); forms excedentes pausados.
 4. **Cancelar** a assinatura, **estornar** o avulso e a compra inicial no painel Asaas, e
    limpar o profile de teste.
-5. Tudo ok → flags em produção na ordem: `BILLING_ALLOWED_PLANS=starter,plus,professional` →
-   liberar anual (testar 1 ciclo anual depois) → `BILLING_RECONCILE_ACTIONS=true`.
+5. Tudo ok → está vendendo. Não há flags pra virar (estado final já deployado).
 
-## Pendência de produto ANTES de liberar o ciclo ANUAL (P2-1 da revisão)
+## P2-1 — semântica do crédito no ciclo ANUAL (DECIDIDO 2026-06-10)
 
-No fluxo PAGO, `nextDueDate` = hoje+1 ciclo. Se o plano ATUAL for ANUAL com muitos meses
-restantes e o crédito for MENOR que o preço do plano novo (ex.: Starter anual com ~4 meses
-restantes → Plus mensal), o cliente paga a diferença pequena e a janela "pago até" ENCURTA
-(o crédito virou desconto, não tempo). Valor preservado matematicamente, mas a semântica
-precisa de decisão do dono (manter como desconto × converter em tempo) ANTES de liberar o
-anual. **Enquanto o anual está travado (mensal→mensal), o cenário é inalcançável** — a
-janela restante mensal (≤30d) nunca excede os +30d da sub nova.
+Cenário: plano ATUAL anual com meses restantes, crédito MENOR que o preço do plano novo
+(ex.: Starter anual com ~2 meses restantes → Plus mensal). **Decisão: crédito vira DESCONTO
+no fluxo pago** (paga `finalPrice = preço novo − crédito` e ganha 1 ciclo cheio começando
+hoje); vira TEMPO apenas quando cobre o preço inteiro (fluxo credit_covered, sem cobrança).
+Racional: matematicamente preserva valor, é o comportamento padrão de proration do mercado,
+e é TRANSPARENTE — o preview mostra crédito, preço final e nova data ANTES de o cliente
+confirmar. Nada a mudar no código (já era o comportamento implementado).
 
 ## NÃO usar (decidido e mantido)
 - `discount` na 1ª cobrança (risco de desconto eterno sem prova oficial).

@@ -13,8 +13,9 @@ import { log, logError } from '@/lib/logger'
  * buraco do incidente (webhook fora do ar + navegador fechado → checkout fica `pending` p/ sempre).
  * NÃO depende de webhook nem de polling do navegador. Protegido por CRON_SECRET.
  *
- * MODO SEGURO: por padrão é ALERT-ONLY (detecta + alerta, NÃO muta). Setar BILLING_RECONCILE_ACTIONS=true
- * na Vercel p/ habilitar a ativação automática (depois do Codex auditar). Fail-closed.
+ * Ação LIGADA por padrão desde 2026-06-10 (código alinhado p/ venda 100%): ativa automaticamente
+ * o que está comprovadamente pago. BILLING_RECONCILE_CHECKOUTS_ACTIONS=false (ou a global =false)
+ * volta ao alert-only.
  *
  * Para cada billing_checkouts pending (5min–24h, com customer):
  *  - acha a sub ACTIVE do customer (a do checkout, ou casa por plano/ciclo/valor; ambíguo → alerta);
@@ -22,9 +23,9 @@ import { log, logError } from '@/lib/logger'
  *  - se o profile não está ativado p/ essa sub → ATIVA (activatePaidSubscription) ou alerta;
  *  - se a correção de valor recorrente falhar → alerta (nunca subcobrar em silêncio).
  */
-// Flag SEPARÁVEL (Codex): liga a ação do backstop independente do reconcile de subs (ativação tem
-// risco maior → liga depois). Fallback p/ a flag global por compat. Fail-closed.
-const ACTIONS_ON = (process.env.BILLING_RECONCILE_CHECKOUTS_ACTIONS ?? process.env.BILLING_RECONCILE_ACTIONS) === 'true'
+// Flag SEPARÁVEL (Codex): permite desligar só este cron sem afetar o reconcile de subs.
+// ON por padrão; só ativa com pagamento CONFIRMED/RECEIVED comprovado (ambíguo → só alerta).
+const ACTIONS_ON = (process.env.BILLING_RECONCILE_CHECKOUTS_ACTIONS ?? process.env.BILLING_RECONCILE_ACTIONS) !== 'false'
 const MAX_ITEMS = 30
 
 export async function GET(req: NextRequest) {

@@ -1,18 +1,18 @@
 /**
- * lib/billing-launch-guard.ts — TRAVA DE SEGURANÇA do escopo de billing em produção.
+ * lib/billing-launch-guard.ts — KILL-SWITCH de emergência do billing.
  *
- * NÃO é gambiarra temporária — é uma FEATURE FLAG permanente. O Asaas de PRODUÇÃO bloqueia alterar
- * o valor de assinatura de cartão já paga (400 invalid_value), o que invalida em prod: upgrade
- * prorateado, downgrade/Caminho D (editam valor) e a auto-correção de valor recorrente. Deixar
- * esses fluxos acessíveis = cobrança errada / desconto eterno (P0, audit Codex 2026-06-09).
+ * Histórico: nasceu como trava de lançamento (BILLING_MVP_ONLY default ON) enquanto os fluxos de
+ * troca de plano editavam valor de assinatura — o Asaas de PRODUÇÃO bloqueia isso (400
+ * invalid_value). Em 2026-06-10 o redesenho cancelar+recriar via token substituiu TODOS esses
+ * fluxos (nenhum caminho edita valor de sub) e a oferta foi liberada por inteiro: todos os planos,
+ * mensal e anual, upgrade/downgrade. Decisão Sidney 2026-06-10: código alinhado p/ venda 100%,
+ * sem rollout gradual.
  *
- * Enquanto a flag está ON, o servidor SÓ permite: **primeira compra (free→pago) MENSAL** dos planos
- * liberados. Mudança de plano/ciclo p/ usuário pagante → 409. Quando o redesenho (cancelar+recriar
- * via token, pós-tokenização) estiver pronto, setar BILLING_MVP_ONLY=false e os fluxos completos
- * voltam — SEM mexer no código. Fail-closed (ON por padrão).
+ * A trava permanece como KILL-SWITCH: setar BILLING_MVP_ONLY=true numa emergência volta ao modo
+ * restrito (só primeira compra mensal dos ALLOWED_PLANS; mudança de plano → 409) sem deploy.
  */
-const MVP_ONLY = process.env.BILLING_MVP_ONLY !== 'false' // ON por padrão
-// Planos liberados p/ PRIMEIRA compra no MVP (Codex: só Starter testado em prod). Relaxar via env.
+const MVP_ONLY = process.env.BILLING_MVP_ONLY === 'true' // OFF por padrão (kill-switch)
+// Planos permitidos p/ primeira compra QUANDO o kill-switch está ON (modo restrito de emergência).
 const ALLOWED_PLANS = (process.env.BILLING_ALLOWED_PLANS ?? 'starter').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
 
 export type LaunchBlock = { status: number; body: { error: string; code: string } }
@@ -22,13 +22,13 @@ export function checkLaunchScope(params: { currentPlan: string; targetPlan: stri
   if (!MVP_ONLY) return null
   const { currentPlan, targetPlan, cycle } = params
 
-  // P0: SEM mudança de plano/ciclo p/ quem já é pagante (upgrade/downgrade/Caminho D quebram em prod).
+  // Modo de emergência: SEM mudança de plano/ciclo p/ quem já é pagante.
   if (currentPlan !== 'free') {
-    return { status: 409, body: { error: 'A mudança de plano estará disponível em breve. Para alterar agora, fale com o suporte.', code: 'PLAN_CHANGE_DISABLED' } }
+    return { status: 409, body: { error: 'A mudança de plano está temporariamente indisponível. Fale com o suporte.', code: 'PLAN_CHANGE_DISABLED' } }
   }
-  // Anual não testado em produção (Codex P2) → só mensal no MVP.
+  // Modo de emergência: só mensal.
   if (String(cycle).toUpperCase() !== 'MONTHLY') {
-    return { status: 409, body: { error: 'O plano anual estará disponível em breve. Por enquanto, escolha o ciclo mensal.', code: 'CYCLE_NOT_AVAILABLE_YET' } }
+    return { status: 409, body: { error: 'O plano anual está temporariamente indisponível. Por enquanto, escolha o ciclo mensal.', code: 'CYCLE_NOT_AVAILABLE_YET' } }
   }
   // Só os planos liberados (default: starter) na primeira compra.
   if (!ALLOWED_PLANS.includes(String(targetPlan).toLowerCase())) {

@@ -18,7 +18,6 @@ const plans = [
       '100 respostas/mês',
       '3 formulários',
       'Questões ilimitadas',
-      '1 usuário',
       'Validação de CPF/CNPJ',
       'Busca automática de CEP',
       'Lógica condicional',
@@ -53,7 +52,7 @@ const plans = [
     name: 'Plus',
     icon: Rocket,
     price: { monthly: 127, annual: 97 },
-    desc: 'Para equipes',
+    desc: 'Para escalar resultados',
     highlight: true,
     features: [
       'Tudo do Starter +',
@@ -84,7 +83,6 @@ const plans = [
     features: [
       'Tudo do Plus +',
       '15.000 respostas/mês',
-      'Até 10 usuários',
       'Domínio personalizado',
       'Acesso à API v1',
       'Chave de API dedicada',

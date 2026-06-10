@@ -57,7 +57,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
       '100 respostas/mês',
       '3 formulários',
       'Questões ilimitadas',
-      '1 usuário',
       'Validação CPF/CNPJ',
       'Busca automática de CEP',
       'Lógica condicional',
@@ -141,7 +140,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     maxResponses: 15000,
     maxForms: -1,
     maxQuestions: 200,
-    maxUsers: 10,
+    maxUsers: 1, // multi-user removido da oferta (2026-06-10) até existir de verdade
     watermark: false,
     pixels: true,
     customDomain: true,
@@ -157,7 +156,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     features: [
       'Tudo do Plus +',
       '15.000 respostas/mês',
-      'Até 10 usuários',
       'Domínio personalizado',
       'Acesso à API v1',
       'Chave de API dedicada',

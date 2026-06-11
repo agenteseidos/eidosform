@@ -8,6 +8,7 @@ import { PixelEventRule, PixelEventCondition, PixelEventConfig } from '@/types/p
 declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void
+    ttq?: { track: (event: string, params?: Record<string, unknown>) => void }
     __eidosCapturedFbqEvents?: string[]
     dataLayer?: unknown[]
   }
@@ -71,6 +72,31 @@ export function firePixelEvent(event: PixelEventConfig) {
   )
   // Meta — comportamento inalterado (espera o fbq carregar, com retry).
   fireFbqEvent(event)
+  // TikTok — mesmo padrão do Meta (espera o ttq carregar, com retry).
+  fireTtqEvent(
+    event.name,
+    event.value !== undefined
+      ? { value: event.value, currency: event.currency || 'BRL' }
+      : undefined,
+  )
+}
+
+/**
+ * Dispara um evento no TikTok Pixel (ttq). O snippet oficial cria o stub
+ * `window.ttq` com fila — eventos disparados antes da lib carregar são
+ * enfileirados. O retry cobre só o caso do Script afterInteractive ainda
+ * não ter executado. ttq.track aceita eventos padrão e custom pelo nome.
+ */
+function fireTtqEvent(name: string, params?: Record<string, unknown>, retries = 10) {
+  if (!name || typeof window === 'undefined') return
+  const { ttq } = window
+  if (!ttq) {
+    if (retries > 0) {
+      setTimeout(() => fireTtqEvent(name, params, retries - 1), 300)
+    }
+    return
+  }
+  ttq.track(name, params)
 }
 
 function fireFbqEvent(event: PixelEventConfig, retries = 10) {
@@ -101,6 +127,8 @@ export function fireNamedPixelEvent(name: string) {
   pushDataLayerEvent(name)
   // Meta — comportamento inalterado (espera o fbq carregar, com retry).
   fireFbqNamedEvent(name)
+  // TikTok — mesmo padrão do Meta (espera o ttq carregar, com retry).
+  fireTtqEvent(name)
 }
 
 function fireFbqNamedEvent(name: string, retries = 10) {

@@ -1,3 +1,6 @@
+import { QuestionConfig, QuestionType } from './database.types'
+import { createDefaultQuestion } from './questions'
+
 export interface TemplateQuestion {
   id: string
   type: 'short_text' | 'long_text' | 'multiple_choice' | 'rating' | 'email' | 'number' | 'yes_no'
@@ -204,3 +207,42 @@ export const templates: FormTemplate[] = [
     ],
   },
 ]
+
+/**
+ * Mapeia o tipo (simplificado) usado nos templates para o QuestionType real do app.
+ * Record exaustivo: se um novo tipo for adicionado a TemplateQuestion sem mapeamento,
+ * o TypeScript quebra o build aqui. `multiple_choice` não existe no schema → vira `dropdown`.
+ */
+const TEMPLATE_TYPE_MAP: Record<TemplateQuestion['type'], QuestionType> = {
+  short_text: 'short_text',
+  long_text: 'long_text',
+  multiple_choice: 'dropdown',
+  rating: 'rating',
+  email: 'email',
+  number: 'number',
+  yes_no: 'yes_no',
+}
+
+export function getTemplateById(id: string): FormTemplate | undefined {
+  return templates.find((t) => t.id === id)
+}
+
+/**
+ * Converte as perguntas de um template em QuestionConfig[] prontos para gravar em `forms.questions`.
+ * Reusa createDefaultQuestion para gerar id novo (crypto.randomUUID) + defaults por tipo, depois
+ * sobrescreve com os valores do template. As perguntas ficam indistinguíveis de perguntas criadas
+ * manualmente no editor.
+ */
+export function buildTemplateQuestions(template: FormTemplate): QuestionConfig[] {
+  return template.questions.map((q) => {
+    const question = createDefaultQuestion(TEMPLATE_TYPE_MAP[q.type])
+    question.title = q.title
+    question.required = q.required
+    if (q.description) question.description = q.description
+    if (q.options) question.options = q.options
+    // Template usa min/max; o schema usa minValue/maxValue. `0` é válido (NPS começa em 0).
+    if (q.min !== undefined) question.minValue = q.min
+    if (q.max !== undefined) question.maxValue = q.max
+    return question
+  })
+}

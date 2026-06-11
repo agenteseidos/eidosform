@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { v4 as uuidv4 } from 'uuid'
 import { FormInsert } from '@/lib/database.types'
 import { checkFormLimit } from '@/lib/plan-limits'
+import { getTemplateById, buildTemplateQuestions } from '@/lib/templates'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,13 @@ export default async function NewFormPage({
   const params = await searchParams
   const retryCount = parseInt(String(params.retry || '0'), 10)
 
+  // Se um template válido foi escolhido na galeria (?template=<id>), pré-carrega título
+  // e perguntas. Template inválido/ausente → formulário em branco (comportamento padrão).
+  const templateId = Array.isArray(params.template) ? params.template[0] : params.template
+  const template = templateId ? getTemplateById(templateId) : undefined
+  const initialTitle = template ? template.name : 'Formulário sem título'
+  const initialQuestions = template ? buildTemplateQuestions(template) : []
+
   // Try to create with retries for slug collision
   let lastError: string | null = null
 
@@ -43,11 +51,11 @@ export default async function NewFormPage({
     const newForm: FormInsert = {
       id: formId,
       user_id: user.id,
-      title: 'Formulário sem título',
+      title: initialTitle,
       slug: slug,
       status: 'draft',
       theme: 'minimal',
-      questions: [],
+      questions: initialQuestions,
       thank_you_message: 'Obrigado pela sua resposta!',
     }
 

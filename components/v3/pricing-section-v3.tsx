@@ -105,7 +105,7 @@ const plans: Array<{
       'Domínio personalizado (a marca do seu cliente)',
       'Acesso à API v1 + chave dedicada',
       'Exportação CSV avançada',
-      'Suporte prioritário com SLA',
+      'Prioridade máxima no suporte',
     ],
     cta: 'Assinar Professional',
   },

@@ -9,16 +9,11 @@ import {
   Check,
   ChevronDown,
   Crosshair,
-  GitBranch,
   Globe,
-  KeyRound,
   LineChart,
   Mail,
-  Palette,
-  Share2,
   Target,
   UserRound,
-  Webhook,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -28,6 +23,13 @@ import { EidosLogo } from '@/components/ui/eidos-logo'
 import { HeroDemo } from '@/components/v3/hero-demo'
 import { TestimonialsSection } from '@/components/v3/testimonials-section'
 import { PricingSectionV3 } from '@/components/v3/pricing-section-v3'
+import { IntegrationsGrid } from '@/components/v3/integrations-grid'
+import {
+  MockupAgency,
+  MockupBrand,
+  MockupSegmentation,
+  MockupShare,
+} from '@/components/v3/section-mockups'
 
 // Página em homologação (modelada na yayforms.com/br/typeform-alternative):
 // noindex até ser aprovada e promovida à raiz. Todos os claims foram
@@ -41,8 +43,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
+// TODO: quando o formulário de migração for criado no próprio EidosForm
+// (plano aprovado em 2026-06-12, ver memória), trocar este mailto pelo /f/<slug>.
 const MIGRATION_EMAIL =
-  'mailto:suporte@eidosform.com.br?subject=Migra%C3%A7%C3%A3o%20do%20Typeform&body=Ol%C3%A1!%20Quero%20migrar%20meus%20formul%C3%A1rios%20para%20o%20EidosForm.%20Seguem%20os%20links%3A'
+  'mailto:suporte@eidosform.com.br?subject=Migra%C3%A7%C3%A3o%20de%20formul%C3%A1rios&body=Ol%C3%A1!%20Quero%20migrar%20meus%20formul%C3%A1rios%20para%20o%20EidosForm.%20Seguem%20os%20links%3A'
 
 const DIFFERENTIALS = [
   { icon: Target, text: 'Meta Pixel, Google Ads, GTM e TikTok nativos no Plus' },
@@ -50,7 +54,7 @@ const DIFFERENTIALS = [
   { icon: LineChart, text: 'UTMs gravadas em cada lead, com janela de 30 dias' },
   { icon: BadgeCheck, text: 'CPF, CNPJ e CEP validados nativamente' },
   { icon: Globe, text: 'Pague em real — sem dólar, sem IOF' },
-  { icon: UserRound, text: 'Suporte humano em português' },
+  { icon: UserRound, text: 'Suporte em português' },
 ]
 
 const TRAFFIC_FEATURES = [
@@ -84,8 +88,6 @@ const EMPHASIS_SECTIONS = [
   {
     id: 'segmentacao',
     badge: 'Segmentação',
-    icon: GitBranch,
-    color: 'from-violet-500 to-purple-600',
     title: 'Segmente sua audiência com lógica condicional',
     desc: 'Se a resposta for X, pergunte Y. Monte quizzes que separam o curioso do comprador, personalize o caminho de cada pessoa e qualifique o lead antes mesmo de falar com ele.',
     bullets: [
@@ -93,25 +95,24 @@ const EMPHASIS_SECTIONS = [
       'Quiz de qualificação para high-ticket',
       'Tela de agradecimento personalizada por perfil',
     ],
+    mockup: 'segmentation' as const,
   },
   {
     id: 'marca',
     badge: 'Sua marca',
-    icon: Palette,
-    color: 'from-[#F5B731] to-[#E8923A]',
     title: 'Formulário com a cara da sua marca',
-    desc: 'Temas, fontes, cores e logo — o formulário parece feito sob medida, porque é. No Plus a marca EidosForm some; no Professional ele vive no seu próprio domínio.',
+    desc: 'Escolha um dos 7 temas profissionais, coloque a sua logo na tela de boas-vindas e publique no seu próprio domínio. O formulário chega com a sua cara — não com a nossa.',
     bullets: [
-      'Temas, cores, fontes e logo personalizados',
+      '7 temas profissionais prontos',
+      'Sua logo na tela de boas-vindas',
       "Sem marca d'água a partir do Plus",
       'Domínio próprio no Professional (formularios.suamarca.com.br)',
     ],
+    mockup: 'brand' as const,
   },
   {
     id: 'compartilhe',
     badge: 'Compartilhe',
-    icon: Share2,
-    color: 'from-blue-500 to-cyan-500',
     title: 'Publique onde o seu público está',
     desc: 'Link direto pronto para anúncio, bio ou WhatsApp — ou incorpore o formulário dentro do seu site. Ao final, redirecione para a página de obrigado que o seu funil precisa.',
     bullets: [
@@ -119,30 +120,22 @@ const EMPHASIS_SECTIONS = [
       'Embed no seu site ou landing page',
       'Redirecionamento pós-envio configurável',
     ],
+    mockup: 'share' as const,
   },
 ]
 
-const INTEGRATIONS = [
-  { name: 'Meta Pixel', hue: 'bg-blue-500/15 text-blue-300 border-blue-400/20' },
-  { name: 'Google Ads', hue: 'bg-yellow-500/15 text-yellow-300 border-yellow-400/20' },
-  { name: 'Google Tag Manager', hue: 'bg-sky-500/15 text-sky-300 border-sky-400/20' },
-  { name: 'TikTok Pixel', hue: 'bg-rose-500/15 text-rose-300 border-rose-400/20' },
-  { name: 'Google Sheets', hue: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/20' },
-  { name: 'Calendly', hue: 'bg-indigo-500/15 text-indigo-300 border-indigo-400/20' },
-  { name: 'WhatsApp', hue: 'bg-green-500/15 text-green-300 border-green-400/20' },
-  { name: 'Email', hue: 'bg-slate-500/15 text-slate-300 border-slate-400/20' },
-  { name: 'Webhooks', hue: 'bg-violet-500/15 text-violet-300 border-violet-400/20' },
-  { name: 'Make*', hue: 'bg-purple-500/15 text-purple-300 border-purple-400/20' },
-  { name: 'Zapier*', hue: 'bg-orange-500/15 text-orange-300 border-orange-400/20' },
-  { name: 'n8n*', hue: 'bg-pink-500/15 text-pink-300 border-pink-400/20' },
-]
+const SECTION_MOCKUPS = {
+  segmentation: MockupSegmentation,
+  brand: MockupBrand,
+  share: MockupShare,
+} as const
 
 const AGENCY_BULLETS = [
-  'Cada formulário com a marca do cliente: logo, cores e tema próprios',
-  'Domínio personalizado — o formulário vive no endereço do cliente',
-  'Webhooks entregando leads direto no CRM de cada cliente',
-  'API v1 com chave dedicada para automatizar a operação',
-  '15.000 respostas/mês e suporte com SLA',
+  'Cada formulário com um dos 7 temas + a logo do cliente na abertura',
+  'Domínio personalizado por formulário — no endereço de cada cliente',
+  'Webhooks levando cada lead direto ao CRM do cliente',
+  'API e webhooks para plugar no stack que a agência já usa',
+  '15.000 respostas/mês e prioridade máxima no suporte',
 ]
 
 // Preços do Typeform verificados em typeform.com/pricing (jun/2026, cobrança
@@ -178,7 +171,7 @@ const FEATURE_COMPARISON: Array<{ label: string; eidos: string | boolean; typefo
   { label: 'TikTok Pixel nativo', eidos: true, typeform: false },
   { label: 'Taxa de abandono por pergunta', eidos: 'No Plus (R$97)', typeform: 'Só em planos altos' },
   { label: 'Respostas parciais', eidos: 'No Plus (R$97)', typeform: 'Só em planos altos' },
-  { label: 'Suporte humano em português', eidos: true, typeform: false },
+  { label: 'Suporte em português', eidos: true, typeform: false },
   { label: 'Integração nativa com Salesforce', eidos: false, typeform: true },
   { label: 'Pagamentos embutidos (Stripe)', eidos: false, typeform: true },
   { label: 'Certificações SOC 2 / HIPAA', eidos: false, typeform: true },
@@ -186,8 +179,8 @@ const FEATURE_COMPARISON: Array<{ label: string; eidos: string | boolean; typefo
 
 const FAQS = [
   {
-    q: 'Estou no Typeform. Como migro para o EidosForm?',
-    a: 'A gente migra para você, sem custo: envie um email para suporte@eidosform.com.br com os links dos seus formulários e nosso time recria tudo no EidosForm. Você só revisa e publica.',
+    q: 'Estou em outra ferramenta. Como migro para o EidosForm?',
+    a: 'A gente migra para você — do Typeform, Google Forms ou qualquer outra plataforma. Envie os links dos seus formulários para suporte@eidosform.com.br: fazemos uma análise gratuita e te dizemos qual plano comporta o que você usa hoje. Assinando qualquer plano pago, recriamos tudo (até 10 formulários) em no máximo 3 dias úteis. Você só revisa e publica.',
   },
   {
     q: 'O que o Typeform tem que vocês não têm?',
@@ -345,22 +338,24 @@ export default function LandingV3Page() {
               <ArrowRightLeft className="w-6 h-6 text-[#F5B731]" />
             </span>
             <h2 className="text-2xl sm:text-4xl font-black mb-3">
-              Saindo do Typeform? <span className="text-[#F5B731]">A gente migra para você.</span>
+              Vindo de outra ferramenta? <span className="text-[#F5B731]">A gente migra para você.</span>
             </h2>
             <p className="text-slate-400 text-lg mb-7 max-w-2xl mx-auto">
-              Envie os links dos seus formulários e nosso time recria tudo no EidosForm,
-              sem custo. Você só revisa, publica e troca o link.
+              Typeform, Google Forms ou qualquer outra: envie os links dos seus formulários e
+              fazemos uma <strong className="text-white">análise gratuita</strong> — te dizemos
+              qual plano comporta o que você usa hoje. Assinou, recriamos tudo em até
+              3 dias úteis. Você só revisa e publica.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
               <a href={MIGRATION_EMAIL}>
                 <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold px-8 py-6 shadow-xl shadow-[#F5B731]/25">
                   <Mail className="w-4 h-4 mr-2" />
-                  Pedir migração gratuita
+                  Pedir análise gratuita
                 </Button>
               </a>
               <div className="flex items-center gap-4 text-sm text-slate-400">
-                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-[#4BB678]" /> Sem custo</span>
-                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-[#4BB678]" /> Sem downtime</span>
+                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-[#4BB678]" /> Análise sem compromisso</span>
+                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-[#4BB678]" /> Até 3 dias úteis</span>
               </div>
             </div>
           </div>
@@ -396,30 +391,31 @@ export default function LandingV3Page() {
       </section>
 
       {/* Seções de ênfase: segmentação, marca, compartilhamento */}
-      {EMPHASIS_SECTIONS.map(({ id, badge, icon: Icon, color, title, desc, bullets }, idx) => (
-        <section key={id} id={id} className={`py-20 px-4 sm:px-6 ${idx % 2 ? 'bg-white/[0.02]' : ''}`}>
-          <div className="max-w-5xl mx-auto grid md:grid-cols-[1fr_1.2fr] gap-10 items-center">
-            <div className={idx % 2 ? 'md:order-2' : ''}>
-              <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">{badge}</Badge>
-              <h2 className="text-2xl sm:text-4xl font-black mb-4 leading-tight">{title}</h2>
-              <p className="text-slate-400 leading-relaxed">{desc}</p>
-            </div>
-            <div className={`p-7 rounded-2xl bg-white/[0.04] border border-white/5 ${idx % 2 ? 'md:order-1' : ''}`}>
-              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center mb-5 shadow-lg`}>
-                <Icon className="w-6 h-6 text-white" />
+      {EMPHASIS_SECTIONS.map(({ id, badge, title, desc, bullets, mockup }, idx) => {
+        const Mockup = SECTION_MOCKUPS[mockup]
+        return (
+          <section key={id} id={id} className={`py-20 px-4 sm:px-6 ${idx % 2 ? 'bg-white/[0.02]' : ''}`}>
+            <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center">
+              <div className={idx % 2 ? 'md:order-2' : ''}>
+                <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">{badge}</Badge>
+                <h2 className="text-2xl sm:text-4xl font-black mb-4 leading-tight">{title}</h2>
+                <p className="text-slate-400 leading-relaxed mb-6">{desc}</p>
+                <ul className="space-y-2.5">
+                  {bullets.map((b) => (
+                    <li key={b} className="flex items-start gap-3 text-sm sm:text-base text-slate-300 leading-relaxed">
+                      <Check className="w-4 h-4 text-[#4BB678] mt-1 flex-shrink-0" />
+                      {b}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="space-y-3">
-                {bullets.map((b) => (
-                  <li key={b} className="flex items-start gap-3 text-sm sm:text-base text-slate-300 leading-relaxed">
-                    <Check className="w-4 h-4 text-[#4BB678] mt-1 flex-shrink-0" />
-                    {b}
-                  </li>
-                ))}
-              </ul>
+              <div className={idx % 2 ? 'md:order-1' : ''}>
+                <Mockup />
+              </div>
             </div>
-          </div>
-        </section>
-      ))}
+          </section>
+        )
+      })}
 
       {/* Integrações */}
       <section className="py-24 px-4 sm:px-6">
@@ -433,17 +429,7 @@ export default function LandingV3Page() {
             por integração nativa ou webhook em tempo real.
           </p>
 
-          <div className="flex flex-wrap justify-center gap-3">
-            {INTEGRATIONS.map(({ name, hue }) => (
-              <span
-                key={name}
-                className={`px-4 py-2.5 rounded-xl border text-sm font-semibold ${hue}`}
-              >
-                {name}
-              </span>
-            ))}
-          </div>
-          <p className="mt-6 text-xs text-slate-600">* via webhook em tempo real</p>
+          <IntegrationsGrid />
         </div>
       </section>
 
@@ -460,7 +446,7 @@ export default function LandingV3Page() {
             </h2>
             <p className="text-slate-400 leading-relaxed mb-6">
               Entregue para o seu cliente um formulário que parece feito pela equipe dele:
-              identidade visual própria, domínio próprio e leads caindo direto no CRM dele.
+              tema com a logo dele, domínio próprio e leads caindo direto no CRM dele.
               Tudo numa conta só, no plano Professional.
             </p>
             <Link href="/register?next=/checkout/professional&cycle=yearly">
@@ -471,21 +457,20 @@ export default function LandingV3Page() {
             </Link>
             <p className="mt-3 text-sm text-slate-500">R$197/mês no plano anual · 15.000 respostas/mês</p>
           </div>
-          <div className="p-7 rounded-2xl bg-slate-900 border border-violet-400/20 ring-1 ring-violet-400/10">
-            <ul className="space-y-4">
+          <div>
+            <div className="p-5 rounded-2xl bg-slate-900 border border-violet-400/20 ring-1 ring-violet-400/10 mb-5">
+              <MockupAgency />
+            </div>
+            <ul className="space-y-2.5">
               {AGENCY_BULLETS.map((b) => (
-                <li key={b} className="flex items-start gap-3 text-sm sm:text-base text-slate-300 leading-relaxed">
-                  <span className="w-6 h-6 min-w-6 rounded-lg bg-violet-500/15 flex items-center justify-center mt-0.5">
-                    <Check className="w-3.5 h-3.5 text-violet-300" />
+                <li key={b} className="flex items-start gap-3 text-sm text-slate-300 leading-relaxed">
+                  <span className="w-5 h-5 min-w-5 rounded-md bg-violet-500/15 flex items-center justify-center mt-0.5">
+                    <Check className="w-3 h-3 text-violet-300" />
                   </span>
                   {b}
                 </li>
               ))}
             </ul>
-            <div className="mt-6 pt-5 border-t border-white/5 flex items-center gap-3 text-xs text-slate-500">
-              <KeyRound className="w-4 h-4 text-violet-300" />
-              API v1 + webhooks <Webhook className="w-4 h-4 text-violet-300 ml-2" /> para plugar no stack da agência
-            </div>
           </div>
         </div>
       </section>
@@ -631,7 +616,7 @@ export default function LandingV3Page() {
               <ul className="space-y-1 text-sm text-slate-500">
                 <li><a href="#faq" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">FAQ</a></li>
                 <li><a href="mailto:suporte@eidosform.com.br" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
-                <li><a href={MIGRATION_EMAIL} className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Migração do Typeform</a></li>
+                <li><a href={MIGRATION_EMAIL} className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Migração gratuita</a></li>
               </ul>
             </div>
             <div>

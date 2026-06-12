@@ -5,6 +5,7 @@ import { createPublicClient } from '@/lib/supabase/public'
 import { FormPlayer } from '@/components/form-player/form-player'
 import { Form } from '@/lib/database.types'
 import { getEffectivePlan } from '@/lib/plans'
+import { filterQuestionsByPlan } from '@/lib/questions'
 
 export const dynamic = 'force-dynamic'
 
@@ -145,6 +146,12 @@ export default async function FormPage({ params }: FormPageProps) {
   // Gate pixel data: strip from payload if plan doesn't allow pixels
   if (!canShowPixels && form.pixels) {
     form.pixels = null
+  }
+
+  // Gate perguntas premium (Calendly=Starter+, HTML=Plus+): forms legados ou
+  // pós-downgrade não entregam esses tipos ao visitante em plano insuficiente.
+  if (Array.isArray(form.questions)) {
+    form.questions = filterQuestionsByPlan(form.questions, ownerPlan)
   }
 
   // Detect if form is loaded inside an iframe

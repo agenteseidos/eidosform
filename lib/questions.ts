@@ -1,4 +1,5 @@
 import { QuestionType, QuestionConfig } from './database.types'
+import { PlanId, planAtLeast } from './plans'
 import {
   Type,
   AlignLeft,
@@ -217,6 +218,37 @@ export const questionTypes: QuestionTypeInfo[] = [
     },
   },
 ]
+
+/**
+ * Tipos de pergunta gateados por plano (fonte única de verdade — builder e
+ * player público importam daqui). Tipo ausente = disponível em qualquer plano.
+ *   - calendly: agendamento integrado → Starter+
+ *   - html_block: embeds HTML arbitrários → Plus+
+ */
+export const QUESTION_TYPE_MIN_PLAN: Partial<Record<QuestionType, PlanId>> = {
+  calendly: 'starter',
+  html_block: 'plus',
+}
+
+/** O plano informado pode usar este tipo de pergunta? */
+export function questionTypeAllowed(type: QuestionType, plan: string | null | undefined): boolean {
+  const min = QUESTION_TYPE_MIN_PLAN[type]
+  return !min || planAtLeast(plan, min)
+}
+
+/**
+ * Remove do array as perguntas de tipo gated que o plano não permite (player
+ * público). Forms legados / pós-downgrade podem conter Calendly/HTML em planos
+ * insuficientes — aqui elas simplesmente não são entregues ao visitante. O
+ * motor de lógica ignora jumps cujo alvo sumiu (form-logic-engine getNextQuestionId),
+ * então a remoção é segura para a navegação.
+ */
+export function filterQuestionsByPlan<T extends { type: QuestionType }>(
+  questions: T[],
+  plan: string | null | undefined,
+): T[] {
+  return questions.filter(q => questionTypeAllowed(q.type, plan))
+}
 
 export function getQuestionTypeInfo(type: QuestionType): QuestionTypeInfo | undefined {
   return questionTypes.find(qt => qt.type === type)

@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
 import { normalizeConditional } from '@/lib/form-logic-engine'
-import { questionTypes, createDefaultQuestion, getQuestionTypeInfo } from '@/lib/questions'
+import { questionTypes, createDefaultQuestion, getQuestionTypeInfo, questionTypeAllowed, QUESTION_TYPE_MIN_PLAN } from '@/lib/questions'
+import { PLANS } from '@/lib/plan-definitions'
 import { themes, themeList } from '@/lib/themes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -582,6 +583,13 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   }
 
   const addQuestion = (type: QuestionConfig['type']) => {
+    // Gating por plano: tipos premium (Calendly=Starter+, HTML=Plus+) não entram
+    // em planos insuficientes. A UI já mostra cadeado; esta é a trava de fato.
+    if (!questionTypeAllowed(type, userPlan)) {
+      const min = QUESTION_TYPE_MIN_PLAN[type]
+      toast.error(`Disponível a partir do plano ${min ? PLANS[min].name : 'pago'}.`)
+      return
+    }
     const newQuestion = createDefaultQuestion(type)
     setQuestions([...questions, newQuestion])
     setSelectedQuestionId(newQuestion.id)
@@ -1907,6 +1915,31 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {categoryQuestionTypes.map((qt) => {
                       const visual = getQuestionVisual(qt.type)
+                      const locked = !questionTypeAllowed(qt.type, userPlan)
+                      const minPlan = QUESTION_TYPE_MIN_PLAN[qt.type]
+                      if (locked) {
+                        return (
+                          <button
+                            key={qt.type}
+                            onClick={() => { setShowAddQuestion(false); router.push('/billing') }}
+                            title={`Disponível a partir do plano ${minPlan ? PLANS[minPlan].name : 'pago'}`}
+                            className="p-3 rounded-lg border border-slate-200 bg-slate-50 hover:border-violet-300 hover:bg-violet-50 transition-all text-left group flex items-start gap-3 opacity-70"
+                          >
+                            <div className="mt-0.5 shrink-0 text-violet-500">
+                              <Lock className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm text-slate-900 flex items-center gap-1.5">
+                                {qt.label}
+                                <span className="text-[10px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">
+                                  {minPlan ? PLANS[minPlan].name : 'Pago'}+
+                                </span>
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">Fazer upgrade para liberar</p>
+                            </div>
+                          </button>
+                        )
+                      }
                       return (
                         <button
                           key={qt.type}

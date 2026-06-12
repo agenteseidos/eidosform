@@ -11,6 +11,15 @@ export function normalizePlan(plan?: string | null): PlanId {
 }
 
 /**
+ * Compara planos pela hierarquia free < starter < plus < professional.
+ * `planAtLeast('starter', 'starter')` → true; `planAtLeast('free', 'starter')` → false.
+ * Usar em todo gating por nível de plano (tipos de pergunta, etc.).
+ */
+export function planAtLeast(plan: string | null | undefined, minimum: PlanId): boolean {
+  return PLAN_ORDER.indexOf(normalizePlan(plan)) >= PLAN_ORDER.indexOf(minimum)
+}
+
+/**
  * Plano efetivo considerando expiração: retorna 'free' quando um plano pago
  * já passou de `plan_expires_at`. NÃO persiste nada — só resolve o valor em
  * memória. A reversão persistida (downgrade + pausa de forms) continua sendo

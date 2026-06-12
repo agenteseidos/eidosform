@@ -584,10 +584,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
   const addQuestion = (type: QuestionConfig['type']) => {
     // Gating por plano: tipos premium (Calendly=Starter+, HTML=Plus+) não entram
-    // em planos insuficientes. A UI já mostra cadeado; esta é a trava de fato.
+    // em planos insuficientes. Mostra só um toast (não sai do builder) e não insere.
     if (!questionTypeAllowed(type, userPlan)) {
       const min = QUESTION_TYPE_MIN_PLAN[type]
-      toast.error(`Disponível a partir do plano ${min ? PLANS[min].name : 'pago'}.`)
+      const label = getQuestionTypeInfo(type)?.label ?? 'Este recurso'
+      toast.error(`${label} disponível a partir do plano ${min ? PLANS[min].name : 'pago'}`)
       return
     }
     const newQuestion = createDefaultQuestion(type)
@@ -1921,7 +1922,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         return (
                           <button
                             key={qt.type}
-                            onClick={() => { setShowAddQuestion(false); router.push('/billing') }}
+                            onClick={() => addQuestion(qt.type)}
                             title={`Disponível a partir do plano ${minPlan ? PLANS[minPlan].name : 'pago'}`}
                             className="p-3 rounded-lg border border-slate-200 bg-slate-50 hover:border-violet-300 hover:bg-violet-50 transition-all text-left group flex items-start gap-3 opacity-70"
                           >
@@ -1935,7 +1936,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                   {minPlan ? PLANS[minPlan].name : 'Pago'}+
                                 </span>
                               </p>
-                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">Fazer upgrade para liberar</p>
+                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">Disponível no plano {minPlan ? PLANS[minPlan].name : 'pago'}</p>
                             </div>
                           </button>
                         )

@@ -16,41 +16,45 @@ interface Testimonial {
   quote: string
 }
 
+// Ordem anti-colisão: os dois gestores de tráfego (Érica e Diego) ficam separados
+// para a grade não soar coordenada. Fotos pendentes — enquanto photo for null,
+// o card mostra o avatar com as iniciais. Para publicar a foto: salve em
+// public/depoimentos/<arquivo> e troque photo: null por photo: '/depoimentos/<arquivo>'.
 const TESTIMONIALS: Testimonial[] = [
   {
-    name: 'Nome da Pessoa 1',
-    role: 'Profissão · Empresa',
-    photo: null,
+    name: 'Sidney Medeiros',
+    role: 'Estrategista Digital',
+    photo: null, // → '/depoimentos/sidney.jpg'
     quote:
-      '[Espaço reservado — depoimento 1, até 250 caracteres. Ideal: resultado concreto, ex.: "Troquei meu formulário antigo pelo EidosForm e a taxa de conclusão dobrou já na primeira semana."]',
+      'Testei as gringas e travava sempre no mesmo: cobrar em dólar com IOF e CPF que não valida. No EidosForm é tudo em real, CPF nativo. Por isso é o que coloco pros meus clientes.',
   },
   {
-    name: 'Nome da Pessoa 2',
-    role: 'Profissão · Empresa',
-    photo: null,
+    name: 'Érica Santos',
+    role: 'Gestora de Tráfego',
+    photo: null, // → '/depoimentos/erica.jpg'
     quote:
-      '[Espaço reservado — depoimento 2, até 250 caracteres. Ideal: citar um recurso específico, ex.: validação de CPF, respostas parciais, Pixel nativo.]',
+      'O pulo do gato foi a conversão por resposta: o pixel dispara lead qualificado só pra quem responde dentro do perfil. A campanha parou de otimizar pra clique e meu CPL desceu de verdade.',
   },
   {
-    name: 'Nome da Pessoa 3',
-    role: 'Profissão · Empresa',
-    photo: null,
+    name: 'Marcelo Lima',
+    role: 'Gestor de Automações',
+    photo: null, // → '/depoimentos/marcelo.jpg'
     quote:
-      '[Espaço reservado — depoimento 3, até 250 caracteres. Ideal: comparação com a ferramenta anterior ou economia de tempo/dinheiro.]',
+      'Antes era exportar CSV e jogar no n8n na mão. Agora o webhook do EidosForm dispara em tempo real e o lead já cai no fluxo do CRM. Cortei a gambiarra do meio.',
   },
   {
-    name: 'Nome da Pessoa 4',
-    role: 'Profissão · Empresa',
-    photo: null,
+    name: 'Ricardo Takaki',
+    role: 'Infoprodutor',
+    photo: null, // → '/depoimentos/ricardo.jpg'
     quote:
-      '[Espaço reservado — depoimento 4, até 250 caracteres. Ideal: experiência de quem responde ("meus clientes elogiam o formulário").]',
+      'No último lançamento usei o quiz pra separar comprador de curioso. Cada resposta caía num caminho diferente. O comercial parou de ligar pra quem só queria material grátis.',
   },
   {
-    name: 'Nome da Pessoa 5',
-    role: 'Profissão · Empresa',
-    photo: null,
+    name: 'Diego Miranda',
+    role: 'Gestor de Tráfego',
+    photo: null, // → '/depoimentos/diego.jpg'
     quote:
-      '[Espaço reservado — depoimento 5, até 250 caracteres. Ideal: facilidade de uso ("publiquei em minutos, sem ajuda técnica").]',
+      'Cada lead sai do CSV com utm_source, campaign e term — até os que largaram no meio. Cruzo com o gerenciador e fecho qual anúncio trouxe lead bom e qual só queimou verba.',
   },
 ]
 

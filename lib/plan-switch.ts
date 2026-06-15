@@ -18,7 +18,7 @@
  * O lock não é reentrante; adquirir aqui dentro causaria deadlock no fluxo pago.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createSubscriptionWithToken, cancelSubscription, reconcileActiveSubscriptions, buildExternalReference, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createSubscriptionWithToken, cancelSubscription, reconcileActiveSubscriptions, buildExternalReference, refundPayment, getPaymentById, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { expiryFromNextDueDate } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { PLANS } from '@/lib/plan-definitions'
@@ -270,11 +270,63 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
  * (webhook) ou no retry da DLQ (reprocessador). IDEMPOTENTE: profile já no plano-alvo
  * com sub vinculada → noop. Falha transitória → throw (o chamador marca failed/retry).
  */
+/**
+ * Estorna um avulso de troca SUPERSEDED (tentativa abandonada/fora de ordem) e registra DLQ durável.
+ * O avulso foi cobrado mas NÃO tem troca correspondente → estornar é sempre seguro (nunca derruba
+ * plano vigente). Estorno falho → upsert PLANCHANGE_SUPERSEDED (status 'dead', visível p/ admin) + alerta.
+ */
+async function refundAndFlagSuperseded(db: SupabaseClient, ctx: {
+  paymentId: string; profileId: string; plan: string; cycle: string; attempt: string | null
+  rowAttempt: string | null; rowStatus: string | null; customerId: string | null; source: string; tag: string
+}): Promise<void> {
+  const { paymentId, profileId, plan, cycle, attempt, rowAttempt, rowStatus, customerId, source, tag } = ctx
+  let refunded = false
+  let refundError: string | null = null
+  if (paymentId) {
+    try {
+      const cur = await getPaymentById(paymentId)
+      if (cur.ok && cur.payment && (cur.payment.status === 'REFUNDED' || cur.payment.status === 'REFUND_REQUESTED')) {
+        refunded = true // já estornado (idempotente)
+      } else if (cur.ok) {
+        await refundPayment(paymentId)
+        refunded = true
+      } else {
+        refundError = 'consulta do avulso falhou (ok=false)'
+      }
+    } catch (e) {
+      refundError = e instanceof Error ? e.message : String(e)
+    }
+  } else {
+    refundError = 'paymentId ausente'
+  }
+  await sendBillingOpsAlert({
+    subject: refunded
+      ? 'Backstop planchange: avulso SUPERSEDED — ESTORNADO automaticamente'
+      : 'Backstop planchange: avulso SUPERSEDED — ESTORNO FALHOU/pendente (AÇÃO MANUAL)',
+    lines: { profileId, plan, cycle, paymentId: paymentId || '(ausente)', attempt: attempt ?? '(ausente)', rowAttempt: rowAttempt ?? '(nenhuma)', rowStatus: rowStatus ?? '(sem linha)', source, refunded: String(refunded), refundError: refundError ?? '—' },
+  }).catch(() => {})
+  if (!refunded) {
+    await (db as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+      .from('asaas_webhook_events')
+      .upsert({
+        event_id: `planchange-superseded:${paymentId || profileId}`,
+        event: 'PLANCHANGE_SUPERSEDED',
+        status: 'dead', // visível p/ admin, NÃO auto-reprocessado (estorno é manual)
+        error: `avulso superseded nao estornado: ${refundError ?? '?'}`,
+        attempts: 0,
+        payment_id: paymentId || null,
+        customer_id: customerId,
+        last_attempt_at: new Date().toISOString(),
+      }, { onConflict: 'event_id' }).catch(() => {})
+  }
+  log(`${tag}: avulso superseded — ${refunded ? 'estornado' : 'estorno pendente (DLQ+alerta)'}`, { profileId, plan, cycle, paymentId, attempt })
+}
+
 export async function runPlanChangeBackstop(db: SupabaseClient, params: {
   profileId: string
   plan: string
   cycle: BillingCycle
-  /** Id do avulso (ou do evento DLQ no reprocesso) — só auditoria. */
+  /** Id REAL do avulso no Asaas (p/ estorno/auditoria). */
   paymentId: string
   /** Nonce da TENTATIVA de troca (do externalReference do avulso). Só aplica se casar com a linha atual. */
   attempt?: string | null
@@ -282,62 +334,65 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
 }): Promise<'already_applied' | 'switched' | 'superseded'> {
   const { profileId, plan, cycle, paymentId, attempt, source } = params
   const tag = `[planchange-backstop:${source}]`
-
-  const { data: prof } = await db
-    .from('profiles')
-    .select('plan, plan_cycle, asaas_subscription_id, asaas_customer_id, asaas_card_token')
-    .eq('id', profileId)
-    .single()
-  const p = prof as { plan?: string | null; plan_cycle?: string | null; asaas_subscription_id?: string | null; asaas_customer_id?: string | null; asaas_card_token?: string | null } | null
-  if (!p) {
-    throw new Error(`${tag} profile ${profileId} não encontrado — retry`)
-  }
-
-  // Caminho síncrono já aplicou a troca → nada a fazer (caso comum).
-  if (p.plan === plan && (p.plan_cycle ?? 'MONTHLY') === cycle && p.asaas_subscription_id) {
-    log(`${tag}: troca já aplicada pelo fluxo síncrono — backstop não necessário`, { profileId, plan, cycle, paymentId })
-    return 'already_applied'
-  }
-
-  // P0/I2 (Codex 2026-06-15): só aplica se este avulso for da tentativa de troca ATUAL. Um avulso de
-  // tentativa SUPERSEDED (a linha 'recovering' foi sobrescrita por outra troca) ou fora de ordem NÃO
-  // pode aplicar — senão troca usando o dinheiro de outra tentativa, ou reaplica uma troca antiga
-  // sobre uma mais nova. Mismatch → alerta (revisar/estornar manual) e NÃO aplica.
-  const { data: recRow } = await db
-    .from('billing_checkouts')
-    .select('planchange_attempt_id, status')
-    .eq('checkout_id', `planchange-pay-${profileId}`)
-    .maybeSingle()
-  const rec = recRow as { planchange_attempt_id?: string | null; status?: string | null } | null
-  const inFlight = rec?.status === 'recovering' || rec?.status === 'pending'
-  // attempt presente (avulso pós-fix) → exige casar com a tentativa em andamento.
-  // attempt ausente (avulso legado pré-fix) → aceita se a linha está em andamento (fallback seguro).
-  const attemptOk = attempt ? (inFlight && rec?.planchange_attempt_id === attempt) : inFlight
-  if (!attemptOk) {
-    await sendBillingOpsAlert({
-      subject: 'Backstop planchange: avulso de tentativa SUPERSEDED/desconhecida — NÃO aplicado (revisar/estornar)',
-      lines: { profileId, plan, cycle, paymentId, attempt: attempt ?? '(ausente)', rowAttempt: rec?.planchange_attempt_id ?? '(nenhuma)', rowStatus: rec?.status ?? '(sem linha)', source },
-    }).catch(() => {})
-    log(`${tag}: avulso de tentativa superseded/desconhecida — não aplica (ação manual)`, { profileId, plan, cycle, paymentId, attempt })
-    return 'superseded'
-  }
-
-  if (!p.asaas_card_token || !p.asaas_customer_id) {
-    // Avulso pago e não há como recriar a sub — intervenção manual (estorno/conclusão).
-    await sendBillingOpsAlert({
-      subject: 'Backstop planchange: avulso pago mas SEM token/customer p/ concluir a troca — ação manual',
-      lines: { profileId, plan, cycle, paymentId },
-    }).catch(() => {})
-    throw new Error(`${tag} avulso ${paymentId} pago mas profile ${profileId} sem card token/customer — ação manual`)
-  }
-
-  // O fluxo síncrono pode estar em andamento AGORA — lock ocupado = deixa o retry
-  // re-checar depois (se o síncrono concluiu, o guard de idempotência acima resolve).
+  const recoveryCheckoutId = `planchange-pay-${profileId}`
   const lockKey = `planchange:${profileId}`
+
+  // LOCK PRIMEIRO (anti-TOCTOU, audit 2026-06-15): lê profile + linha de recuperação e decide TODOS
+  // os guards (attempt, already_applied, downgrade, expectedOldSub) SOB o lock. Antes os guards liam
+  // um snapshot pré-lock e só o CAS do executePlanSwitch protegia — defesa indireta e frágil.
   if (!(await acquireLock(db, lockKey))) {
     throw new Error(`${tag} lock ocupado (fluxo síncrono em andamento?) — retry`)
   }
   try {
+    const { data: prof } = await db
+      .from('profiles')
+      .select('plan, plan_cycle, asaas_subscription_id, asaas_customer_id, asaas_card_token')
+      .eq('id', profileId)
+      .single()
+    const p = prof as { plan?: string | null; plan_cycle?: string | null; asaas_subscription_id?: string | null; asaas_customer_id?: string | null; asaas_card_token?: string | null } | null
+    if (!p) throw new Error(`${tag} profile ${profileId} não encontrado — retry`)
+
+    const { data: recRow } = await db
+      .from('billing_checkouts')
+      .select('planchange_attempt_id, status, plan, cycle')
+      .eq('checkout_id', recoveryCheckoutId)
+      .maybeSingle()
+    const rec = recRow as { planchange_attempt_id?: string | null; status?: string | null; plan?: string | null; cycle?: string | null } | null
+    const rowAttempt = rec?.planchange_attempt_id ?? null
+    const inFlight = rec?.status === 'recovering' || rec?.status === 'pending'
+
+    // IDENTIDADE primeiro (audit 2026-06-15): este avulso é da tentativa ATUAL da linha de recuperação?
+    //  - attempt presente → casa EXATAMENTE com a tentativa em andamento.
+    //  - attempt ausente (avulso legado) → SÓ se a linha TAMBÉM é legada (sem attempt), in-flight e mesmo
+    //    alvo — senão um avulso legado "rouba" a linha de uma tentativa NOVA (cobrança dupla).
+    const attemptOk = attempt
+      ? (inFlight && rowAttempt === attempt)
+      : (inFlight && rowAttempt === null && rec?.plan === plan && (rec?.cycle ?? 'MONTHLY') === cycle)
+
+    // Validação de identidade ANTES de already_applied (audit 2026-06-15): um avulso superseded cujo
+    // plano-alvo COINCIDE com o do profile não pode virar noop silencioso — é dinheiro cobrado sem troca.
+    if (!attemptOk) {
+      await refundAndFlagSuperseded(db, { paymentId, profileId, plan, cycle, attempt: attempt ?? null, rowAttempt, rowStatus: rec?.status ?? null, customerId: p.asaas_customer_id ?? null, source, tag })
+      return 'superseded'
+    }
+
+    // Já aplicado por ESTA tentativa (fluxo síncrono concluiu) → marca a linha terminal e noop.
+    if (p.plan === plan && (p.plan_cycle ?? 'MONTHLY') === cycle && p.asaas_subscription_id) {
+      if (inFlight) {
+        await db.from('billing_checkouts').update({ status: 'paid', last_event: `PLAN_CHANGE_ALREADY:${paymentId}` }).eq('checkout_id', recoveryCheckoutId)
+      }
+      log(`${tag}: troca já aplicada (mesma tentativa) — noop`, { profileId, plan, cycle, paymentId })
+      return 'already_applied'
+    }
+
+    if (!p.asaas_card_token || !p.asaas_customer_id) {
+      await sendBillingOpsAlert({
+        subject: 'Backstop planchange: avulso pago mas SEM token/customer p/ concluir a troca — ação manual',
+        lines: { profileId, plan, cycle, paymentId },
+      }).catch(() => {})
+      throw new Error(`${tag} avulso ${paymentId} pago mas profile ${profileId} sem card token/customer — ação manual`)
+    }
+
     const targetIdx = PLAN_ORDER.indexOf(plan as PlanId)
     const currentIdx = PLAN_ORDER.indexOf((p.plan ?? 'free') as PlanId)
     const result = await executePlanSwitch({
@@ -360,7 +415,7 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
     await db
       .from('billing_checkouts')
       .update({ status: 'paid', last_event: `PLAN_CHANGE_PAID_BACKSTOP:${paymentId}` })
-      .eq('checkout_id', `planchange-pay-${profileId}`)
+      .eq('checkout_id', recoveryCheckoutId)
     log(`${tag}: troca concluída pelo backstop`, { profileId, plan, cycle, paymentId, newSub: result.newSubscriptionId })
     return 'switched'
   } finally {

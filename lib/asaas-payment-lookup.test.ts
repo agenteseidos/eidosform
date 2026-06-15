@@ -58,11 +58,14 @@ describe('findPaymentByExternalReference (P0-A idempotência)', () => {
     expect(r.payment?.id).toBe('pay_new')
   })
 
-  it('ignora avulso ANTIGO (>24h) do mesmo externalReference → null (cobra a troca nova)', async () => {
+  it('avulso ANTIGO do mesmo externalReference (único por tentativa) → RETOMA (sem janela de recência)', async () => {
+    // O externalReference inclui |attempt:{nonce} → único por tentativa. Um avulso antigo retornado
+    // é necessariamente DESTA tentativa: deve ser retomado (idempotência), nunca descartado por idade
+    // (descartar levaria a cobrar a mesma diferença de novo). audit 2026-06-15.
     stubFetch(200, { data: [{ id: 'pay_velho', status: 'CONFIRMED', dateCreated: iso(48 * 3600_000) }] })
-    const r = await findPaymentByExternalReference('ref')
+    const r = await findPaymentByExternalReference('profile:p|plan:plus|cycle:MONTHLY|kind:planchange|attempt:a1')
     expect(r.ok).toBe(true)
-    expect(r.payment).toBeNull()
+    expect(r.payment?.id).toBe('pay_velho')
   })
 
   it('lista vazia → payment:null', async () => {

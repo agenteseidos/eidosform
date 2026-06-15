@@ -209,6 +209,29 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     return 'formlimit_reaplicado'
   }
 
+  // ── AVULSO de troca de plano (PAYMENT_CONFIRMED/RECEIVED sem subscription, kind:planchange) ──
+  // Roteia pelo PRÓPRIO external_reference do evento (igual ao webhook ao vivo), NÃO pelo findCheckout:
+  // a linha mais recente do customer pode ser de OUTRA troca → aplicaria plan/cycle ERRADO ou daria noop
+  // silencioso (avulso pago, troca nunca aplicada). (audit 2026-06-15, P0.) Sem ref planchange → manual.
+  if (ACTIVATION_EVENTS.has(ev) && !subscriptionId) {
+    const pcRef = parseExternalReference(row.external_reference)
+    if (pcRef.kind === 'planchange' && pcRef.profileId && pcRef.plan && pcRef.cycle) {
+      const r = await runPlanChangeBackstop(supabase, {
+        profileId: pcRef.profileId,
+        plan: pcRef.plan,
+        cycle: pcRef.cycle as BillingCycle,
+        paymentId: row.payment_id ?? row.event_id, // id REAL do avulso (estorno/auditoria); fallback evento
+        attempt: pcRef.attempt,
+        source: 'reprocess',
+      })
+      if (r === 'superseded') return 'planchange_superseded'
+      return r === 'switched' ? 'planchange_backstop_aplicado' : 'planchange_ja_aplicado'
+    }
+    // Evento de DINHEIRO sem subscription e sem ref de planchange = anomalia → NÃO aplicar às cegas:
+    // lança (mantém failed/dead, visível) p/ roteamento manual.
+    throw new Error('avulso PAYMENT_CONFIRMED/RECEIVED sem subscription e sem external_reference planchange — roteamento manual')
+  }
+
   if (!subscriptionId && !customerId) throw new Error('evento sem customer_id/subscription_id — não dá pra reconciliar')
 
   const checkout = await findCheckout(supabase, { customerId, subscriptionId })
@@ -226,26 +249,8 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
   // NUNCA reverte aqui (Codex ponto 1): profile 'free' pode ser o próprio sintoma do
   // bug que impediu a ativação, então 'free' NÃO bloqueia ativar.
   if (ACTIVATION_EVENTS.has(ev)) {
-    if (!subscriptionId) {
-      // AVULSO de mudança de plano (redesenho 2026-06-10): PAYMENT_CONFIRMED sem
-      // subscription cujo checkout é plan_switch_token ainda não-pago = o backstop da
-      // troca falhou no webhook → re-roda aqui (idempotente; lança p/ retry se falhar).
-      if (checkout.payment_method === 'plan_switch_token' && checkout.status !== 'paid') {
-        const r = await runPlanChangeBackstop(supabase, {
-          profileId: checkout.profile_id,
-          plan: checkout.plan,
-          cycle: (checkout.cycle ?? 'MONTHLY') as BillingCycle,
-          paymentId: row.event_id,
-          // P0/I2 (Codex 2026-06-15): amarra ao attempt do avulso (do external_reference guardado no
-          // evento) — o backstop recusa se a linha de recuperação já é de OUTRA tentativa (superseded).
-          attempt: parseExternalReference(row.external_reference).attempt,
-          source: 'reprocess',
-        })
-        if (r === 'superseded') return 'planchange_superseded'
-        return r === 'switched' ? 'planchange_backstop_aplicado' : 'planchange_ja_aplicado'
-      }
-      return 'noop_activation_sem_subscription'
-    }
+    // O avulso sem subscription (kind:planchange) já foi roteado pelo external_reference acima.
+    if (!subscriptionId) return 'noop_activation_sem_subscription' // inalcançável aqui (narrowing p/ TS)
     const asaasStatus = await getAsaasStatus(subscriptionId) // relança em erro transitório → retry
     if (asaasStatus !== 'ACTIVE') return 'noop_activation_nao_active'
 

@@ -99,6 +99,28 @@ export async function listFailedEvents(limit = 50): Promise<FailedEvent[]> {
   return (data ?? []) as FailedEvent[]
 }
 
+const STALE_RECEIVED_MIN_AGE_MS = 10 * 60 * 1000 // 10 min >> maxDuration do webhook (30s) → nunca pega handler ainda vivo
+
+/**
+ * Lista eventos presos em status='received' há mais de STALE_RECEIVED_MIN_AGE_MS — o handler do
+ * webhook morreu (timeout/OOM) entre o insert da idempotência e a promoção p/ 'processed'/'failed',
+ * então listFailedEvents (só 'failed') nunca os pega e o evento de dinheiro fica invisível. (P1, 2026-06-15.)
+ * Idade por processed_at (DEFAULT now() no insert do 'received'; created_at não existe na tabela).
+ */
+export async function listStaleReceivedEvents(limit = 50): Promise<FailedEvent[]> {
+  const supabase = getServiceClient()
+  const cutoff = new Date(Date.now() - STALE_RECEIVED_MIN_AGE_MS).toISOString()
+  const { data, error } = await supabase
+    .from('asaas_webhook_events')
+    .select('event_id, event, customer_id, subscription_id, attempts, error, last_attempt_at')
+    .eq('status', 'received')
+    .lt('processed_at', cutoff)
+    .order('processed_at', { ascending: true })
+    .limit(limit)
+  if (error) throw new Error(`listStaleReceivedEvents: ${error.message}`)
+  return (data ?? []) as FailedEvent[]
+}
+
 interface CheckoutRow {
   id: string
   profile_id: string
@@ -379,6 +401,13 @@ export async function reprocessAllFailed(limit = 50): Promise<ReprocessResult[]>
   const events = await listFailedEvents(limit)
   const results: ReprocessResult[] = []
   for (const e of events) {
+    results.push(await reprocessEvent(e.event_id))
+  }
+  // P1 (2026-06-15): recupera também eventos de dinheiro presos em 'received' (handler morreu
+  // antes de promover) — listFailedEvents não os vê. reprocessEvent é idempotente (noop em
+  // 'processed'); o limiar de idade evita pegar um handler ainda em execução.
+  const stale = await listStaleReceivedEvents(limit)
+  for (const e of stale) {
     results.push(await reprocessEvent(e.event_id))
   }
   return results

@@ -256,6 +256,21 @@ export async function POST(
       // Linha de recuperação ANTES de cobrar: se o processo morrer depois da cobrança,
       // o webhook (backstop) e a auditoria têm o mapa da intenção.
       const recoveryCheckoutId = `planchange-pay-${profile.profileId}`
+      const planChangeRef = buildPlanChangeReference(profile.profileId, plan, cycle)
+
+      // ── P0-A (2026-06-15): IDEMPOTÊNCIA da cobrança avulsa ──
+      // A linha 'recovering' (`planchange-pay-{profile}`) é REUSADA entre trocas do mesmo perfil.
+      // Lê o estado ANTERIOR antes de sobrescrever: só herda o asaas_payment_id se a linha for da
+      // MESMA troca (mesmo plan+cycle) — troca NOVA zera o id, p/ não "retomar" o avulso de uma troca
+      // anterior já concluída e acabar PULANDO a cobrança da troca nova (vazamento de receita).
+      const { data: prevRow } = await sSupa
+        .from('billing_checkouts')
+        .select('asaas_payment_id, plan, cycle')
+        .eq('checkout_id', recoveryCheckoutId)
+        .maybeSingle()
+      const prev = prevRow as { asaas_payment_id?: string | null; plan?: string; cycle?: string } | null
+      const savedPaymentId = prev && prev.plan === plan && prev.cycle === cycle ? (prev.asaas_payment_id ?? null) : null
+
       const { error: recErr } = await sSupa
         .from('billing_checkouts')
         .upsert({
@@ -263,6 +278,7 @@ export async function POST(
           checkout_id: recoveryCheckoutId,
           asaas_customer_id: customerId,
           asaas_subscription_id: profile.asaasSubscriptionId ?? null,
+          asaas_payment_id: savedPaymentId, // troca nova → null (não herda avulso de troca anterior)
           plan,
           cycle,
           status: 'recovering',
@@ -277,21 +293,10 @@ export async function POST(
         return NextResponse.json({ error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' }, { status: 500 })
       }
 
-      // ── P0-A (2026-06-15): IDEMPOTÊNCIA da cobrança avulsa ──
-      // Se um retry após crash/timeout já criou o avulso desta troca, RETOMAR em vez de cobrar de
-      // novo (evita cobrança em dobro). Ponte primária: asaas_payment_id salvo na linha 'recovering';
-      // fallback: busca por externalReference (cobre a janela "crashou ANTES de salvar o id").
+      // Se há avulso DESTA troca, RETOMAR em vez de cobrar de novo. Primário: asaas_payment_id da
+      // mesma troca (getPaymentById); fallback: externalReference RECENTE (janela crash-antes-de-salvar).
       // Consulta que FALHA → aborta sem cobrar (fail-closed: não cobrar duplicado > conveniência).
-      const planChangeRef = buildPlanChangeReference(profile.profileId, plan, cycle)
       let payment: { id: string; status: string } | null = null
-
-      const { data: recRow } = await sSupa
-        .from('billing_checkouts')
-        .select('asaas_payment_id')
-        .eq('checkout_id', recoveryCheckoutId)
-        .maybeSingle()
-      const savedPaymentId = (recRow as { asaas_payment_id?: string | null } | null)?.asaas_payment_id ?? null
-
       const lookup = savedPaymentId
         ? await getPaymentById(savedPaymentId)
         : await findPaymentByExternalReference(planChangeRef)

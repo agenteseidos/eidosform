@@ -335,8 +335,13 @@ export async function findPaymentByExternalReference(externalReference: string):
   try {
     const data = await asaasFetch(`/payments?externalReference=${encodeURIComponent(externalReference)}&limit=20`)
     const pays: Array<{ id?: string; status?: string; dateCreated?: string }> = data?.data ?? []
+    // Janela de recência: ignora avulsos ANTIGOS — uma troca pro MESMO plano+ciclo feita há dias
+    // colide no mesmo externalReference. Um retry legítimo ocorre em minutos, então 24h cobre com folga
+    // (evita "retomar" um avulso velho e pular a cobrança da troca nova). dateCreated não-parseável → exclui.
+    const recentCutoff = Date.now() - 24 * 60 * 60 * 1000
     const usable = pays
       .filter((p) => p.status === 'CONFIRMED' || p.status === 'RECEIVED' || p.status === 'PENDING')
+      .filter((p) => { const t = Date.parse(p.dateCreated ?? ''); return !Number.isNaN(t) && t >= recentCutoff })
       .sort((a, b) => String(b.dateCreated ?? '').localeCompare(String(a.dateCreated ?? '')))
     const top = usable[0]
     if (!top?.id) return { ok: true, payment: null }

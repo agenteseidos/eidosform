@@ -44,16 +44,25 @@ describe('getPaymentById (P0-A idempotência)', () => {
 })
 
 describe('findPaymentByExternalReference (P0-A idempotência)', () => {
+  const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
+
   it('retorna o avulso utilizável mais RECENTE (CONFIRMED/RECEIVED/PENDING)', async () => {
     stubFetch(200, {
       data: [
-        { id: 'pay_old', status: 'CONFIRMED', dateCreated: '2026-06-10' },
-        { id: 'pay_new', status: 'PENDING', dateCreated: '2026-06-15' },
+        { id: 'pay_old', status: 'CONFIRMED', dateCreated: iso(5 * 60_000) }, // 5 min
+        { id: 'pay_new', status: 'PENDING', dateCreated: iso(60_000) }, // 1 min (mais recente)
       ],
     })
     const r = await findPaymentByExternalReference('profile:p|plan:plus|cycle:MONTHLY|kind:planchange')
     expect(r.ok).toBe(true)
     expect(r.payment?.id).toBe('pay_new')
+  })
+
+  it('ignora avulso ANTIGO (>24h) do mesmo externalReference → null (cobra a troca nova)', async () => {
+    stubFetch(200, { data: [{ id: 'pay_velho', status: 'CONFIRMED', dateCreated: iso(48 * 3600_000) }] })
+    const r = await findPaymentByExternalReference('ref')
+    expect(r.ok).toBe(true)
+    expect(r.payment).toBeNull()
   })
 
   it('lista vazia → payment:null', async () => {
@@ -64,7 +73,7 @@ describe('findPaymentByExternalReference (P0-A idempotência)', () => {
   })
 
   it('só REFUNDED → null (não reutiliza avulso estornado)', async () => {
-    stubFetch(200, { data: [{ id: 'pay_r', status: 'REFUNDED', dateCreated: '2026-06-15' }] })
+    stubFetch(200, { data: [{ id: 'pay_r', status: 'REFUNDED', dateCreated: iso(60_000) }] })
     const r = await findPaymentByExternalReference('ref')
     expect(r.ok).toBe(true)
     expect(r.payment).toBeNull()

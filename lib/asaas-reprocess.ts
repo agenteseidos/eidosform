@@ -22,7 +22,7 @@
  * tratamento MANUAL — o evento permanece visível na lista de failed/dead do admin.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription } from '@/lib/asaas'
+import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription, parseExternalReference } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, type BillingCycle } from '@/lib/billing-activation'
 import { runPlanChangeBackstop } from '@/lib/plan-switch'
@@ -73,6 +73,8 @@ export interface FailedEvent {
   event: string
   customer_id: string | null
   subscription_id: string | null
+  external_reference: string | null
+  payment_id: string | null
   attempts: number
   error: string | null
   last_attempt_at: string | null
@@ -90,7 +92,7 @@ export async function listFailedEvents(limit = 50): Promise<FailedEvent[]> {
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('asaas_webhook_events')
-    .select('event_id, event, customer_id, subscription_id, attempts, error, last_attempt_at')
+    .select('event_id, event, customer_id, subscription_id, attempts, error, last_attempt_at, external_reference, payment_id')
     .eq('status', 'failed')
     .lt('attempts', MAX_ATTEMPTS)
     .order('last_attempt_at', { ascending: true })
@@ -116,7 +118,7 @@ export async function listStaleReceivedEvents(limit = 50): Promise<FailedEvent[]
   const cutoff = new Date(Date.now() - STALE_RECEIVED_MIN_AGE_MS).toISOString()
   const { data, error } = await supabase
     .from('asaas_webhook_events')
-    .select('event_id, event, customer_id, subscription_id, attempts, error, last_attempt_at')
+    .select('event_id, event, customer_id, subscription_id, attempts, error, last_attempt_at, external_reference, payment_id')
     .eq('status', 'received')
     .in('event', SWEEP_RELEVANT_EVENTS)
     .lt('processed_at', cutoff)
@@ -234,8 +236,12 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
           plan: checkout.plan,
           cycle: (checkout.cycle ?? 'MONTHLY') as BillingCycle,
           paymentId: row.event_id,
+          // P0/I2 (Codex 2026-06-15): amarra ao attempt do avulso (do external_reference guardado no
+          // evento) — o backstop recusa se a linha de recuperação já é de OUTRA tentativa (superseded).
+          attempt: parseExternalReference(row.external_reference).attempt,
           source: 'reprocess',
         })
+        if (r === 'superseded') return 'planchange_superseded'
         return r === 'switched' ? 'planchange_backstop_aplicado' : 'planchange_ja_aplicado'
       }
       return 'noop_activation_sem_subscription'
@@ -370,7 +376,7 @@ export async function reprocessEvent(eventId: string): Promise<ReprocessResult> 
   const supabase = getServiceClient()
   const { data: row, error } = await supabase
     .from('asaas_webhook_events')
-    .select('event_id, event, customer_id, subscription_id, attempts, error, last_attempt_at, status')
+    .select('event_id, event, customer_id, subscription_id, attempts, error, last_attempt_at, status, external_reference, payment_id')
     .eq('event_id', eventId)
     .maybeSingle()
 

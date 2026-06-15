@@ -276,9 +276,11 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
   cycle: BillingCycle
   /** Id do avulso (ou do evento DLQ no reprocesso) — só auditoria. */
   paymentId: string
+  /** Nonce da TENTATIVA de troca (do externalReference do avulso). Só aplica se casar com a linha atual. */
+  attempt?: string | null
   source: 'webhook' | 'reprocess'
-}): Promise<'already_applied' | 'switched'> {
-  const { profileId, plan, cycle, paymentId, source } = params
+}): Promise<'already_applied' | 'switched' | 'superseded'> {
+  const { profileId, plan, cycle, paymentId, attempt, source } = params
   const tag = `[planchange-backstop:${source}]`
 
   const { data: prof } = await db
@@ -295,6 +297,29 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
   if (p.plan === plan && (p.plan_cycle ?? 'MONTHLY') === cycle && p.asaas_subscription_id) {
     log(`${tag}: troca já aplicada pelo fluxo síncrono — backstop não necessário`, { profileId, plan, cycle, paymentId })
     return 'already_applied'
+  }
+
+  // P0/I2 (Codex 2026-06-15): só aplica se este avulso for da tentativa de troca ATUAL. Um avulso de
+  // tentativa SUPERSEDED (a linha 'recovering' foi sobrescrita por outra troca) ou fora de ordem NÃO
+  // pode aplicar — senão troca usando o dinheiro de outra tentativa, ou reaplica uma troca antiga
+  // sobre uma mais nova. Mismatch → alerta (revisar/estornar manual) e NÃO aplica.
+  const { data: recRow } = await db
+    .from('billing_checkouts')
+    .select('planchange_attempt_id, status')
+    .eq('checkout_id', `planchange-pay-${profileId}`)
+    .maybeSingle()
+  const rec = recRow as { planchange_attempt_id?: string | null; status?: string | null } | null
+  const inFlight = rec?.status === 'recovering' || rec?.status === 'pending'
+  // attempt presente (avulso pós-fix) → exige casar com a tentativa em andamento.
+  // attempt ausente (avulso legado pré-fix) → aceita se a linha está em andamento (fallback seguro).
+  const attemptOk = attempt ? (inFlight && rec?.planchange_attempt_id === attempt) : inFlight
+  if (!attemptOk) {
+    await sendBillingOpsAlert({
+      subject: 'Backstop planchange: avulso de tentativa SUPERSEDED/desconhecida — NÃO aplicado (revisar/estornar)',
+      lines: { profileId, plan, cycle, paymentId, attempt: attempt ?? '(ausente)', rowAttempt: rec?.planchange_attempt_id ?? '(nenhuma)', rowStatus: rec?.status ?? '(sem linha)', source },
+    }).catch(() => {})
+    log(`${tag}: avulso de tentativa superseded/desconhecida — não aplica (ação manual)`, { profileId, plan, cycle, paymentId, attempt })
+    return 'superseded'
   }
 
   if (!p.asaas_card_token || !p.asaas_customer_id) {

@@ -47,5 +47,6 @@ describe('externalReference com |attempt: não quebra o webhook backstop', () =>
     expect(parsed.plan).toBe('plus')
     expect(parsed.cycle).toBe('MONTHLY')
     expect(parsed.kind).toBe('planchange')
+    expect(parsed.attempt).toBe('abc-123')
   })
 })

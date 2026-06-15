@@ -141,8 +141,8 @@ export function buildPlanChangeReference(profileId: string, plan: string, cycle:
 }
 
 /** Faz o parse de um externalReference no formato acima (campos ausentes → null). */
-export function parseExternalReference(ref?: string | null): { profileId: string | null; plan: string | null; cycle: string | null; kind: string | null } {
-  const out = { profileId: null as string | null, plan: null as string | null, cycle: null as string | null, kind: null as string | null }
+export function parseExternalReference(ref?: string | null): { profileId: string | null; plan: string | null; cycle: string | null; kind: string | null; attempt: string | null } {
+  const out = { profileId: null as string | null, plan: null as string | null, cycle: null as string | null, kind: null as string | null, attempt: null as string | null }
   if (!ref) return out
   for (const part of ref.split('|')) {
     const idx = part.indexOf(':')
@@ -156,6 +156,9 @@ export function parseExternalReference(ref?: string | null): { profileId: string
     else if (k === 'cycle' && (v === 'MONTHLY' || v === 'YEARLY')) out.cycle = v
     // kind restrito a valores conhecidos (hoje só 'planchange') — mesmo racional do plan.
     else if (k === 'kind' && v === 'planchange') out.kind = v
+    // attempt (P0-A 2026-06-15): nonce por TENTATIVA de troca — o backstop só aplica o avulso se
+    // este attempt casar com a tentativa atual da linha de recuperação (anti reuso/fora-de-ordem).
+    else if (k === 'attempt' && v) out.attempt = v
   }
   return out
 }

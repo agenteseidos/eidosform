@@ -324,7 +324,7 @@ type IdempotencyResult = 'fresh' | 'duplicate' | 'error'
 async function checkAndMarkIdempotent(
   eventId: string,
   event: string,
-  keys?: { customerId?: string | null; subscriptionId?: string | null }
+  keys?: { customerId?: string | null; subscriptionId?: string | null; paymentId?: string | null; externalReference?: string | null }
 ): Promise<IdempotencyResult> {
   const supabase = getSupabase()
   const { error } = await supabase
@@ -338,6 +338,10 @@ async function checkAndMarkIdempotent(
       status: 'received',
       customer_id: keys?.customerId ?? null,
       subscription_id: keys?.subscriptionId ?? null,
+      // payment_id + external_reference (P0/I2, Codex 2026-06-15): o reprocessador da DLQ usa o
+      // external_reference p/ extrair o attempt e só aplicar o avulso da tentativa ATUAL.
+      payment_id: keys?.paymentId ?? null,
+      external_reference: keys?.externalReference ?? null,
     })
 
   if (!error) return 'fresh'
@@ -438,6 +442,8 @@ export async function POST(req: NextRequest) {
   const idempotencyResult = await checkAndMarkIdempotent(eventId, event, {
     customerId: payment?.customer ?? subscription?.customer ?? null,
     subscriptionId: payment?.subscription ?? subscription?.id ?? null,
+    paymentId: payment?.id ?? null,
+    externalReference: payment?.externalReference ?? null,
   })
   if (idempotencyResult === 'duplicate') {
     log('[asaas-webhook] Duplicate event ignored (idempotent)', { eventId, event })
@@ -472,6 +478,7 @@ export async function POST(req: NextRequest) {
               plan: pcRef.plan,
               cycle: pcRef.cycle as 'MONTHLY' | 'YEARLY',
               paymentId: String(payment?.id ?? ''),
+              attempt: pcRef.attempt,
               source: 'webhook',
             })
             break

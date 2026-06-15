@@ -35,9 +35,10 @@ import { acquireLock } from '@/lib/billing-lock'
 // ── Supabase fake configurável ────────────────────────────────────────────────
 const state: {
   profileRow: Record<string, unknown> | null
+  recoveryRow: Record<string, unknown> | null
   updateRows: Array<{ id: string }>
   calls: Array<{ table: string; op: string; payload?: unknown }>
-} = { profileRow: null, updateRows: [], calls: [] }
+} = { profileRow: null, recoveryRow: null, updateRows: [], calls: [] }
 
 function makeDb() {
   return {
@@ -53,6 +54,7 @@ function makeDb() {
         if (table === 'profiles' && b._op === 'select') res = { data: state.profileRow, error: null }
         if (table === 'profiles' && b._op === 'update') res = { data: state.updateRows, error: null }
         if (b._op === 'upsert') res = { error: null }
+        if (table === 'billing_checkouts' && b._op === 'select') res = { data: state.recoveryRow, error: null }
         if (table === 'billing_checkouts' && b._op === 'update') res = { error: null }
         return Promise.resolve(res).then(resolve)
       }
@@ -79,6 +81,7 @@ const baseParams = {
 beforeEach(() => {
   vi.clearAllMocks()
   state.profileRow = { asaas_subscription_id: 'sub_old' }
+  state.recoveryRow = { planchange_attempt_id: 'att_default', status: 'recovering' }
   state.updateRows = [{ id: PROFILE_ID }]
   state.calls = []
 })
@@ -183,6 +186,32 @@ describe('runPlanChangeBackstop', () => {
     expect(r).toBe('switched')
     const pl = await import('@/lib/plan-limits')
     expect(vi.mocked(pl.handleDowngrade)).toHaveBeenCalledWith(PROFILE_ID, 'srk', 'starter')
+  })
+
+  it('avulso de tentativa SUPERSEDED (attempt ≠ linha atual) → NÃO aplica, alerta (I2)', async () => {
+    state.profileRow = { plan: 'starter', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_old', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
+    state.recoveryRow = { planchange_attempt_id: 'att_NOVA', status: 'recovering' }
+    const r = await runPlanChangeBackstop(makeDb(), { profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_velho', attempt: 'att_ANTIGA', source: 'reprocess' })
+    expect(r).toBe('superseded')
+    expect(asaasMocks.createSubscriptionWithToken).not.toHaveBeenCalled()
+    const { sendBillingOpsAlert } = await import('@/lib/resend')
+    expect(vi.mocked(sendBillingOpsAlert)).toHaveBeenCalled()
+  })
+
+  it('linha já PAID (tentativa concluída) → avulso fora de ordem NÃO reaplica (I1)', async () => {
+    state.profileRow = { plan: 'starter', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_old', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
+    state.recoveryRow = { planchange_attempt_id: 'att_X', status: 'paid' }
+    const r = await runPlanChangeBackstop(makeDb(), { profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_1', attempt: 'att_X', source: 'webhook' })
+    expect(r).toBe('superseded') // status terminal → não in-flight → não aplica
+    expect(asaasMocks.createSubscriptionWithToken).not.toHaveBeenCalled()
+  })
+
+  it('avulso da tentativa ATUAL (attempt casa, in-flight) → executa o switch', async () => {
+    state.profileRow = { plan: 'starter', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_old', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
+    state.recoveryRow = { planchange_attempt_id: 'att_X', status: 'recovering' }
+    const r = await runPlanChangeBackstop(makeDb(), { profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_1', attempt: 'att_X', source: 'webhook' })
+    expect(r).toBe('switched')
+    expect(asaasMocks.createSubscriptionWithToken).toHaveBeenCalled()
   })
 })
 

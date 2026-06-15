@@ -100,6 +100,10 @@ export async function listFailedEvents(limit = 50): Promise<FailedEvent[]> {
 }
 
 const STALE_RECEIVED_MIN_AGE_MS = 10 * 60 * 1000 // 10 min >> maxDuration do webhook (30s) → nunca pega handler ainda vivo
+// P3 (2026-06-15): varre só 'received' de eventos que MEXEM EM DINHEIRO — eventos informativos
+// presos em 'received' viram ruído (attempts/failed/dead) sem efeito financeiro. reconcile() roteia
+// exatamente estes (ativação/reversão/refund-noop); o resto seria noop de qualquer forma.
+const SWEEP_RELEVANT_EVENTS = [...ACTIVATION_EVENTS, ...REVERSION_EVENTS, ...REFUND_NOOP_EVENTS]
 
 /**
  * Lista eventos presos em status='received' há mais de STALE_RECEIVED_MIN_AGE_MS — o handler do
@@ -114,6 +118,7 @@ export async function listStaleReceivedEvents(limit = 50): Promise<FailedEvent[]
     .from('asaas_webhook_events')
     .select('event_id, event, customer_id, subscription_id, attempts, error, last_attempt_at')
     .eq('status', 'received')
+    .in('event', SWEEP_RELEVANT_EVENTS)
     .lt('processed_at', cutoff)
     .order('processed_at', { ascending: true })
     .limit(limit)

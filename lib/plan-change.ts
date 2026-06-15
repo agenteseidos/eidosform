@@ -164,3 +164,42 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
   const amountDueNow = proration ? proration.finalPrice : fullPrice(newPlan, newCycle)
   return { ...base, action: 'checkout', proration, amountDueNow }
 }
+
+export interface PlanChangeRecoveryRow {
+  plan?: string | null
+  cycle?: string | null
+  status?: string | null
+  asaas_payment_id?: string | null
+  planchange_attempt_id?: string | null
+}
+
+/**
+ * P0-A (2026-06-15): decide se o POST atual CONTINUA uma tentativa de troca EM ANDAMENTO ou inicia
+ * uma tentativa NOVA. A linha de recuperação (`planchange-pay-{profile}`) é reusada entre trocas do
+ * mesmo perfil, então identificar por ALVO (plan+cycle) não basta — duas trocas pro mesmo plano em
+ * momentos diferentes colidem. A identidade correta é a TENTATIVA (attemptId), que entra no
+ * externalReference do avulso.
+ *
+ * - Continuação (mesmo plan+cycle E status ainda não-terminal: recovering/pending E com attemptId):
+ *   reaproveita o attemptId + asaas_payment_id → um retry acha o MESMO avulso e NÃO cobra de novo.
+ * - Tentativa nova (sem linha, ou alvo diferente, ou status terminal 'paid'/'cancelled'): attemptId
+ *   FRESCO e payment id zerado → uma troca anterior já concluída (com outro attemptId) nunca é
+ *   confundida com esta (fecha o vazamento de receita do reuso de avulso antigo).
+ */
+export function decidePlanChangeAttempt(
+  prev: PlanChangeRecoveryRow | null,
+  plan: string,
+  cycle: string,
+  freshAttemptId: string,
+): { attemptId: string; savedPaymentId: string | null } {
+  const inFlight =
+    !!prev &&
+    prev.plan === plan &&
+    prev.cycle === cycle &&
+    (prev.status === 'recovering' || prev.status === 'pending') &&
+    !!prev.planchange_attempt_id
+  if (inFlight) {
+    return { attemptId: prev.planchange_attempt_id as string, savedPaymentId: prev.asaas_payment_id ?? null }
+  }
+  return { attemptId: freshAttemptId, savedPaymentId: null }
+}

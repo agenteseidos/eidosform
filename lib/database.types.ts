@@ -264,6 +264,7 @@ export interface Database {
           asaas_customer_id: string | null
           asaas_subscription_id: string | null
           asaas_payment_id: string | null
+          planchange_attempt_id: string | null
           plan: string
           cycle: string
           status: string
@@ -278,6 +279,7 @@ export interface Database {
           asaas_customer_id?: string | null
           asaas_subscription_id?: string | null
           asaas_payment_id?: string | null
+          planchange_attempt_id?: string | null
           plan: string
           cycle: string
           status?: string
@@ -292,6 +294,7 @@ export interface Database {
           asaas_customer_id?: string | null
           asaas_subscription_id?: string | null
           asaas_payment_id?: string | null
+          planchange_attempt_id?: string | null
           plan?: string
           cycle?: string
           status?: string

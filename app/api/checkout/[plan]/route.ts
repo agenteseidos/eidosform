@@ -4,14 +4,14 @@
  * Cria/obtém customer e salva asaas_customer_id no profile.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { createCheckout, createCustomer, updateCustomer, buildExternalReference, buildPlanChangeReference, createPaymentWithToken, refundPayment, getPaymentById, findPaymentByExternalReference, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
-import { computePlanChange } from '@/lib/plan-change'
+import { computePlanChange, decidePlanChangeAttempt, type PlanChangeRecoveryRow } from '@/lib/plan-change'
 import { addDaysToTodayBRT } from '@/lib/proration'
 import { executePlanSwitch, nextDueDateAfterFullCycle } from '@/lib/plan-switch'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
@@ -256,20 +256,20 @@ export async function POST(
       // Linha de recuperação ANTES de cobrar: se o processo morrer depois da cobrança,
       // o webhook (backstop) e a auditoria têm o mapa da intenção.
       const recoveryCheckoutId = `planchange-pay-${profile.profileId}`
-      const planChangeRef = buildPlanChangeReference(profile.profileId, plan, cycle)
 
-      // ── P0-A (2026-06-15): IDEMPOTÊNCIA da cobrança avulsa ──
+      // ── P0-A (2026-06-15): IDEMPOTÊNCIA por TENTATIVA (não por alvo) ──
       // A linha 'recovering' (`planchange-pay-{profile}`) é REUSADA entre trocas do mesmo perfil.
-      // Lê o estado ANTERIOR antes de sobrescrever: só herda o asaas_payment_id se a linha for da
-      // MESMA troca (mesmo plan+cycle) — troca NOVA zera o id, p/ não "retomar" o avulso de uma troca
-      // anterior já concluída e acabar PULANDO a cobrança da troca nova (vazamento de receita).
+      // Cada tentativa ganha um attemptId único que entra no externalReference do avulso — assim uma
+      // troca pro MESMO plano feita antes (já concluída) NUNCA é confundida com esta (evita retomar um
+      // avulso velho e PULAR a cobrança nova). Só uma tentativa EM ANDAMENTO da mesma troca (mesmo
+      // plan+cycle, status recovering/pending) é continuada → reaproveita attemptId + payment id.
       const { data: prevRow } = await sSupa
         .from('billing_checkouts')
-        .select('asaas_payment_id, plan, cycle')
+        .select('plan, cycle, status, asaas_payment_id, planchange_attempt_id')
         .eq('checkout_id', recoveryCheckoutId)
         .maybeSingle()
-      const prev = prevRow as { asaas_payment_id?: string | null; plan?: string; cycle?: string } | null
-      const savedPaymentId = prev && prev.plan === plan && prev.cycle === cycle ? (prev.asaas_payment_id ?? null) : null
+      const { attemptId, savedPaymentId } = decidePlanChangeAttempt(prevRow as PlanChangeRecoveryRow | null, plan, cycle, randomUUID())
+      const planChangeRef = `${buildPlanChangeReference(profile.profileId, plan, cycle)}|attempt:${attemptId}`
 
       const { error: recErr } = await sSupa
         .from('billing_checkouts')
@@ -278,7 +278,8 @@ export async function POST(
           checkout_id: recoveryCheckoutId,
           asaas_customer_id: customerId,
           asaas_subscription_id: profile.asaasSubscriptionId ?? null,
-          asaas_payment_id: savedPaymentId, // troca nova → null (não herda avulso de troca anterior)
+          asaas_payment_id: savedPaymentId, // tentativa nova → null (não herda avulso de outra troca)
+          planchange_attempt_id: attemptId,
           plan,
           cycle,
           status: 'recovering',
@@ -293,8 +294,8 @@ export async function POST(
         return NextResponse.json({ error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' }, { status: 500 })
       }
 
-      // Se há avulso DESTA troca, RETOMAR em vez de cobrar de novo. Primário: asaas_payment_id da
-      // mesma troca (getPaymentById); fallback: externalReference RECENTE (janela crash-antes-de-salvar).
+      // Se há avulso DESTA tentativa, RETOMAR em vez de cobrar de novo. Primário: asaas_payment_id da
+      // mesma tentativa (getPaymentById); fallback: externalReference (único por tentativa via attemptId).
       // Consulta que FALHA → aborta sem cobrar (fail-closed: não cobrar duplicado > conveniência).
       let payment: { id: string; status: string } | null = null
       const lookup = savedPaymentId
@@ -328,16 +329,34 @@ export async function POST(
             externalReference: planChangeRef,
           })
         } catch (err) {
-          logError('[checkout] Mudança paga — cobrança avulsa no token FALHOU (nada foi alterado)', err, { userId: profile.profileId, plan, cycle, value: proration.finalPrice })
-          await sSupa.from('billing_checkouts').update({ status: 'cancelled', last_event: 'PLAN_CHANGE_CHARGE_FAILED' }).eq('checkout_id', recoveryCheckoutId)
-          return NextResponse.json(
-            { error: 'Não conseguimos cobrar no seu cartão salvo. Verifique o cartão nas configurações ou fale com o suporte.', code: 'CHARGE_FAILED' },
-            { status: 402 }
-          )
+          // O throw pode ser FALSO-NEGATIVO (rede caiu DEPOIS de o Asaas criar a cobrança). Antes de
+          // declarar falha, confere se o avulso DESTA tentativa existe (externalReference único) — se
+          // existir, NÃO cobra de novo (evita cobrança em dobro no retry ambíguo).
+          const recheck = await findPaymentByExternalReference(planChangeRef)
+          if (recheck.ok && recheck.payment) {
+            created = recheck.payment
+            log('[checkout] P0-A: createPayment lançou mas o avulso desta tentativa EXISTE — seguindo sem recobrar', { userId: profile.profileId, paymentId: recheck.payment.id })
+          } else if (recheck.ok) {
+            // recheck OK e NÃO achou → cobrança genuinamente não criada → falha limpa.
+            logError('[checkout] Mudança paga — cobrança avulsa FALHOU (avulso não criado)', err, { userId: profile.profileId, plan, cycle, value: proration.finalPrice })
+            await sSupa.from('billing_checkouts').update({ status: 'cancelled', last_event: 'PLAN_CHANGE_CHARGE_FAILED' }).eq('checkout_id', recoveryCheckoutId)
+            return NextResponse.json(
+              { error: 'Não conseguimos cobrar no seu cartão salvo. Verifique o cartão nas configurações ou fale com o suporte.', code: 'CHARGE_FAILED' },
+              { status: 402 }
+            )
+          } else {
+            // NÃO deu p/ verificar se a cobrança caiu (rede). NÃO marca terminal: deixa a tentativa EM
+            // ANDAMENTO p/ um retry (mesmo attemptId) reconferir o avulso e não cobrar em dobro.
+            logError('[checkout] Mudança paga — cobrança lançou E recheck falhou; mantendo tentativa p/ retry', err, { userId: profile.profileId, plan, cycle })
+            return NextResponse.json({ error: 'Não foi possível confirmar a cobrança agora. Tente novamente em instantes.' }, { status: 503 })
+          }
         }
-        // Persiste o id IMEDIATAMENTE — fecha a janela "crashou entre cobrar e trocar": num retry,
-        // o guard acima acha o id e RETOMA em vez de cobrar de novo.
-        await sSupa.from('billing_checkouts').update({ asaas_payment_id: created.id }).eq('checkout_id', recoveryCheckoutId)
+        // Persiste o id IMEDIATAMENTE — fecha a janela "crashou entre cobrar e trocar". Se o UPDATE
+        // falhar, NÃO bloqueia: o fallback por externalReference (único por tentativa) recupera no retry.
+        const { error: payIdErr } = await sSupa.from('billing_checkouts').update({ asaas_payment_id: created.id }).eq('checkout_id', recoveryCheckoutId)
+        if (payIdErr) {
+          logError('[checkout] P0-A: falha ao persistir asaas_payment_id (fallback por externalReference cobre o retry)', payIdErr, { userId: profile.profileId, paymentId: created.id })
+        }
         payment = created
       }
 

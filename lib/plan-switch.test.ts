@@ -201,12 +201,22 @@ describe('runPlanChangeBackstop', () => {
     expect(vi.mocked(sendBillingOpsAlert)).toHaveBeenCalled()
   })
 
-  it('linha já PAID (tentativa concluída) → avulso fora de ordem NÃO reaplica (I1)', async () => {
+  it('REGRESSÃO Codex: POST síncrono concluiu (linha paid, profile NO alvo) + webhook do MESMO avulso → already_applied, NÃO estorna (I1/I3)', async () => {
+    state.profileRow = { plan: 'plus', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_new', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
+    state.recoveryRow = { planchange_attempt_id: 'att_X', status: 'paid', plan: 'plus', cycle: 'MONTHLY' }
+    const r = await runPlanChangeBackstop(makeDb(), { profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_X', attempt: 'att_X', source: 'webhook' })
+    expect(r).toBe('already_applied')
+    expect(asaasMocks.refundPayment).not.toHaveBeenCalled()
+    expect(asaasMocks.createSubscriptionWithToken).not.toHaveBeenCalled()
+  })
+
+  it('mesma tentativa, linha já PAID mas profile saiu do alvo depois → noop, NÃO re-aplica NEM estorna (I1/I3)', async () => {
     state.profileRow = { plan: 'starter', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_old', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
     state.recoveryRow = { planchange_attempt_id: 'att_X', status: 'paid' }
     const r = await runPlanChangeBackstop(makeDb(), { profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_1', attempt: 'att_X', source: 'webhook' })
-    expect(r).toBe('superseded') // status terminal → não in-flight → não aplica
+    expect(r).toBe('already_applied')
     expect(asaasMocks.createSubscriptionWithToken).not.toHaveBeenCalled()
+    expect(asaasMocks.refundPayment).not.toHaveBeenCalled()
   })
 
   it('avulso da tentativa ATUAL (attempt casa, in-flight) → executa o switch', async () => {

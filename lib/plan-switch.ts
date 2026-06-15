@@ -361,27 +361,38 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
     const rowAttempt = rec?.planchange_attempt_id ?? null
     const inFlight = rec?.status === 'recovering' || rec?.status === 'pending'
 
-    // IDENTIDADE primeiro (audit 2026-06-15): este avulso é da tentativa ATUAL da linha de recuperação?
-    //  - attempt presente → casa EXATAMENTE com a tentativa em andamento.
-    //  - attempt ausente (avulso legado) → SÓ se a linha TAMBÉM é legada (sem attempt), in-flight e mesmo
-    //    alvo — senão um avulso legado "rouba" a linha de uma tentativa NOVA (cobrança dupla).
-    const attemptOk = attempt
-      ? (inFlight && rowAttempt === attempt)
-      : (inFlight && rowAttempt === null && rec?.plan === plan && (rec?.cycle ?? 'MONTHLY') === cycle)
+    // IDENTIDADE (audit 2026-06-15 + Codex): este avulso é da MESMA tentativa que a linha de recuperação?
+    // superseded = attempt de OUTRA tentativa — NÃO depende de in-flight (a linha 'paid' da PRÓPRIA
+    // tentativa é o caso NORMAL: o webhook do avulso legítimo chega após o POST síncrono concluir e
+    // marcar 'paid' → isso é already_applied, JAMAIS superseded/estorno).
+    //  - attempt presente → casa com o attempt da linha (terminal ou não).
+    //  - attempt ausente (avulso legado) → só se a linha TAMBÉM é legada (sem attempt) e mesmo alvo.
+    const attemptMine = attempt
+      ? rowAttempt === attempt
+      : (rowAttempt === null && rec?.plan === plan && (rec?.cycle ?? 'MONTHLY') === cycle)
 
-    // Validação de identidade ANTES de already_applied (audit 2026-06-15): um avulso superseded cujo
-    // plano-alvo COINCIDE com o do profile não pode virar noop silencioso — é dinheiro cobrado sem troca.
-    if (!attemptOk) {
+    // Avulso de OUTRA tentativa (superseded/abandonada): cobrado sem troca correspondente → ESTORNA.
+    if (!attemptMine) {
       await refundAndFlagSuperseded(db, { paymentId, profileId, plan, cycle, attempt: attempt ?? null, rowAttempt, rowStatus: rec?.status ?? null, customerId: p.asaas_customer_id ?? null, source, tag })
       return 'superseded'
     }
 
-    // Já aplicado por ESTA tentativa (fluxo síncrono concluiu) → marca a linha terminal e noop.
-    if (p.plan === plan && (p.plan_cycle ?? 'MONTHLY') === cycle && p.asaas_subscription_id) {
+    // É a tentativa DESTE avulso (dinheiro legítimo). Profile já no alvo → o fluxo síncrono já aplicou:
+    // noop SEM estorno (o webhook normal do avulso legítimo NÃO pode devolver a diferença paga).
+    const onTarget = p.plan === plan && (p.plan_cycle ?? 'MONTHLY') === cycle && !!p.asaas_subscription_id
+    if (onTarget) {
       if (inFlight) {
         await db.from('billing_checkouts').update({ status: 'paid', last_event: `PLAN_CHANGE_ALREADY:${paymentId}` }).eq('checkout_id', recoveryCheckoutId)
       }
-      log(`${tag}: troca já aplicada (mesma tentativa) — noop`, { profileId, plan, cycle, paymentId })
+      log(`${tag}: troca já aplicada por esta tentativa — noop (sem estorno)`, { profileId, plan, cycle, paymentId })
+      return 'already_applied'
+    }
+
+    // Profile FORA do alvo. Se a linha desta tentativa já é TERMINAL (paid/cancelled), a tentativa já
+    // rodou (aplicou e o profile mudou depois por outra via) → noop seguro: NÃO re-aplica (desfaria a
+    // mudança posterior) e NÃO estorna (dinheiro legítimo desta tentativa).
+    if (!inFlight) {
+      log(`${tag}: linha desta tentativa já terminal + profile fora do alvo — noop (não re-aplica nem estorna)`, { profileId, plan, cycle, paymentId, rowStatus: rec?.status ?? null })
       return 'already_applied'
     }
 

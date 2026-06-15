@@ -8,7 +8,7 @@ import { createHash } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { createCheckout, createCustomer, updateCustomer, buildExternalReference, buildPlanChangeReference, createPaymentWithToken, refundPayment, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, updateCustomer, buildExternalReference, buildPlanChangeReference, createPaymentWithToken, refundPayment, getPaymentById, findPaymentByExternalReference, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
 import { computePlanChange } from '@/lib/plan-change'
@@ -277,22 +277,63 @@ export async function POST(
         return NextResponse.json({ error: 'Não foi possível alterar sua assinatura agora. Tente novamente.' }, { status: 500 })
       }
 
-      let payment: { id: string; status: string }
-      try {
-        payment = await createPaymentWithToken({
-          customerId,
-          value: proration.finalPrice,
-          creditCardToken: token,
-          description: `EidosForm — Mudança para Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'}) — diferença prorateada`,
-          externalReference: buildPlanChangeReference(profile.profileId, plan, cycle),
-        })
-      } catch (err) {
-        logError('[checkout] Mudança paga — cobrança avulsa no token FALHOU (nada foi alterado)', err, { userId: profile.profileId, plan, cycle, value: proration.finalPrice })
-        await sSupa.from('billing_checkouts').update({ status: 'cancelled', last_event: 'PLAN_CHANGE_CHARGE_FAILED' }).eq('checkout_id', recoveryCheckoutId)
-        return NextResponse.json(
-          { error: 'Não conseguimos cobrar no seu cartão salvo. Verifique o cartão nas configurações ou fale com o suporte.', code: 'CHARGE_FAILED' },
-          { status: 402 }
-        )
+      // ── P0-A (2026-06-15): IDEMPOTÊNCIA da cobrança avulsa ──
+      // Se um retry após crash/timeout já criou o avulso desta troca, RETOMAR em vez de cobrar de
+      // novo (evita cobrança em dobro). Ponte primária: asaas_payment_id salvo na linha 'recovering';
+      // fallback: busca por externalReference (cobre a janela "crashou ANTES de salvar o id").
+      // Consulta que FALHA → aborta sem cobrar (fail-closed: não cobrar duplicado > conveniência).
+      const planChangeRef = buildPlanChangeReference(profile.profileId, plan, cycle)
+      let payment: { id: string; status: string } | null = null
+
+      const { data: recRow } = await sSupa
+        .from('billing_checkouts')
+        .select('asaas_payment_id')
+        .eq('checkout_id', recoveryCheckoutId)
+        .maybeSingle()
+      const savedPaymentId = (recRow as { asaas_payment_id?: string | null } | null)?.asaas_payment_id ?? null
+
+      const lookup = savedPaymentId
+        ? await getPaymentById(savedPaymentId)
+        : await findPaymentByExternalReference(planChangeRef)
+      if (!lookup.ok) {
+        logError('[checkout] P0-A: consulta de avulso existente FALHOU; abortando p/ não cobrar duplicado', undefined, { userId: profile.profileId, savedPaymentId })
+        return NextResponse.json({ error: 'Não foi possível confirmar o estado do pagamento agora. Tente novamente em instantes.' }, { status: 503 })
+      }
+      const existing = lookup.payment
+      if (existing && (existing.status === 'CONFIRMED' || existing.status === 'RECEIVED')) {
+        // Já pago num retry anterior — RETOMA a troca (executePlanSwitch é idempotente via CAS), sem recobrar.
+        payment = existing
+        await sSupa.from('billing_checkouts').update({ asaas_payment_id: existing.id, last_event: `PLAN_CHANGE_RESUMED_PAID:${existing.id}` }).eq('checkout_id', recoveryCheckoutId)
+        log('[checkout] P0-A: avulso já CONFIRMED/RECEIVED — retomando sem cobrar de novo', { userId: profile.profileId, paymentId: existing.id })
+      } else if (existing && existing.status === 'PENDING') {
+        // Já cobrado, aguardando confirmação — não cobra de novo; o webhook (backstop) completa a troca.
+        await sSupa.from('billing_checkouts').update({ status: 'pending', asaas_payment_id: existing.id, last_event: `PLAN_CHANGE_AWAITING_PAYMENT:${existing.id}` }).eq('checkout_id', recoveryCheckoutId)
+        log('[checkout] P0-A: avulso já PENDING — webhook completará a troca', { userId: profile.profileId, paymentId: existing.id })
+        return NextResponse.json({ status: 'success', processing: true, proration })
+      }
+
+      if (!payment) {
+        let created: { id: string; status: string }
+        try {
+          created = await createPaymentWithToken({
+            customerId,
+            value: proration.finalPrice,
+            creditCardToken: token,
+            description: `EidosForm — Mudança para Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'}) — diferença prorateada`,
+            externalReference: planChangeRef,
+          })
+        } catch (err) {
+          logError('[checkout] Mudança paga — cobrança avulsa no token FALHOU (nada foi alterado)', err, { userId: profile.profileId, plan, cycle, value: proration.finalPrice })
+          await sSupa.from('billing_checkouts').update({ status: 'cancelled', last_event: 'PLAN_CHANGE_CHARGE_FAILED' }).eq('checkout_id', recoveryCheckoutId)
+          return NextResponse.json(
+            { error: 'Não conseguimos cobrar no seu cartão salvo. Verifique o cartão nas configurações ou fale com o suporte.', code: 'CHARGE_FAILED' },
+            { status: 402 }
+          )
+        }
+        // Persiste o id IMEDIATAMENTE — fecha a janela "crashou entre cobrar e trocar": num retry,
+        // o guard acima acha o id e RETOMA em vez de cobrar de novo.
+        await sSupa.from('billing_checkouts').update({ asaas_payment_id: created.id }).eq('checkout_id', recoveryCheckoutId)
+        payment = created
       }
 
       const paidNow = payment.status === 'CONFIRMED' || payment.status === 'RECEIVED'

@@ -310,6 +310,44 @@ export async function refundPayment(paymentId: string): Promise<{ id: string; st
 }
 
 /**
+ * Busca um pagamento por id. `ok:false` = consulta FALHOU (rede/5xx → o chamador NÃO deve cobrar
+ * de novo); `payment:null` = não existe (404). Usado pela idempotência da troca de plano (P0-A).
+ */
+export async function getPaymentById(paymentId: string): Promise<{ ok: boolean; payment: { id: string; status: string } | null }> {
+  try {
+    const data = await asaasFetch(`/payments/${encodeURIComponent(paymentId)}`)
+    if (!data?.id) return { ok: true, payment: null }
+    return { ok: true, payment: { id: String(data.id), status: String(data.status ?? '') } }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/error 404/i.test(msg)) return { ok: true, payment: null } // não existe → definitivo
+    logError('[asaas] getPaymentById: consulta falhou (ok=false)', err, { paymentId })
+    return { ok: false, payment: null }
+  }
+}
+
+/**
+ * Busca o avulso (pagamento) NÃO-estornado mais recente com este externalReference. Usado pela
+ * idempotência da troca de plano (P0-A) p/ não cobrar em dobro num retry quando o payment.id ainda
+ * não foi salvo. `ok:false` = consulta FALHOU (NÃO cobrar de novo); `payment:null` = não achou.
+ */
+export async function findPaymentByExternalReference(externalReference: string): Promise<{ ok: boolean; payment: { id: string; status: string } | null }> {
+  try {
+    const data = await asaasFetch(`/payments?externalReference=${encodeURIComponent(externalReference)}&limit=20`)
+    const pays: Array<{ id?: string; status?: string; dateCreated?: string }> = data?.data ?? []
+    const usable = pays
+      .filter((p) => p.status === 'CONFIRMED' || p.status === 'RECEIVED' || p.status === 'PENDING')
+      .sort((a, b) => String(b.dateCreated ?? '').localeCompare(String(a.dateCreated ?? '')))
+    const top = usable[0]
+    if (!top?.id) return { ok: true, payment: null }
+    return { ok: true, payment: { id: String(top.id), status: String(top.status ?? '') } }
+  } catch (err) {
+    logError('[asaas] findPaymentByExternalReference: consulta falhou (ok=false)', err, { externalReference })
+    return { ok: false, payment: null }
+  }
+}
+
+/**
  * Alinha o dueDate dos pagamentos PENDING de uma assinatura ao novo nextDueDate. Necessário no
  * Caminho D: ao editar a sub (updateSubscription), o Asaas atualiza o VALOR dos pagamentos
  * pendentes mas MANTÉM a data do que já foi gerado — então um pagamento antigo cobraria ANTES da

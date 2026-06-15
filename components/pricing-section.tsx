@@ -18,7 +18,7 @@ const plans = [
     features: [
       '100 respostas/mês',
       '3 formulários',
-      'Questões ilimitadas',
+      'Até 25 questões por formulário',
       'Validação de CPF/CNPJ',
       'Busca automática de CEP',
       'Lógica condicional',

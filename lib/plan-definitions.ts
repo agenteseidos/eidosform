@@ -56,7 +56,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     features: [
       '100 respostas/mês',
       '3 formulários',
-      'Questões ilimitadas',
+      'Até 25 questões por formulário',
       'Validação CPF/CNPJ',
       'Busca automática de CEP',
       'Lógica condicional',

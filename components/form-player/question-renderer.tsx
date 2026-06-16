@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react'
 import { QuestionConfig, ThemeConfig, Json } from '@/lib/database.types'
 import { Input } from '@/components/ui/input'
-import { formatCPF, validateCPF } from '@/lib/validators'
+import { formatCpfCnpj, validateCPF, validateCNPJ } from '@/lib/validators'
 import { countries, getCountryByCode } from '@/lib/countries'
 import { Textarea } from '@/components/ui/textarea'
 import { motion } from 'framer-motion'
@@ -197,11 +197,13 @@ const CpfQuestion = React.memo(function CpfQuestion({ question, value, onChange,
   const [cpfError, setCpfError] = useState<string | null>(null)
 
   const handleChange = useCallback((raw: string) => {
-    const formatted = formatCPF(raw)
+    const formatted = formatCpfCnpj(raw)
     onChange(formatted)
     const clean = raw.replace(/\D/g, '')
     if (clean.length === 11) {
       setCpfError(validateCPF(clean) ? null : 'CPF inválido')
+    } else if (clean.length === 14) {
+      setCpfError(validateCNPJ(clean) ? null : 'CNPJ inválido')
     } else {
       setCpfError(null)
     }
@@ -213,7 +215,7 @@ const CpfQuestion = React.memo(function CpfQuestion({ question, value, onChange,
         value={value || ''}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={question.placeholder || '000.000.000-00'}
-        maxLength={14}
+        maxLength={18}
         className="text-lg md:text-xl h-auto py-3 bg-transparent border-0 border-b-2 rounded-none px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
         style={{
           borderColor: error || cpfError ? '#EF4444' : `${theme.textColor}50`,

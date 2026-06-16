@@ -197,4 +197,20 @@ describe('POST /api/responses/partial', () => {
     expect(body.skipped).toBe(true)
     expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
   })
+
+  it('pergunta premium bloqueada pelo plano é podada em POST direto', async () => {
+    state.form = {
+      data: {
+        ...formRow,
+        questions: [{ id: 'doc', type: 'cpf', title: 'CPF/CNPJ' }],
+      },
+      error: null,
+    }
+
+    const res = await POST(makeReq({ form_id: FORM_ID, answers: { doc: '11.222.333/0001-81' } }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.skipped).toBe(true)
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
+  })
 })

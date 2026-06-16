@@ -92,6 +92,14 @@ describe('cpf', () => {
     expect(validateFieldValue(q('cpf'), '111.111.111-11').valid).toBe(false)
     expect(validateFieldValue(q('cpf'), '123').valid).toBe(false)
   })
+
+  it('aceita CNPJ válido (dígito verificador) e rejeita inválido', () => {
+    // 11.222.333/0001-81 é um CNPJ de teste estruturalmente válido
+    expect(validateFieldValue(q('cpf'), '11.222.333/0001-81').valid).toBe(true)
+    expect(validateFieldValue(q('cpf'), '11.111.111/1111-11').valid).toBe(false)
+    // 12 ou 13 dígitos não são nem CPF nem CNPJ
+    expect(validateFieldValue(q('cpf'), '1234567890123').valid).toBe(false)
+  })
 })
 
 describe('file_upload — regressão P1-4 (prefixo do bucket)', () => {

@@ -4,7 +4,7 @@
  */
 
 import { QuestionConfig } from './database.types'
-import { validateCPF, isValidLooseUrl } from './validators'
+import { validateCPF, validateCNPJ, isValidLooseUrl } from './validators'
 
 export interface FieldValidationResult {
   valid: boolean
@@ -356,16 +356,16 @@ function validateAddress(value: unknown): FieldValidationResult {
 
 function validateCpfField(value: unknown): FieldValidationResult {
   if (typeof value !== 'string') {
-    return { valid: false, error: 'CPF deve ser texto' }
+    return { valid: false, error: 'CPF/CNPJ deve ser texto' }
   }
   const clean = value.replace(/\D/g, '')
-  if (clean.length !== 11) {
-    return { valid: false, error: 'CPF deve ter 11 dígitos' }
+  if (clean.length === 11) {
+    return validateCPF(clean) ? { valid: true } : { valid: false, error: 'CPF inválido' }
   }
-  if (!validateCPF(clean)) {
-    return { valid: false, error: 'CPF inválido' }
+  if (clean.length === 14) {
+    return validateCNPJ(clean) ? { valid: true } : { valid: false, error: 'CNPJ inválido' }
   }
-  return { valid: true }
+  return { valid: false, error: 'Informe um CPF (11 dígitos) ou CNPJ (14 dígitos)' }
 }
 
 function validateContentBlock(value: unknown): FieldValidationResult {

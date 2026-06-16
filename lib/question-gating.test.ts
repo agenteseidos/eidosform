@@ -34,14 +34,21 @@ describe('questionTypeAllowed', () => {
     expect(questionTypeAllowed('html_block', 'professional')).toBe(true)
   })
 
+  it('CPF/CNPJ exige Starter+', () => {
+    expect(questionTypeAllowed('cpf', 'free')).toBe(false)
+    expect(questionTypeAllowed('cpf', 'starter')).toBe(true)
+    expect(questionTypeAllowed('cpf', 'plus')).toBe(true)
+  })
+
   it('tipos não-gateados são livres em qualquer plano', () => {
     expect(questionTypeAllowed('short_text', 'free')).toBe(true)
     expect(questionTypeAllowed('content_block', 'free')).toBe(true)
-    expect(questionTypeAllowed('cpf', 'free')).toBe(true)
+    // CEP (address) continua no free — só o CPF/CNPJ subiu para Starter+
+    expect(questionTypeAllowed('address', 'free')).toBe(true)
   })
 
-  it('o mapa de gating cobre só calendly e html_block', () => {
-    expect(Object.keys(QUESTION_TYPE_MIN_PLAN).sort()).toEqual(['calendly', 'html_block'])
+  it('o mapa de gating cobre cpf, calendly e html_block', () => {
+    expect(Object.keys(QUESTION_TYPE_MIN_PLAN).sort()).toEqual(['calendly', 'cpf', 'html_block'])
   })
 })
 
@@ -54,20 +61,21 @@ describe('filterQuestionsByPlan', () => {
     q('b', 'calendly'),
     q('c', 'html_block'),
     q('d', 'email'),
+    q('e', 'cpf'),
   ]
 
-  it('free perde calendly e html_block', () => {
+  it('free perde calendly, html_block e cpf', () => {
     const out = filterQuestionsByPlan(questions, 'free').map(x => x.id)
     expect(out).toEqual(['a', 'd'])
   })
 
-  it('starter mantém calendly mas perde html_block', () => {
+  it('starter mantém calendly e cpf mas perde html_block', () => {
     const out = filterQuestionsByPlan(questions, 'starter').map(x => x.id)
-    expect(out).toEqual(['a', 'b', 'd'])
+    expect(out).toEqual(['a', 'b', 'd', 'e'])
   })
 
   it('plus mantém tudo', () => {
     const out = filterQuestionsByPlan(questions, 'plus').map(x => x.id)
-    expect(out).toEqual(['a', 'b', 'c', 'd'])
+    expect(out).toEqual(['a', 'b', 'c', 'd', 'e'])
   })
 })

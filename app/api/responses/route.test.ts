@@ -237,6 +237,22 @@ describe('POST /api/responses — defesas básicas', () => {
     expect(body.field_errors?.[0]?.questionId).toBe('e1')
   })
 
+  it('todas as chaves podadas (campo bloqueado pelo plano) → 422 sem insert nem consumir cota', async () => {
+    const { checkAndIncrementResponseCount } = await import('@/lib/plan-limits')
+    vi.mocked(checkAndIncrementResponseCount).mockClear()
+    // Dono free (profiles mockado → null → free); form só com campo CPF/CNPJ,
+    // que é Starter+ e portanto filtrado para [] nos endpoints. POST direto não
+    // pode queimar cota nem criar resposta vazia.
+    state.form = {
+      data: { ...formRow, questions: [{ id: 'doc', type: 'cpf', title: 'CPF/CNPJ' }] },
+      error: null,
+    }
+    const res = await POST(makeReq({ form_id: FORM_ID, answers: { doc: '11.222.333/0001-81' } }))
+    expect(res.status).toBe(422)
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
+    expect(checkAndIncrementResponseCount).not.toHaveBeenCalled()
+  })
+
   it('limite do plano estourado → 429', async () => {
     const { checkAndIncrementResponseCount } = await import('@/lib/plan-limits')
     vi.mocked(checkAndIncrementResponseCount).mockResolvedValueOnce({

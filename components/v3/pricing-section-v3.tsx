@@ -37,7 +37,6 @@ const plans: Array<{
     features: [
       '3 formulários',
       'Até 25 questões por formulário',
-      'Validação de CPF/CNPJ',
       'Busca automática de CEP',
       'Lógica condicional',
       'Tela de agradecimento personalizada',
@@ -57,6 +56,7 @@ const plans: Array<{
       'Tudo do Free +',
       '100 formulários',
       'Até 50 questões por formulário',
+      'Validação de CPF/CNPJ',
       'Agendamento com Calendly',
       'Redirecionamento após envio',
       'Exportação CSV',

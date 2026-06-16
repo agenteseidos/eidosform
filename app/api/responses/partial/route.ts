@@ -6,6 +6,8 @@ import { logError } from '@/lib/logger'
 import { pruneOrphanAnswers, validateAllAnswers } from '@/lib/field-validators'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import type { QuestionConfig, ResponseInsert } from '@/lib/database.types'
+import { getEffectivePlan } from '@/lib/plans'
+import { filterQuestionsByPlan } from '@/lib/questions'
 
 // POST /api/responses/partial
 //
@@ -122,16 +124,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Formulário indisponível' }, { status: 403, headers: CORS_HEADERS })
   }
 
-  // Sanitiza respostas órfãs (mesma lógica do /api/responses)
+  // Sanitiza respostas órfãs ou bloqueadas pelo plano (mesma lógica do /api/responses)
   const formQuestions = (form.questions ?? []) as QuestionConfig[]
-  const { pruned } = pruneOrphanAnswers(formQuestions, answers)
+  const { data: ownerProfile } = await supabase
+    .from('profiles')
+    .select('plan, plan_expires_at')
+    .eq('id', form.user_id)
+    .single() as { data: { plan: string | null; plan_expires_at: string | null } | null; error: unknown }
+  const effectiveQuestions = filterQuestionsByPlan(formQuestions, getEffectivePlan(ownerProfile))
+  const { pruned } = pruneOrphanAnswers(effectiveQuestions, answers)
   if (Object.keys(pruned).length === 0) {
     return NextResponse.json({ skipped: true }, { status: 200, headers: CORS_HEADERS })
   }
 
   // Validação leve por tipo — só pra não persistir lixo. Em parcial, não
   // tomamos field_errors como erro fatal; descartamos o que não passa.
-  const errs = validateAllAnswers(formQuestions, pruned)
+  const errs = validateAllAnswers(effectiveQuestions, pruned)
   const invalidIds = new Set(errs.map((e) => e.questionId))
   const valid: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(pruned)) {
@@ -157,7 +165,7 @@ export async function POST(req: NextRequest) {
     if (!verifyPartialToken(partialToken, existingResponseId)) {
       // Sem prova de posse (token ausente/ inválido) — trata como nova response
       // em vez de atualizar a existente. Não vaza se o id existe ou não.
-      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions })
+      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions: effectiveQuestions })
     }
 
     // UPDATE
@@ -169,7 +177,7 @@ export async function POST(req: NextRequest) {
 
     if (!existing || existing.form_id !== form_id) {
       // Trata como nova response — cliente pode ter ID stale
-      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions })
+      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions: effectiveQuestions })
     }
     if (existing.completed) {
       // Já foi finalizado — não regredir pra parcial
@@ -191,7 +199,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Erro ao salvar progresso' }, { status: 500, headers: CORS_HEADERS })
     }
   } else {
-    return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions })
+    return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions: effectiveQuestions })
   }
 
   // Upsert no Sheets (gating pelo plano + integração habilitada)
@@ -201,7 +209,7 @@ export async function POST(req: NextRequest) {
     answers: valid,
     utmData,
     responseId,
-    formQuestions,
+    formQuestions: effectiveQuestions,
     currentRowIndex,
   })
 

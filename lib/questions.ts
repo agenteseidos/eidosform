@@ -179,8 +179,8 @@ export const questionTypes: QuestionTypeInfo[] = [
   },
   {
     type: 'cpf',
-    label: 'CPF',
-    description: 'Campo de CPF com máscara e validação',
+    label: 'CPF / CNPJ',
+    description: 'Campo de CPF ou CNPJ com máscara e validação',
     icon: Fingerprint,
     defaultConfig: {
       placeholder: '000.000.000-00',
@@ -222,10 +222,12 @@ export const questionTypes: QuestionTypeInfo[] = [
 /**
  * Tipos de pergunta gateados por plano (fonte única de verdade — builder e
  * player público importam daqui). Tipo ausente = disponível em qualquer plano.
+ *   - cpf: validação de CPF/CNPJ → Starter+
  *   - calendly: agendamento integrado → Starter+
  *   - html_block: embeds HTML arbitrários → Plus+
  */
 export const QUESTION_TYPE_MIN_PLAN: Partial<Record<QuestionType, PlanId>> = {
+  cpf: 'starter',
   calendly: 'starter',
   html_block: 'plus',
 }
@@ -238,8 +240,9 @@ export function questionTypeAllowed(type: QuestionType, plan: string | null | un
 
 /**
  * Remove do array as perguntas de tipo gated que o plano não permite (player
- * público). Forms legados / pós-downgrade podem conter Calendly/HTML em planos
- * insuficientes — aqui elas simplesmente não são entregues ao visitante. O
+ * público e endpoints de submissão). Forms legados / pós-downgrade podem conter
+ * perguntas premium em planos insuficientes — aqui elas simplesmente não são
+ * entregues ao visitante nem aceitas por POST direto. O
  * motor de lógica ignora jumps cujo alvo sumiu (form-logic-engine getNextQuestionId),
  * então a remoção é segura para a navegação.
  */
@@ -267,4 +270,3 @@ export function createDefaultQuestion(type: QuestionType): QuestionConfig {
     ...typeInfo?.defaultConfig,
   }
 }
-

@@ -76,6 +76,16 @@ export function formatCNPJ(cnpj: string): string {
 }
 
 /**
+ * Formata CPF ou CNPJ conforme a quantidade de dígitos digitados:
+ * até 11 dígitos → máscara de CPF (000.000.000-00); acima → CNPJ
+ * (00.000.000/0000-00). Usado no campo de formulário que aceita ambos.
+ */
+export function formatCpfCnpj(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  return digits.length <= 11 ? formatCPF(digits) : formatCNPJ(digits)
+}
+
+/**
  * Validação "leniente" de URL para campos preenchidos por leigos.
  * Aceita endereços SEM protocolo (ex.: "www.site.com.br", "site.com.br") —
  * o `https://` é assumido por baixo dos panos. Exige apenas que o host

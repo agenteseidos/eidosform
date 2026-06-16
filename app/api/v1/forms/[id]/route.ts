@@ -8,6 +8,7 @@ import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
 import { validateAllAnswers, pruneOrphanAnswers } from '@/lib/field-validators'
 import { logError } from '@/lib/logger'
+import { filterQuestionsByPlan } from '@/lib/questions'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -244,16 +245,33 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     )
   }
 
-  // Remove chaves de perguntas órfãs (form editado depois do respondente começar).
+  // Remove chaves de perguntas órfãs ou bloqueadas pelo plano do dono.
   const formQuestions = (form.questions ?? []) as import('@/lib/database.types').QuestionConfig[]
-  const { pruned: prunedAnswers, removedKeys } = pruneOrphanAnswers(formQuestions, answers)
+  const { data: ownerProfileForGate } = await supabase
+    .from('profiles')
+    .select('plan, plan_expires_at')
+    .eq('id', form.user_id)
+    .single()
+  const ownerPlan = getEffectivePlan(ownerProfileForGate) as PlanName
+  const effectiveQuestions = filterQuestionsByPlan(formQuestions, ownerPlan)
+  const { pruned: prunedAnswers, removedKeys } = pruneOrphanAnswers(effectiveQuestions, answers)
   if (removedKeys.length > 0) {
-    console.warn('[v1/forms] orphan answer keys discarded', { form_id: id, removedKeys })
+    console.warn('[v1/forms] unavailable answer keys discarded', { form_id: id, removedKeys })
   }
   const answersForPersist = prunedAnswers
 
+  // Todas as chaves enviadas foram podadas (órfãs/bloqueadas pelo plano): nada
+  // válido para salvar — rejeita antes de consumir cota mensal. Submit legítimo
+  // sem chaves (form todo-opcional) não cai aqui.
+  if (Object.keys(answersForPersist).length === 0 && removedKeys.length > 0) {
+    return NextResponse.json(
+      { error: 'Nenhuma resposta válida para salvar' },
+      { status: 422, headers: getCorsHeaders(req.headers.get("origin")) }
+    )
+  }
+
   // Validate answers against known question IDs
-  const validationErrors = validateAllAnswers(formQuestions, answersForPersist)
+  const validationErrors = validateAllAnswers(effectiveQuestions, answersForPersist)
   if (validationErrors.length > 0) {
     return NextResponse.json(
       { error: 'Respostas inválidas', details: validationErrors },
@@ -261,7 +279,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const completed = isResponseComplete(answersForPersist, form.questions ?? [])
+  const completed = isResponseComplete(answersForPersist, effectiveQuestions)
 
   // Checagem de limite atômica (RPC check_and_increment_response) — mesma
   // do endpoint público /api/responses. Evita corrida TOCTOU entre ler e
@@ -369,13 +387,6 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   // Webhook dispatch — feature gated by plan (only Plus+ has webhooks)
   if (completed && form.webhook_url) {
-    const { data: ownerProfile } = await supabase
-      .from('profiles')
-      .select('plan, plan_expires_at')
-      .eq('id', form.user_id)
-      .single()
-    // Considera expiração do plano (P1-3).
-    const ownerPlan = getEffectivePlan(ownerProfile) as PlanName
     const planConfig = PLANS[ownerPlan]
 
     if (planConfig?.webhooks) {

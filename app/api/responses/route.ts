@@ -18,6 +18,7 @@ import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import { sendNewResponseNotification } from '@/lib/resend'
+import { filterQuestionsByPlan } from '@/lib/questions'
 
 // Maximum payload size (1MB — covers long text forms with URLs; file uploads go to R2)
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -197,22 +198,43 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Remove chaves de perguntas que não existem mais no form (ex.: dono editou
-  // o form depois que o respondente começou). Antes, qualquer chave órfã
-  // bloqueava o submit inteiro com "Pergunta desconhecida".
   const formQuestions = (form.questions ?? []) as QuestionConfig[]
+  const { data: ownerProfile } = await supabase
+    .from('profiles')
+    .select('plan, email, plan_expires_at')
+    .eq('id', form.user_id)
+    .single() as { data: { plan: string | null; email: string | null; plan_expires_at: string | null } | null; error: unknown }
+  const ownerPlan = getEffectivePlan(ownerProfile)
+  const ownerPlanConfig = PLANS[ownerPlan]
+  const effectiveQuestions = filterQuestionsByPlan(formQuestions, ownerPlan)
+
+  // Remove chaves de perguntas que não existem mais no form ou que o plano do
+  // dono não permite mais (ex.: downgrade). Antes, qualquer chave órfã
+  // bloqueava o submit inteiro com "Pergunta desconhecida".
   const { pruned: prunedAnswers, removedKeys } = pruneOrphanAnswers(
-    formQuestions,
+    effectiveQuestions,
     answers as Record<string, unknown>
   )
   if (removedKeys.length > 0) {
-    console.warn('[responses] orphan answer keys discarded', { form_id, removedKeys })
+    console.warn('[responses] unavailable answer keys discarded', { form_id, removedKeys })
   }
   answers = prunedAnswers
 
+  // Se o respondente enviou chaves mas TODAS foram podadas (órfãs ou bloqueadas
+  // pelo plano do dono), não há nada válido para salvar — rejeita ANTES de
+  // consumir cota. Sem isso, um POST direto só com campos indisponíveis criaria
+  // uma resposta vazia e queimaria um slot do limite mensal. Submit legítimo de
+  // form todo-opcional (sem chaves removidas) não cai aqui.
+  if (Object.keys(answers).length === 0 && removedKeys.length > 0) {
+    return NextResponse.json(
+      { error: 'Nenhuma resposta válida para salvar' },
+      { status: 422, headers: CORS_HEADERS }
+    )
+  }
+
   // B16b: Validação backend por tipo de campo
   const fieldErrors = validateAllAnswers(
-    formQuestions,
+    effectiveQuestions,
     answers
   )
   if (fieldErrors.length > 0) {
@@ -223,7 +245,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Bug #5: Auto-detect completed based on required questions
-  const completed = isResponseComplete(answers, form.questions ?? [])
+  const completed = isResponseComplete(answers, effectiveQuestions)
 
   // Resolve primeiro o alvo de UPDATE (se houver) e a autorização sobre ele;
   // só depois o limite de respostas — um UPDATE não consome cota nova.
@@ -342,16 +364,6 @@ export async function POST(req: NextRequest) {
   // quando a resposta HTTP termina. Por isso acumulamos promises e aguardamos.
   const postSubmitTasks: Promise<unknown>[] = []
   if (completed) {
-    // Fetch form owner's plan for feature gating — considera expiração (P1-3):
-    // plano pago vencido conta como free, mesmo que o webhook Asaas tenha falhado.
-    const { data: ownerProfile } = await supabase
-      .from('profiles')
-      .select('plan, email, plan_expires_at')
-      .eq('id', form.user_id)
-      .single() as { data: { plan: string | null; email: string | null; plan_expires_at: string | null } | null; error: unknown }
-    const ownerPlan = getEffectivePlan(ownerProfile)
-    const ownerPlanConfig = PLANS[ownerPlan]
-
     // Notificação principal para o dono do formulário — feature gated em Plus+.
     if (ownerProfile?.email && ownerPlanConfig?.emailNotifications) {
       console.log('[responses] sending owner email notification', { formId: form_id, responseId, ownerPlan, hasOwnerEmail: true })
@@ -423,7 +435,7 @@ export async function POST(req: NextRequest) {
               id: form.id,
               title: form.title,
               user_id: form.user_id,
-              questions: form.questions as Array<{ id: string; title?: string; type?: string }>,
+              questions: effectiveQuestions as Array<{ id: string; title?: string; type?: string }>,
             },
             appUrl,
           }).catch((err) => logError('Failed to send WhatsApp notification', err))
@@ -432,10 +444,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (form.google_sheets_enabled && form.google_sheets_id) {
-      const formQuestions = (form.questions ?? []) as Array<{ id: string; title: string }>
-      const fieldLabels = formQuestions.map((q) => q.title || 'Sem título')
+      const sheetQuestions = effectiveQuestions as Array<{ id: string; title: string }>
+      const fieldLabels = sheetQuestions.map((q) => q.title || 'Sem título')
       const questionIdToLabel: Record<string, string> = {}
-      for (const q of formQuestions) {
+      for (const q of sheetQuestions) {
         questionIdToLabel[q.id] = q.title || 'Sem título'
       }
       // Se a row já existe no Sheets (criada por /api/responses/partial), faz
@@ -470,7 +482,7 @@ export async function POST(req: NextRequest) {
     if (ownerPlanConfig?.pixels && metaEvents.length > 0) {
       const pii = extractPIIFromAnswers(
         answers as Record<string, unknown>,
-        form.questions as Array<{ id: string; type?: string; title?: string; fields?: Array<{ id: string; ref?: string }> }>
+        effectiveQuestions as Array<{ id: string; type?: string; title?: string; fields?: Array<{ id: string; ref?: string }> }>
       )
       const userAgent = req.headers.get('user-agent') ?? undefined
       const referer = req.headers.get('referer') ?? undefined
@@ -491,15 +503,14 @@ export async function POST(req: NextRequest) {
     // Webhook externo configurado pelo usuário — feature gated
     if (form.webhook_url && ownerPlanConfig?.webhooks) {
       // Enriquecer payload com metadata dos campos + lead canônico
-      const questions = (form.questions ?? []) as QuestionConfig[]
-      const fields = questions.map(q => ({
+      const fields = effectiveQuestions.map(q => ({
         question_id: q.id,
         type: q.type,
         title: q.title,
       }))
       const lead = extractLead({
         responseData: answers as Record<string, unknown>,
-        questions: questions.map(q => ({ id: q.id, title: q.title, type: q.type })),
+        questions: effectiveQuestions.map(q => ({ id: q.id, title: q.title, type: q.type })),
       })
       postSubmitTasks.push(
         dispatchWebhook({

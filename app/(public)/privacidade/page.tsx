@@ -200,7 +200,7 @@ export default function PrivacidadePage() {
                 <li><strong className="text-slate-200">Oposição:</strong> se opor ao tratamento realizado com base em legítimo interesse.</li>
               </ul>
               <p className="text-slate-400 mt-4">
-                Para exercer seus direitos, envie um e-mail para <a href="mailto:privacidade@eidosform.com.br" className="text-[#F5B731] hover:underline">privacidade@eidosform.com.br</a> com o assunto &quot;Direitos LGPD&quot;. Responderemos em até 15 dias úteis.
+                Para exercer seus direitos, envie um e-mail para <a href="mailto:contato@eidosform.com.br" className="text-[#F5B731] hover:underline">contato@eidosform.com.br</a> com o assunto &quot;Direitos LGPD&quot;. Responderemos em até 15 dias úteis.
               </p>
             </section>
 
@@ -208,7 +208,7 @@ export default function PrivacidadePage() {
             <section>
               <h2 className="text-xl font-bold text-white mb-4">8. Encarregado de Dados (DPO)</h2>
               <p className="text-slate-400">
-                Nos termos do art. 41 da LGPD, o Encarregado de Proteção de Dados da Eidos pode ser contatado pelo e-mail: <a href="mailto:dpo@eidosform.com.br" className="text-[#F5B731] hover:underline">dpo@eidosform.com.br</a>.
+                Nos termos do art. 41 da LGPD, o Encarregado de Proteção de Dados da Eidos pode ser contatado pelo e-mail: <a href="mailto:contato@eidosform.com.br" className="text-[#F5B731] hover:underline">contato@eidosform.com.br</a>.
               </p>
             </section>
 

@@ -315,7 +315,7 @@ export default function LandingPage() {
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Suporte</h4>
               <ul className="space-y-1 text-sm text-slate-500">
                 <li><a href="#faq" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">FAQ</a></li>
-                <li><a href="mailto:suporte@eidosform.com.br" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
+                <li><a href="https://wa.me/5583999378937" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
               </ul>
             </div>
             <div>

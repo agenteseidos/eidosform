@@ -41,9 +41,9 @@ export const metadata: Metadata = {
 }
 
 // TODO: quando o formulário de migração for criado no próprio EidosForm
-// (plano aprovado em 2026-06-12, ver memória), trocar este mailto pelo /f/<slug>.
+// (plano aprovado em 2026-06-12, ver memória), trocar este link de WhatsApp pelo /f/<slug>.
 const MIGRATION_EMAIL =
-  'mailto:suporte@eidosform.com.br?subject=Migra%C3%A7%C3%A3o%20de%20formul%C3%A1rios&body=Ol%C3%A1!%20Quero%20migrar%20meus%20formul%C3%A1rios%20para%20o%20EidosForm.%20Seguem%20os%20links%3A'
+  'https://wa.me/5583999378937?text=Ol%C3%A1!%20Quero%20migrar%20meus%20formul%C3%A1rios%20para%20o%20EidosForm.%20Seguem%20os%20links%3A'
 
 const DIFFERENTIALS = [
   { icon: Target, text: 'Meta Pixel, Google Ads, GTM e TikTok nativos no Plus' },
@@ -177,7 +177,7 @@ const FEATURE_COMPARISON: Array<{ label: string; eidos: string | boolean; typefo
 const FAQS = [
   {
     q: 'Estou em outra ferramenta. Como migro para o EidosForm?',
-    a: 'A gente migra para você — do Typeform, Google Forms ou qualquer outra plataforma. Envie os links dos seus formulários para suporte@eidosform.com.br: fazemos uma análise gratuita e te dizemos qual plano comporta o que você usa hoje. Assinando qualquer plano pago, recriamos tudo (até 10 formulários) em no máximo 3 dias úteis. Você só revisa e publica.',
+    a: 'A gente migra para você — do Typeform, Google Forms ou qualquer outra plataforma. Chame a gente no WhatsApp com os links dos seus formulários: fazemos uma análise gratuita e te dizemos qual plano comporta o que você usa hoje. Assinando qualquer plano pago, recriamos tudo (até 10 formulários) em no máximo 3 dias úteis. Você só revisa e publica.',
   },
   {
     q: 'O que o Typeform tem que vocês não têm?',
@@ -612,7 +612,7 @@ export default function LandingV4Page() {
               <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Suporte</h4>
               <ul className="space-y-1 text-sm text-slate-500">
                 <li><a href="#faq" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">FAQ</a></li>
-                <li><a href="mailto:suporte@eidosform.com.br" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
+                <li><a href="https://wa.me/5583999378937" target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
                 <li><a href={MIGRATION_EMAIL} className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Migração gratuita</a></li>
               </ul>
             </div>

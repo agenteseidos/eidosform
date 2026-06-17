@@ -100,8 +100,8 @@ export default async function BillingPage() {
       <BillingPlans currentPlan={currentPlan} currentCycle={currentCycle} planStatus={planStatus} />
 
       <p className="text-center text-sm text-slate-500 mt-8">
-        Todos os planos incluem SSL, backups diários e suporte por e-mail.{' '}
-        <a href="mailto:suporte@eidosform.com.br" className="text-[#F5B731] hover:underline">
+        Todos os planos incluem SSL, backups diários e suporte por WhatsApp.{' '}
+        <a href="https://wa.me/5583999378937" target="_blank" rel="noopener noreferrer" className="text-[#F5B731] hover:underline">
           Dúvidas? Fale conosco
         </a>
       </p>

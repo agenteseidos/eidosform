@@ -102,7 +102,7 @@ export default function TermosPage() {
                 Nos termos do art. 49 do <strong className="text-white">Código de Defesa do Consumidor (Lei nº 8.078/1990)</strong>, o consumidor que contratar um plano anual por meio eletrônico tem direito ao arrependimento e ao reembolso integral, desde que o exercício se dê no prazo de <strong className="text-white">7 (sete) dias corridos</strong> a contar da data da contratação.
               </p>
               <p className="mt-3 text-slate-400">
-                Para solicitar o arrependimento, envie um e-mail para <a href="mailto:suporte@eidosform.com.br" className="text-[#F5B731] hover:underline">suporte@eidosform.com.br</a> com o assunto &quot;Arrependimento — Plano Anual&quot;. O reembolso será processado pelo mesmo meio de pagamento utilizado na contratação em até 7 dias úteis.
+                Para solicitar o arrependimento, envie um e-mail para <a href="mailto:contato@eidosform.com.br" className="text-[#F5B731] hover:underline">contato@eidosform.com.br</a> com o assunto &quot;Arrependimento — Plano Anual&quot;. O reembolso será processado pelo mesmo meio de pagamento utilizado na contratação em até 7 dias úteis.
               </p>
               <p className="mt-3 text-slate-400">
                 Para planos mensais, não há reembolso proporcional ao período não utilizado, mas o cancelamento interrompe a renovação imediata.
@@ -189,7 +189,7 @@ export default function TermosPage() {
             <section>
               <h2 className="text-xl font-bold text-white mb-4">12. Contato</h2>
               <p className="text-slate-400">
-                Dúvidas sobre estes Termos podem ser enviadas para <a href="mailto:suporte@eidosform.com.br" className="text-[#F5B731] hover:underline">suporte@eidosform.com.br</a>.
+                Dúvidas sobre estes Termos podem ser enviadas para <a href="mailto:contato@eidosform.com.br" className="text-[#F5B731] hover:underline">contato@eidosform.com.br</a>.
               </p>
             </section>
 

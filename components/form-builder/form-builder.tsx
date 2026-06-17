@@ -286,15 +286,21 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const shouldShowMobilePreview = !isMobileUtilityTab && (mobilePanel === 'preview' || mobilePanel === 'editor')
   const shouldShowMobileRightPanel = !isMobileUtilityTab && mobilePanel === 'editor'
 
+  // Fonte ÚNICA de verdade do preview passo-a-passo: `selectedQuestionId`.
+  // O `stepPreviewIndex` é DERIVADO da seleção por este único efeito (seleção → índice).
+  // NÃO pode existir um efeito no sentido inverso (índice → seleção): com os dois, eles
+  // se corrigiam mutuamente lendo valores defasados e oscilavam pra sempre
+  // ("Maximum update depth exceeded") quando o "Próxima" mudava só o índice. A navegação
+  // (stepBy, abaixo) mexe na SELEÇÃO; este efeito reposiciona o índice em seguida.
   useEffect(() => {
     if (previewMode !== 'step') return
-
     const selectedIndex = questions.findIndex(q => q.id === selectedQuestionId)
     if (selectedIndex >= 0 && selectedIndex !== stepPreviewIndex) {
       setStepPreviewIndex(selectedIndex)
     }
   }, [previewMode, questions, selectedQuestionId, stepPreviewIndex])
 
+  // Mantém o índice dentro do intervalo quando a lista de perguntas muda (ex.: exclusão).
   useEffect(() => {
     setStepPreviewIndex((currentIndex) => {
       if (questions.length === 0) return 0
@@ -302,15 +308,18 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     })
   }, [questions])
 
-  useEffect(() => {
-    if (previewMode !== 'step') return
-
-    const previewQuestion = questions[stepPreviewIndex]
-    if (previewQuestion && previewQuestion.id !== selectedQuestionId) {
-      setSelectedQuestionId(previewQuestion.id)
+  // Navega no preview passo-a-passo alterando a SELEÇÃO (o índice segue pelo efeito acima).
+  const stepBy = useCallback((delta: number) => {
+    if (questions.length === 0) return
+    const current = questions.findIndex(q => q.id === selectedQuestionId)
+    const base = current >= 0 ? current : stepPreviewIndex
+    const next = Math.max(0, Math.min(questions.length - 1, base + delta))
+    const target = questions[next]
+    if (target) {
+      setSelectedQuestionId(target.id)
       setSidebarSection(null)
     }
-  }, [previewMode, questions, stepPreviewIndex, selectedQuestionId])
+  }, [questions, selectedQuestionId, stepPreviewIndex])
 
   useEffect(() => {
     if (activeTab === 'integrations' || activeTab === 'share' || activeTab === 'logic') {
@@ -1766,9 +1775,12 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   <button
                     onClick={() => {
                       setPreviewMode("step")
-                      // Sync step index with selected question
+                      // Sincroniza o índice com a pergunta selecionada; se nenhuma estiver
+                      // selecionada, seleciona a primeira (seleção e índice nascem coerentes).
                       const idx = questions.findIndex(q => q.id === selectedQuestionId)
-                      setStepPreviewIndex(idx >= 0 ? idx : 0)
+                      const target = idx >= 0 ? idx : 0
+                      setStepPreviewIndex(target)
+                      if (idx < 0 && questions[target]) setSelectedQuestionId(questions[target].id)
                     }}
                     className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
                       previewMode === "step"
@@ -1828,7 +1840,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     {questions.length > 1 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t" style={{ borderColor: `${currentTheme.textColor}15` }}>
                         <button
-                          onClick={() => setStepPreviewIndex(i => Math.max(0, i - 1))}
+                          onClick={() => stepBy(-1)}
                           disabled={stepPreviewIndex === 0}
                           className="flex items-center gap-1 text-sm font-medium disabled:opacity-30 transition-opacity"
                           style={{ color: currentTheme.textColor }}
@@ -1840,7 +1852,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           {stepPreviewIndex + 1} / {questions.length}
                         </span>
                         <button
-                          onClick={() => setStepPreviewIndex(i => Math.min(questions.length - 1, i + 1))}
+                          onClick={() => stepBy(1)}
                           disabled={stepPreviewIndex >= questions.length - 1}
                           className="flex items-center gap-1 text-sm font-medium disabled:opacity-30 transition-opacity"
                           style={{ color: currentTheme.textColor }}

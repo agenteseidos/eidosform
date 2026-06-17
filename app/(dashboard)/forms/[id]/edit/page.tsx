@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAdminEmail } from '@/lib/admin-auth'
 import { FormBuilder } from '@/components/form-builder/form-builder'
 import { Form } from '@/lib/database.types'
+import { getEffectivePlan } from '@/lib/plans'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,11 +41,13 @@ export default async function EditFormPage({ params }: EditFormPageProps) {
   const profileUserId = isAdmin ? form.user_id : user.id
   const { data: profile } = await dbClient
     .from('profiles')
-    .select('plan')
+    .select('plan, plan_expires_at')
     .eq('id', profileUserId)
     .single()
 
-  const userPlan = (profile?.plan as string) || 'free'
+  // Plano EFETIVO (igual à blindagem do player): plano pago vencido vira 'free'
+  // e perde pixels/sheets — o builder trava os campos no downsell/expiração.
+  const userPlan = getEffectivePlan(profile ?? { plan: 'free' })
 
   // B20: Passar info do usuário para o builder (avatar no header)
   const userInfo = {

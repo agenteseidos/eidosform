@@ -443,7 +443,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (form.google_sheets_enabled && form.google_sheets_id) {
+    if (form.google_sheets_enabled && form.google_sheets_id && ownerPlanConfig?.googleSheets) {
       const sheetQuestions = effectiveQuestions as Array<{ id: string; title: string }>
       const fieldLabels = sheetQuestions.map((q) => q.title || 'Sem título')
       const questionIdToLabel: Record<string, string> = {}

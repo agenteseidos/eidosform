@@ -236,6 +236,9 @@ function QuestionReorderItem({
 }
 
 export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: FormBuilderProps) {
+  // Gating por plano (espelha a blindagem de runtime do player: canShowPixels / getEffectivePlan).
+  const canUsePixels = userPlan === 'plus' || userPlan === 'professional'
+  const canUseSheets = userPlan !== 'free' // Starter+
   const router = useRouter()
   const supabase = createClient()
   
@@ -1157,7 +1160,18 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     <div className="h-px flex-1 bg-slate-100" />
                   </div>
 
-                  <div className="space-y-4">
+                  {!canUsePixels && (
+                    <div className="mb-4 p-3 rounded-lg border border-slate-200 bg-slate-50">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-500">Pixels de rastreamento</span>
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
+                      <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                    </div>
+                  )}
+
+                  <fieldset disabled={!canUsePixels} className={`space-y-4 ${!canUsePixels ? 'opacity-60' : ''}`}>
                     {/* Meta Pixel — agrupado com Eventos */}
                     <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-4">
                       <div className="flex items-center gap-3">
@@ -1279,7 +1293,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         placeholder="GTM-XXXXXXX"
                       />
                     </div>
-                  </div>
+                  </fieldset>
                 </section>
 
                 {/* ── Seção 2: Destino de dados ── */}
@@ -1302,7 +1316,16 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       </div>
                     </div>
 
-                    {form.google_sheets_id ? (
+                    {!canUseSheets ? (
+                      <div className="p-3 rounded-lg border border-slate-200 bg-white opacity-60">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-slate-500">Google Sheets</span>
+                          <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Starter+</span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">Disponível a partir do plano Starter.</p>
+                        <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                      </div>
+                    ) : form.google_sheets_id ? (
                       <>
                         {/* CONNECTED state */}
                         <div className="p-3 rounded-md bg-emerald-50 border border-emerald-200 space-y-2">

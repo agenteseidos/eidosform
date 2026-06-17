@@ -252,6 +252,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   let connectedSheetsId: string | undefined
   let connectedSheetsTitle: string | undefined
   if (google_sheets_url) {
+    if (!PLANS[userPlan]?.googleSheets) {
+      return NextResponse.json(
+        { error: 'Integração com Google Sheets disponível a partir do plano Starter.' },
+        { status: 403 }
+      )
+    }
     const spreadsheetId = extractSpreadsheetId(google_sheets_url as string)
     if (!spreadsheetId) {
       return NextResponse.json(

@@ -19,6 +19,7 @@ export interface PlanConfig {
   maxUsers: number
   watermark: boolean
   pixels: boolean
+  googleSheets: boolean
   customDomain: boolean
   apiAccess: boolean
   partialResponses: boolean
@@ -43,6 +44,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     maxUsers: 1,
     watermark: true,
     pixels: false,
+    googleSheets: false,
     customDomain: false,
     apiAccess: false,
     partialResponses: false,
@@ -74,6 +76,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     maxUsers: 1,
     watermark: true,
     pixels: false,
+    googleSheets: true,
     customDomain: false,
     apiAccess: false,
     partialResponses: false,
@@ -92,6 +95,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
       'Agendamento com Calendly',
       'Redirecionamento após envio',
       'Exportação CSV',
+      'Integração com Google Sheets',
       "Marca d'água EidosForm",
     ],
   },
@@ -106,6 +110,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     maxUsers: 1,
     watermark: false,
     pixels: true,
+    googleSheets: true,
     customDomain: false,
     apiAccess: false,
     partialResponses: true,
@@ -145,6 +150,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     maxUsers: 1, // multi-user removido da oferta (2026-06-10) até existir de verdade
     watermark: false,
     pixels: true,
+    googleSheets: true,
     customDomain: true,
     apiAccess: true,
     partialResponses: true,
@@ -174,6 +180,7 @@ export interface PlanLimits {
   maxForms: number
   watermark: boolean
   pixels: boolean
+  googleSheets: boolean
   customDomain: boolean
   apiAccess: boolean
   maxUsers: number
@@ -188,6 +195,7 @@ export const PLAN_LIMITS: Record<PlanName, PlanLimits> = Object.fromEntries(
       maxForms: p.maxForms,
       watermark: p.watermark,
       pixels: p.pixels,
+      googleSheets: p.googleSheets,
       customDomain: p.customDomain,
       apiAccess: p.apiAccess,
       maxUsers: p.maxUsers,

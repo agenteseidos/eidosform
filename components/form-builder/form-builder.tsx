@@ -17,6 +17,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { ErrorBoundary } from '@/components/ui/error-boundary'
 import {
   Dialog,
   DialogContent,
@@ -1787,22 +1788,43 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 }}
               >
                 {previewMode === "full" ? (
-                  <FormPreview
-                    questions={questions}
-                    theme={currentTheme}
-                    selectedQuestionId={selectedQuestionId}
-                    onSelectQuestion={setSelectedQuestionId}
-                    onUpdateQuestion={updateQuestion}
-                  />
-                ) : (
-                  <>
+                  <ErrorBoundary
+                    key="preview-full"
+                    label="form-preview-full"
+                    fallback={(_e, reset) => (
+                      <div className="p-6 text-sm text-slate-500 space-y-2">
+                        <p>Não foi possível exibir o preview de uma das perguntas.</p>
+                        <button onClick={reset} className="text-blue-600 hover:underline">Tentar novamente</button>
+                      </div>
+                    )}
+                  >
                     <FormPreview
-                      questions={questions.length > 0 ? [questions[stepPreviewIndex] || questions[0]] : []}
+                      questions={questions}
                       theme={currentTheme}
-                      selectedQuestionId={questions[stepPreviewIndex]?.id || null}
+                      selectedQuestionId={selectedQuestionId}
                       onSelectQuestion={setSelectedQuestionId}
                       onUpdateQuestion={updateQuestion}
                     />
+                  </ErrorBoundary>
+                ) : (
+                  <>
+                    <ErrorBoundary
+                      key={`preview-step-${questions[stepPreviewIndex]?.id || 'none'}`}
+                      label="form-preview-step"
+                      fallback={() => (
+                        <div className="p-6 text-sm text-slate-500">
+                          Não foi possível exibir o preview desta pergunta. Use “Anterior”/“Próxima” para continuar.
+                        </div>
+                      )}
+                    >
+                      <FormPreview
+                        questions={questions.length > 0 ? [questions[stepPreviewIndex] || questions[0]] : []}
+                        theme={currentTheme}
+                        selectedQuestionId={questions[stepPreviewIndex]?.id || null}
+                        onSelectQuestion={setSelectedQuestionId}
+                        onUpdateQuestion={updateQuestion}
+                      />
+                    </ErrorBoundary>
                     {questions.length > 1 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t" style={{ borderColor: `${currentTheme.textColor}15` }}>
                         <button
@@ -1839,23 +1861,34 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
         {/* Right Panel - Fixed property editor */}
         <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} md:flex fixed md:relative inset-0 md:inset-auto z-40 md:z-auto w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col md:shrink-0 overflow-y-auto overflow-x-hidden pb-16 md:pb-0`}>
-          <RightPanel
-            selectedQuestion={selectedQuestion || null}
-            allQuestions={questions}
-            onUpdateQuestion={updateQuestion}
-            onDeleteQuestion={deleteQuestion}
-            onDuplicateQuestion={duplicateQuestion}
-            ownerPlan={userPlan}
-            sidebarSection={sidebarSection}
-            form={form}
-            onUpdateForm={(updates) => {
-              setForm(prev => ({ ...prev, ...updates }))
-              setHasUnsavedChanges(true)
-            }}
-            onWelcomeImageUpload={handleWelcomeImageUpload}
-            onRemoveWelcomeImage={handleRemoveWelcomeImage}
-            isUploadingImage={isUploadingImage}
-          />
+          <ErrorBoundary
+            key={`right-panel-${selectedQuestion?.id || sidebarSection || 'none'}`}
+            label="right-panel"
+            fallback={(_e, reset) => (
+              <div className="p-6 text-sm text-slate-500 space-y-2">
+                <p>Não foi possível abrir o editor desta pergunta. Selecione outra pergunta para continuar.</p>
+                <button onClick={reset} className="text-blue-600 hover:underline">Tentar novamente</button>
+              </div>
+            )}
+          >
+            <RightPanel
+              selectedQuestion={selectedQuestion || null}
+              allQuestions={questions}
+              onUpdateQuestion={updateQuestion}
+              onDeleteQuestion={deleteQuestion}
+              onDuplicateQuestion={duplicateQuestion}
+              ownerPlan={userPlan}
+              sidebarSection={sidebarSection}
+              form={form}
+              onUpdateForm={(updates) => {
+                setForm(prev => ({ ...prev, ...updates }))
+                setHasUnsavedChanges(true)
+              }}
+              onWelcomeImageUpload={handleWelcomeImageUpload}
+              onRemoveWelcomeImage={handleRemoveWelcomeImage}
+              isUploadingImage={isUploadingImage}
+            />
+          </ErrorBoundary>
         </aside>
       </div>
 

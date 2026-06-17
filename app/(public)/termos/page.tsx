@@ -72,8 +72,9 @@ export default function TermosPage() {
               <p className="text-slate-400">O EidosForm oferece os seguintes planos (valores sujeitos a atualização periódica):</p>
               <ul className="list-disc list-inside space-y-2 mt-3 text-slate-400">
                 <li><strong className="text-slate-200">Free:</strong> gratuito para sempre, até 3 formulários e 100 respostas/mês. Sem necessidade de cartão de crédito.</li>
-                <li><strong className="text-slate-200">Plus:</strong> cobrança mensal ou anual; inclui mais formulários, respostas ilimitadas, pixels de rastreamento, notificações e sem marca d&apos;água.</li>
-                <li><strong className="text-slate-200">Professional:</strong> todas as funcionalidades do Plus, mais API REST, domínio personalizado, Google Sheets e suporte prioritário.</li>
+                <li><strong className="text-slate-200">Starter:</strong> cobrança mensal ou anual; até 100 formulários e 1.000 respostas/mês, campo de CPF/CNPJ, integração com Google Sheets e Calendly.</li>
+                <li><strong className="text-slate-200">Plus:</strong> tudo do Starter, formulários ilimitados, 5.000 respostas/mês, pixels de rastreamento, notificações e sem marca d&apos;água.</li>
+                <li><strong className="text-slate-200">Professional:</strong> tudo do Plus, 15.000 respostas/mês, API REST, domínio personalizado e suporte prioritário.</li>
               </ul>
               <p className="mt-4 text-slate-400">
                 Os preços atualizados estão sempre disponíveis na <Link href="/#precos" className="text-[#F5B731] hover:underline">página de preços</Link>. Assinaturas anuais são cobradas integralmente no ato da contratação.

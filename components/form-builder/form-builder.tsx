@@ -280,6 +280,17 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   // e pedimos recarregar, em vez de seguir sobrescrevendo a versão mais nova.
   const [hasConflict, setHasConflict] = useState(false)
 
+  // Fix (2026-06-18) — salvamento em FILA (single-flight). Evita que o autosave e o
+  // "Salvar" manual (ou dois saves seguidos) rodem ao mesmo tempo e disparem um FALSO
+  // conflito de versão. Um worker serializa as gravações e, se surgir mudança durante
+  // um save, roda outra rodada já com a versão FRESCA (buildPayloadRef).
+  const savingRef = useRef(false)                    // um save está em voo?
+  const dirtyRef = useRef(false)                     // há mudança pendente pra salvar?
+  const saveOkRef = useRef(true)                     // resultado da última gravação
+  const hasConflictRef = useRef(false)               // espelho síncrono de hasConflict
+  const buildPayloadRef = useRef<(() => ReturnType<typeof buildFormPayload>) | null>(null)
+  const saveWaitersRef = useRef<Array<(ok: boolean) => void>>([])
+
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
   const isMobileUtilityTab = activeTab === 'integrations' || activeTab === 'share' || activeTab === 'logic'
   const shouldShowMobileSidebar = mobilePanel === 'questions' || isMobileUtilityTab
@@ -450,6 +461,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     ...(status && { status }),
   }), [form, questions, pixels])
 
+  // Mantém a referência do builder sempre fresca p/ o worker de save usar a versão
+  // ATUAL (form.version) a cada rodada, mesmo dentro de um loop assíncrono.
+  buildPayloadRef.current = buildFormPayload
+
   const updateFormViaApi = useCallback(async (payload: ReturnType<typeof buildFormPayload>) => {
     const response = await fetch(`/api/forms/${form.id}`, {
       method: 'PATCH',
@@ -484,6 +499,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   // Camada 1 — conflito de versão: pausa o autosave e pede recarregar (não sobrescreve).
   const notifyVersionConflict = useCallback(() => {
     setHasConflict(true)
+    hasConflictRef.current = true
     setSaveStatus('error')
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     toast.error('Conflito de versão — salvamento pausado', {
@@ -493,59 +509,99 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     })
   }, [])
 
-  const handleAutosave = useCallback(async () => {
-    setSaveStatus('saving')
+  // Worker serializado de salvamento. Roda UMA gravação por vez; se surgir mudança
+  // durante o save (dirtyRef), faz outra rodada já com a versão fresca. Quem pediu o
+  // save (autosave/manual) só é resolvido quando a fila DRENA — então o "Salvar e sair"
+  // recebe um booleano confiável (true só se gravou tudo sem conflito).
+  const drainSaves = useCallback(async (): Promise<void> => {
+    if (savingRef.current) return // worker já rodando
+    savingRef.current = true
     setIsSaving(true)
     try {
-      const updatedForm = await updateFormViaApi(buildFormPayload())
-      if (updatedForm) {
-        setForm(updatedForm)
-        setHasUnsavedChanges(false)
-        setSaveStatus('saved')
-        setTimeout(() => setSaveStatus('idle'), 2000)
-      } else {
-        toast.error('Falha ao salvar automaticamente', { description: 'Suas alterações podem não ter sido salvas.' })
-        setSaveStatus('error')
-        setTimeout(() => setSaveStatus('idle'), 5000)
+      while (dirtyRef.current && !hasConflictRef.current) {
+        dirtyRef.current = false
+        setSaveStatus('saving')
+        try {
+          const builder = buildPayloadRef.current
+          const updatedForm = builder ? await updateFormViaApi(builder()) : undefined
+          if (updatedForm) {
+            setForm(updatedForm)
+            setHasUnsavedChanges(false)
+            setSaveStatus('saved')
+            setTimeout(() => setSaveStatus('idle'), 2000)
+            saveOkRef.current = true
+          } else {
+            saveOkRef.current = false
+            toast.error('Falha ao salvar', { description: 'Suas alterações podem não ter sido salvas.' })
+            setSaveStatus('error')
+            setTimeout(() => setSaveStatus('idle'), 5000)
+          }
+        } catch (err) {
+          saveOkRef.current = false
+          if ((err as { conflict?: boolean })?.conflict) {
+            notifyVersionConflict()
+          } else {
+            toast.error(err instanceof Error ? err.message : 'Erro ao salvar', { description: 'Verifique sua internet e tente novamente.' })
+            setSaveStatus('error')
+            setTimeout(() => setSaveStatus('idle'), 5000)
+          }
+          break // para de tentar; uma nova edição re-dispara o worker
+        }
+        // deixa o re-render aplicar a versão nova em buildPayloadRef antes da próxima volta
+        if (dirtyRef.current && !hasConflictRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+        }
       }
-    } catch (err) {
-      if ((err as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return }
-      toast.error(err instanceof Error ? err.message : 'Erro de conexão ao salvar', { description: 'Verifique sua internet e tente salvar manualmente.' })
-      setSaveStatus('error')
-      setTimeout(() => setSaveStatus('idle'), 5000)
     } finally {
+      savingRef.current = false
       setIsSaving(false)
     }
-  }, [buildFormPayload, updateFormViaApi, notifyVersionConflict])
+    // mudança que chegou na brecha do finally → continua drenando
+    if (dirtyRef.current && !hasConflictRef.current) { return drainSaves() }
+    // drenou: resolve quem estava esperando esta leva de saves
+    const ok = saveOkRef.current && !hasConflictRef.current
+    const waiters = saveWaitersRef.current
+    saveWaitersRef.current = []
+    waiters.forEach(w => w(ok))
+  }, [updateFormViaApi, notifyVersionConflict])
+
+  // Pede um save. `manual` só controla o toast de sucesso. Resolve quando a fila drena.
+  const requestSave = useCallback((manual = false): Promise<boolean> => {
+    if (hasConflictRef.current) return Promise.resolve(false)
+    dirtyRef.current = true
+    saveOkRef.current = true
+    return new Promise<boolean>((resolve) => {
+      saveWaitersRef.current.push((ok) => {
+        if (manual && ok) toast.success('Formulário salvo')
+        resolve(ok)
+      })
+      void drainSaves()
+    })
+  }, [drainSaves])
+
+  // Cancela um autosave AGENDADO (timer) — usado antes de salvar manual/publicar.
+  const cancelPendingAutosave = useCallback(() => {
+    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null }
+  }, [])
+
+  // Espera um save em voo terminar (usado antes de publicar/despublicar).
+  const waitForSaveIdle = useCallback(async () => {
+    while (savingRef.current) { await new Promise(resolve => setTimeout(resolve, 50)) }
+  }, [])
 
   useEffect(() => {
     if (!hasUnsavedChanges || hasConflict) return
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = setTimeout(() => {
-      handleAutosave()
-    }, 1500)
+    autosaveTimerRef.current = setTimeout(() => { void requestSave(false) }, 1500)
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     }
-  }, [hasUnsavedChanges, hasConflict, handleAutosave])
+  }, [hasUnsavedChanges, hasConflict, requestSave])
 
-  const handleSave = useCallback(async () => {
-    setIsSaving(true)
-
-    try {
-      const updatedForm = await updateFormViaApi(buildFormPayload())
-      if (updatedForm) setForm(updatedForm)
-      toast.success('Formulário salvo')
-      setHasUnsavedChanges(false)
-      return true
-    } catch (error) {
-      if ((error as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return false }
-      toast.error(error instanceof Error ? error.message : 'Falha ao salvar formulário')
-      return false
-    } finally {
-      setIsSaving(false)
-    }
-  }, [buildFormPayload, updateFormViaApi, notifyVersionConflict])
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    cancelPendingAutosave()
+    return requestSave(true)
+  }, [cancelPendingAutosave, requestSave])
 
   const handlePublish = async () => {
     if (!form.title.trim()) {
@@ -566,15 +622,21 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       return
     }
 
+    cancelPendingAutosave()
+    await waitForSaveIdle()
+    if (hasConflictRef.current) { notifyVersionConflict(); return }
     setIsSaving(true)
     try {
-      const payload = { ...buildFormPayload(), status: 'published' as FormStatus }
-      await updateFormViaApi(payload)
-      setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
+      const builder = buildPayloadRef.current
+      const payload = { ...(builder ? builder() : buildFormPayload()), status: 'published' as FormStatus }
+      const updated = await updateFormViaApi(payload)
+      if (updated) setForm(updated)
+      else setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
       toast.success(form.status === 'published' ? 'Alterações publicadas!' : 'Formulário publicado!')
       setShowPublishDialog(false)
       setHasUnsavedChanges(false)
     } catch (error) {
+      if ((error as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return }
       toast.error(error instanceof Error ? error.message : 'Falha ao atualizar status')
     } finally {
       setIsSaving(false)
@@ -582,13 +644,19 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   }
 
   const handleUnpublish = async () => {
+    cancelPendingAutosave()
+    await waitForSaveIdle()
+    if (hasConflictRef.current) { notifyVersionConflict(); return }
     setIsSaving(true)
     try {
-      const payload = { ...buildFormPayload(), status: 'draft' as FormStatus }
-      await updateFormViaApi(payload)
-      setForm(prev => ({ ...prev, status: 'draft' as FormStatus }))
+      const builder = buildPayloadRef.current
+      const payload = { ...(builder ? builder() : buildFormPayload()), status: 'draft' as FormStatus }
+      const updated = await updateFormViaApi(payload)
+      if (updated) setForm(updated)
+      else setForm(prev => ({ ...prev, status: 'draft' as FormStatus }))
       toast.success('Formulário movido para rascunho')
     } catch (error) {
+      if ((error as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return }
       toast.error(error instanceof Error ? error.message : 'Falha ao despublicar')
     } finally {
       setIsSaving(false)

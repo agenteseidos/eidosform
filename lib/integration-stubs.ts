@@ -99,7 +99,7 @@ export async function sendWhatsAppOnFormResponse(params: {
       whatsapp: phoneValue,
       form_name: params.form.title || 'Formulário',
       response_id: responseId,
-      response_link: `${appUrl}/form/${formId}/responses/${responseId}`,
+      response_link: `${appUrl}/forms/${formId}/responses?response=${responseId}`,
       horario: horarioValue,
       data: dataValue,
       dia_semana: diaSemanaValue,

@@ -9,10 +9,12 @@ export const dynamic = 'force-dynamic'
 
 interface ResponsesPageProps {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ response?: string }>
 }
 
-export default async function ResponsesPage({ params }: ResponsesPageProps) {
+export default async function ResponsesPage({ params, searchParams }: ResponsesPageProps) {
   const { id } = await params
+  const { response: initialResponseId } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -64,6 +66,7 @@ export default async function ResponsesPage({ params }: ResponsesPageProps) {
       userPlan={userPlan}
       totalResponseCount={totalResponseCount}
       hasMoreResponses={hasMoreResponses}
+      initialResponseId={initialResponseId}
     />
   )
 }

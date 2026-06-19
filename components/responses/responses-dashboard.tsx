@@ -72,6 +72,7 @@ interface ResponsesDashboardProps {
   userPlan?: string
   totalResponseCount?: number
   hasMoreResponses?: boolean
+  initialResponseId?: string
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -384,7 +385,7 @@ function ResponseDetailDialog({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ResponsesDashboard({ form, responses: initialResponses, userPlan = 'free', totalResponseCount }: ResponsesDashboardProps) {
+export function ResponsesDashboard({ form, responses: initialResponses, userPlan = 'free', totalResponseCount, initialResponseId }: ResponsesDashboardProps) {
   const supabase = createClient()
   const questions = (form.questions as QuestionConfig[]) || []
 
@@ -395,7 +396,10 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [responseToDelete, setResponseToDelete] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [selectedResponse, setSelectedResponse] = useState<Response | null>(null)
+  // Abre direto a resposta vinda do link "Ver resposta" do e-mail (?response=<id>).
+  const [selectedResponse, setSelectedResponse] = useState<Response | null>(
+    () => (initialResponseId ? initialResponses.find(r => r.id === initialResponseId) ?? null : null)
+  )
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 20
 

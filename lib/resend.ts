@@ -141,7 +141,7 @@ export async function sendNewResponseNotification(params: {
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
         <h2 style="color:#6366f1">Nova resposta recebida! 🎉</h2>
         <p>Seu formulário <strong>${safeFormTitle}</strong> recebeu uma nova resposta.</p>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/forms/${formId}/responses/${responseId}"
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/forms/${formId}/responses?response=${responseId}"
            style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
           Ver resposta
         </a>

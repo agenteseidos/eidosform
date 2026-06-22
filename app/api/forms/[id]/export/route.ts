@@ -34,8 +34,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const { searchParams } = new URL(req.url)
   const format = searchParams.get('format') || 'csv'
 
-  if (format !== 'csv' && format !== 'xlsx' && format !== 'pdf') {
-    return NextResponse.json({ error: 'Formato não suportado. Use ?format=csv, ?format=xlsx ou ?format=pdf' }, { status: 400 })
+  if (format !== 'csv' && format !== 'xlsx' && format !== 'pdf' && format !== 'json') {
+    return NextResponse.json({ error: 'Formato não suportado. Use ?format=csv, ?format=xlsx, ?format=pdf ou ?format=json' }, { status: 400 })
   }
 
   const supabase = await createClient()
@@ -72,7 +72,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     )
   }
 
-  if (format === 'pdf' && !PLANS[userPlan]?.pdfExport) {
+  // 'json' é o caminho de dados do PDF gerado no cliente — gateia igual ao PDF.
+  if ((format === 'pdf' || format === 'json') && !PLANS[userPlan]?.pdfExport) {
     return NextResponse.json(
       { error: 'Exportação PDF disponível a partir do plano Plus' },
       { status: 403 }
@@ -100,6 +101,18 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   if (responsesError) {
     return NextResponse.json({ error: responsesError.message }, { status: 500 })
+  }
+
+  // Caminho de dados do PDF gerado no NAVEGADOR: devolve os dados crus (rápido, como o
+  // CSV) e o cliente monta o PDF — sem o risco de estourar o limite de 30s da função.
+  if (format === 'json') {
+    const hideBranding = !!PLANS[userPlan]?.pdfExport
+    return NextResponse.json({
+      title: form.title,
+      questions,
+      responses: responses || [],
+      hideBranding,
+    })
   }
 
   const escapeCSV = (value: unknown): string => {

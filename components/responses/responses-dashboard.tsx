@@ -401,6 +401,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
     () => (initialResponseId ? initialResponses.find(r => r.id === initialResponseId) ?? null : null)
   )
   const [page, setPage] = useState(1)
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
   const PAGE_SIZE = 20
 
   // ── Metrics ──
@@ -491,12 +492,35 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
     link.click()
   }
 
-  const exportPDFFromAPI = () => {
-    const url = `/api/forms/${form.id}/export?format=pdf`
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${form.title || 'form'}-respostas.pdf`
-    link.click()
+  // PDF gerado no NAVEGADOR: o servidor só devolve os dados (rápido), e a montagem do
+  // PDF roda aqui — sem o limite de 30s da função serverless que fazia o download falhar.
+  // A biblioteca entra sob demanda (import dinâmico) p/ não pesar o bundle inicial.
+  const exportPDFFromAPI = async () => {
+    if (isExportingPdf) return
+    setIsExportingPdf(true)
+    const toastId = toast.loading('Gerando PDF…')
+    try {
+      const res = await fetch(`/api/forms/${form.id}/export?format=json`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || 'Falha ao carregar as respostas')
+      }
+      const { title, questions: qs, responses: rows, hideBranding } = await res.json()
+      const { buildPdfExport } = await import('@/lib/export-pdf')
+      const pdf = buildPdfExport(title, qs, rows, hideBranding)
+      const blob = new Blob([pdf as BlobPart], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${form.title || 'form'}-respostas.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+      toast.success('PDF gerado!', { id: toastId })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao gerar PDF', { id: toastId })
+    } finally {
+      setIsExportingPdf(false)
+    }
   }
 
   const copyFormLink = () => {
@@ -569,8 +593,11 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   {PLANS[userPlan as PlanName]?.pdfExport && (
-                    <DropdownMenuItem onClick={exportPDFFromAPI}>
-                      <File className="w-4 h-4 mr-2" />PDF
+                    <DropdownMenuItem
+                      onSelect={(e) => { e.preventDefault(); void exportPDFFromAPI() }}
+                      disabled={isExportingPdf}
+                    >
+                      <File className="w-4 h-4 mr-2" />{isExportingPdf ? 'Gerando PDF…' : 'PDF'}
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>

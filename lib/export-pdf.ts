@@ -1,5 +1,4 @@
 import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import { sanitizeCellValue } from '@/lib/sanitize-formula'
 
 interface QuestionRow {
@@ -30,94 +29,137 @@ function cellValue(value: unknown): string {
   return sanitizeCellValue(String(value))
 }
 
+const PT_TO_MM = 0.3528 // 1pt em mm
+
+/**
+ * Gera o PDF das respostas como um RELATÓRIO POR RESPOSTA (não tabela). Cada resposta
+ * vira um bloco com os pares "Pergunta / Resposta" empilhados em largura total — legível
+ * em qualquer formulário, inclusive os com muitas perguntas (onde uma tabela larga ficaria
+ * ilegível) — e barato de gerar (sem o layout pesado de tabela em colunas estreitas).
+ * Roda no NAVEGADOR (a montagem foi tirada do servidor p/ não estourar o timeout de função).
+ */
 export function buildPdfExport(
   formTitle: string,
   questions: QuestionRow[],
   responses: ResponseRow[],
   hideBranding = false
 ): Uint8Array {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const pageW = doc.internal.pageSize.getWidth()
+  const pageH = doc.internal.pageSize.getHeight()
+  const marginX = 15
+  const marginTop = 18
+  const marginBottom = 16
+  const contentW = pageW - marginX * 2
+  let y = marginTop
 
-  // Title
-  doc.setFontSize(18)
+  const lineH = (fontSize: number, factor = 1.15) => fontSize * PT_TO_MM * factor
+
+  // Garante espaço vertical; se não couber, abre nova página.
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageH - marginBottom) {
+      doc.addPage()
+      y = marginTop
+    }
+  }
+
+  // Escreve um parágrafo com quebra de linha automática (full-width).
+  const writeParagraph = (
+    text: string,
+    fontSize: number,
+    style: 'bold' | 'normal',
+    color: [number, number, number]
+  ) => {
+    doc.setFont('helvetica', style)
+    doc.setFontSize(fontSize)
+    doc.setTextColor(color[0], color[1], color[2])
+    const lines = doc.splitTextToSize(text || '—', contentW) as string[]
+    const lh = lineH(fontSize)
+    for (const line of lines) {
+      ensureSpace(lh)
+      doc.text(line, marginX, y)
+      y += lh
+    }
+  }
+
+  // ── Cabeçalho do documento ──
   doc.setFont('helvetica', 'bold')
-  doc.text(formTitle || 'Formulário', 14, 20)
+  doc.setFontSize(16)
+  doc.setTextColor(17, 24, 39)
+  doc.text(formTitle || 'Formulário', marginX, y)
+  y += lineH(16, 1.25)
 
-  // Subtitle
-  doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(120)
+  doc.setFontSize(9.5)
+  doc.setTextColor(120, 120, 120)
   doc.text(
-    `Exportado em ${new Date().toLocaleString('pt-BR')} · ${responses.length} respostas`,
-    14,
-    27
+    `Exportado em ${new Date().toLocaleString('pt-BR')}  ·  ${responses.length} resposta${responses.length === 1 ? '' : 's'}`,
+    marginX,
+    y
   )
-  doc.setTextColor(0)
+  y += lineH(9.5) + 4
 
-  // Build table data
-  const headers = [
-    'ID',
-    'Submetido em',
-    'Completo',
-    ...questions.map(q => q.title),
-    'meta_events',
-    ...UTM_KEYS,
-  ]
+  if (responses.length === 0) {
+    writeParagraph('Nenhuma resposta para exportar.', 10, 'normal', [120, 120, 120])
+  }
 
-  const questionIds = questions.map(q => q.id)
+  // ── Um bloco por resposta ──
+  responses.forEach((response, idx) => {
+    const headerH = 7
+    // Mantém o cabeçalho da resposta junto com ao menos o início do conteúdo.
+    ensureSpace(headerH + lineH(9.5) * 2 + 6)
 
-  const body: string[][] = responses.map(response => {
+    // Barra-título da resposta.
+    doc.setFillColor(16, 185, 129) // emerald-500
+    doc.rect(marginX, y, contentW, headerH, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(255, 255, 255)
+    const date = new Date(response.submitted_at).toLocaleString('pt-BR')
+    const status = response.completed ? 'Completo' : 'Incompleto'
+    doc.text(`Resposta ${idx + 1}  ·  ${date}  ·  ${status}`, marginX + 3, y + headerH - 2.3)
+    y += headerH + 4
+
+    // Pares pergunta / resposta.
     const answerMap = response.answers || {}
-    return [
-      response.id.slice(0, 8),
-      new Date(response.submitted_at).toLocaleString('pt-BR'),
-      response.completed ? 'Sim' : 'Não',
-      ...questionIds.map(qid => cellValue(answerMap[qid])),
-      (response.meta_events || []).join('; '),
-      ...UTM_KEYS.map(k => response[k] ?? ''),
-    ]
+    questions.forEach(q => {
+      const answer = cellValue(answerMap[q.id]) || '—'
+      // Evita "pergunta órfã" no rodapé: reserva pergunta + 1 linha de resposta.
+      ensureSpace(lineH(9.5) * 2 + 2)
+      writeParagraph(q.title, 9.5, 'bold', [55, 65, 81]) // slate-700
+      y += 0.5
+      writeParagraph(answer, 9.5, 'normal', [17, 24, 39]) // slate-900
+      y += 2.5
+    })
+
+    // Linha compacta de metadados (meta_events + UTMs), só se houver.
+    const metaParts: string[] = []
+    if (response.meta_events?.length) metaParts.push(`eventos: ${response.meta_events.join(', ')}`)
+    for (const k of UTM_KEYS) {
+      if (response[k]) metaParts.push(`${k}: ${response[k]}`)
+    }
+    if (metaParts.length) {
+      y += 0.5
+      writeParagraph(metaParts.join('   ·   '), 7.5, 'normal', [150, 150, 150])
+    }
+
+    y += 7 // respiro antes da próxima resposta
   })
 
-  autoTable(doc, {
-    head: [headers],
-    body,
-    startY: 33,
-    styles: {
-      fontSize: 7,
-      cellPadding: 2,
-      overflow: 'linebreak',
-    },
-    headStyles: {
-      fillColor: [16, 185, 129], // emerald-500
-      textColor: 255,
-      fontStyle: 'bold',
-      fontSize: 7.5,
-    },
-    alternateRowStyles: {
-      fillColor: [245, 247, 250],
-    },
-    margin: { left: 14, right: 14 },
-    didDrawPage: (data) => {
-      // Footer with page number
-      const pageCount = doc.getNumberOfPages()
-      doc.setFontSize(8)
-      doc.setTextColor(150)
-      doc.text(
-        `Página ${data.pageNumber} de ${pageCount}`,
-        doc.internal.pageSize.getWidth() / 2,
-        doc.internal.pageSize.getHeight() - 8,
-        { align: 'center' }
-      )
-      // Branding (hide for white-label plans)
-      if (!hideBranding) {
-        doc.text(
-          'EidosForm',
-          14,
-          doc.internal.pageSize.getHeight() - 8
-        )
-      }
-    },
-  })
+  // ── Rodapé em todas as páginas (numeração + marca) ──
+  const totalPages = doc.getNumberOfPages()
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p)
+    const w = doc.internal.pageSize.getWidth()
+    const h = doc.internal.pageSize.getHeight()
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(150, 150, 150)
+    doc.text(`Página ${p} de ${totalPages}`, w / 2, h - 8, { align: 'center' })
+    if (!hideBranding) {
+      doc.text('EidosForm', marginX, h - 8)
+    }
+  }
 
   return new Uint8Array(doc.output('arraybuffer'))
 }

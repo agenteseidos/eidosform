@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, type ReactNode, type PointerEvent as RPointerEvent, type MouseEvent as RMouseEvent } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -41,7 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card } from '@/components/ui/card'
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -204,25 +204,134 @@ function MetricCard({ icon, label, value, sub, color }: {
   )
 }
 
+// ─── Área com rolagem horizontal arrastável + scrollbar visível ───────────────
+// Container próprio (não o ScrollArea do Radix) p/ ter controle total: barra de
+// rolagem nítida e "clicar, segurar e arrastar pro lado" rola a tabela. Um arraste
+// real engole o clique seguinte (não abre o modal da linha) e suprime a seleção de
+// texto só enquanto arrasta (clique simples ainda permite selecionar/copiar).
+function DragScrollArea({ children, className }: { children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const state = useRef({ down: false, startX: 0, startScroll: 0, moved: false })
+
+  const onPointerDown = (e: RPointerEvent<HTMLDivElement>) => {
+    const el = ref.current
+    if (!el) return
+    state.current = { down: true, startX: e.clientX, startScroll: el.scrollLeft, moved: false }
+  }
+  const onPointerMove = (e: RPointerEvent<HTMLDivElement>) => {
+    const el = ref.current
+    if (!el || !state.current.down) return
+    const dx = e.clientX - state.current.startX
+    if (!state.current.moved && Math.abs(dx) > 4) {
+      state.current.moved = true
+      el.style.userSelect = 'none'
+    }
+    if (state.current.moved) el.scrollLeft = state.current.startScroll - dx
+  }
+  const stop = () => {
+    const el = ref.current
+    state.current.down = false
+    if (el) el.style.userSelect = ''
+  }
+  const onClickCapture = (e: RMouseEvent<HTMLDivElement>) => {
+    if (state.current.moved) {
+      e.preventDefault()
+      e.stopPropagation()
+      state.current.moved = false
+    }
+  }
+
+  return (
+    <div
+      ref={ref}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onClickCapture={onClickCapture}
+      className={cn(
+        'overflow-x-auto overflow-y-hidden cursor-grab active:cursor-grabbing',
+        // Scrollbar horizontal bem visível (webkit) + Firefox
+        '[&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-track]:rounded-full',
+        '[&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-slate-100',
+        '[scrollbar-width:auto] [scrollbar-color:#cbd5e1_#f1f5f9]',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+// ─── Preview de arquivo (imagem/PDF/outros) — reutilizado pela tabela E pelo modal ─
+function FilePreviewDialog({ file, onClose }: { file: FileUpload | null; onClose: () => void }) {
+  if (!file) return null
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {file.type?.startsWith('image/') ? <ImageIcon className="w-5 h-5 text-blue-600" /> : <File className="w-5 h-5 text-blue-600" />}
+            <span className="truncate">{file.name}</span>
+          </DialogTitle>
+          <DialogDescription>
+            {file.size ? formatFileSize(file.size) + ' • ' : ''}{file.type}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex-1 min-h-0 overflow-auto mt-4">
+          {file.type?.startsWith('image/') ? (
+            <Image src={getFileUrl(file)} alt={file.name} width={800} height={600} className="max-w-full h-auto rounded-lg mx-auto" />
+          ) : file.type === 'application/pdf' ? (
+            // sandbox sem allow-scripts: se o anexo for um HTML disfarçado de PDF
+            // (MIME confusion), nada executa no contexto do dashboard.
+            <iframe src={getFileUrl(file)} sandbox="" className="w-full h-[60vh] rounded-lg border" title={file.name} />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+              <File className="w-16 h-16 mb-4 opacity-40" />
+              <p className="text-sm">Preview não disponível para este tipo de arquivo</p>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="mt-4">
+          <Button variant="outline" onClick={onClose}>Fechar</Button>
+          {file.url ? (
+            <a href={file.url} target="_blank" rel="noopener noreferrer" download={file.name}>
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white"><Download className="w-4 h-4 mr-2" />Baixar</Button>
+            </a>
+          ) : file.data ? (
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => {
+              const link = document.createElement('a')
+              link.href = file.data!
+              link.download = file.name
+              link.click()
+            }}>
+              <Download className="w-4 h-4 mr-2" />Baixar
+            </Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Individual Response Dialog ───────────────────────────────────────────────
 
 function ResponseDetailDialog({
   response,
   questions,
   onClose,
+  onPreviewFile,
 }: {
   response: Response | null
   questions: QuestionConfig[]
   onClose: () => void
+  onPreviewFile: (file: FileUpload) => void
 }) {
-  const [filePreview, setFilePreview] = useState<FileUpload | null>(null)
-
   if (!response) return null
   const answers = response.answers as Record<string, Json>
 
   return (
-    <>
-      <Dialog open onOpenChange={onClose}>
+    <Dialog open onOpenChange={onClose}>
         <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -242,7 +351,9 @@ function ResponseDetailDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 mt-4 pr-1">
+          {/* Corpo rolável com scrollbar SEMPRE visível (o ScrollArea do Radix é
+              type="hover" → a barra sumia). min-h-0 deixa o flex-1 encolher e rolar. */}
+          <div className="flex-1 min-h-0 mt-4 pr-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-thumb]:rounded-full [scrollbar-width:thin] [scrollbar-color:#cbd5e1_#f1f5f9]">
             <div className="space-y-5 pb-4">
               {questions.map((q, idx) => {
                 const answer = answers[q.id]
@@ -256,7 +367,7 @@ function ResponseDetailDialog({
                       <p className="text-sm text-slate-400 italic">Não respondida</p>
                     ) : isFileUpload(answer) ? (
                       <button
-                        onClick={() => setFilePreview(asFileUpload(answer))}
+                        onClick={() => onPreviewFile(asFileUpload(answer))}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm transition-colors"
                       >
                         {asFileUpload(answer).type?.startsWith('image/') ? (
@@ -324,62 +435,13 @@ function ResponseDetailDialog({
                 )
               })()}
             </div>
-          </ScrollArea>
+          </div>
 
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={onClose}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* File preview inside response dialog */}
-      {filePreview && (
-        <Dialog open onOpenChange={() => setFilePreview(null)}>
-          <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                {filePreview.type?.startsWith('image/') ? <ImageIcon className="w-5 h-5 text-blue-600" /> : <File className="w-5 h-5 text-blue-600" />}
-                <span className="truncate">{filePreview.name}</span>
-              </DialogTitle>
-              <DialogDescription>
-                {filePreview.size ? formatFileSize(filePreview.size) + ' • ' : ''}{filePreview.type}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex-1 overflow-auto mt-4">
-              {filePreview.type?.startsWith('image/') ? (
-                <Image src={getFileUrl(filePreview)} alt={filePreview.name} width={800} height={600} className="max-w-full h-auto rounded-lg mx-auto" />
-              ) : filePreview.type === 'application/pdf' ? (
-                // sandbox sem allow-scripts: se o anexo for um HTML disfarçado de
-                // PDF (MIME confusion), nada executa no contexto do dashboard.
-                <iframe src={getFileUrl(filePreview)} sandbox="" className="w-full h-[60vh] rounded-lg border" title={filePreview.name} />
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                  <File className="w-16 h-16 mb-4 opacity-40" />
-                  <p className="text-sm">Preview não disponível para este tipo de arquivo</p>
-                </div>
-              )}
-            </div>
-            <DialogFooter className="mt-4">
-              <Button variant="outline" onClick={() => setFilePreview(null)}>Fechar</Button>
-              {filePreview.url ? (
-                <a href={filePreview.url} target="_blank" rel="noopener noreferrer" download={filePreview.name}>
-                  <Button className="bg-blue-600 hover:bg-blue-700 text-white"><Download className="w-4 h-4 mr-2" />Baixar</Button>
-                </a>
-              ) : filePreview.data ? (
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => {
-                  const link = document.createElement('a')
-                  link.href = filePreview.data!
-                  link.download = filePreview.name
-                  link.click()
-                }}>
-                  <Download className="w-4 h-4 mr-2" />Baixar
-                </Button>
-              ) : null}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-    </>
   )
 }
 
@@ -402,6 +464,8 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
   )
   const [page, setPage] = useState(1)
   const [isExportingPdf, setIsExportingPdf] = useState(false)
+  // Preview de arquivo aberto a partir da TABELA (compartilha o mesmo dialog do modal).
+  const [filePreview, setFilePreview] = useState<FileUpload | null>(null)
   const PAGE_SIZE = 20
 
   // ── Metrics ──
@@ -710,7 +774,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
 
           {/* ── Table ── */}
           <Card className="overflow-hidden relative">
-            <ScrollArea className="w-full overflow-x-auto">
+            <DragScrollArea className="w-full">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50/80">
@@ -763,10 +827,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                             return (
                               <TableCell key={q.id} onClick={e => e.stopPropagation()}>
                                 <button
-                                  onClick={() => {
-                                    // open file inline by selecting response + scrolling to question
-                                    setSelectedResponse(response)
-                                  }}
+                                  onClick={() => setFilePreview(file)}
                                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs transition-colors group"
                                 >
                                   {file.type?.startsWith('image/') ? <ImageIcon className="w-3.5 h-3.5" /> : <File className="w-3.5 h-3.5" />}
@@ -815,8 +876,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                   })}
                 </TableBody>
               </Table>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
+            </DragScrollArea>
           </Card>
 
           {/* Pagination */}
@@ -883,7 +943,11 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
         response={selectedResponse}
         questions={questions}
         onClose={() => setSelectedResponse(null)}
+        onPreviewFile={setFilePreview}
       />
+
+      {/* ── Preview de arquivo (tabela + modal compartilham) ── */}
+      <FilePreviewDialog file={filePreview} onClose={() => setFilePreview(null)} />
     </div>
   )
 }

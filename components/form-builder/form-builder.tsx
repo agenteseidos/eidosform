@@ -290,6 +290,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const hasConflictRef = useRef(false)               // espelho síncrono de hasConflict
   const buildPayloadRef = useRef<(() => ReturnType<typeof buildFormPayload>) | null>(null)
   const saveWaitersRef = useRef<Array<(ok: boolean) => void>>([])
+  // Fonte da verdade do controle de concorrência. O `version` é METADADO, não conteúdo
+  // editável: vive FORA do estado `form` para que nenhuma edição de UI (setForm com
+  // closure defasada) consiga revertê-lo e gerar um FALSO "conflito de versão". Só o
+  // próprio salvamento o atualiza, de forma síncrona, com o version que o servidor devolve.
+  const versionRef = useRef<number | undefined>(initialForm.version)
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
   const isMobileUtilityTab = activeTab === 'integrations' || activeTab === 'share' || activeTab === 'logic'
@@ -454,10 +459,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     google_sheets_enabled: form.google_sheets_enabled ?? false,
     google_sheets_id: form.google_sheets_id || null,
     google_sheets_share_email: form.google_sheets_share_email || null,
-    // Camada 1 — versão que o cliente tem em mãos. O servidor só grava se ela ainda
-    // for a atual no banco (senão devolve 409 e o save é pausado). Se undefined (form
-    // carregado antes da migration da coluna), o servidor faz update cego (legado).
-    expectedVersion: form.version,
+    // Camada 1 — versão que o cliente tem em mãos. Lida do versionRef (fonte da verdade
+    // síncrona), NÃO do estado `form`, que uma edição com closure defasada poderia reverter.
+    // O servidor só grava se ela ainda for a atual no banco (senão devolve 409 e o save é
+    // pausado). Se undefined (form carregado antes da migration), o servidor faz update cego.
+    expectedVersion: versionRef.current,
     ...(status && { status }),
   }), [form, questions, pixels])
 
@@ -525,6 +531,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           const builder = buildPayloadRef.current
           const updatedForm = builder ? await updateFormViaApi(builder()) : undefined
           if (updatedForm) {
+            // Sincroniza a versão IMEDIATAMENTE (sem esperar o re-render), pra a próxima
+            // rodada do worker já mandar o expectedVersion fresco e não tomar 409 falso.
+            versionRef.current = (updatedForm as { version?: number }).version ?? versionRef.current
             setForm(updatedForm)
             setHasUnsavedChanges(false)
             setSaveStatus('saved')
@@ -630,8 +639,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       const builder = buildPayloadRef.current
       const payload = { ...(builder ? builder() : buildFormPayload()), status: 'published' as FormStatus }
       const updated = await updateFormViaApi(payload)
-      if (updated) setForm(updated)
-      else setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
+      if (updated) {
+        versionRef.current = (updated as { version?: number }).version ?? versionRef.current
+        setForm(updated)
+      } else setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
       toast.success(form.status === 'published' ? 'Alterações publicadas!' : 'Formulário publicado!')
       setShowPublishDialog(false)
       setHasUnsavedChanges(false)
@@ -652,8 +663,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       const builder = buildPayloadRef.current
       const payload = { ...(builder ? builder() : buildFormPayload()), status: 'draft' as FormStatus }
       const updated = await updateFormViaApi(payload)
-      if (updated) setForm(updated)
-      else setForm(prev => ({ ...prev, status: 'draft' as FormStatus }))
+      if (updated) {
+        versionRef.current = (updated as { version?: number }).version ?? versionRef.current
+        setForm(updated)
+      } else setForm(prev => ({ ...prev, status: 'draft' as FormStatus }))
       toast.success('Formulário movido para rascunho')
     } catch (error) {
       if ((error as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return }
@@ -765,7 +778,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               <Input
                 value={form.title}
                 onChange={(e) => {
-                  setForm({ ...form, title: e.target.value })
+                  setForm(prev => ({ ...prev, title: e.target.value }))
                   setHasUnsavedChanges(true)
                 }}
                 className="w-full min-w-0 max-w-[150px] sm:max-w-[220px] truncate text-xs sm:text-base font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 transition-colors"
@@ -1118,7 +1131,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       <button
                         key={theme.id}
                         onClick={() => {
-                          setForm({ ...form, theme: theme.id })
+                          setForm(prev => ({ ...prev, theme: theme.id }))
                           setHasUnsavedChanges(true)
                         }}
                         className={`
@@ -1154,7 +1167,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     id="description"
                     value={form.description || ''}
                     onChange={(e) => {
-                      setForm({ ...form, description: e.target.value })
+                      setForm(prev => ({ ...prev, description: e.target.value }))
                       setHasUnsavedChanges(true)
                     }}
                     className="mt-2 text-slate-900 placeholder:text-slate-400"
@@ -1172,7 +1185,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     id="redirect_url"
                     value={form.redirect_url || ''}
                     onChange={(e) => {
-                      setForm({ ...form, redirect_url: e.target.value || null })
+                      setForm(prev => ({ ...prev, redirect_url: e.target.value || null }))
                       setHasUnsavedChanges(true)
                     }}
                     className="mt-2 text-slate-900 placeholder:text-slate-400"
@@ -1194,7 +1207,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     <Switch
                       checked={form.is_closed ?? false}
                       onCheckedChange={(checked) => {
-                        setForm({ ...form, is_closed: checked })
+                        setForm(prev => ({ ...prev, is_closed: checked }))
                         setHasUnsavedChanges(true)
                       }}
                     />
@@ -1208,7 +1221,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       <Switch
                         checked={form.hide_branding ?? false}
                         onCheckedChange={(checked) => {
-                          setForm({ ...form, hide_branding: checked })
+                          setForm(prev => ({ ...prev, hide_branding: checked }))
                           setHasUnsavedChanges(true)
                         }}
                       />
@@ -1283,7 +1296,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                               id="pixel_event_start"
                               value={form.pixel_event_on_start || ''}
                               onChange={(e) => {
-                                setForm({ ...form, pixel_event_on_start: e.target.value || null })
+                                setForm(prev => ({ ...prev, pixel_event_on_start: e.target.value || null }))
                                 setHasUnsavedChanges(true)
                               }}
                               className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white"
@@ -1296,7 +1309,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                               id="pixel_event_complete"
                               value={form.pixel_event_on_complete || ''}
                               onChange={(e) => {
-                                setForm({ ...form, pixel_event_on_complete: e.target.value || null })
+                                setForm(prev => ({ ...prev, pixel_event_on_complete: e.target.value || null }))
                                 setHasUnsavedChanges(true)
                               }}
                               className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white"
@@ -1464,7 +1477,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                   }),
                                 })
                                 if (!res.ok) throw new Error('Erro ao desconectar')
-                                setForm({ ...form, google_sheets_enabled: false, google_sheets_id: null })
+                                setForm(prev => ({ ...prev, google_sheets_enabled: false, google_sheets_id: null }))
                                 setSheetsTitle('')
                                 setHasUnsavedChanges(false)
                                 toast.success('Planilha desconectada', { id: 'sheets-disconnect' })
@@ -1540,11 +1553,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                   throw new Error(data.error || 'Não foi possível conectar a planilha. Tente novamente.')
                                 }
                                 const updated = data.form
-                                setForm({
-                                  ...form,
+                                setForm(prev => ({
+                                  ...prev,
                                   google_sheets_id: updated.google_sheets_id,
                                   google_sheets_enabled: true,
-                                })
+                                }))
                                 setSheetsUrl('')
                                 if (data.google_sheets_title) setSheetsTitle(data.google_sheets_title)
                                 setHasUnsavedChanges(false)
@@ -1593,7 +1606,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         id="webhook_url"
                         value={form.webhook_url || ''}
                         onChange={(e) => {
-                          setForm({ ...form, webhook_url: e.target.value || null })
+                          setForm(prev => ({ ...prev, webhook_url: e.target.value || null }))
                           setHasUnsavedChanges(true)
                         }}
                         className="text-slate-900 placeholder:text-slate-400 text-sm"
@@ -1634,7 +1647,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         <Switch
                           checked={form.notify_email_enabled ?? false}
                           onCheckedChange={(checked) => {
-                            setForm({ ...form, notify_email_enabled: checked })
+                            setForm(prev => ({ ...prev, notify_email_enabled: checked }))
                             setHasUnsavedChanges(true)
                           }}
                         />
@@ -1651,7 +1664,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         <Input
                           value={form.notify_email ?? ""}
                           onChange={(e) => {
-                            setForm({ ...form, notify_email: e.target.value || null })
+                            setForm(prev => ({ ...prev, notify_email: e.target.value || null }))
                             setHasUnsavedChanges(true)
                           }}
                           className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
@@ -1669,7 +1682,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       settings={null}
                       userPlan={userPlan}
                       onUpdateForm={(updates) => {
-                        setForm({ ...form, ...updates })
+                        setForm(prev => ({ ...prev, ...updates }))
                         setHasUnsavedChanges(true)
                       }}
                       isLoading={false}
@@ -1797,7 +1810,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       value={form.slug}
                       onChange={(e) => {
                         const slug = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
-                        setForm({ ...form, slug })
+                        setForm(prev => ({ ...prev, slug }))
                         setSlugError(validateSlug(slug))
                         setHasUnsavedChanges(true)
                       }}

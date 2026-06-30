@@ -44,8 +44,9 @@ const naoConfirmado = () =>
 /**
  * POST /api/migracao/recommend  — INTERNO (Bearer INTERNAL_API_SECRET).
  * Body: { phone, email }  (phone = telefone real do remetente; email = digitado na conversa).
- * Verificação em DOIS sinais: a busca PARTE do telefone do remetente e o e-mail CONFIRMA.
- * Devolve só o necessário p/ a Elen recomendar o plano. Nunca distingue qual sinal falhou.
+ * ⚠️ NÃO é verificação de identidade: telefone e e-mail vêm da MESMA submissão pública, então o
+ * e-mail é só SELETOR/desambiguador da submissão (não prova posse de conta). Por isso NÃO consulta
+ * nem devolve dado de conta. Mesmo envelope p/ telefone-inexistente e e-mail-errado (anti-enumeração).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!isInternal(req)) {
@@ -73,9 +74,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, reason: 'bad_request' }, { status: 400, headers: NO_STORE })
   }
 
-  // 2) rate-limit por telefone canônico (5 / 15min)
-  const rl = await checkRateLimitAsync(`migracao:${phone}`, { maxAttempts: 5, windowMs: 15 * 60 * 1000 })
-  if (!rl.allowed) {
+  // 2) rate-limit: por telefone canônico (5/15min) + teto GLOBAL (anti-abuso com vários telefones)
+  const rlPhone = await checkRateLimitAsync(`migracao:${phone}`, { maxAttempts: 5, windowMs: 15 * 60 * 1000 })
+  if (!rlPhone.allowed) {
+    return NextResponse.json({ ok: false, reason: 'rate_limited' }, { status: 429, headers: NO_STORE })
+  }
+  const rlGlobal = await checkRateLimitAsync('migracao:__global__', { maxAttempts: 200, windowMs: 15 * 60 * 1000 })
+  if (!rlGlobal.allowed) {
+    console.warn('[migracao] teto GLOBAL de rate-limit atingido (possível abuso)')
     return NextResponse.json({ ok: false, reason: 'rate_limited' }, { status: 429, headers: NO_STORE })
   }
 
@@ -122,7 +128,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const match = (rows ?? []).find((r) => {
     const a = (r.answers ?? {}) as Record<string, unknown>
     if (normalizarTelefoneBR(a[q.telefone]) !== phone) return false
-    return normalizarEmail(a[q.emailSim]) === email || normalizarEmail(a[q.emailNao]) === email
+    // Integridade: compara o e-mail SÓ do ramo declarado em "já tem conta?" (o outro campo,
+    // numa submissão legítima, está vazio). Ramo ausente/contraditório → inválido.
+    const ja = String(a[q.jaConta] ?? '').trim().toLowerCase()
+    if (ja === 'sim') return normalizarEmail(a[q.emailSim]) === email
+    if (ja === 'não' || ja === 'nao') return normalizarEmail(a[q.emailNao]) === email
+    return false
   })
   if (!match) return naoConfirmado()
 

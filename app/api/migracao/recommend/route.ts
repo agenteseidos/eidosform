@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { getEffectivePlan, planAtLeast, type PlanId } from '@/lib/plans'
 import { MIGRACAO, validarContratoForm } from '@/lib/migracao/config'
 import { recomendarPlano, normalizarTelefoneBR, normalizarEmail } from '@/lib/migracao/regua'
 import type { QuestionConfig } from '@/lib/database.types'
@@ -98,7 +97,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, reason: 'config' }, { status: 503, headers: NO_STORE })
   }
 
-  // 4) respostas na JANELA DE ELEGIBILIDADE (busca TODAS no período — sem top-N → sem falso negativo)
+  // 4) respostas na JANELA DE ELEGIBILIDADE (90d) + teto-backstop de 2000 (mais recentes).
+  //    Sem falso negativo no volume atual; se o form passar de 2000/90d, as MAIS ANTIGAS
+  //    são truncadas → migrar p/ RPC (warning abaixo). Hoje (form novo) é folgadíssimo.
   const cutoff = new Date(Date.now() - MIGRACAO.eligibilityDays * 86400000).toISOString()
   const { data: rows, error: respErr } = await sb
     .from('responses')
@@ -137,45 +138,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { tier, flags } = recomendarPlano(usage)
   const flagSet = new Set(flags)
 
-  // 6) plano efetivo com plan_status EXPLÍCITO (getEffectivePlan só cobre plan+expiração)
-  let planoAtual: PlanId | null = null
-  let cicloAtual: 'MONTHLY' | 'YEARLY' | null = null
-  if (jaTemConta) {
-    const { data: prof } = await sb
-      .from('profiles')
-      .select('plan, plan_status, plan_cycle, plan_expires_at')
-      .eq('email', email)
-      .maybeSingle()
-    if (!prof) {
-      flagSet.add('conta_nao_encontrada')
-    } else {
-      const status = String(prof.plan_status ?? '').trim().toLowerCase()
-      if (status === 'active') {
-        planoAtual = getEffectivePlan({ plan: prof.plan, plan_expires_at: prof.plan_expires_at })
-        const cyc = String(prof.plan_cycle ?? '').trim().toUpperCase()
-        cicloAtual = cyc === 'MONTHLY' || cyc === 'YEARLY' ? (cyc as 'MONTHLY' | 'YEARLY') : null
-      } else {
-        // overdue / cancelled / nulo / desconhecido → não afirmar plano ativo
-        flagSet.add('status_indeterminado')
-      }
-    }
-  }
+  // 6) ⚠️ SEGURANÇA — NÃO consultamos a conta pelo e-mail DIGITADO. O form é público e
+  // autossubmetido: telefone E e-mail vêm da MESMA submissão, então o e-mail NÃO prova
+  // posse independente da conta (a "verificação em 2 sinais" original era ilusória).
+  // Revelar plano/ciclo a partir desse e-mail vazaria dado de TERCEIRO (basta conhecer o
+  // e-mail da vítima). Por isso a recomendação usa SÓ o uso informado no form; o "plano
+  // atual" não é consultado nem devolvido. (Comparar com o plano atual com segurança
+  // exigiria verificação out-of-band do e-mail — ex.: OTP — fica como evolução futura.)
 
-  // 7) motivo (enum primário) — incerteza/limite têm precedência sobre upgrade/manter
+  // 7) motivo (enum primário)
   let motivo: string
   if (flagSet.has('acima_do_limite')) motivo = 'acima_do_limite'
-  else if (flagSet.has('requer_analise') || flagSet.has('status_indeterminado') || flagSet.has('conta_nao_encontrada')) motivo = 'requer_analise'
-  else if (!jaTemConta) motivo = 'assinar'
-  else if (planoAtual && planAtLeast(planoAtual, tier)) motivo = 'manter_plano'
-  else motivo = 'upgrade'
+  else if (flagSet.has('requer_analise') || flagSet.has('acima_do_beneficio')) motivo = 'requer_analise'
+  else if (jaTemConta) motivo = 'upgrade'
+  else motivo = 'assinar'
 
   return NextResponse.json(
     {
       ok: true,
       nome: sanitizar(a[q.nome], 60),
       jaTemConta,
-      planoAtual,
-      cicloAtual,
       planoRecomendado: tier,
       motivo,
       flags: Array.from(flagSet),

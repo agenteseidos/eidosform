@@ -73,6 +73,10 @@ describe('recomendarPlano — recursos e forms', () => {
     const r = recomendarPlano({ recursos: ['Validação de CPF/CNPJ', 'Google Sheets'] })
     expect(r.tier).toBe('starter')
   })
+  it('rótulo composto "Integração com Google Sheets" → starter (não plus)', () => {
+    // regressão: o substring largo "integraç" foi removido p/ não colidir com Sheets.
+    expect(recomendarPlano({ recursos: ['Integração com Google Sheets'] }).tier).toBe('starter')
+  })
   it('Lógica condicional e "nada disso" não elevam', () => {
     const r = recomendarPlano({ respostasMes: 'Até 100', recursos: ['Lógica condicional (pular perguntas)', 'Ainda não uso nada disso'] })
     expect(r.tier).toBe('free')

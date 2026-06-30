@@ -52,7 +52,6 @@ const TIER_RECURSO: Array<[string, PlanId]> = [
   ['pixels', 'plus'],
   ['rastreamento', 'plus'],
   ['webhook', 'plus'],
-  ['integraç', 'plus'],
   ['bloco html', 'plus'],
   ['domínio', 'professional'],
   ['agendamento', 'starter'],

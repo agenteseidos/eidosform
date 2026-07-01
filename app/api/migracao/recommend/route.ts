@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { getEffectivePlan, planAtLeast, type PlanId } from '@/lib/plans'
+import { type PlanId } from '@/lib/plans'
 import { MIGRACAO, validarContratoForm } from '@/lib/migracao/config'
 import { recomendarPlano, normalizarTelefoneBR, normalizarEmail } from '@/lib/migracao/regua'
+import { resolverPlanoAtual, aplicarPisoMigracao, decidirMotivo } from '@/lib/migracao/decisao'
 import type { QuestionConfig } from '@/lib/database.types'
 
 export const dynamic = 'force-dynamic'
@@ -36,31 +37,6 @@ function sanitizar(s: unknown, max = 60): string {
     })
     .join('')
   return semControle.replace(/\s+/g, ' ').trim().slice(0, max)
-}
-
-// Resolve o plano EFETIVO de um profile considerando o STATUS. `getEffectivePlan` só cobre
-// plan+expiração (`lib/plans.ts`); aqui aplicamos o status por cima SEM alterar o helper global
-// (que faz o gating do produto inteiro). Retorna `indeterminado` quando o status é desconhecido
-// (não inventa plano nesse caso).
-function resolverPlanoAtual(prof: {
-  plan?: string | null
-  plan_status?: string | null
-  plan_cycle?: string | null
-  plan_expires_at?: string | null
-}): { plano: PlanId | null; ciclo: 'MONTHLY' | 'YEARLY' | null; indeterminado: boolean } {
-  const status = String(prof.plan_status ?? '').trim().toLowerCase()
-  const cyc = String(prof.plan_cycle ?? '').trim().toUpperCase()
-  const ciclo = cyc === 'MONTHLY' || cyc === 'YEARLY' ? (cyc as 'MONTHLY' | 'YEARLY') : null
-  // active / canceling (ainda vigente até expirar) → plano efetivo (getEffectivePlan vira free se expirou).
-  if (status === 'active' || status === 'canceling') {
-    return { plano: getEffectivePlan({ plan: prof.plan, plan_expires_at: prof.plan_expires_at }), ciclo, indeterminado: false }
-  }
-  // sem plano ativo → trata como free (recomenda assinar/upgrade).
-  if (['overdue', 'cancelled', 'canceled', 'expired', 'chargeback', 'inactive'].includes(status)) {
-    return { plano: 'free', ciclo: null, indeterminado: false }
-  }
-  // status vazio/desconhecido → não inventa plano.
-  return { plano: null, ciclo: null, indeterminado: true }
 }
 
 // Pedido de migração não localizado pelo número (a pessoa não preencheu o form / número diferente).
@@ -152,16 +128,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.warn('[migracao] janela atingiu o teto de 2000 respostas — migrar p/ RPC')
   }
 
-  // 5) acha o PEDIDO pelo NÚMERO do remetente (mais recente). O e-mail NÃO entra aqui — assim a
-  //    pessoa pode CORRIGIR o e-mail no chat sem perder a localização do pedido.
+  // 5) acha o PEDIDO pelo NÚMERO do remetente. O e-mail NÃO entra na busca — assim a pessoa pode
+  //    CORRIGIR o e-mail no chat sem perder a localização do pedido.
   const q = MIGRACAO.q
-  const match = (rows ?? []).find((r) => {
-    const a = (r.answers ?? {}) as Record<string, unknown>
-    return normalizarTelefoneBR(a[q.telefone]) === phone
-  })
-  if (!match) return naoConfirmado()
+  const answersDe = (r: { answers?: unknown }) => (r.answers ?? {}) as Record<string, unknown>
+  const emailDoForm = (r: { answers?: unknown }) => {
+    const ans = answersDe(r)
+    return normalizarEmail(ans[q.emailSim] ?? ans[q.emailNao] ?? '')
+  }
+  // rows já vem ordenado por submitted_at DESC → o [0] de cada recorte é o mais recente.
+  const doTelefone = (rows ?? []).filter((r) => normalizarTelefoneBR(answersDe(r)[q.telefone]) === phone)
+  if (doTelefone.length === 0) return naoConfirmado()
 
-  const a = (match.answers ?? {}) as Record<string, unknown>
+  // Desambiguação anti-mistura (número compartilhado/reciclado / duas submissões): escolhe pela
+  // IDENTIDADE — a submissão cujo e-mail do form casa com o e-mail confirmado no chat. Sem casar:
+  // 1 identidade (ou correção de e-mail) → mais recente; identidades DIVERGENTES → não arrisca
+  // cruzar o uso de A com a conta de B → manda pro humano (sem expor uso/plano).
+  let match = doTelefone[0]
+  if (doTelefone.length > 1) {
+    const porEmail = doTelefone.filter((r) => emailDoForm(r) === email)
+    if (porEmail.length >= 1) {
+      match = porEmail[0]
+    } else {
+      const emailsDistintos = new Set(doTelefone.map(emailDoForm).filter(Boolean))
+      if (emailsDistintos.size > 1) {
+        console.warn('[migracao] múltiplas submissões divergentes pro mesmo telefone → requer_analise')
+        return NextResponse.json(
+          { ok: true, motivo: 'requer_analise', flags: ['submissao_ambigua'] },
+          { status: 200, headers: NO_STORE }
+        )
+      }
+    }
+  }
+
+  const a = answersDe(match)
   const jaTemConta = String(a[q.jaConta] ?? '').trim().toLowerCase() === 'sim'
 
   const usage = {
@@ -170,7 +170,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     qtdForms: a[q.qtdForms],
     recursos: a[q.recursos],
   }
-  const { tier, flags } = recomendarPlano(usage)
+  const { tier: tierUso, flags } = recomendarPlano(usage)
+  // Piso comercial: migração feita pela equipe é benefício PAGO → recomendação nunca abaixo de Starter.
+  const tier = aplicarPisoMigracao(tierUso)
+  // Sinaliza p/ a Elen a copy "seu volume cabe no Grátis, mas a migração feita por nós começa no Starter".
+  const usoCabeGratis = tierUso === 'free'
   const flagSet = new Set(flags)
 
   // 6) CONTA/PLANO — cruza o E-MAIL com os clientes da plataforma (ver aviso de RISCO ACEITO no topo).
@@ -184,9 +188,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .eq('email', email)
       .maybeSingle()
     if (profErr) {
-      // e-mail duplicado (profiles.email não é unique) → NÃO escolhe um perfil silenciosamente.
-      console.warn('[migracao] lookup de profile ambíguo/erro:', profErr.message)
-      flagSet.add('requer_analise')
+      // PGRST116 = maybeSingle achou MAIS de uma linha (e-mail duplicado; profiles.email não é
+      // unique) → fail-closed p/ humano. Qualquer OUTRO erro é transitório (DB/rede) → 500 p/ o
+      // bot RETENTAR — não vira "requer_analise" comercial de um problema técnico.
+      if ((profErr as { code?: string }).code === 'PGRST116') {
+        console.warn('[migracao] e-mail duplicado em profiles → requer_analise')
+        flagSet.add('requer_analise')
+      } else {
+        console.error('[migracao] lookup de profile falhou (transitório):', profErr.message)
+        return NextResponse.json({ ok: false, reason: 'erro' }, { status: 500, headers: NO_STORE })
+      }
     } else if (!prof) {
       contaNaoEncontrada = true
     } else {
@@ -199,19 +210,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // 7) motivo (enum primário)
-  let motivo: string
-  if (flagSet.has('acima_do_limite')) motivo = 'acima_do_limite'
-  else if (flagSet.has('requer_analise') || flagSet.has('acima_do_beneficio')) motivo = 'requer_analise'
-  else if (contaNaoEncontrada) motivo = jaTemConta ? 'conta_nao_encontrada' : 'assinar'
-  else if (planoAtual != null) motivo = planAtLeast(planoAtual, tier) ? 'manter_plano' : 'upgrade'
-  else motivo = jaTemConta ? 'upgrade' : 'assinar'
+  // 7) motivo (enum) — matriz pura e testável (lib/migracao/decisao.ts).
+  const motivo = decidirMotivo({ flags: flagSet, contaNaoEncontrada, jaTemConta, planoAtual, tier })
 
   return NextResponse.json(
     {
       ok: true,
       nome: sanitizar(a[q.nome], 60),
       jaTemConta,
+      usoCabeGratis,
       planoAtual,
       cicloAtual,
       planoRecomendado: tier,

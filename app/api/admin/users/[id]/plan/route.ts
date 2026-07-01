@@ -133,7 +133,7 @@ export async function PATCH(
         responses_used: 0,
         limit_alert_sent: false,
         ...(newPlan === 'free'
-          ? { plan_status: 'cancelled', plan_cycle: null, asaas_subscription_id: null }
+          ? { plan_status: 'cancelled', plan_cycle: null, asaas_subscription_id: null, annual_started_at: null }
           : { plan_status: 'active' }),
         ...expiresAtUpdate,
       })

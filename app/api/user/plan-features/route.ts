@@ -97,6 +97,7 @@ export async function GET() {
               plan_status: 'expired',
               plan_expires_at: null,
               limit_alert_sent: false,
+              annual_started_at: null,
               responses_limit: PLANS.free.maxResponses,
               asaas_subscription_id: null,
             })

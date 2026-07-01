@@ -24,7 +24,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription, parseExternalReference } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
-import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, type BillingCycle } from '@/lib/billing-activation'
+import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart, type BillingCycle } from '@/lib/billing-activation'
 import { runPlanChangeBackstop } from '@/lib/plan-switch'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
@@ -289,6 +289,7 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
       .eq('id', profile.id)
       .select('id')
     if (actErr || !actRows || actRows.length !== 1) throw new Error(`ativar plano falhou (rows=${actRows?.length ?? 0}): ${actErr?.message ?? 'sem erro DB'}`)
+    await stampAnnualStart(supabase, profile.id, cycle)
 
     await supabase
       .from('billing_checkouts')

@@ -182,6 +182,7 @@ export interface Database {
           limit_alert_sent: boolean
           plan_status: string | null
           plan_expires_at: string | null
+          annual_started_at: string | null
           asaas_customer_id: string | null
           asaas_subscription_id: string | null
           plan_cycle: string | null

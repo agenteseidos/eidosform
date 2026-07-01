@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
 import { handleUpgrade } from '@/lib/plan-limits'
-import { buildActivePlanUpdate, finalizeActivation, isExpectedFullPrice } from '@/lib/billing-activation'
+import { buildActivePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
 
@@ -174,6 +174,7 @@ export async function GET() {
       })
       return false
     }
+    await stampAnnualStart(admin, user!.id, cycle)
 
     if (checkoutId) {
       const { error: ckError } = await admin

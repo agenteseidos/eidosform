@@ -94,6 +94,7 @@ export async function GET(req: NextRequest) {
             plan_status: p.plan_status === 'canceling' ? 'cancelled' : 'expired',
             plan_expires_at: null,
             asaas_subscription_id: null,
+            annual_started_at: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
             responses_used: 0,

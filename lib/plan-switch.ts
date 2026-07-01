@@ -19,7 +19,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createSubscriptionWithToken, cancelSubscription, reconcileActiveSubscriptions, buildExternalReference, refundPayment, getPaymentById, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
-import { expiryFromNextDueDate } from '@/lib/billing-activation'
+import { expiryFromNextDueDate, stampAnnualStart } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { PLANS } from '@/lib/plan-definitions'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
@@ -171,6 +171,8 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
       responses_limit: planConfig?.maxResponses ?? 100,
       responses_used: 0,
       limit_alert_sent: false,
+      // mensal encerra a assinatura anual vigente (janela do benefício de migração)
+      ...(cycle === 'MONTHLY' ? { annual_started_at: null } : {}),
     })
     .eq('id', profileId)
   q = expectedOldSubscriptionId === null
@@ -186,6 +188,8 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
     })
     return { ok: false, status: 409, error: 'Não foi possível concluir agora. Recarregue e tente novamente.', code: 'CAS_COMMIT' }
   }
+
+  await stampAnnualStart(db, profileId, cycle)
 
   // 3) Limites de forms (downgrade pausa excedentes — crítico, com DLQ).
   await applyFormLimits(db, profileId, plan, isPlanDowngrade, newSub.id, tag)

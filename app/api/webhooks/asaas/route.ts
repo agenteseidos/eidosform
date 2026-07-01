@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
-import { finalizeActivation, claimActivationEffects, isExpectedFullPrice } from '@/lib/billing-activation'
+import { finalizeActivation, claimActivationEffects, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
 import { runPlanChangeBackstop } from '@/lib/plan-switch'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
@@ -756,6 +756,8 @@ export async function POST(req: NextRequest) {
               responses_used: 0,
               asaas_customer_id: customerId,
               ...(payment.subscription ? { asaas_subscription_id: payment.subscription } : {}),
+              // mensal encerra a assinatura anual vigente (janela do benefício de migração)
+              ...(cycle === 'MONTHLY' ? { annual_started_at: null } : {}),
             })
             .eq('id', user.id)
             .select('id')
@@ -766,6 +768,8 @@ export async function POST(req: NextRequest) {
           if (activateError || !activatedRows || activatedRows.length !== 1) {
             throw new Error(`Falha ao ativar plano no profile (rows=${activatedRows?.length ?? 0}): ${activateError?.message ?? 'sem erro DB'}`)
           }
+        
+          await stampAnnualStart(supabase, user.id, cycle)
         }
 
         const billingType = (body as unknown as Record<string, unknown>).billingType as string | undefined
@@ -892,6 +896,7 @@ export async function POST(req: NextRequest) {
             plan: 'free',
             plan_status: 'overdue',
             plan_expires_at: null,
+            annual_started_at: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
             responses_used: 0,
@@ -991,6 +996,7 @@ export async function POST(req: NextRequest) {
             plan_status: 'cancelled',
             plan_expires_at: null,
             asaas_subscription_id: null,
+            annual_started_at: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
             responses_used: 0,
@@ -1100,6 +1106,7 @@ export async function POST(req: NextRequest) {
             plan_status: newStatus,
             plan_expires_at: null,
             asaas_subscription_id: null,
+            annual_started_at: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
             responses_used: 0,

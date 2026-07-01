@@ -64,6 +64,38 @@ export function buildActivePlanUpdate(params: {
     responses_used: 0,
     ...(customerId ? { asaas_customer_id: customerId } : {}),
     ...(subscriptionId !== undefined ? { asaas_subscription_id: subscriptionId } : {}),
+    // Ativação MENSAL encerra qualquer "assinatura anual vigente" (janela do benefício
+    // de migração). YEARLY NÃO entra aqui — o carimbo é condicional (só se ainda não
+    // há um início anual vigente) via stampAnnualStart, chamado após a ativação.
+    ...(cycle === 'MONTHLY' ? { annual_started_at: null } : {}),
+  }
+}
+
+/**
+ * Carimbo do início da assinatura ANUAL vigente (`profiles.annual_started_at`) — fonte
+ * da verdade da janela do benefício de migração (Codex Rodada 6 P1; política Sidney
+ * 2026-07-01: janela de 20d conta da assinatura anual, NÃO reseta em renovação nem em
+ * upgrade anual→anual). O guard `.is('annual_started_at', null)` garante isso: só grava
+ * quando NÃO há início vigente (1ª compra anual, conversão mensal→anual, reativação —
+ * a reversão pra free/mensal zera a coluna, reabrindo o carimbo pro próximo anual).
+ * NÃO-bloqueante: falha aqui não derruba a ativação (o endpoint de migração tem
+ * fallback pelo checkout pago da sub vigente e, sem dado, cai fail-closed pro humano).
+ */
+export async function stampAnnualStart(
+  db: { from: (table: string) => any }, // eslint-disable-line @typescript-eslint/no-explicit-any
+  userId: string,
+  cycle: BillingCycle
+): Promise<void> {
+  if (cycle !== 'YEARLY') return
+  try {
+    const { error } = await db
+      .from('profiles')
+      .update({ annual_started_at: new Date().toISOString() })
+      .eq('id', userId)
+      .is('annual_started_at', null)
+    if (error) logError('[billing] stampAnnualStart falhou (não-bloqueante)', error, { userId })
+  } catch (err) {
+    logError('[billing] stampAnnualStart lançou (não-bloqueante)', err, { userId })
   }
 }
 
@@ -245,6 +277,7 @@ export function buildFreePlanUpdate(newStatus: 'overdue' | 'cancelled' | 'charge
     limit_alert_sent: false,
     responses_limit: PLANS.free.maxResponses,
     responses_used: 0,
+    annual_started_at: null, // sem plano pago = sem assinatura anual vigente
   }
 }
 
@@ -319,6 +352,7 @@ export async function activatePaidSubscription(params: {
     logError(`${tag}: falha ao persistir plano (0 linhas/erro)`, upErr, { userId, subscriptionId, rows: (rows as unknown[] | null)?.length ?? 0 })
     return { activated: false, alreadyActive: false, recurringValueNeeded: false, recurringValueFixed: true, error: 'persist_failed' }
   }
+  await stampAnnualStart(db, userId, cycle)
 
   // 2) checkout → paid.
   if (checkoutId) {

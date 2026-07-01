@@ -9,7 +9,7 @@ import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { extractLead } from '@/lib/lead-extraction'
 import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
-import { validateAllAnswers, pruneOrphanAnswers } from '@/lib/field-validators'
+import { validateAllAnswers, pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
 import { isResponseComplete } from '@/lib/form-response-security'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { upsertSubmission } from '@/lib/google-sheets'
@@ -220,12 +220,25 @@ export async function POST(req: NextRequest) {
   }
   answers = prunedAnswers
 
-  // Se o respondente enviou chaves mas TODAS foram podadas (órfãs ou bloqueadas
-  // pelo plano do dono), não há nada válido para salvar — rejeita ANTES de
-  // consumir cota. Sem isso, um POST direto só com campos indisponíveis criaria
-  // uma resposta vazia e queimaria um slot do limite mensal. Submit legítimo de
-  // form todo-opcional (sem chaves removidas) não cai aqui.
-  if (Object.keys(answers).length === 0 && removedKeys.length > 0) {
+  // Poda por LÓGICA CONDICIONAL/saltos (hardening 2026-07-01): descarta respostas de
+  // perguntas fora do caminho percorrível (ramo escondido, troca de resposta no meio,
+  // POST direto preenchendo campo oculto). Mesma semântica do isResponseComplete
+  // (buildQuestionPath) → não cria 422 novo pra submit legítimo.
+  const { pruned: onPathAnswers, removedKeys: offPathKeys } = pruneOffPathAnswers(
+    effectiveQuestions,
+    answers
+  )
+  if (offPathKeys.length > 0) {
+    console.warn('[responses] off-path answer keys discarded', { form_id, offPathKeys })
+  }
+  answers = onPathAnswers
+
+  // Se o respondente enviou chaves mas TODAS foram podadas (órfãs, bloqueadas
+  // pelo plano do dono ou fora do caminho), não há nada válido para salvar —
+  // rejeita ANTES de consumir cota. Sem isso, um POST direto só com campos
+  // indisponíveis criaria uma resposta vazia e queimaria um slot do limite
+  // mensal. Submit legítimo de form todo-opcional (sem chaves removidas) não cai aqui.
+  if (Object.keys(answers).length === 0 && (removedKeys.length > 0 || offPathKeys.length > 0)) {
     return NextResponse.json(
       { error: 'Nenhuma resposta válida para salvar' },
       { status: 422, headers: CORS_HEADERS }

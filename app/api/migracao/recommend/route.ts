@@ -4,7 +4,13 @@ import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { type PlanId } from '@/lib/plans'
 import { MIGRACAO, validarContratoForm } from '@/lib/migracao/config'
 import { recomendarPlano, normalizarTelefoneBR, normalizarEmail } from '@/lib/migracao/regua'
-import { resolverPlanoAtual, aplicarPisoMigracao, decidirMotivo } from '@/lib/migracao/decisao'
+import {
+  resolverPlanoAtual,
+  aplicarPisoMigracao,
+  classificarElegibilidade,
+  decidirMotivo,
+  type Elegibilidade,
+} from '@/lib/migracao/decisao'
 import type { QuestionConfig } from '@/lib/database.types'
 
 export const dynamic = 'force-dynamic'
@@ -181,10 +187,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let planoAtual: PlanId | null = null
   let cicloAtual: 'MONTHLY' | 'YEARLY' | null = null
   let contaNaoEncontrada = false
+  let elegibilidade: Elegibilidade = 'nao_pagante'
   {
     const { data: prof, error: profErr } = await sb
       .from('profiles')
-      .select('plan, plan_status, plan_cycle, plan_expires_at')
+      .select('id, plan, plan_status, plan_cycle, plan_expires_at')
       .eq('email', email)
       .maybeSingle()
     if (profErr) {
@@ -206,12 +213,45 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       else {
         planoAtual = res.plano
         cicloAtual = res.ciclo
+
+        // ELEGIBILIDADE do benefício (política 2026-07-01): migração feita-pela-equipe = assinatura
+        // ANUAL vigente iniciada há ≤ `beneficioDias`. O início é apurado pelo checkout PAGO mais
+        // recente de ciclo YEARLY (cobre 1ª compra, upgrade e conversão mensal→anual; renovação
+        // automática NÃO gera checkout novo → não reabre a janela).
+        let inicioAnual: Date | null = null
+        if (planoAtual !== 'free' && !res.cancelando && cicloAtual === 'YEARLY') {
+          const { data: chk, error: chkErr } = await sb
+            .from('billing_checkouts')
+            .select('created_at')
+            .eq('profile_id', prof.id)
+            .eq('status', 'paid')
+            .eq('cycle', 'YEARLY')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (chkErr) {
+            console.error('[migracao] lookup de checkout falhou (transitório):', chkErr.message)
+            return NextResponse.json({ ok: false, reason: 'erro' }, { status: 500, headers: NO_STORE })
+          }
+          if (chk?.created_at) inicioAnual = new Date(chk.created_at)
+          // sem checkout rastreável (plano concedido manualmente etc.) → indeterminada → humano.
+        }
+        elegibilidade = classificarElegibilidade({
+          plano: planoAtual,
+          ciclo: cicloAtual,
+          cancelando: res.cancelando,
+          inicioAnual,
+          agora: new Date(),
+          janelaDias: MIGRACAO.beneficioDias,
+        })
       }
     }
   }
 
-  // 7) motivo (enum) — matriz pura e testável (lib/migracao/decisao.ts).
-  const motivo = decidirMotivo({ flags: flagSet, contaNaoEncontrada, jaTemConta, planoAtual, tier })
+  // 7) motivo (enum) + plano recomendado — matriz pura e testável (lib/migracao/decisao.ts).
+  const { motivo, planoRecomendado } = decidirMotivo({
+    flags: flagSet, contaNaoEncontrada, jaTemConta, planoAtual, tier, elegibilidade,
+  })
 
   return NextResponse.json(
     {
@@ -221,7 +261,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       usoCabeGratis,
       planoAtual,
       cicloAtual,
-      planoRecomendado: tier,
+      planoRecomendado,
       motivo,
       flags: Array.from(flagSet),
       resumoUso: {

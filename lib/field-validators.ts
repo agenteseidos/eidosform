@@ -5,6 +5,7 @@
 
 import { QuestionConfig } from './database.types'
 import { validateCPF, validateCNPJ, isValidLooseUrl } from './validators'
+import { buildQuestionPath } from './form-logic-engine'
 
 export interface FieldValidationResult {
   valid: boolean
@@ -147,6 +148,43 @@ export function pruneOrphanAnswers(
     else removedKeys.push(k)
   }
   return { pruned, removedKeys }
+}
+
+/**
+ * Remove respostas de perguntas FORA do caminho efetivamente percorrível do form
+ * (escondidas por lógica condicional ou puladas por salto). Fecha dois buracos:
+ * (a) respondente volta, troca uma resposta e as respostas do ramo antigo ficam
+ * penduradas no estado do player → dado contraditório persistido; (b) POST direto
+ * na API preenchendo campos que a lógica esconderia (ex.: os dois e-mails
+ * condicionais do /f/migracao ao mesmo tempo).
+ *
+ * Usa a MESMA semântica de `isResponseComplete` (buildQuestionPath = visibilidade
+ * + saltos) — poda e checagem de obrigatórias enxergam o mesmo caminho, então a
+ * poda não cria 422 novo. Itera até ponto-fixo porque remover uma resposta pode
+ * mudar a visibilidade de outra pergunta (regras encadeadas / is_empty).
+ */
+export function pruneOffPathAnswers(
+  questions: QuestionConfig[],
+  answers: Record<string, unknown>,
+  maxIterations = 5
+): { pruned: Record<string, unknown>; removedKeys: string[] } {
+  let current = answers
+  const removed = new Set<string>()
+  for (let i = 0; i < maxIterations; i++) {
+    const path = new Set(buildQuestionPath(questions, current))
+    const next: Record<string, unknown> = {}
+    let changed = false
+    for (const [k, v] of Object.entries(current)) {
+      if (path.has(k)) next[k] = v
+      else {
+        removed.add(k)
+        changed = true
+      }
+    }
+    current = next
+    if (!changed) break
+  }
+  return { pruned: current, removedKeys: Array.from(removed) }
 }
 
 // ── Validadores individuais ──

@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { upsertSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
-import { pruneOrphanAnswers, validateAllAnswers } from '@/lib/field-validators'
+import { pruneOrphanAnswers, pruneOffPathAnswers, validateAllAnswers } from '@/lib/field-validators'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import type { QuestionConfig, ResponseInsert } from '@/lib/database.types'
 import { getEffectivePlan } from '@/lib/plans'
@@ -132,7 +132,13 @@ export async function POST(req: NextRequest) {
     .eq('id', form.user_id)
     .single() as { data: { plan: string | null; plan_expires_at: string | null } | null; error: unknown }
   const effectiveQuestions = filterQuestionsByPlan(formQuestions, getEffectivePlan(ownerProfile))
-  const { pruned } = pruneOrphanAnswers(effectiveQuestions, answers)
+  const { pruned: knownAnswers } = pruneOrphanAnswers(effectiveQuestions, answers)
+  // Poda por lógica condicional/saltos (hardening 2026-07-01) — não persiste
+  // resposta de ramo escondido nem de pergunta pulada por salto.
+  const { pruned, removedKeys: offPathKeys } = pruneOffPathAnswers(effectiveQuestions, knownAnswers)
+  if (offPathKeys.length > 0) {
+    console.warn('[responses/partial] off-path answer keys discarded', { form_id, offPathKeys })
+  }
   if (Object.keys(pruned).length === 0) {
     return NextResponse.json({ skipped: true }, { status: 200, headers: CORS_HEADERS })
   }

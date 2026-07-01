@@ -3,6 +3,9 @@ import { createPublicClient } from '@/lib/supabase/public'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
+import { filterQuestionsByPlan } from '@/lib/questions'
+import { pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
+import type { QuestionConfig } from '@/lib/database.types'
 import { sanitizeValue } from '@/lib/form-response-security'
 import { log, logError } from '@/lib/logger'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
@@ -125,7 +128,7 @@ export async function PUT(
   // Verify form exists and is published
   const { data: form, error: formError } = await supabase
     .from('forms')
-    .select('id, user_id, status, is_closed')
+    .select('id, user_id, status, is_closed, questions')
     .eq('id', formId)
     .eq('status', 'published')
     .single()
@@ -166,7 +169,28 @@ export async function PUT(
     return NextResponse.json({ error: 'Respostas em formato inválido' }, { status: 400, headers: CORS_HEADERS })
   }
 
-  const sanitizedAnswers = sanitizeValue(answers) as Record<string, unknown>
+  const sanitizedAnswersRaw = sanitizeValue(answers) as Record<string, unknown>
+
+  // Hardening 2026-07-01: este endpoint aceitava QUALQUER objeto `answers` sem poda.
+  // Agora aplica as mesmas defesas do /api/responses/partial anônimo: descarta chave
+  // órfã/bloqueada pelo plano e resposta fora do caminho da lógica condicional/saltos.
+  const formQuestions = (form.questions ?? []) as QuestionConfig[]
+  const effectiveQuestions = filterQuestionsByPlan(formQuestions, ownerPlan)
+  const { pruned: knownAnswers, removedKeys: orphanKeys } = pruneOrphanAnswers(
+    effectiveQuestions,
+    sanitizedAnswersRaw
+  )
+  const { pruned: sanitizedAnswers, removedKeys: offPathKeys } = pruneOffPathAnswers(
+    effectiveQuestions,
+    knownAnswers
+  )
+  if (orphanKeys.length > 0 || offPathKeys.length > 0) {
+    console.warn('[forms/partial-response] answer keys discarded', { formId, orphanKeys, offPathKeys })
+  }
+  if (Object.keys(sanitizedAnswers).length === 0) {
+    // Nada válido pra salvar — não cria/atualiza linha com objeto vazio.
+    return NextResponse.json({ skipped: true }, { status: 200, headers: CORS_HEADERS })
+  }
 
   // Upsert: find existing incomplete response or create new one
   const { data: existing } = await supabase

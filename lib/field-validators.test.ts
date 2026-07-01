@@ -168,3 +168,96 @@ describe('validateAllAnswers / pruneOrphanAnswers', () => {
     expect(removedKeys).toEqual(['fantasma'])
   })
 })
+
+// ── pruneOffPathAnswers — poda por lógica condicional/saltos (hardening 2026-07-01) ──
+import { pruneOffPathAnswers } from './field-validators'
+
+const qc = (id: string, extra: Partial<QuestionConfig> = {}): QuestionConfig =>
+  ({ id, type: 'short_text', title: id, ...extra } as QuestionConfig)
+
+describe('pruneOffPathAnswers', () => {
+  it('mantém tudo quando não há lógica condicional', () => {
+    const questions = [qc('a'), qc('b')]
+    const r = pruneOffPathAnswers(questions, { a: '1', b: '2' })
+    expect(r.pruned).toEqual({ a: '1', b: '2' })
+    expect(r.removedKeys).toEqual([])
+  })
+
+  it('descarta resposta de ramo escondido (troca de resposta / POST direto)', () => {
+    // b só aparece se a = 'não'; respondente mandou a='sim' E resposta pra b
+    const questions = [
+      qc('a'),
+      qc('b', { conditionalLogic: { questionId: 'a', operator: 'equals', value: 'não' } } as Partial<QuestionConfig>),
+      qc('c'),
+    ]
+    const r = pruneOffPathAnswers(questions, { a: 'sim', b: 'vazou', c: '3' })
+    expect(r.pruned).toEqual({ a: 'sim', c: '3' })
+    expect(r.removedKeys).toEqual(['b'])
+  })
+
+  it('mantém a resposta quando o ramo está ATIVO', () => {
+    const questions = [
+      qc('a'),
+      qc('b', { conditionalLogic: { questionId: 'a', operator: 'equals', value: 'não' } } as Partial<QuestionConfig>),
+    ]
+    const r = pruneOffPathAnswers(questions, { a: 'não', b: 'legítimo' })
+    expect(r.pruned).toEqual({ a: 'não', b: 'legítimo' })
+  })
+
+  it('formato NOVO (ConditionalGroup or) também é respeitado', () => {
+    const questions = [
+      qc('a'),
+      qc('b', {
+        conditionalLogic: {
+          conjunction: 'or',
+          rules: [
+            { questionId: 'a', operator: 'equals', value: 'x' },
+            { questionId: 'a', operator: 'equals', value: 'y' },
+          ],
+        },
+      } as Partial<QuestionConfig>),
+    ]
+    expect(pruneOffPathAnswers(questions, { a: 'x', b: 'ok' }).pruned).toEqual({ a: 'x', b: 'ok' })
+    expect(pruneOffPathAnswers(questions, { a: 'z', b: 'vaza' }).pruned).toEqual({ a: 'z' })
+  })
+
+  it('CASCATA: podar b derruba c que dependia de b (ponto-fixo)', () => {
+    // b visível se a='não'; c visível se b preenchida. a='sim' + b + c enviados →
+    // 1ª passada tira b (mas c ainda "via" b preenchida) → 2ª passada tira c.
+    const questions = [
+      qc('a'),
+      qc('b', { conditionalLogic: { questionId: 'a', operator: 'equals', value: 'não' } } as Partial<QuestionConfig>),
+      qc('c', { conditionalLogic: { questionId: 'b', operator: 'not_empty' } } as Partial<QuestionConfig>),
+    ]
+    const r = pruneOffPathAnswers(questions, { a: 'sim', b: 'x', c: 'y' })
+    expect(r.pruned).toEqual({ a: 'sim' })
+    expect(new Set(r.removedKeys)).toEqual(new Set(['b', 'c']))
+  })
+
+  it('SALTO: pergunta pulada por jump não persiste resposta', () => {
+    // a com jump: se a='pula' → vai direto pra c (b fica fora do caminho)
+    const questions = [
+      qc('a', {
+        jumpRules: [
+          { condition: { questionId: 'a', operator: 'equals', value: 'pula' }, action: { type: 'jump', targetQuestionId: 'c' } },
+        ],
+      } as Partial<QuestionConfig>),
+      qc('b'),
+      qc('c'),
+    ]
+    const r = pruneOffPathAnswers(questions, { a: 'pula', b: 'fora-do-caminho', c: 'ok' })
+    expect(r.pruned).toEqual({ a: 'pula', c: 'ok' })
+    expect(r.removedKeys).toEqual(['b'])
+  })
+
+  it('caso /f/migracao: os DOIS e-mails condicionais nunca coexistem', () => {
+    const questions = [
+      qc('jaConta'),
+      qc('emailSim', { conditionalLogic: { questionId: 'jaConta', operator: 'equals', value: 'Sim' } } as Partial<QuestionConfig>),
+      qc('emailNao', { conditionalLogic: { questionId: 'jaConta', operator: 'equals', value: 'Não' } } as Partial<QuestionConfig>),
+    ]
+    const r = pruneOffPathAnswers(questions, { jaConta: 'Não', emailSim: 'atacante@x.com', emailNao: 'legit@x.com' })
+    expect(r.pruned).toEqual({ jaConta: 'Não', emailNao: 'legit@x.com' })
+    expect(r.removedKeys).toEqual(['emailSim'])
+  })
+})

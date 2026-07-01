@@ -6,7 +6,7 @@ import { checkAndIncrementResponseCount, PLANS, PlanName } from '@/lib/plan-limi
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
-import { validateAllAnswers, pruneOrphanAnswers } from '@/lib/field-validators'
+import { validateAllAnswers, pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
 import { logError } from '@/lib/logger'
 import { filterQuestionsByPlan } from '@/lib/questions'
 
@@ -258,12 +258,21 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (removedKeys.length > 0) {
     console.warn('[v1/forms] unavailable answer keys discarded', { form_id: id, removedKeys })
   }
-  const answersForPersist = prunedAnswers
+  // Poda por lógica condicional/saltos (hardening 2026-07-01) — mesma semântica
+  // do isResponseComplete; não persiste resposta de ramo escondido/pulado.
+  const { pruned: onPathAnswers, removedKeys: offPathKeys } = pruneOffPathAnswers(
+    effectiveQuestions,
+    prunedAnswers
+  )
+  if (offPathKeys.length > 0) {
+    console.warn('[v1/forms] off-path answer keys discarded', { form_id: id, offPathKeys })
+  }
+  const answersForPersist = onPathAnswers
 
-  // Todas as chaves enviadas foram podadas (órfãs/bloqueadas pelo plano): nada
-  // válido para salvar — rejeita antes de consumir cota mensal. Submit legítimo
-  // sem chaves (form todo-opcional) não cai aqui.
-  if (Object.keys(answersForPersist).length === 0 && removedKeys.length > 0) {
+  // Todas as chaves enviadas foram podadas (órfãs/bloqueadas pelo plano/fora do
+  // caminho): nada válido para salvar — rejeita antes de consumir cota mensal.
+  // Submit legítimo sem chaves (form todo-opcional) não cai aqui.
+  if (Object.keys(answersForPersist).length === 0 && (removedKeys.length > 0 || offPathKeys.length > 0)) {
     return NextResponse.json(
       { error: 'Nenhuma resposta válida para salvar' },
       { status: 422, headers: getCorsHeaders(req.headers.get("origin")) }

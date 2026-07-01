@@ -191,7 +191,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   {
     const { data: prof, error: profErr } = await sb
       .from('profiles')
-      .select('id, plan, plan_status, plan_cycle, plan_expires_at')
+      .select('id, plan, plan_status, plan_cycle, plan_expires_at, asaas_subscription_id')
       .eq('email', email)
       .maybeSingle()
     if (profErr) {
@@ -215,26 +215,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         cicloAtual = res.ciclo
 
         // ELEGIBILIDADE do benefício (política 2026-07-01): migração feita-pela-equipe = assinatura
-        // ANUAL vigente iniciada há ≤ `beneficioDias`. O início é apurado pelo checkout PAGO mais
-        // recente de ciclo YEARLY (cobre 1ª compra, upgrade e conversão mensal→anual; renovação
-        // automática NÃO gera checkout novo → não reabre a janela).
+        // ANUAL vigente iniciada há ≤ `beneficioDias`. O início é apurado pelo checkout PAGO de
+        // ciclo YEARLY **vinculado à ASSINATURA VIGENTE** do profile (Codex Rodada 6: sem o vínculo,
+        // uma linha anual de assinatura antiga/substituída classificava errado nas duas direções).
+        // Renovação automática NÃO gera checkout → não reabre a janela (intencional).
+        // Nota de precisão: `created_at` ≈ pagamento — o checkout hospedado expira em minutos
+        // (ASAAS_CHECKOUT_MINUTES_TO_EXPIRE), então o gap criação→pagamento é irrelevante numa
+        // janela de dias. O fix definitivo (`annual_started_at` no profile) tem migração própria.
         let inicioAnual: Date | null = null
         if (planoAtual !== 'free' && !res.cancelando && cicloAtual === 'YEARLY') {
-          const { data: chk, error: chkErr } = await sb
-            .from('billing_checkouts')
-            .select('created_at')
-            .eq('profile_id', prof.id)
-            .eq('status', 'paid')
-            .eq('cycle', 'YEARLY')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          if (chkErr) {
-            console.error('[migracao] lookup de checkout falhou (transitório):', chkErr.message)
-            return NextResponse.json({ ok: false, reason: 'erro' }, { status: 500, headers: NO_STORE })
+          const subVigente = String(prof.asaas_subscription_id ?? '').trim()
+          if (subVigente) {
+            const { data: chks, error: chkErr } = await sb
+              .from('billing_checkouts')
+              .select('created_at, asaas_subscription_id')
+              .eq('profile_id', prof.id)
+              .eq('status', 'paid')
+              .eq('cycle', 'YEARLY')
+              .order('created_at', { ascending: false })
+              .limit(10)
+            if (chkErr) {
+              console.error('[migracao] lookup de checkout falhou (transitório):', chkErr.message)
+              return NextResponse.json({ ok: false, reason: 'erro' }, { status: 500, headers: NO_STORE })
+            }
+            const daVigente = (chks ?? []).find((c) => c.asaas_subscription_id === subVigente)
+            if (daVigente?.created_at) inicioAnual = new Date(daVigente.created_at)
+            // sem linha da sub vigente (bookkeeping não-bloqueante pode ter falhado, ou plano
+            // concedido manualmente) → inicioAnual=null → indeterminada → humano (fail-closed).
           }
-          if (chk?.created_at) inicioAnual = new Date(chk.created_at)
-          // sem checkout rastreável (plano concedido manualmente etc.) → indeterminada → humano.
+          // profile anual ativo SEM sub vinculada (raro/admin) → inicioAnual=null → humano.
         }
         elegibilidade = classificarElegibilidade({
           plano: planoAtual,

@@ -162,15 +162,20 @@ export function pruneOrphanAnswers(
  * + saltos) — poda e checagem de obrigatórias enxergam o mesmo caminho, então a
  * poda não cria 422 novo. Itera até ponto-fixo porque remover uma resposta pode
  * mudar a visibilidade de outra pergunta (regras encadeadas / is_empty).
+ *
+ * A operação é MONOTÔNICA (só remove, nunca restaura) → termina; o teto é derivado
+ * dos dados (nº de chaves + 1: cada passada remove ≥1 chave ou estabiliza) — um teto
+ * fixo deixava resíduo em cadeias de dependência mais fundas que ele (Codex 2026-07-01).
  */
 export function pruneOffPathAnswers(
   questions: QuestionConfig[],
   answers: Record<string, unknown>,
-  maxIterations = 5
+  maxIterations?: number
 ): { pruned: Record<string, unknown>; removedKeys: string[] } {
+  const limite = maxIterations ?? Object.keys(answers).length + 1
   let current = answers
   const removed = new Set<string>()
-  for (let i = 0; i < maxIterations; i++) {
+  for (let i = 0; i < limite; i++) {
     const path = new Set(buildQuestionPath(questions, current))
     const next: Record<string, unknown> = {}
     let changed = false

@@ -261,3 +261,39 @@ describe('pruneOffPathAnswers', () => {
     expect(r.removedKeys).toEqual(['emailSim'])
   })
 })
+
+describe('pruneOffPathAnswers — ponto-fixo e retomada (Codex Rodada 6)', () => {
+  it('CADEIA PROFUNDA (7 níveis): poda completa sem teto fixo', () => {
+    // q1 → q2 → ... → q8, cada uma visível se a anterior estiver preenchida.
+    // q1 respondida com o valor que ESCONDE q2 → TODA a cadeia abaixo cai, nível
+    // por nível (1 nível por passada — o teto fixo de 5 deixava resíduo).
+    const questions: QuestionConfig[] = [qc('q1')]
+    const answers: Record<string, unknown> = { q1: 'esconde' }
+    for (let i = 2; i <= 8; i++) {
+      const dep = i === 2
+        ? { questionId: 'q1', operator: 'equals', value: 'mostra' }
+        : { questionId: `q${i - 1}`, operator: 'not_empty' }
+      questions.push(qc(`q${i}`, { conditionalLogic: dep } as Partial<QuestionConfig>))
+      answers[`q${i}`] = `resposta ${i}`
+    }
+    const r = pruneOffPathAnswers(questions, answers)
+    expect(r.pruned).toEqual({ q1: 'esconde' })
+    expect(r.removedKeys.length).toBe(7)
+  })
+
+  it('RETOMADA de parcial: trocar de ramo descarta o ramo antigo (trade-off aceito)', () => {
+    // Documenta o comportamento decidido (Codex P2, aceito 2026-07-01): o usuário
+    // responde o ramo A, volta e muda pra B → o autosave PERSISTIDO perde as
+    // respostas de A; se ele retomar a parcial e voltar pra A, preenche de novo.
+    // Integridade > conveniência (nunca persistir dado de ramo não-percorrido).
+    const questions = [
+      qc('tipo'),
+      qc('ramoA', { conditionalLogic: { questionId: 'tipo', operator: 'equals', value: 'a' } } as Partial<QuestionConfig>),
+      qc('ramoB', { conditionalLogic: { questionId: 'tipo', operator: 'equals', value: 'b' } } as Partial<QuestionConfig>),
+    ]
+    // estado do player após trocar tipo de 'a' pra 'b' (resposta de ramoA pendurada)
+    const r = pruneOffPathAnswers(questions, { tipo: 'b', ramoA: 'dado antigo', ramoB: 'dado novo' })
+    expect(r.pruned).toEqual({ tipo: 'b', ramoB: 'dado novo' })
+    expect(r.removedKeys).toEqual(['ramoA'])
+  })
+})

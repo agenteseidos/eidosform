@@ -269,6 +269,12 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
   const answersForPersist = onPathAnswers
 
+  // last_question_answered só persiste se apontar pra pergunta EXISTENTE (Codex P3 2026-07-01).
+  const lastQuestionOk =
+    typeof lastQuestionAnswered === 'string' && effectiveQuestions.some((q) => q.id === lastQuestionAnswered)
+      ? lastQuestionAnswered
+      : null
+
   // Todas as chaves enviadas foram podadas (órfãs/bloqueadas pelo plano/fora do
   // caminho): nada válido para salvar — rejeita antes de consumir cota mensal.
   // Submit legítimo sem chaves (form todo-opcional) não cai aqui.
@@ -337,7 +343,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       .update({
         answers: answersForPersist as Record<string, import('@/lib/database.types').Json>,
         completed,
-        last_question_answered: lastQuestionAnswered ?? null,
+        last_question_answered: lastQuestionOk,
         ...(bodyRespondentId ? { respondent_id: bodyRespondentId } : {}),
         ...utmData,
       } as ResponseUpdate)
@@ -362,7 +368,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         form_id: id,
         answers: answersForPersist as Record<string, import('@/lib/database.types').Json>,
         completed,
-        last_question_answered: lastQuestionAnswered ?? null,
+        last_question_answered: lastQuestionOk,
         respondent_id: typeof body.respondent_id === 'string' ? body.respondent_id : null,
         ...utmData,
       } as ResponseInsert)

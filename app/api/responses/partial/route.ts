@@ -143,6 +143,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ skipped: true }, { status: 200, headers: CORS_HEADERS })
   }
 
+  // last_question_answered só persiste se apontar pra pergunta EXISTENTE (Codex P3 2026-07-01).
+  const lastQuestionOk =
+    typeof last_question_answered === 'string' && effectiveQuestions.some((q) => q.id === last_question_answered)
+      ? last_question_answered
+      : null
+
   // Validação leve por tipo — só pra não persistir lixo. Em parcial, não
   // tomamos field_errors como erro fatal; descartamos o que não passa.
   const errs = validateAllAnswers(effectiveQuestions, pruned)
@@ -171,7 +177,7 @@ export async function POST(req: NextRequest) {
     if (!verifyPartialToken(partialToken, existingResponseId)) {
       // Sem prova de posse (token ausente/ inválido) — trata como nova response
       // em vez de atualizar a existente. Não vaza se o id existe ou não.
-      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions: effectiveQuestions })
+      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
     }
 
     // UPDATE
@@ -183,7 +189,7 @@ export async function POST(req: NextRequest) {
 
     if (!existing || existing.form_id !== form_id) {
       // Trata como nova response — cliente pode ter ID stale
-      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions: effectiveQuestions })
+      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
     }
     if (existing.completed) {
       // Já foi finalizado — não regredir pra parcial
@@ -196,7 +202,7 @@ export async function POST(req: NextRequest) {
       .from('responses')
       .update({
         answers: valid as Record<string, import('@/lib/database.types').Json>,
-        last_question_answered: typeof last_question_answered === 'string' ? last_question_answered : null,
+        last_question_answered: lastQuestionOk,
         ...utmData,
       })
       .eq('id', responseId)
@@ -205,7 +211,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Erro ao salvar progresso' }, { status: 500, headers: CORS_HEADERS })
     }
   } else {
-    return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: last_question_answered, formQuestions: effectiveQuestions })
+    return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
   }
 
   // Upsert no Sheets (gating pelo plano + integração habilitada)

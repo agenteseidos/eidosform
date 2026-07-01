@@ -12,13 +12,19 @@ import type { QuestionConfig } from '@/lib/database.types'
  * `formId` pode ser sobrescrito por env (`MIGRATION_FORM_ID`); o fallback é o id atual
  * em produção. NUNCA é recebido do body da requisição.
  */
+// Número de env com validação: NaN/zero/negativo cai no default (Codex P3 2026-07-01).
+function envNum(v: string | undefined, def: number): number {
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : def
+}
+
 export const MIGRACAO = {
   formId: process.env.MIGRATION_FORM_ID || 'ecaa7ab8-f74f-465f-bd8f-fd41c7bc2da4',
   slug: 'migracao',
-  eligibilityDays: Number(process.env.MIGRACAO_ELIGIBILITY_DAYS || 90),
+  eligibilityDays: envNum(process.env.MIGRACAO_ELIGIBILITY_DAYS, 90),
   // Janela do BENEFÍCIO (política Sidney 2026-07-01): migração feita-pela-equipe só p/ assinatura
   // ANUAL vigente iniciada há ≤ N dias. (≠ eligibilityDays, que é a janela da SUBMISSÃO do form.)
-  beneficioDias: Number(process.env.MIGRACAO_BENEFICIO_DIAS || 20),
+  beneficioDias: envNum(process.env.MIGRACAO_BENEFICIO_DIAS, 20),
   q: {
     nome: '558df868-0e71-4e6e-a779-9efdf040b2e5',
     telefone: '54b813d7-39bd-4081-81a1-8f8a4341ba37',

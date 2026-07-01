@@ -165,7 +165,8 @@ export async function PUT(
   }
 
   const { answers, last_question_answered } = body
-  if (!answers || typeof answers !== 'object') {
+  // Array também é typeof 'object' — rejeitar explicitamente (Codex P3 2026-07-01).
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
     return NextResponse.json({ error: 'Respostas em formato inválido' }, { status: 400, headers: CORS_HEADERS })
   }
 
@@ -192,6 +193,12 @@ export async function PUT(
     return NextResponse.json({ skipped: true }, { status: 200, headers: CORS_HEADERS })
   }
 
+  // last_question_answered só persiste se apontar pra pergunta EXISTENTE (Codex P3 2026-07-01).
+  const lastQuestionOk =
+    typeof last_question_answered === 'string' && effectiveQuestions.some((q) => q.id === last_question_answered)
+      ? last_question_answered
+      : null
+
   // Upsert: find existing incomplete response or create new one
   const { data: existing } = await supabase
     .from('responses')
@@ -210,7 +217,7 @@ export async function PUT(
       .from('responses')
       .update({
         answers: sanitizedAnswers as Record<string, import('@/lib/database.types').Json>,
-        last_question_answered: last_question_answered ?? null,
+        last_question_answered: lastQuestionOk,
       })
       .eq('id', existing.id)
       .select('id')
@@ -229,7 +236,7 @@ export async function PUT(
         respondent_id: user.id,
         answers: sanitizedAnswers as Record<string, import('@/lib/database.types').Json>,
         completed: false,
-        last_question_answered: last_question_answered ?? null,
+        last_question_answered: lastQuestionOk,
       })
       .select('id')
       .single()

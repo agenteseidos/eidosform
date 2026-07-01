@@ -233,6 +233,13 @@ export async function POST(req: NextRequest) {
   }
   answers = onPathAnswers
 
+  // last_question_answered só persiste se apontar pra pergunta EXISTENTE do form
+  // (Codex P3 2026-07-01 — evita referência pendurada a pergunta podada/deletada).
+  const lastQuestionAnswered =
+    typeof last_question_answered === 'string' && effectiveQuestions.some((q) => q.id === last_question_answered)
+      ? last_question_answered
+      : null
+
   // Se o respondente enviou chaves mas TODAS foram podadas (órfãs, bloqueadas
   // pelo plano do dono ou fora do caminho), não há nada válido para salvar —
   // rejeita ANTES de consumir cota. Sem isso, um POST direto só com campos
@@ -327,7 +334,7 @@ export async function POST(req: NextRequest) {
   if (existingResponseId && existingResponse) {
     const { data: updated, error: updateError } = await supabase
       .from('responses')
-      .update({ answers, meta_events: metaEvents, completed, last_question_answered: last_question_answered ?? null, ...utmData } as ResponseUpdate)
+      .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
       .select('id, meta_events, sheets_row_index')
@@ -344,7 +351,7 @@ export async function POST(req: NextRequest) {
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
-      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: last_question_answered as string ?? null, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData } as ResponseInsert)
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData } as ResponseInsert)
       .select('id, meta_events')
       .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string } | null }
 

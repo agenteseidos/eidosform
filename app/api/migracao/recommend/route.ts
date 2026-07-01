@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { getEffectivePlan, planAtLeast, type PlanId } from '@/lib/plans'
 import { MIGRACAO, validarContratoForm } from '@/lib/migracao/config'
 import { recomendarPlano, normalizarTelefoneBR, normalizarEmail } from '@/lib/migracao/regua'
 import type { QuestionConfig } from '@/lib/database.types'
@@ -37,16 +38,46 @@ function sanitizar(s: unknown, max = 60): string {
   return semControle.replace(/\s+/g, ' ').trim().slice(0, max)
 }
 
-// Mesmo envelope p/ "telefone não encontrado" e "e-mail errado" (anti-enumeração).
+// Resolve o plano EFETIVO de um profile considerando o STATUS. `getEffectivePlan` só cobre
+// plan+expiração (`lib/plans.ts`); aqui aplicamos o status por cima SEM alterar o helper global
+// (que faz o gating do produto inteiro). Retorna `indeterminado` quando o status é desconhecido
+// (não inventa plano nesse caso).
+function resolverPlanoAtual(prof: {
+  plan?: string | null
+  plan_status?: string | null
+  plan_cycle?: string | null
+  plan_expires_at?: string | null
+}): { plano: PlanId | null; ciclo: 'MONTHLY' | 'YEARLY' | null; indeterminado: boolean } {
+  const status = String(prof.plan_status ?? '').trim().toLowerCase()
+  const cyc = String(prof.plan_cycle ?? '').trim().toUpperCase()
+  const ciclo = cyc === 'MONTHLY' || cyc === 'YEARLY' ? (cyc as 'MONTHLY' | 'YEARLY') : null
+  // active / canceling (ainda vigente até expirar) → plano efetivo (getEffectivePlan vira free se expirou).
+  if (status === 'active' || status === 'canceling') {
+    return { plano: getEffectivePlan({ plan: prof.plan, plan_expires_at: prof.plan_expires_at }), ciclo, indeterminado: false }
+  }
+  // sem plano ativo → trata como free (recomenda assinar/upgrade).
+  if (['overdue', 'cancelled', 'canceled', 'expired', 'chargeback', 'inactive'].includes(status)) {
+    return { plano: 'free', ciclo: null, indeterminado: false }
+  }
+  // status vazio/desconhecido → não inventa plano.
+  return { plano: null, ciclo: null, indeterminado: true }
+}
+
+// Pedido de migração não localizado pelo número (a pessoa não preencheu o form / número diferente).
 const naoConfirmado = () =>
   NextResponse.json({ ok: false, reason: 'nao_confirmado' }, { status: 200, headers: NO_STORE })
 
 /**
  * POST /api/migracao/recommend  — INTERNO (Bearer INTERNAL_API_SECRET).
- * Body: { phone, email }  (phone = telefone real do remetente; email = digitado na conversa).
- * ⚠️ NÃO é verificação de identidade: telefone e e-mail vêm da MESMA submissão pública, então o
- * e-mail é só SELETOR/desambiguador da submissão (não prova posse de conta). Por isso NÃO consulta
- * nem devolve dado de conta. Mesmo envelope p/ telefone-inexistente e e-mail-errado (anti-enumeração).
+ * Body: { phone, email }  (phone = telefone real do remetente; email = confirmado na conversa).
+ *
+ * Mecânica: acha o PEDIDO de migração pelo NÚMERO do remetente (o form que a pessoa preencheu do
+ * próprio celular) → tira o USO dali; e cruza o E-MAIL com os clientes p/ achar a CONTA/plano atual
+ * (o e-mail pode ser corrigido no chat sem quebrar a localização do pedido).
+ *
+ * ⚠️ RISCO ACEITO (Sidney, 2026-07-01): a consulta de plano por e-mail NÃO verifica posse do e-mail
+ * (não há OTP). Alguém que saiba o e-mail de um cliente pode ver o TIER + CICLO do plano dele. Decisão
+ * consciente (só leitura; dado de baixa sensibilidade). NÃO tratar isto como bug/vazamento em auditoria.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!isInternal(req)) {
@@ -104,8 +135,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // 4) respostas na JANELA DE ELEGIBILIDADE (90d) + teto-backstop de 2000 (mais recentes).
-  //    Sem falso negativo no volume atual; se o form passar de 2000/90d, as MAIS ANTIGAS
-  //    são truncadas → migrar p/ RPC (warning abaixo). Hoje (form novo) é folgadíssimo.
   const cutoff = new Date(Date.now() - MIGRACAO.eligibilityDays * 86400000).toISOString()
   const { data: rows, error: respErr } = await sb
     .from('responses')
@@ -123,17 +152,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.warn('[migracao] janela atingiu o teto de 2000 respostas — migrar p/ RPC')
   }
 
-  // 5) match em 2 sinais CONJUNTOS (telefone E e-mail na MESMA resposta); mais recente entre as válidas
+  // 5) acha o PEDIDO pelo NÚMERO do remetente (mais recente). O e-mail NÃO entra aqui — assim a
+  //    pessoa pode CORRIGIR o e-mail no chat sem perder a localização do pedido.
   const q = MIGRACAO.q
   const match = (rows ?? []).find((r) => {
     const a = (r.answers ?? {}) as Record<string, unknown>
-    if (normalizarTelefoneBR(a[q.telefone]) !== phone) return false
-    // Integridade: compara o e-mail SÓ do ramo declarado em "já tem conta?" (o outro campo,
-    // numa submissão legítima, está vazio). Ramo ausente/contraditório → inválido.
-    const ja = String(a[q.jaConta] ?? '').trim().toLowerCase()
-    if (ja === 'sim') return normalizarEmail(a[q.emailSim]) === email
-    if (ja === 'não' || ja === 'nao') return normalizarEmail(a[q.emailNao]) === email
-    return false
+    return normalizarTelefoneBR(a[q.telefone]) === phone
   })
   if (!match) return naoConfirmado()
 
@@ -149,26 +173,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { tier, flags } = recomendarPlano(usage)
   const flagSet = new Set(flags)
 
-  // 6) ⚠️ SEGURANÇA — NÃO consultamos a conta pelo e-mail DIGITADO. O form é público e
-  // autossubmetido: telefone E e-mail vêm da MESMA submissão, então o e-mail NÃO prova
-  // posse independente da conta (a "verificação em 2 sinais" original era ilusória).
-  // Revelar plano/ciclo a partir desse e-mail vazaria dado de TERCEIRO (basta conhecer o
-  // e-mail da vítima). Por isso a recomendação usa SÓ o uso informado no form; o "plano
-  // atual" não é consultado nem devolvido. (Comparar com o plano atual com segurança
-  // exigiria verificação out-of-band do e-mail — ex.: OTP — fica como evolução futura.)
+  // 6) CONTA/PLANO — cruza o E-MAIL com os clientes da plataforma (ver aviso de RISCO ACEITO no topo).
+  let planoAtual: PlanId | null = null
+  let cicloAtual: 'MONTHLY' | 'YEARLY' | null = null
+  let contaNaoEncontrada = false
+  {
+    const { data: prof, error: profErr } = await sb
+      .from('profiles')
+      .select('plan, plan_status, plan_cycle, plan_expires_at')
+      .eq('email', email)
+      .maybeSingle()
+    if (profErr) {
+      // e-mail duplicado (profiles.email não é unique) → NÃO escolhe um perfil silenciosamente.
+      console.warn('[migracao] lookup de profile ambíguo/erro:', profErr.message)
+      flagSet.add('requer_analise')
+    } else if (!prof) {
+      contaNaoEncontrada = true
+    } else {
+      const res = resolverPlanoAtual(prof)
+      if (res.indeterminado) flagSet.add('requer_analise')
+      else {
+        planoAtual = res.plano
+        cicloAtual = res.ciclo
+      }
+    }
+  }
 
   // 7) motivo (enum primário)
   let motivo: string
   if (flagSet.has('acima_do_limite')) motivo = 'acima_do_limite'
   else if (flagSet.has('requer_analise') || flagSet.has('acima_do_beneficio')) motivo = 'requer_analise'
-  else if (jaTemConta) motivo = 'upgrade'
-  else motivo = 'assinar'
+  else if (contaNaoEncontrada) motivo = jaTemConta ? 'conta_nao_encontrada' : 'assinar'
+  else if (planoAtual != null) motivo = planAtLeast(planoAtual, tier) ? 'manter_plano' : 'upgrade'
+  else motivo = jaTemConta ? 'upgrade' : 'assinar'
 
   return NextResponse.json(
     {
       ok: true,
       nome: sanitizar(a[q.nome], 60),
       jaTemConta,
+      planoAtual,
+      cicloAtual,
       planoRecomendado: tier,
       motivo,
       flags: Array.from(flagSet),

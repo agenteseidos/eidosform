@@ -62,7 +62,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
       'Busca automática de CEP',
       'Lógica condicional',
       'Tela de agradecimento',
-      'Suporte por email',
+      'Suporte por WhatsApp',
       "Marca d'água EidosForm",
     ],
   },

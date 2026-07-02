@@ -289,7 +289,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Links dos formulários a migrar (pergunta 6 do form): a Elen NÃO deve pedir de novo o
   // que a pessoa já forneceu no pedido (feedback Sidney 02/07). `temLinks` guia a copy;
   // `linksResumo` (sanitizado/curto) vai no alerta OPS pro time agir sem abrir o painel.
+  // ⚠️ temLinks exige URL DE VERDADE — dado real pego no teste: campo preenchido com
+  // "Mando depois" (não-vazio, zero links) diria falsamente "já tenho os links".
   const linksVal = String(a[q.links] ?? '').trim()
+  const contemLink = /(https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.[a-z]{2,}\/\S+/i.test(linksVal)
 
   return NextResponse.json(
     {
@@ -302,7 +305,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       planoRecomendado,
       motivo,
       flags: Array.from(flagSet),
-      temLinks: linksVal.length > 0,
+      temLinks: contemLink,
       linksResumo: sanitizar(linksVal, 200),
       resumoUso: {
         respostasMes: sanitizar(usage.respostasMes, 40),

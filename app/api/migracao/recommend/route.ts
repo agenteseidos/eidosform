@@ -286,6 +286,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     flags: flagSet, contaNaoEncontrada, jaTemConta, planoAtual, tier, elegibilidade,
   })
 
+  // Links dos formulários a migrar (pergunta 6 do form): a Elen NÃO deve pedir de novo o
+  // que a pessoa já forneceu no pedido (feedback Sidney 02/07). `temLinks` guia a copy;
+  // `linksResumo` (sanitizado/curto) vai no alerta OPS pro time agir sem abrir o painel.
+  const linksVal = String(a[q.links] ?? '').trim()
+
   return NextResponse.json(
     {
       ok: true,
@@ -297,6 +302,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       planoRecomendado,
       motivo,
       flags: Array.from(flagSet),
+      temLinks: linksVal.length > 0,
+      linksResumo: sanitizar(linksVal, 200),
       resumoUso: {
         respostasMes: sanitizar(usage.respostasMes, 40),
         maiorForm: sanitizar(usage.maiorForm, 40),

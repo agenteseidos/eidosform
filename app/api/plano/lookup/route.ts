@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createHash } from 'crypto'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { sendBillingOpsAlert } from '@/lib/resend'
 import { resolverPlanoAtual } from '@/lib/migracao/decisao'
 import { normalizarEmail } from '@/lib/migracao/regua'
 
@@ -65,7 +66,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const rlGlobal = await checkRateLimitAsync('plano:__global__', { maxAttempts: 300, windowMs: 15 * 60 * 1000 })
   if (!rlGlobal.allowed) {
-    console.warn('[plano/lookup] teto GLOBAL de rate-limit atingido (possível abuso)')
+    console.warn('[plano/lookup] teto GLOBAL de rate-limit atingido (possível ENUMERAÇÃO de contas)')
+    // Sinal de possível enumeração dirigida (existe:false revela conta) → alerta OPS 1×/dia
+    // (marker diário; INSERT duplicado = já alertou). Codex 2026-07-02.
+    const dia = new Date().toISOString().slice(0, 10)
+    const { error: mkErr } = await getServiceClient()
+      .from('asaas_webhook_events')
+      .insert({ event_id: `plano-lookup-teto:${dia}`, event: 'PLANO_LOOKUP_TETO', status: 'processed' })
+    if (!mkErr) {
+      sendBillingOpsAlert({
+        subject: 'plano/lookup: teto GLOBAL de consultas atingido (300/15min) — possível enumeração de contas',
+        lines: { endpoint: '/api/plano/lookup', teto: '300/15min' },
+      }).catch(() => {})
+    }
     return NextResponse.json({ ok: false, reason: 'rate_limited' }, { status: 429, headers: NO_STORE })
   }
 

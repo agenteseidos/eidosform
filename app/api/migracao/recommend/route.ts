@@ -92,8 +92,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, reason: 'bad_request' }, { status: 400, headers: NO_STORE })
   }
 
-  // 2) rate-limit: por telefone canônico (5/15min) + teto GLOBAL (anti-abuso com vários telefones)
-  const rlPhone = await checkRateLimitAsync(`migracao:${phone}`, { maxAttempts: 5, windowMs: 15 * 60 * 1000 })
+  // 2) rate-limit por telefone canônico + teto GLOBAL. Chaves SEPARADAS (Codex 2026-07-02 P1):
+  //    o precheck (modo LOCALIZAR, sem e-mail) tinha o mesmo orçamento da jornada com e-mail e a
+  //    somava — precheck + consulta + correção + reconsultas de pagamento estouravam 5/15min.
+  //    LOCALIZAR tem chave própria; a jornada com e-mail ganhou folga (8/15min).
+  const rlKey = temEmail ? `migracao:${phone}` : `migracao-loc:${phone}`
+  const rlPhone = await checkRateLimitAsync(rlKey, { maxAttempts: 8, windowMs: 15 * 60 * 1000 })
   if (!rlPhone.allowed) {
     return NextResponse.json({ ok: false, reason: 'rate_limited' }, { status: 429, headers: NO_STORE })
   }
@@ -169,6 +173,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Modo LOCALIZAR (sem e-mail): só confirma a existência do pedido + nome da submissão
   // do PRÓPRIO telefone (mesma superfície já exposta na recomendação). Nada de conta/uso.
   if (!temEmail) {
+    // Desambiguação (Codex 2026-07-02 P2): telefone compartilhado/reciclado com submissões de
+    // e-mails DIVERGENTES → só confirma a existência, SEM nome/jaTemConta (não revela quem é o
+    // "mais recente" pra outra pessoa). Sem e-mail no chat ainda não dá pra escolher a certa.
+    const emailsDistintos = new Set(doTelefone.map(emailDoForm).filter(Boolean))
+    if (doTelefone.length > 1 && emailsDistintos.size > 1) {
+      return NextResponse.json({ ok: true, etapa: 'pedido_localizado' }, { status: 200, headers: NO_STORE })
+    }
     const aLoc = answersDe(doTelefone[0])
     return NextResponse.json(
       {

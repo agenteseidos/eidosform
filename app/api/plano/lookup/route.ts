@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { createHash } from 'crypto'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { resolverPlanoAtual } from '@/lib/migracao/decisao'
 import { normalizarEmail } from '@/lib/migracao/regua'
@@ -56,7 +57,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const email = normalizarEmail(emailRaw)
 
   // Rate-limit: por e-mail (anti-enumeração dirigida) + global (anti-abuso distribuído).
-  const rlEmail = await checkRateLimitAsync(`plano:${email}`, { maxAttempts: 6, windowMs: 15 * 60 * 1000 })
+  // Chave HASHEADA (Codex 2026-07-02 P3): o e-mail em claro não precisa virar chave de storage.
+  const emailHash = createHash('sha256').update(email).digest('hex').slice(0, 24)
+  const rlEmail = await checkRateLimitAsync(`plano:${emailHash}`, { maxAttempts: 6, windowMs: 15 * 60 * 1000 })
   if (!rlEmail.allowed) {
     return NextResponse.json({ ok: false, reason: 'rate_limited' }, { status: 429, headers: NO_STORE })
   }

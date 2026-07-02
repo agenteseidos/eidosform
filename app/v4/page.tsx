@@ -40,10 +40,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
-// TODO: quando o formulário de migração for criado no próprio EidosForm
-// (plano aprovado em 2026-06-12, ver memória), trocar este link de WhatsApp pelo /f/<slug>.
-const MIGRATION_EMAIL =
-  'https://wa.me/5583999378937?text=Ol%C3%A1!%20Quero%20migrar%20meus%20formul%C3%A1rios%20para%20o%20EidosForm.%20Seguem%20os%20links%3A'
+// Funil oficial de migração (2026-07-02, executa o TODO original): form /f/migracao →
+// tela de obrigado → botão wa.me pra Elen, que recomenda o plano automaticamente.
+const MIGRATION_EMAIL = '/f/migracao'
 
 const DIFFERENTIALS = [
   { icon: Target, text: 'Meta Pixel, Google Ads, GTM e TikTok nativos no Plus' },

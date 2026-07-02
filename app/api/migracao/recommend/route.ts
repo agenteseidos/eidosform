@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { sendBillingOpsAlert } from '@/lib/resend'
 import { type PlanId } from '@/lib/plans'
 import { MIGRACAO, validarContratoForm } from '@/lib/migracao/config'
 import { recomendarPlano, normalizarTelefoneBR, normalizarEmail } from '@/lib/migracao/regua'
@@ -134,8 +135,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.error('[migracao] erro ao ler responses:', respErr.message)
     return NextResponse.json({ ok: false, reason: 'erro' }, { status: 500, headers: NO_STORE })
   }
-  if ((rows?.length ?? 0) >= 2000) {
+  const totalJanela = rows?.length ?? 0
+  if (totalJanela >= 2000) {
     console.warn('[migracao] janela atingiu o teto de 2000 respostas — migrar p/ RPC')
+  }
+  if (totalJanela >= 1600) {
+    // 80% do teto → alerta operacional 1x/dia (marker diário em asaas_webhook_events —
+    // mesmo padrão dos markers de billing; INSERT duplicado = já alertou hoje).
+    const dia = new Date().toISOString().slice(0, 10)
+    const { error: mkErr } = await sb
+      .from('asaas_webhook_events')
+      .insert({ event_id: `migracao-teto:${dia}`, event: 'MIGRACAO_TETO', status: 'processed' })
+    if (!mkErr) {
+      sendBillingOpsAlert({
+        subject: `Form de migração: ${totalJanela}/2000 submissões na janela de ${MIGRACAO.eligibilityDays}d — planejar RPC/paginação`,
+        lines: { total: totalJanela, teto: 2000, janelaDias: MIGRACAO.eligibilityDays },
+      }).catch(() => {})
+    }
   }
 
   // 5) acha o PEDIDO pelo NÚMERO do remetente. O e-mail NÃO entra na busca — assim a pessoa pode

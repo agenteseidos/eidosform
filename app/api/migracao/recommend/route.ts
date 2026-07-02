@@ -75,14 +75,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const phoneRaw = String(body?.phone ?? '')
   const emailRaw = String(body?.email ?? '')
+  // E-mail OPCIONAL (Sidney 02/07): sem e-mail = modo LOCALIZAR — só confirma se existe
+  // pedido pro telefone (o bot checa ANTES de pedir o e-mail; evita pedir "o e-mail do
+  // formulário" pra quem nunca preencheu formulário nenhum).
+  const temEmail = emailRaw.trim().length > 0
   if (
     phoneRaw.length < 8 || phoneRaw.length > 24 ||
-    emailRaw.length < 5 || emailRaw.length > 120 || !emailRaw.includes('@')
+    (temEmail && (emailRaw.length < 5 || emailRaw.length > 120 || !emailRaw.includes('@')))
   ) {
     return NextResponse.json({ ok: false, reason: 'bad_request' }, { status: 400, headers: NO_STORE })
   }
   const phone = normalizarTelefoneBR(phoneRaw)
-  const email = normalizarEmail(emailRaw)
+  const email = temEmail ? normalizarEmail(emailRaw) : ''
   if (phone.length < 8) {
     return NextResponse.json({ ok: false, reason: 'bad_request' }, { status: 400, headers: NO_STORE })
   }
@@ -145,6 +149,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // rows já vem ordenado por submitted_at DESC → o [0] de cada recorte é o mais recente.
   const doTelefone = (rows ?? []).filter((r) => normalizarTelefoneBR(answersDe(r)[q.telefone]) === phone)
   if (doTelefone.length === 0) return naoConfirmado()
+
+  // Modo LOCALIZAR (sem e-mail): só confirma a existência do pedido + nome da submissão
+  // do PRÓPRIO telefone (mesma superfície já exposta na recomendação). Nada de conta/uso.
+  if (!temEmail) {
+    const aLoc = answersDe(doTelefone[0])
+    return NextResponse.json(
+      {
+        ok: true,
+        etapa: 'pedido_localizado',
+        nome: sanitizar(aLoc[q.nome], 60),
+        jaTemConta: String(aLoc[q.jaConta] ?? '').trim().toLowerCase() === 'sim',
+      },
+      { status: 200, headers: NO_STORE }
+    )
+  }
 
   // Desambiguação anti-mistura (número compartilhado/reciclado / duas submissões): escolhe pela
   // IDENTIDADE — a submissão cujo e-mail do form casa com o e-mail confirmado no chat. Sem casar:

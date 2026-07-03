@@ -18,7 +18,7 @@
  * O lock não é reentrante; adquirir aqui dentro causaria deadlock no fluxo pago.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createSubscriptionWithToken, cancelSubscription, reconcileActiveSubscriptions, buildExternalReference, refundPayment, getPaymentById, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createSubscriptionWithToken, cancelSubscription, reconcileActiveSubscriptions, buildExternalReference, refundPayment, getPaymentById, getPaymentWithCard, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { expiryFromNextDueDate, stampAnnualStart } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { PLANS } from '@/lib/plan-definitions'
@@ -43,7 +43,7 @@ export interface PlanSwitchParams {
   /** YYYY-MM-DD — primeira cobrança RECORRENTE da assinatura nova (preço cheio). */
   nextDueDate: string
   /** Origem (telemetria + checkout_id estável p/ overlay/recuperação). */
-  reason: 'upgrade_paid' | 'credit_covered' | 'reactivate' | 'webhook_backstop'
+  reason: 'upgrade_paid' | 'credit_covered' | 'reactivate' | 'webhook_backstop' | 'card_fallback'
   isPlanDowngrade: boolean
   proration?: { credit: number; originalPrice: number; finalPrice: number } | null
 }
@@ -432,6 +432,278 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
       .update({ status: 'paid', last_event: `PLAN_CHANGE_PAID_BACKSTOP:${paymentId}` })
       .eq('checkout_id', recoveryCheckoutId)
     log(`${tag}: troca concluída pelo backstop`, { profileId, plan, cycle, paymentId, newSub: result.newSubscriptionId })
+    return 'switched'
+  } finally {
+    await releaseLock(db, lockKey)
+  }
+}
+
+// ─── FALLBACK DE CARTÃO MORTO (2026-07-03) — conclusão da troca ────────────────────────────────
+
+/** Linha de recuperação do fallback (billing_checkouts, checkout_id = planchange-pay-{profileId}). */
+type CardFallbackRow = {
+  profile_id: string
+  checkout_id: string | null
+  status: string | null
+  plan: string
+  cycle: string
+  payment_method: string | null
+  asaas_customer_id: string | null
+  asaas_checkout_session_id: string | null
+  asaas_payment_id: string | null
+  final_price: number | string | null
+}
+
+/**
+ * Estorna o avulso DETACHED do fallback e marca a linha 'cancelled'. SÓ é chamado DEPOIS do gate de
+ * identidade forte (🛡️ P0) — nunca estorna sem provar que o pagamento é desta tentativa/customer.
+ * Idempotente (REFUNDED/REFUND_REQUESTED → noop). Estorno falho → DLQ 'dead'
+ * CARD_FALLBACK_REFUND_FAILED + alerta (dinheiro nunca fica retido sem troca e sem deixar rastro).
+ */
+async function refundCardFallbackAndCancel(db: SupabaseClient, ctx: {
+  paymentId: string; checkoutId: string; profileId: string; customerId: string | null
+  lastEvent: string; reasonLabel: string; source: string; tag: string
+}): Promise<void> {
+  const { paymentId, checkoutId, profileId, customerId, lastEvent, reasonLabel, source, tag } = ctx
+  let refunded = false
+  let refundError: string | null = null
+  if (paymentId) {
+    try {
+      const cur = await getPaymentById(paymentId)
+      if (cur.ok && cur.payment && (cur.payment.status === 'REFUNDED' || cur.payment.status === 'REFUND_REQUESTED')) {
+        refunded = true // já estornado (idempotente)
+      } else if (cur.ok) {
+        await refundPayment(paymentId)
+        refunded = true
+      } else {
+        refundError = 'consulta do avulso falhou (ok=false)'
+      }
+    } catch (e) {
+      refundError = e instanceof Error ? e.message : String(e)
+    }
+  } else {
+    refundError = 'paymentId ausente'
+  }
+  // Linha do fallback → cancelled (auditoria + tira do in-flight do polling/cron).
+  await db.from('billing_checkouts')
+    .update({ status: 'cancelled', last_event: lastEvent })
+    .eq('checkout_id', checkoutId)
+  await sendBillingOpsAlert({
+    subject: refunded
+      ? `Fallback cartão morto: avulso ${reasonLabel} — ESTORNADO automaticamente`
+      : `Fallback cartão morto: avulso ${reasonLabel} — ESTORNO FALHOU/pendente (AÇÃO MANUAL)`,
+    lines: { profileId, paymentId: paymentId || '(ausente)', reason: reasonLabel, source, refunded: String(refunded), refundError: refundError ?? '—' },
+  }).catch(() => {})
+  if (!refunded) {
+    await (db as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+      .from('asaas_webhook_events')
+      .upsert({
+        event_id: `cardfallback-refund-failed:${paymentId || profileId}`,
+        event: 'CARD_FALLBACK_REFUND_FAILED',
+        status: 'dead', // visível p/ admin, estorno manual
+        error: `avulso do fallback nao estornado (${reasonLabel}): ${refundError ?? '?'}`,
+        attempts: 0,
+        payment_id: paymentId || null,
+        customer_id: customerId,
+        last_attempt_at: new Date().toISOString(),
+      }, { onConflict: 'event_id' }).catch(() => {})
+  }
+  log(`${tag}: avulso ${reasonLabel} — ${refunded ? 'estornado' : 'estorno pendente (DLQ+alerta)'}`, { profileId, paymentId })
+}
+
+/**
+ * BACKSTOP do FALLBACK DE CARTÃO MORTO (2026-07-03): conclui a troca de plano quando o avulso
+ * DETACHED da diferença é pago numa sessão hospedada (cartão NOVO). Compartilhado por webhook,
+ * reprocessador da DLQ e cron de reconcile — os caminhos de conclusão ficam SEMPRE ligados
+ * (a flag BILLING_CARD_FALLBACK gateia só a CRIAÇÃO da sessão; dinheiro já pago tem que ser
+ * processado mesmo com a flag off). Irmã de runPlanChangeBackstop: adquire o lock
+ * planchange:{profileId} e chama executePlanSwitch direto (lock não-reentrante).
+ *
+ * 🛡️ Correções da revisão adversarial embutidas:
+ *  - (P0) IDENTIDADE FORTE (customer + sessão) gateia TODA ação automática; customer/sessão
+ *    divergente NUNCA auto-estorna → alerta + throw → DLQ manual (o avulso pode ser legítimo de
+ *    outra origem — ex. cobrança manual do painel).
+ *  - (P1-A) o token do cartão novo fica em VARIÁVEL LOCAL e só entra no profile DEPOIS do switch ok
+ *    (salvar antes + switch falhar transitório faria o retry do usuário cobrar a diferença DE NOVO).
+ *  - (P1-C) status da linha fora de {pending,paid,cancelled} = terminal fail-closed → estorno.
+ *  - (P2) final_price null/NaN → alerta + throw (nunca estornar por coerção NUMERIC ruim).
+ */
+export async function runCardFallbackBackstop(db: SupabaseClient, params: {
+  customerId: string
+  paymentId: string
+  checkoutSessionId?: string | null
+  source: 'webhook' | 'reprocess' | 'reconcile'
+}): Promise<'no_match' | 'switched' | 'already_applied' | 'refunded_superseded' | 'refunded_value_mismatch' | 'refunded_duplicate' | 'externally_refunded'> {
+  const { customerId, paymentId, checkoutSessionId, source } = params
+  const tag = `[card-fallback-backstop:${source}]`
+  const ROW_COLS = 'profile_id, checkout_id, status, plan, cycle, payment_method, asaas_customer_id, asaas_checkout_session_id, asaas_payment_id, final_price'
+
+  // 1) Resolve a linha SEM lock (precisa do profileId p/ a chave do lock): por session id (se veio)
+  //    senão por customer → linha planchange-pay-{profileId}. Linha inexistente OU não é do fallback
+  //    → 'no_match' (o chamador mantém o throw→DLQ atual do avulso desconhecido).
+  let rowPre: CardFallbackRow | null = null
+  if (checkoutSessionId) {
+    const { data } = await db.from('billing_checkouts').select(ROW_COLS).eq('asaas_checkout_session_id', checkoutSessionId).maybeSingle()
+    rowPre = (data as CardFallbackRow | null) ?? null
+  } else {
+    const { data: prof0 } = await db.from('profiles').select('id').eq('asaas_customer_id', customerId).maybeSingle()
+    const profileId0 = (prof0 as { id?: string } | null)?.id ?? null
+    if (profileId0) {
+      const { data } = await db.from('billing_checkouts').select(ROW_COLS).eq('checkout_id', `planchange-pay-${profileId0}`).maybeSingle()
+      rowPre = (data as CardFallbackRow | null) ?? null
+    }
+  }
+  if (!rowPre || rowPre.payment_method !== 'plan_switch_fallback') {
+    return 'no_match'
+  }
+  const profileId = rowPre.profile_id
+  const recoveryCheckoutId = rowPre.checkout_id ?? `planchange-pay-${profileId}`
+  const lockKey = `planchange:${profileId}`
+
+  // 2) LOCK PRIMEIRO (anti-TOCTOU) e RELÊ profile + linha sob o lock.
+  if (!(await acquireLock(db, lockKey))) {
+    throw new Error(`${tag} lock ocupado (fluxo síncrono/outro backstop em andamento?) — retry`)
+  }
+  try {
+    const { data: prof } = await db
+      .from('profiles')
+      .select('plan, plan_cycle, asaas_subscription_id, asaas_customer_id, asaas_card_token')
+      .eq('id', profileId)
+      .single()
+    const p = prof as { plan?: string | null; plan_cycle?: string | null; asaas_subscription_id?: string | null; asaas_customer_id?: string | null; asaas_card_token?: string | null } | null
+    if (!p) throw new Error(`${tag} profile ${profileId} não encontrado — retry`)
+
+    const { data: recRow } = await db.from('billing_checkouts').select(ROW_COLS).eq('checkout_id', recoveryCheckoutId).maybeSingle()
+    const row = (recRow as CardFallbackRow | null) ?? rowPre
+    // Se sob o lock a linha deixou de ser do fallback (sobrescrita por outro fluxo), no_match.
+    if (!row || row.payment_method !== 'plan_switch_fallback') return 'no_match'
+    const inFlight = row.status === 'pending'
+
+    // 3) GET FRESCO do payment — o payload do webhook é só dica de correlação, nunca fonte de verdade.
+    const pay = await getPaymentWithCard(paymentId)
+    if (!pay.ok) throw new Error(`${tag} getPaymentWithCard falhou (ok=false) p/ ${paymentId} — retry`)
+    const payment = pay.payment
+    if (!payment) throw new Error(`${tag} payment ${paymentId} não encontrado no Asaas — retry`)
+    if (payment.status === 'REFUNDED' || payment.status === 'REFUND_REQUESTED') {
+      if (inFlight) {
+        await db.from('billing_checkouts').update({ status: 'cancelled', last_event: 'CARD_FALLBACK_REFUNDED_EXTERNALLY' }).eq('checkout_id', recoveryCheckoutId)
+      }
+      log(`${tag}: avulso já estornado externamente — nada a aplicar`, { profileId, paymentId })
+      return 'externally_refunded'
+    }
+    if (payment.status !== 'CONFIRMED' && payment.status !== 'RECEIVED') {
+      throw new Error(`${tag} payment ${paymentId} ainda não pago (status ${payment.status}) — retry`)
+    }
+
+    // 4) 🛡️ (P0) IDENTIDADE FORTE — gate de TODA ação automática (aplicar OU estornar).
+    if (payment.customer !== row.asaas_customer_id) {
+      await sendBillingOpsAlert({
+        subject: 'Fallback cartão morto: CUSTOMER divergente no avulso — NÃO estornado (roteamento manual)',
+        lines: { profileId, paymentId, paymentCustomer: payment.customer, rowCustomer: row.asaas_customer_id ?? '(nenhum)', source },
+      }).catch(() => {})
+      throw new Error(`${tag} CARD_FALLBACK_CUSTOMER_MISMATCH (payment.customer ${payment.customer} != linha ${row.asaas_customer_id}) — roteamento manual`)
+    }
+    if (payment.checkoutSession && payment.checkoutSession !== row.asaas_checkout_session_id) {
+      await sendBillingOpsAlert({
+        subject: 'Fallback cartão morto: SESSÃO divergente no avulso — NÃO aplicado NEM estornado (manual)',
+        lines: { profileId, paymentId, paymentSession: payment.checkoutSession, rowSession: row.asaas_checkout_session_id ?? '(nenhuma)', source },
+      }).catch(() => {})
+      throw new Error(`${tag} CARD_FALLBACK_SESSION_MISMATCH (payment.checkoutSession ${payment.checkoutSession} != linha ${row.asaas_checkout_session_id}) — manual`)
+    }
+    // Identidade FORTE confirmada = customer bate E (checkoutSession ausente OU igual). Libera 5-9.
+
+    // 5) Guards de duplicidade/estado.
+    if (row.status === 'paid') {
+      if (row.asaas_payment_id === paymentId) {
+        log(`${tag}: linha já paid por ESTE avulso — noop`, { profileId, paymentId })
+        return 'already_applied'
+      }
+      // Linha já paga por OUTRO avulso (pagamento duplicado da mesma tentativa) → estorna ESTE.
+      await refundCardFallbackAndCancel(db, { paymentId, checkoutId: recoveryCheckoutId, profileId, customerId: row.asaas_customer_id, lastEvent: `CARD_FALLBACK_DUPLICATE:${paymentId}`, reasonLabel: 'DUPLICADO', source, tag })
+      return 'refunded_duplicate'
+    }
+    if (row.status === 'cancelled') {
+      // Tentativa abandonada/expirada/superseded → estorno seguro (nunca derruba plano vigente).
+      await refundCardFallbackAndCancel(db, { paymentId, checkoutId: recoveryCheckoutId, profileId, customerId: row.asaas_customer_id, lastEvent: `CARD_FALLBACK_SUPERSEDED:${paymentId}`, reasonLabel: 'SUPERSEDED', source, tag })
+      return 'refunded_superseded'
+    }
+    if (row.status !== 'pending') {
+      // 🛡️ (P1-C) Status fora de {pending,paid,cancelled} (ex.: 'overdue' de escrita genérica na
+      // janela do cartão morto) → terminal fail-closed → estorno + alerta. Defesa em profundidade:
+      // a linha do fallback já é blindada contra escrita genérica no webhook (P1-C, resolveBillingContext).
+      await refundCardFallbackAndCancel(db, { paymentId, checkoutId: recoveryCheckoutId, profileId, customerId: row.asaas_customer_id, lastEvent: `CARD_FALLBACK_TERMINAL:${paymentId}`, reasonLabel: `STATUS_INDEFINIDO(${row.status})`, source, tag })
+      return 'refunded_superseded'
+    }
+
+    // row.status === 'pending' (in-flight). Profile já no alvo → o síncrono/outro backstop já aplicou:
+    // marca paid SEM estorno (dinheiro legítimo desta tentativa).
+    const onTarget = p.plan === row.plan && (p.plan_cycle ?? 'MONTHLY') === row.cycle && !!p.asaas_subscription_id
+    if (onTarget) {
+      await db.from('billing_checkouts').update({ status: 'paid', asaas_payment_id: paymentId, last_event: `CARD_FALLBACK_ALREADY:${paymentId}` }).eq('checkout_id', recoveryCheckoutId)
+      log(`${tag}: profile já no alvo — troca já aplicada; marca paid (sem estorno)`, { profileId, paymentId, plan: row.plan, cycle: row.cycle })
+      return 'already_applied'
+    }
+
+    // 6) Validação de dinheiro (só com identidade forte). null/NaN → manual (nunca estorno por coerção).
+    const fpRaw = row.final_price
+    const fp = fpRaw === null || fpRaw === undefined ? NaN : Number(fpRaw)
+    if (!Number.isFinite(fp)) {
+      await sendBillingOpsAlert({
+        subject: 'Fallback cartão morto: final_price ausente/inválido na linha — NÃO estornado (ação manual)',
+        lines: { profileId, paymentId, finalPrice: String(fpRaw ?? '(null)'), source },
+      }).catch(() => {})
+      throw new Error(`${tag} final_price nulo/NaN na linha ${recoveryCheckoutId} — roteamento manual`)
+    }
+    // NaN-safe: payment.value ausente (NaN) NUNCA passa como valor OK → cai no estorno fail-closed.
+    if (!Number.isFinite(payment.value) || Math.abs(payment.value - fp) > 0.01) {
+      await refundCardFallbackAndCancel(db, { paymentId, checkoutId: recoveryCheckoutId, profileId, customerId: row.asaas_customer_id, lastEvent: `CARD_FALLBACK_VALUE_MISMATCH:${paymentId}`, reasonLabel: `VALOR_DIVERGENTE(pago ${payment.value} != esperado ${fp})`, source, tag })
+      return 'refunded_value_mismatch'
+    }
+
+    // 7) 🛡️ (P1-A) TOKEN do cartão novo em VARIÁVEL LOCAL — NÃO salvo no profile ainda.
+    const token = payment.creditCardToken
+    if (!token) {
+      // Se o gate 2 (token no avulso DETACHED) falhar em produção, aparece EXATAMENTE aqui.
+      await sendBillingOpsAlert({
+        subject: 'Fallback cartão morto: avulso pago mas SEM creditCardToken — ação manual',
+        lines: { profileId, paymentId, source },
+      }).catch(() => {})
+      throw new Error(`${tag} avulso ${paymentId} pago mas SEM creditCardToken p/ concluir a troca — ação manual`)
+    }
+
+    // 8) Conclui a troca pelo motor interno — sub NOVA no preço CHEIO (fullPriceOf) via token NOVO.
+    const targetIdx = PLAN_ORDER.indexOf(row.plan as PlanId)
+    const currentIdx = PLAN_ORDER.indexOf((p.plan ?? 'free') as PlanId)
+    const result = await executePlanSwitch({
+      db,
+      profileId,
+      customerId: (row.asaas_customer_id ?? p.asaas_customer_id) as string,
+      cardToken: token,
+      expectedOldSubscriptionId: p.asaas_subscription_id ?? null,
+      plan: row.plan as PlanId,
+      cycle: row.cycle as BillingCycle,
+      // Drift: se o backstop rodar dias depois, o ciclo conta a partir de AGORA (favorece o cliente).
+      nextDueDate: nextDueDateAfterFullCycle(row.cycle as BillingCycle),
+      reason: 'card_fallback',
+      isPlanDowngrade: targetIdx >= 0 && currentIdx >= 0 && targetIdx < currentIdx,
+    })
+    if (!result.ok) {
+      // 🛡️ (P1-A) profiles.asaas_card_token INTOCADO — o retry relê o token do payment fresco.
+      throw new Error(`${tag} executePlanSwitch falhou (${result.code}): ${result.error} — retry`)
+    }
+
+    // 9) 🛡️ (P1-A) SÓ AGORA: salva o token novo no profile + linha 'paid'. Falha no save do token é
+    //    NÃO-FATAL (a sub nova já cobra no cartão novo no Asaas; um futuro planchange recai no fallback).
+    const { error: tokErr } = await db.from('profiles').update({ asaas_card_token: token }).eq('id', profileId)
+    if (tokErr) {
+      logError(`${tag}: switch OK mas falha ao salvar o token novo no profile (não-fatal; degradação segura)`, tokErr, { profileId, paymentId })
+      await sendBillingOpsAlert({
+        subject: 'Fallback cartão morto: troca concluída mas token novo NÃO salvo no profile (não-fatal)',
+        lines: { profileId, paymentId, source },
+      }).catch(() => {})
+    }
+    await db.from('billing_checkouts').update({ status: 'paid', asaas_payment_id: paymentId, last_event: `CARD_FALLBACK_PAID:${paymentId}` }).eq('checkout_id', recoveryCheckoutId)
+    log(`${tag}: troca concluída pelo fallback de cartão morto`, { profileId, plan: row.plan, cycle: row.cycle, paymentId, newSub: result.newSubscriptionId })
     return 'switched'
   } finally {
     await releaseLock(db, lockKey)

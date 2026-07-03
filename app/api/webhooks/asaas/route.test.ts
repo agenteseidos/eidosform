@@ -43,16 +43,24 @@ vi.mock('@/lib/asaas', () => ({
   updateSubscription: vi.fn(),
   extractCardToken: () => null,
   parseExternalReference: (ref?: string | null) => {
-    const out = { profileId: null as string | null, plan: null as string | null, cycle: null as string | null }
+    const out = { profileId: null as string | null, plan: null as string | null, cycle: null as string | null, kind: null as string | null, attempt: null as string | null }
     if (!ref) return out
     for (const part of ref.split('|')) {
       const [k, v] = [part.slice(0, part.indexOf(':')), part.slice(part.indexOf(':') + 1)]
       if (k === 'profile') out.profileId = v
       else if (k === 'plan') out.plan = v
       else if (k === 'cycle') out.cycle = v
+      else if (k === 'kind') out.kind = v
+      else if (k === 'attempt') out.attempt = v
     }
     return out
   },
+}))
+// runPlanChangeBackstop e runCardFallbackBackstop mockados: os testes de correlação controlam o
+// retorno (o comportamento interno deles é coberto em lib/plan-switch.test.ts).
+vi.mock('@/lib/plan-switch', () => ({
+  runPlanChangeBackstop: vi.fn(),
+  runCardFallbackBackstop: vi.fn(),
 }))
 // finalizeActivation/claimActivationEffects mockados; isExpectedFullPrice REAL (usa o
 // PLAN_PRICES do mock de @/lib/asaas acima — preços de produção).
@@ -73,6 +81,10 @@ import { getSubscription } from '@/lib/asaas'
 import { finalizeActivation, claimActivationEffects } from '@/lib/billing-activation'
 import { handleUpgrade } from '@/lib/plan-limits'
 import { sendBillingOpsAlert, sendPlanActivated } from '@/lib/resend'
+import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
+
+const mockCardFallback = vi.mocked(runCardFallbackBackstop)
+const mockPlanChange = vi.mocked(runPlanChangeBackstop)
 
 const mockCreateClient = vi.mocked(createClient)
 const mockGetSubscription = vi.mocked(getSubscription)
@@ -366,5 +378,90 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
     const downgrade = calls.find((c) => c.table === 'profiles' && c.method === 'update'
       && (c.args[0] as { plan?: string })?.plan === 'free')
     expect(downgrade).toBeUndefined()
+  })
+
+  // ── Fallback de cartão morto (2026-07-03): correlação no webhook + blindagem P1-C ──
+
+  // Teste 22 — avulso DETACHED (sem subscription) com checkoutSession → runCardFallbackBackstop.
+  it('PAYMENT_CONFIRMED sem subscription COM checkoutSession → runCardFallbackBackstop invocado, 200 processed, SEM throw', async () => {
+    const { db, calls } = makeRecordingDb({ asaas_webhook_events: [{ error: null }] })
+    mockCreateClient.mockReturnValue(db as never)
+    mockCardFallback.mockResolvedValue('switched')
+
+    const body = { id: 'evt_fb', event: 'PAYMENT_CONFIRMED', payment: { customer: 'cus_1', value: 78, id: 'pay_fb', checkoutSession: 'chk_1' } }
+    const res = await POST(makeReq(body))
+    const out = await res.json() as { received: boolean; processed?: boolean }
+
+    expect(mockCardFallback).toHaveBeenCalledWith(expect.anything(), {
+      customerId: 'cus_1', paymentId: 'pay_fb', checkoutSessionId: 'chk_1', source: 'webhook',
+    })
+    expect(out.received).toBe(true)
+    expect(out.processed).toBeUndefined() // break → fluxo normal (não DLQ)
+    const dlq = calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'failed')
+    expect(dlq).toBeUndefined()
+  })
+
+  // Teste 23 — sem match → mantém o throw→DLQ (regressão do avulso desconhecido).
+  it('sem subscription e no_match (avulso desconhecido) → continua lançando → DLQ failed', async () => {
+    const { db, calls } = makeRecordingDb({ asaas_webhook_events: [{ error: null }] })
+    mockCreateClient.mockReturnValue(db as never)
+    mockCardFallback.mockResolvedValue('no_match')
+
+    const body = { id: 'evt_fb2', event: 'PAYMENT_CONFIRMED', payment: { customer: 'cus_1', value: 78, id: 'pay_fb2' } }
+    const res = await POST(makeReq(body))
+    const out = await res.json() as { processed?: boolean }
+
+    expect(mockCardFallback).toHaveBeenCalled()
+    expect(out.processed).toBe(false)
+    const dlq = calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'failed')
+    expect(dlq).toBeTruthy()
+  })
+
+  // Teste 24 — branch kind:planchange intocado: runPlanChangeBackstop roda, card fallback NÃO.
+  it('avulso kind:planchange → runPlanChangeBackstop (regressão), runCardFallbackBackstop NÃO chamado', async () => {
+    const { db } = makeRecordingDb({ asaas_webhook_events: [{ error: null }] })
+    mockCreateClient.mockReturnValue(db as never)
+    mockPlanChange.mockResolvedValue('switched')
+
+    const body = { id: 'evt_pc', event: 'PAYMENT_CONFIRMED', payment: { customer: 'cus_1', value: 78, id: 'pay_pc', externalReference: 'profile:user-1|plan:plus|cycle:MONTHLY|kind:planchange|attempt:att1' } }
+    const res = await POST(makeReq(body))
+    expect((await res.json() as { received: boolean }).received).toBe(true)
+
+    expect(mockPlanChange).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ profileId: 'user-1', plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_pc' }))
+    expect(mockCardFallback).not.toHaveBeenCalled()
+  })
+
+  // Teste 25 — 🛡️ P1-C: PAYMENT_OVERDUE re-resolve por customer NÃO casa a linha do fallback
+  // (o .neq('payment_method','plan_switch_fallback') é aplicado no resolveBillingContext E no
+  // re-resolve do updateCheckoutLink). Sem isso, a linha do fallback (pending) seria marcada 'overdue'.
+  it('🛡️ P1-C: PAYMENT_OVERDUE aplica .neq(payment_method, plan_switch_fallback) no resolve E no re-resolve', async () => {
+    const { db, calls } = makeRecordingDb({
+      asaas_webhook_events: [{ error: null }],
+      billing_checkouts: [
+        { data: null, error: null },   // resolveBillingContext opção (1) por subscription → nada
+        { data: CK_ROW, error: null }, // resolveBillingContext opção (3) por customer (com .neq)
+        { data: null, error: null },   // updateCheckoutLink re-resolve opção (1) por subscription
+        { data: CK_ROW, error: null }, // updateCheckoutLink re-resolve opção (3) por customer (com .neq)
+        { error: null },               // update do checkout p/ overdue
+      ],
+      profiles: [
+        { data: USER_ROW, error: null }, // getProfileById (resolve inicial)
+        { data: { asaas_subscription_id: 'sub_1', plan: 'starter', plan_status: 'active', plan_expires_at: null }, error: null },
+        { data: [{ id: 'user-1' }], error: null }, // revert p/ free (overdue)
+        { data: USER_ROW, error: null }, // getProfileById (re-resolve do updateCheckoutLink)
+      ],
+    })
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_overdue_fb', event: 'PAYMENT_OVERDUE', payment: { customer: 'cus_1', value: 49, subscription: 'sub_1' } }
+    const res = await POST(makeReq(body))
+    expect((await res.json() as { received: boolean }).received).toBe(true)
+
+    const neqCalls = calls.filter((c) => c.table === 'billing_checkouts' && c.method === 'neq'
+      && JSON.stringify(c.args) === JSON.stringify(['payment_method', 'plan_switch_fallback']))
+    // 1 no resolveBillingContext inicial (opção 3) + 1 no re-resolve do updateCheckoutLink (opção 3).
+    expect(neqCalls.length).toBeGreaterThanOrEqual(2)
   })
 })

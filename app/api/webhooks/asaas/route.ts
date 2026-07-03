@@ -9,7 +9,7 @@ import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
 import { finalizeActivation, claimActivationEffects, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
-import { runPlanChangeBackstop } from '@/lib/plan-switch'
+import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -178,6 +178,11 @@ async function resolveBillingContext(params: {
       .eq('plan', wantPlan)
       .eq('cycle', wantCycle)
       .in('status', ACTIVEISH)
+      // 🛡️ (P1-C) NUNCA casar a linha do fallback de cartão morto (payment_method 'plan_switch_fallback',
+      // status 'pending' = ACTIVEISH): uma escrita genérica (ex. PAYMENT_OVERDUE da sub antiga na janela
+      // do cartão morto) a marcaria 'overdue'/sobrescreveria payment_method → quebraria o short-circuit
+      // do polling e deixaria o backstop em estado indefinido. A linha do fallback só é escrita pelo backstop.
+      .neq('payment_method', 'plan_switch_fallback')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -195,6 +200,9 @@ async function resolveBillingContext(params: {
       .select(COLS)
       .eq('asaas_customer_id', customerId)
       .in('status', ACTIVEISH)
+      // 🛡️ (P1-C) exclui a linha do fallback (ver opção 2). A opção (1), por asaas_subscription_id,
+      // não casa a linha do fallback — sua sub é NULL. Cobre o re-resolve do updateCheckoutLink (mesma fn).
+      .neq('payment_method', 'plan_switch_fallback')
       .order('created_at', { ascending: false })
       .limit(5)
 
@@ -297,6 +305,8 @@ interface AsaasPayment {
   externalReference?: string
   /** YYYY-MM-DD — data da cobrança. Usada p/ distinguir renovação de entrega tardia (P2-c). */
   dueDate?: string
+  /** Id da sessão de checkout (avulso DETACHED do fallback de cartão morto). Correlação P0. */
+  checkoutSession?: string
 }
 
 interface AsaasSubscription {
@@ -483,6 +493,16 @@ export async function POST(req: NextRequest) {
             })
             break
           }
+          // Fallback de cartão morto (2026-07-03): o avulso DETACHED da sessão de checkout NÃO tem
+          // subscription NEM externalReference (o Asaas não persiste no hosted checkout). Correlaciona
+          // por checkoutSession/customer. 'no_match' = avulso desconhecido → mantém o throw→DLQ atual.
+          const fb = await runCardFallbackBackstop(getSupabase(), {
+            customerId,
+            paymentId: String(payment?.id ?? ''),
+            checkoutSessionId: payment?.checkoutSession ?? null,
+            source: 'webhook',
+          })
+          if (fb !== 'no_match') break
           throw new Error(`PAYMENT_CONFIRMED/RECEIVED sem payment.subscription (customer ${customerId}) — não ativa; enviado p/ DLQ`)
         }
 

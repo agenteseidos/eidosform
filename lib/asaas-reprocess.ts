@@ -25,7 +25,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription, parseExternalReference } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart, type BillingCycle } from '@/lib/billing-activation'
-import { runPlanChangeBackstop } from '@/lib/plan-switch'
+import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
 
@@ -227,8 +227,22 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
       if (r === 'superseded') return 'planchange_superseded'
       return r === 'switched' ? 'planchange_backstop_aplicado' : 'planchange_ja_aplicado'
     }
-    // Evento de DINHEIRO sem subscription e sem ref de planchange = anomalia → NÃO aplicar às cegas:
-    // lança (mantém failed/dead, visível) p/ roteamento manual.
+    // Fallback de cartão morto (2026-07-03): o avulso DETACHED da sessão de checkout não tem
+    // subscription NEM externalReference planchange (o Asaas não persiste no hosted checkout). Antes de
+    // recusar p/ roteamento manual, tenta o backstop pela correlação por customer (a DLQ não guarda
+    // value/sessão — o backstop busca o payment fresco e valida identidade/valor/token). (§2.8, P1-B: este
+    // caminho só roda quando alguém dispara o endpoint admin; a retaguarda automática é o cron.)
+    if (row.payment_id && customerId) {
+      const fb = await runCardFallbackBackstop(supabase, {
+        customerId,
+        paymentId: row.payment_id,
+        checkoutSessionId: null,
+        source: 'reprocess',
+      })
+      if (fb !== 'no_match') return `card_fallback_${fb}`
+    }
+    // Evento de DINHEIRO sem subscription e sem ref de planchange/fallback = anomalia → NÃO aplicar às
+    // cegas: lança (mantém failed/dead, visível) p/ roteamento manual.
     throw new Error('avulso PAYMENT_CONFIRMED/RECEIVED sem subscription e sem external_reference planchange — roteamento manual')
   }
 

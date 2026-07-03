@@ -771,6 +771,13 @@ export async function POST(req: NextRequest) {
               plan_cycle: cycle,
               plan_status: 'active',
               plan_expires_at: planExpiresAt,
+              // Limpa a régua de valoração do plano anterior; o finalizeActivation (passo 4a)
+              // grava a base REAL (payment.dueDate → nextDueDate) logo em seguida. No RECEIVED
+              // tardio (skipProfileUpdate) esta inline NÃO roda e o finalize passa
+              // writeBasis:false → a base vigente fica intacta. (Commit C, proration.)
+              proration_basis_days: null,
+              billing_period_start_on: null,
+              billing_period_end_on: null,
               limit_alert_sent: false,
               responses_limit: planConfig?.maxResponses ?? 100,
               responses_used: 0,
@@ -833,6 +840,10 @@ export async function POST(req: NextRequest) {
           plan,
           cycle,
           source: 'webhook',
+          // Base REAL: início = dueDate da cobrança corrente; fim = nextDueDate da sub.
+          paymentDueDate: payment?.dueDate ?? null,
+          // RECEIVED tardio (skipProfileUpdate) NÃO reescreve a base vigente (guard L728).
+          writeBasis: !skipProfileUpdate,
         })
         // Correção de valor recorrente necessária mas falhou → DLQ (throw → catch marca
         // 'failed' → reprocessador retenta). NUNCA deixar a renovação subcobrar em silêncio.
@@ -917,6 +928,10 @@ export async function POST(req: NextRequest) {
             plan_status: 'overdue',
             plan_expires_at: null,
             annual_started_at: null,
+            // free LIMPA a régua de valoração (caso 5). (Commit C, proration.)
+            proration_basis_days: null,
+            billing_period_start_on: null,
+            billing_period_end_on: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
             responses_used: 0,
@@ -1017,6 +1032,10 @@ export async function POST(req: NextRequest) {
             plan_expires_at: null,
             asaas_subscription_id: null,
             annual_started_at: null,
+            // free LIMPA a régua de valoração (caso 5). (Commit C, proration.)
+            proration_basis_days: null,
+            billing_period_start_on: null,
+            billing_period_end_on: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
             responses_used: 0,
@@ -1127,6 +1146,10 @@ export async function POST(req: NextRequest) {
             plan_expires_at: null,
             asaas_subscription_id: null,
             annual_started_at: null,
+            // free LIMPA a régua de valoração (caso 5). (Commit C, proration.)
+            proration_basis_days: null,
+            billing_period_start_on: null,
+            billing_period_end_on: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
             responses_used: 0,

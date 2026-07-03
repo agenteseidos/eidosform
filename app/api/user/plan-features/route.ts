@@ -4,6 +4,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { PLANS, PlanName, handleDowngrade } from '@/lib/plan-limits'
 import { getSubscription } from '@/lib/asaas'
 import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
+import { computeProrationBasisDays } from '@/lib/proration'
 import { log, logError, logWarn } from '@/lib/logger'
 
 /**
@@ -47,10 +48,21 @@ export async function GET() {
             // se ele não der uma data futura válida, cai no fallback now+ciclo (P2, Codex):
             // SEMPRE corrige plan_expires_at, pra outros gates (getEffectivePlan) não verem
             // o plano como Free por causa de um expires_at vencido.
-            const next = expiryFromNextDueDate(sub?.nextDueDate) ?? calculateExpiryDate((profile.plan_cycle ?? 'MONTHLY') as BillingCycle)
+            // Recomputa TAMBÉM a régua de valoração (§4.F): fallback do webhook-fora-do-ar;
+            // sem recomputar, o divisor VELHO persistiria numa troca mid-ciclo. Sem
+            // paymentDueDate → base derivada do nextDueDate por mês/ano-CALENDÁRIO; null (fora
+            // de banda / inválido) → NÃO grava (fica no valor vigente/fallback + log).
+            const cycleRenew = (profile.plan_cycle ?? 'MONTHLY') as BillingCycle
+            const next = expiryFromNextDueDate(sub?.nextDueDate) ?? calculateExpiryDate(cycleRenew)
+            const basisRenew = computeProrationBasisDays(cycleRenew, sub?.nextDueDate)
             try {
               const sc = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-              await sc.from('profiles').update({ plan_expires_at: next }).eq('id', user.id)
+              const upd: Record<string, unknown> = { plan_expires_at: next }
+              if (basisRenew !== null) {
+                upd.proration_basis_days = basisRenew
+                upd.billing_period_end_on = sub?.nextDueDate ?? null
+              }
+              await sc.from('profiles').update(upd).eq('id', user.id)
             } catch (e) {
               logWarn('[plan-features] Falha ao estender plan_expires_at (não-bloqueante)', { error: e instanceof Error ? e.message : String(e) })
             }
@@ -98,6 +110,10 @@ export async function GET() {
               plan_expires_at: null,
               limit_alert_sent: false,
               annual_started_at: null,
+              // free LIMPA a régua de valoração (caso 5) — este revert NÃO usa buildFreePlanUpdate.
+              proration_basis_days: null,
+              billing_period_start_on: null,
+              billing_period_end_on: null,
               responses_limit: PLANS.free.maxResponses,
               asaas_subscription_id: null,
             })

@@ -14,7 +14,8 @@ import {
   updateSubscription,
   extractCardToken,
 } from '@/lib/asaas'
-import { log, logError } from '@/lib/logger'
+import { log, logError, logWarn } from '@/lib/logger'
+import { computeProrationBasisDays } from '@/lib/proration'
 
 export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
@@ -59,6 +60,13 @@ export function buildActivePlanUpdate(params: {
     plan_cycle: cycle,
     plan_status: 'active',
     plan_expires_at: calculateExpiryDate(cycle),
+    // Limpa a régua de valoração do plano ANTERIOR: o finalizeActivation (passo 4a) grava
+    // logo em seguida a base REAL (payment.dueDate → subscription.nextDueDate). Deixá-la
+    // suja faria o crédito do plano recém-ativado ser valorado pela base velha até a 1ª
+    // renovação. (Commit C, proration.)
+    proration_basis_days: null,
+    billing_period_start_on: null,
+    billing_period_end_on: null,
     limit_alert_sent: false,
     responses_limit: planConfig?.maxResponses ?? 100,
     responses_used: 0,
@@ -166,8 +174,15 @@ export async function finalizeActivation(params: {
   plan: string
   cycle: BillingCycle
   source: 'webhook' | 'polling' | 'reprocess' | 'backstop'
+  /** dueDate da cobrança CORRENTE (o webhook tem via payment.dueDate; polling/reprocess
+   *  não → a base REAL é derivada do nextDueDate por mês/ano-CALENDÁRIO). Início do período. */
+  paymentDueDate?: string | null
+  /** Gravar a régua de valoração (proration_basis_days) neste finalize? Default true.
+   *  O webhook passa `!skipProfileUpdate`: no RECEIVED TARDIO (liquidação ~D+32 do ciclo
+   *  ANTERIOR) NÃO reescreve a base vigente. (guard do route.ts:728.) */
+  writeBasis?: boolean
 }): Promise<FinalizeActivationResult> {
-  const { db, userId, customerId, newSubscriptionId, previousSubscriptionId, plan, cycle, source } = params
+  const { db, userId, customerId, newSubscriptionId, previousSubscriptionId, plan, cycle, source, paymentDueDate, writeBasis } = params
   const tag = `[${source}] finalizeActivation`
   const noop: FinalizeActivationResult = { skipped: true, cancelledPrevious: false, recurringValueNeeded: false, recurringValueFixed: true }
 
@@ -239,9 +254,25 @@ export async function finalizeActivation(params: {
     //      pelo buildActivePlanUpdate — nunca expira hoje). Best-effort, não-bloqueante. (P2-7)
     const realExpiry = expiryFromNextDueDate(sub?.nextDueDate)
     if (realExpiry) {
-      const { error: expErr } = await db.from('profiles').update({ plan_expires_at: realExpiry }).eq('id', userId)
-      if (expErr) logError(`${tag}: falha ao ajustar expiração pelo nextDueDate real (não-bloqueante)`, expErr, { userId, newSubscriptionId })
-      else log(`${tag}: expiração ajustada pelo nextDueDate real`, { userId, newSubscriptionId, plan_expires_at: realExpiry })
+      const update: Record<string, unknown> = { plan_expires_at: realExpiry }
+      // (4a-base) Régua de valoração REAL do período pago corrente (payment.dueDate →
+      // subscription.nextDueDate), gravada na 1ª compra e em TODA renovação. writeBasis:false
+      // (RECEIVED tardio do ciclo anterior) NÃO reescreve a base vigente. Quando a base não é
+      // computável com segurança (leitura falhou / fora da banda sã), mantém o fallback 30/365
+      // no read — consistente com o fallback now+ciclo do próprio plan_expires_at. (Commit C.)
+      if (writeBasis !== false) {
+        const basisDays = computeProrationBasisDays(cycle, sub?.nextDueDate, paymentDueDate)
+        if (basisDays !== null) {
+          update.proration_basis_days = basisDays
+          update.billing_period_end_on = sub?.nextDueDate ?? null
+          if (paymentDueDate) update.billing_period_start_on = paymentDueDate
+        } else {
+          logWarn(`${tag}: proration_basis_days não computável — mantém fallback 30/365`, { userId, nextDueDate: sub?.nextDueDate ?? null, paymentDueDate: paymentDueDate ?? null })
+        }
+      }
+      const { error: expErr } = await db.from('profiles').update(update).eq('id', userId)
+      if (expErr) logError(`${tag}: falha ao ajustar expiração/base pelo nextDueDate real (não-bloqueante)`, expErr, { userId, newSubscriptionId })
+      else log(`${tag}: expiração+base ajustadas pelo período real`, { userId, newSubscriptionId, plan_expires_at: realExpiry, proration_basis_days: update.proration_basis_days ?? null })
     }
 
     // (4b) Valor recorrente → preço cheio (só se diferir; proration-checkout cria prorateado).
@@ -278,6 +309,11 @@ export function buildFreePlanUpdate(newStatus: 'overdue' | 'cancelled' | 'charge
     responses_limit: PLANS.free.maxResponses,
     responses_used: 0,
     annual_started_at: null, // sem plano pago = sem assinatura anual vigente
+    // Mudança para free LIMPA a régua de valoração (caso 5): sem plano pago não há dias a
+    // valorar. Money-neutral (free → preço 0 → crédito 0), mas mantém o profile coerente.
+    proration_basis_days: null,
+    billing_period_start_on: null,
+    billing_period_end_on: null,
   }
 }
 

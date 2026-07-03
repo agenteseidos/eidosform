@@ -3,6 +3,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getSubscription } from '@/lib/asaas'
 import { PLANS, handleDowngrade } from '@/lib/plan-limits'
 import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
+import { computeProrationBasisDays } from '@/lib/proration'
 import { log, logError, logWarn } from '@/lib/logger'
 
 /**
@@ -59,9 +60,20 @@ export async function GET(req: NextRequest) {
       try {
         const sub = (await getSubscription(p.asaas_subscription_id)) as { status?: string; nextDueDate?: string }
         if (String(sub?.status ?? '').toUpperCase() === 'ACTIVE') {
-          // Renovação atrasada — estende em vez de derrubar o pagante.
-          const next = expiryFromNextDueDate(sub?.nextDueDate) ?? calculateExpiryDate((p.plan_cycle ?? 'MONTHLY') as BillingCycle)
-          const { error: extErr } = await admin.from('profiles').update({ plan_expires_at: next }).eq('id', p.id)
+          // Renovação atrasada — estende em vez de derrubar o pagante. Recomputa TAMBÉM a
+          // régua de valoração (§4.F): este é o fallback do webhook-fora-do-ar; sem recomputar,
+          // o divisor VELHO persistiria e a distorção que o projeto mata reapareceria. Sem
+          // paymentDueDate → a base é derivada do nextDueDate por mês/ano-CALENDÁRIO (§2.5);
+          // fora de banda / inválido → null → NÃO grava (fica no valor vigente/fallback + log).
+          const cycleRenew = (p.plan_cycle ?? 'MONTHLY') as BillingCycle
+          const next = expiryFromNextDueDate(sub?.nextDueDate) ?? calculateExpiryDate(cycleRenew)
+          const basisRenew = computeProrationBasisDays(cycleRenew, sub?.nextDueDate)
+          const upd: Record<string, unknown> = { plan_expires_at: next }
+          if (basisRenew !== null) {
+            upd.proration_basis_days = basisRenew
+            upd.billing_period_end_on = sub?.nextDueDate ?? null
+          }
+          const { error: extErr } = await admin.from('profiles').update(upd).eq('id', p.id)
           if (extErr) logError('[cron/expire-plans] falha ao estender', extErr, { profileId: p.id })
           else extended++
           shouldRevert = false
@@ -95,6 +107,10 @@ export async function GET(req: NextRequest) {
             plan_expires_at: null,
             asaas_subscription_id: null,
             annual_started_at: null,
+            // free LIMPA a régua de valoração (caso 5) — este revert NÃO usa buildFreePlanUpdate.
+            proration_basis_days: null,
+            billing_period_start_on: null,
+            billing_period_end_on: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
             responses_used: 0,

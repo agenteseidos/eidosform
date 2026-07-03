@@ -223,6 +223,64 @@ export async function createCheckout(params: {
   return { id: data.id, url: checkoutUrl }
 }
 
+/**
+ * Cria checkout hospedado de PAGAMENTO ÚNICO (chargeTypes DETACHED) — fallback de cartão morto
+ * (2026-07-03): quando o token salvo falhou/não existe, cobra só a DIFERENÇA prorateada da troca
+ * de plano numa sessão hospedada; o cartão novo digitado vira token reutilizável no pagamento
+ * (smoke de produção 2026-07-03: GET /payments/{id} do avulso pago devolve
+ * creditCard.creditCardToken preenchido E o campo checkoutSession com o id exato da sessão —
+ * gate 2 verde; a correlação com a tentativa de troca é pelo ID DA SESSÃO, salvo em
+ * billing_checkouts.asaas_checkout_session_id ANTES de entregar a URL).
+ * NÃO reusa o createCheckout acima de propósito: o payload DETACHED não tem bloco `subscription`,
+ * e parametrizar/misturar os dois convidaria regressão na 1ª compra.
+ * ⚠️ Valor mínimo de cobrança do gateway = R$5 (smoke 2026-07-03: 400 invalid_object abaixo disso).
+ */
+export async function createDetachedCheckout(params: {
+  customerId: string
+  value: number
+  /** ≤30 chars (limite de item do Asaas — truncado defensivamente aqui). */
+  name: string
+  description: string
+  successUrl: string
+  cancelUrl: string
+  expiredUrl: string
+  /** Defensivo: o Asaas NÃO persiste externalReference no checkout hospedado (smoke 2026-06-08). */
+  externalReference?: string
+  /** Default 60 (janela menor = menos drift de proration na sessão viva). */
+  minutesToExpire?: number
+}): Promise<{ id: string; url: string }> {
+  const { customerId, value, name, description, successUrl, cancelUrl, expiredUrl, externalReference, minutesToExpire } = params
+
+  log('[asaas] createDetachedCheckout payload', { value, customerId })
+
+  // Shape validada no smoke de produção 2026-07-03 → 200 { id, status:'ACTIVE', link }.
+  const payload = {
+    customer: customerId,
+    billingTypes: ['CREDIT_CARD'],
+    chargeTypes: ['DETACHED'],
+    ...(externalReference ? { externalReference } : {}),
+    items: [{
+      name: name.slice(0, 30),
+      description,
+      quantity: 1,
+      value,
+    }],
+    callback: {
+      successUrl,
+      cancelUrl,
+      expiredUrl,
+    },
+    minutesToExpire: minutesToExpire ?? 60,
+  }
+
+  const data = await asaasFetch('/checkouts', { method: 'POST', body: JSON.stringify(payload) })
+  // A resposta já traz a URL pronta (campo link, formato /checkoutSession/show/{id} — smoke
+  // 2026-07-03), mas montamos a partir do id espelhando o createCheckout acima: mesma origem
+  // sandbox/produção e um único ponto de verdade do formato.
+  const checkoutUrl = `${getAsaasCheckoutOrigin()}/checkoutSession/show?id=${data.id}`
+  return { id: data.id, url: checkoutUrl }
+}
+
 /** Resumo de assinatura retornado pela listagem do Asaas (campos usados pelo app). */
 export interface AsaasSubscriptionSummary {
   id: string
@@ -330,6 +388,49 @@ export async function getPaymentById(paymentId: string): Promise<{ ok: boolean; 
 }
 
 /**
+ * Busca um pagamento por id COM os campos usados pelo fallback de cartão morto (2026-07-03):
+ * `customer` e `checkoutSession` (identidade forte da correlação — o payment de sessão DETACHED
+ * paga devolve o id exato da sessão, smoke de produção 2026-07-03) e `creditCardToken` (via
+ * extractCardToken — o avulso DETACHED pago devolve creditCard.creditCardToken reutilizável,
+ * gate 2 verde no smoke). O backstop SEMPRE consulta este GET fresco: o payload do webhook é só
+ * dica de correlação, nunca fonte de verdade. Mesma semântica do getPaymentById: `ok:false` =
+ * consulta FALHOU (rede/5xx → o chamador não deve agir); `payment:null` = não existe (404).
+ * `value` é coerção Number() (NaN se ausente — o consumidor valida antes de comparar dinheiro).
+ */
+export async function getPaymentWithCard(paymentId: string): Promise<{
+  ok: boolean
+  payment: {
+    id: string
+    status: string
+    value: number
+    customer: string
+    checkoutSession: string | null
+    creditCardToken: string | null
+  } | null
+}> {
+  try {
+    const data = await asaasFetch(`/payments/${encodeURIComponent(paymentId)}`)
+    if (!data?.id) return { ok: true, payment: null }
+    return {
+      ok: true,
+      payment: {
+        id: String(data.id),
+        status: String(data.status ?? ''),
+        value: Number(data.value),
+        customer: String(data.customer ?? ''),
+        checkoutSession: data.checkoutSession ? String(data.checkoutSession) : null,
+        creditCardToken: extractCardToken(data),
+      },
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/error 404/i.test(msg)) return { ok: true, payment: null } // não existe → definitivo
+    logError('[asaas] getPaymentWithCard: consulta falhou (ok=false)', err, { paymentId })
+    return { ok: false, payment: null }
+  }
+}
+
+/**
  * Busca o avulso (pagamento) NÃO-estornado mais recente com este externalReference. Usado pela
  * idempotência da troca de plano (P0-A) p/ não cobrar em dobro num retry quando o payment.id ainda
  * não foi salvo. `ok:false` = consulta FALHOU (NÃO cobrar de novo); `payment:null` = não achou.
@@ -351,6 +452,39 @@ export async function findPaymentByExternalReference(externalReference: string):
     return { ok: true, payment: { id: String(top.id), status: String(top.status ?? '') } }
   } catch (err) {
     logError('[asaas] findPaymentByExternalReference: consulta falhou (ok=false)', err, { externalReference })
+    return { ok: false, payment: null }
+  }
+}
+
+/**
+ * Busca o pagamento utilizável (CONFIRMED/RECEIVED/PENDING) mais recente de uma SESSÃO de
+ * checkout DETACHED — fallback de cartão morto (2026-07-03). Usado pelo cron de reconcile como
+ * backstop de webhook perdido/falho. `ok:false` = consulta FALHOU (o chamador NÃO deve agir
+ * neste tick); `payment:null` = não achou.
+ *
+ * 🛡️ (P0-b) VALIDAÇÃO CLIENT-SIDE OBRIGATÓRIA: descarta todo payment cujo `checkoutSession` não
+ * seja EXATAMENTE o id pedido. Motivo: APIs REST (Asaas incluso) costumam IGNORAR query params
+ * desconhecidos e devolver a listagem GERAL da conta — sem este filtro local, o cron poderia
+ * casar o pagamento de OUTRO cliente e o backstop estornaria uma renovação legítima. O smoke de
+ * produção 2026-07-03 confirmou que `GET /payments?checkoutSession=` filtra corretamente E que
+ * id inexistente devolve lista VAZIA (totalCount 0) — mesmo assim o filtro fica: defesa em
+ * profundidade contra mudança de comportamento da API.
+ */
+export async function findPaymentByCheckoutSession(checkoutSessionId: string): Promise<{ ok: boolean; payment: { id: string; status: string } | null }> {
+  try {
+    const data = await asaasFetch(`/payments?checkoutSession=${encodeURIComponent(checkoutSessionId)}&limit=10`)
+    const pays: Array<{ id?: string; status?: string; checkoutSession?: string; dateCreated?: string }> = data?.data ?? []
+    const usable = pays
+      // 🛡️ P0-b: só payments da PRÓPRIA sessão. Payment SEM checkoutSession também é descartado
+      // (seria um pagamento comum de assinatura vazando por uma listagem geral).
+      .filter((p) => p.checkoutSession === checkoutSessionId)
+      .filter((p) => p.status === 'CONFIRMED' || p.status === 'RECEIVED' || p.status === 'PENDING')
+      .sort((a, b) => String(b.dateCreated ?? '').localeCompare(String(a.dateCreated ?? '')))
+    const top = usable[0]
+    if (!top?.id) return { ok: true, payment: null }
+    return { ok: true, payment: { id: String(top.id), status: String(top.status ?? '') } }
+  } catch (err) {
+    logError('[asaas] findPaymentByCheckoutSession: consulta falhou (ok=false)', err, { checkoutSessionId })
     return { ok: false, payment: null }
   }
 }

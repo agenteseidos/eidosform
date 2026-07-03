@@ -161,6 +161,49 @@ describe('executePlanSwitch', () => {
   })
 })
 
+// ── Commit B (2026-07-03): a sub NOVA criada por nós grava proration_basis_days ──
+// Regra: sub criada por executePlanSwitch = 1 preço-cheio cobre UM ciclo NOMINAL →
+//  (2) upgrade_paid / (3) credit_covered p/ plano ≠ → 30 (MONTHLY) / 365 (YEARLY) [default]
+//  (4) reativação MESMO plano+ciclo → base VIGENTE preservada (o chamador passa a base real)
+// NUNCA coverageDays (armadilha do divisor: Pro→Starter 158d perderia R$208).
+describe('executePlanSwitch — proration_basis_days na sub NOVA', () => {
+  const profileUpdate = () =>
+    state.calls.find(c => c.table === 'profiles' && c.op === 'update' && !!(c.payload as { plan?: string })?.plan)?.payload as
+      Record<string, unknown> | undefined
+
+  it('(2/3) MONTHLY sem base explícita (upgrade_paid/credit_covered p/ plano ≠) → grava 30', async () => {
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams })
+    expect(r.ok).toBe(true)
+    expect(profileUpdate()!.proration_basis_days).toBe(30)
+  })
+
+  it('(2/3) YEARLY sem base explícita → grava 365', async () => {
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams, cycle: 'YEARLY', nextDueDate: '2027-07-10' })
+    expect(r.ok).toBe(true)
+    expect(profileUpdate()!.proration_basis_days).toBe(365)
+  })
+
+  it('(4) reativação MESMO plano+ciclo: base VIGENTE preservada (78) → grava 78, NUNCA 30', async () => {
+    state.profileRow = { asaas_subscription_id: null }
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams, expectedOldSubscriptionId: null, reason: 'reactivate', prorationBasisDays: 78 })
+    expect(r.ok).toBe(true)
+    expect(profileUpdate()!.proration_basis_days).toBe(78)
+  })
+
+  it('base explícita null (legado) → grava null (read cai no fallback 30/365 com log)', async () => {
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams, prorationBasisDays: null })
+    expect(r.ok).toBe(true)
+    expect(profileUpdate()!.proration_basis_days).toBeNull()
+  })
+
+  it('base explícita 0/negativa NÃO vira default: passa o valor (o read valida ≥1 e loga)', async () => {
+    // undefined → default; 0 é um valor EXPLÍCITO → grava 0 (o resolveBasisDays do read trata).
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams, prorationBasisDays: 0 })
+    expect(r.ok).toBe(true)
+    expect(profileUpdate()!.proration_basis_days).toBe(0)
+  })
+})
+
 describe('runPlanChangeBackstop', () => {
   it('profile já no plano-alvo com sub → noop (idempotente)', async () => {
     state.profileRow = { plan: 'plus', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_x', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }

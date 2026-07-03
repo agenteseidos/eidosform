@@ -278,6 +278,14 @@ export async function POST(
           // Defensivo: computePlanChange sempre define p/ credit_covered.
           coverageNextDue = addDaysToTodayBRT(change.creditCoverageDays ?? 1)
         }
+        // Base de valoração da sub NOVA (§4.E). Reativação MESMO plano+ciclo (identidade de dias:
+        // só atingível SEM sub ativa — com sub ativa e mesmo alvo já retornou already_subscribed)
+        // PRESERVA a base vigente; senão saldo-vira-tempo → 30/365 NOMINAL do plano-alvo, NUNCA
+        // coverageDays (a régua é quantos dias UM preço-cheio compra, não a duração da cobertura).
+        const samePlanCycle = profile.plan === plan && (profile.plan_cycle ?? 'MONTHLY') === cycle
+        const basisForSwitch = samePlanCycle
+          ? profile.prorationBasisDays            // caso 4: preserva a base real do período pago
+          : (cycle === 'YEARLY' ? 365 : 30)       // caso 3: 30/365 do plano-alvo
         const result = await executePlanSwitch({
           db: sSupa,
           profileId: profile.profileId,
@@ -292,6 +300,7 @@ export async function POST(
           reason: profile.asaasSubscriptionId ? 'credit_covered' : 'reactivate',
           isPlanDowngrade: change.isPlanDowngrade,
           proration,
+          prorationBasisDays: basisForSwitch,
         })
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: result.status })

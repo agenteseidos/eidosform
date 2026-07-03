@@ -46,6 +46,17 @@ export interface PlanSwitchParams {
   reason: 'upgrade_paid' | 'credit_covered' | 'reactivate' | 'webhook_backstop' | 'card_fallback'
   isPlanDowngrade: boolean
   proration?: { credit: number; originalPrice: number; finalPrice: number } | null
+  /**
+   * Denominador de valoração (proration_basis_days) da sub NOVA — quantos dias UM preço-cheio
+   * do plano-alvo compra. A sub aqui é SEMPRE criada por nós no preço CHEIO cobrindo UM ciclo
+   * NOMINAL (os dias extras do saldo-vira-tempo vêm valorados à diária nominal), então:
+   *   - undefined → 30 (MONTHLY) / 365 (YEARLY) nominal (upgrade_paid, credit_covered p/ plano ≠,
+   *     backstops). NUNCA coverageDays (senão o downgrade perderia saldo — armadilha do divisor).
+   *   - reativação MESMO plano+ciclo → o chamador passa a base VIGENTE (profile.prorationBasisDays)
+   *     p/ PRESERVAR a régua real do período pago (identidade de dias).
+   *   - null → grava null (legado; read cai no fallback 30/365 com log).
+   */
+  prorationBasisDays?: number | null
 }
 
 export type PlanSwitchResult =
@@ -160,6 +171,12 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
   //    a sub recém-criada (não deixar cobrança fantasma) e aborta.
   const planConfig = PLANS[plan]
   const expiry = expiryFromNextDueDate(nextDueDate) ?? new Date(`${nextDueDate}T00:00:00.000Z`).toISOString()
+  // Base de valoração da sub NOVA. Sub criada por nós = 1 preço-cheio cobre UM ciclo NOMINAL →
+  // 30/365 (default). O chamador da reativação MESMO plano+ciclo passa a base vigente p/ preservar.
+  // undefined → nominal; null → grava null (legado). NUNCA usar coverageDays (armadilha do divisor).
+  const basisDays = params.prorationBasisDays !== undefined
+    ? params.prorationBasisDays
+    : (cycle === 'YEARLY' ? 365 : 30)
   let q = db
     .from('profiles')
     .update({
@@ -167,6 +184,7 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
       plan_cycle: cycle,
       plan_status: 'active',
       plan_expires_at: expiry,
+      proration_basis_days: basisDays,
       asaas_subscription_id: newSub.id,
       responses_limit: planConfig?.maxResponses ?? 100,
       responses_used: 0,

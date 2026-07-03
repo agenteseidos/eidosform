@@ -436,8 +436,7 @@ function CheckoutContent() {
           <h1 className="text-2xl font-bold text-slate-900">Seu cartão salvo não funcionou</h1>
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 text-left leading-relaxed">
             Não conseguimos cobrar no cartão salvo. Você pode concluir a mudança pagando só a
-            diferença ({brl(fallbackInfo.value ?? 0)}) com outro cartão — o novo cartão fica
-            salvo para as próximas cobranças.
+            diferença ({brl(fallbackInfo.value ?? 0)}) com outro cartão.
           </div>
           <div className="flex gap-3 justify-center">
             <Button

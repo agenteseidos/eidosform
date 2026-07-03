@@ -69,18 +69,18 @@ describe('checkLaunchScope (kill-switch BILLING_MVP_ONLY)', () => {
 describe('isCardFallbackEnabled (flag BILLING_CARD_FALLBACK — fallback de cartão morto)', () => {
   afterEach(() => vi.unstubAllEnvs())
 
-  it('default: OFF — feature inerte em produção até o E2E passar (commits deployáveis a qualquer momento)', async () => {
+  it('default: ON — E2E de produção passou (2026-07-03), feature ligada de fábrica', async () => {
     const { isCardFallbackEnabled } = await load()
-    expect(isCardFallbackEnabled()).toBe(false)
-  })
-
-  it("BILLING_CARD_FALLBACK='true' liga o fallback", async () => {
-    const { isCardFallbackEnabled } = await load({ BILLING_CARD_FALLBACK: 'true' })
     expect(isCardFallbackEnabled()).toBe(true)
   })
 
-  it("qualquer valor ≠ 'true' (ex. '1') NÃO liga — opt-in explícito, espelho do BILLING_MVP_ONLY", async () => {
-    const { isCardFallbackEnabled } = await load({ BILLING_CARD_FALLBACK: '1' })
+  it("BILLING_CARD_FALLBACK='false' desliga (kill-switch de emergência, sem deploy)", async () => {
+    const { isCardFallbackEnabled } = await load({ BILLING_CARD_FALLBACK: 'false' })
     expect(isCardFallbackEnabled()).toBe(false)
+  })
+
+  it("qualquer valor ≠ 'false' (ex. 'true', '1') mantém ligado — espelho do kill-switch BILLING_MVP_ONLY", async () => {
+    expect((await load({ BILLING_CARD_FALLBACK: 'true' })).isCardFallbackEnabled()).toBe(true)
+    expect((await load({ BILLING_CARD_FALLBACK: '1' })).isCardFallbackEnabled()).toBe(true)
   })
 })

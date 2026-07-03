@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { getCustomerSubscriptions, hasConfirmedPaymentForSubscription, detectPlanAndCycleFromValue, type AsaasSubscriptionSummary } from '@/lib/asaas'
+import { getCustomerSubscriptions, hasConfirmedPaymentForSubscription, detectPlanAndCycleFromValue, findPaymentByCheckoutSession, type AsaasSubscriptionSummary } from '@/lib/asaas'
 import { activatePaidSubscription, isExpectedFullPrice, type BillingCycle } from '@/lib/billing-activation'
+import { runCardFallbackBackstop } from '@/lib/plan-switch'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
@@ -43,14 +44,18 @@ export async function GET(req: NextRequest) {
   const until = new Date(now - 5 * 60 * 1000).toISOString() // dá tempo do webhook/polling agir
 
   const { data: pendings, error } = await (db as unknown as {
-    from: (t: string) => { select: (c: string) => { eq: (a: string, b: string) => { gt: (a: string, b: string) => { lt: (a: string, b: string) => { order: (a: string, o: unknown) => { limit: (n: number) => Promise<{ data: PendingRow[] | null; error: unknown }> } } } } } }
+    from: (t: string) => { select: (c: string) => { eq: (a: string, b: string) => { neq: (a: string, b: string) => { gt: (a: string, b: string) => { lt: (a: string, b: string) => { order: (a: string, o: unknown) => { limit: (n: number) => Promise<{ data: PendingRow[] | null; error: unknown }> } } } } } } }
   }).from('billing_checkouts').select('id, profile_id, plan, cycle, status, asaas_customer_id, asaas_subscription_id, created_at')
-    .eq('status', 'pending').gt('created_at', since).lt('created_at', until)
+    // 🛡️ (P1-D) EXCLUI a linha do fallback de cartão morto (payment_method 'plan_switch_fallback',
+    // asaas_subscription_id NULL). Sem isto ela entra no scan, o alvo resolvido vira a sub ANTIGA,
+    // isExpectedFullPrice(valor antigo, plano NOVO) falha e dispara alerta falso "PRORATEADO/INSEGURO
+    // — manual" a CADA execução horária — fadiga exatamente no alerta anti-desconto-eterno.
+    .eq('status', 'pending').neq('payment_method', 'plan_switch_fallback').gt('created_at', since).lt('created_at', until)
     .order('created_at', { ascending: true }).limit(MAX_ITEMS)
 
   if (error) { logError('[cron/reconcile-checkouts] erro ao listar pendings', error); return NextResponse.json({ error: 'db' }, { status: 500 }) }
 
-  const results = { scanned: pendings?.length ?? 0, activated: 0, alerted: 0, skipped: 0, actionsOn: ACTIONS_ON }
+  const results = { scanned: pendings?.length ?? 0, activated: 0, alerted: 0, skipped: 0, fallbackScanned: 0, fallbackBackstop: 0, fallbackExpired: 0, actionsOn: ACTIONS_ON }
   const alerts: string[] = []
 
   for (const ck of pendings ?? []) {
@@ -147,6 +152,67 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Fallback de cartão morto (2026-07-03) — passo NOVO 🛡️ (P1-B) ─────────────────────────────
+  // O webhook é o completador PRIMÁRIO do fallback; ESTE passo é (a) o BACKSTOP CEDO (a partir de
+  // ~15min) p/ webhook perdido/falho OU evento preso na DLQ, e (b) o EXPIRADOR (a partir de 90min)
+  // da sessão abandonada. Chaveia por `updated_at` (a linha é REUSADA de planchange-pay-{profile},
+  // então `created_at` é antigo; o trigger billing_checkouts_updated_at marca `updated_at` na
+  // abertura da sessão). NUNCA gateado pela flag BILLING_CARD_FALLBACK: dinheiro já pago tem que ser
+  // processado mesmo com a criação de sessões desligada. Best-effort por linha (erro loga e segue).
+  const fb15 = new Date(now - 15 * 60 * 1000).toISOString()
+  const EXPIRE_MS = 90 * 60 * 1000 // sessão de 60min + margem
+  const { data: fbRows, error: fbErr } = await (db as unknown as {
+    from: (t: string) => { select: (c: string) => { eq: (a: string, b: string) => { eq: (a: string, b: string) => { lt: (a: string, b: string) => { order: (a: string, o: unknown) => { limit: (n: number) => Promise<{ data: FallbackRow[] | null; error: unknown }> } } } } } }
+  }).from('billing_checkouts').select('id, profile_id, asaas_customer_id, asaas_checkout_session_id, updated_at')
+    .eq('status', 'pending').eq('payment_method', 'plan_switch_fallback').lt('updated_at', fb15)
+    .order('updated_at', { ascending: true }).limit(MAX_ITEMS)
+
+  if (fbErr) {
+    logError('[cron/reconcile-checkouts] erro ao listar fallbacks pendentes', fbErr)
+  } else {
+    results.fallbackScanned = fbRows?.length ?? 0
+    for (const fb of fbRows ?? []) {
+      try {
+        const sessionId = fb.asaas_checkout_session_id
+        // Consulta o pagamento da sessão (validação client-side 🛡️ P0-b DENTRO do helper).
+        // ok:false = consulta FALHOU → conservador, deixa p/ o próximo tick (não expira às cegas).
+        let payment: { id: string; status: string } | null = null
+        if (sessionId) {
+          const found = await findPaymentByCheckoutSession(sessionId)
+          if (!found.ok) { results.skipped++; continue }
+          payment = found.payment
+        }
+        if (payment && (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED')) {
+          // BACKSTOP CEDO: conclui a troca que o webhook não concluiu. O backstop relê o payment
+          // FRESCO, valida identidade forte (P0) e é idempotente (lock + guards + CAS). Erro cai no
+          // catch (best-effort); os casos de roteamento manual já alertam ops DENTRO do backstop.
+          const outcome = await runCardFallbackBackstop(db, {
+            customerId: fb.asaas_customer_id ?? '',
+            paymentId: payment.id,
+            checkoutSessionId: sessionId,
+            source: 'reconcile',
+          })
+          results.fallbackBackstop++
+          log('[cron/reconcile-checkouts] fallback backstop', { checkoutId: fb.id, paymentId: payment.id, outcome })
+          continue
+        }
+        // PENDING → aguarda o próximo tick (NUNCA expira com pagamento em trânsito). Sem pagamento
+        // utilizável E `updated_at < now−90min` → expira a sessão abandonada (plano intacto, R$0).
+        const updatedMs = fb.updated_at ? new Date(fb.updated_at).getTime() : 0
+        if (!payment && updatedMs < now - EXPIRE_MS) {
+          await db.from('billing_checkouts').update({ status: 'cancelled', last_event: 'CARD_FALLBACK_EXPIRED' } as never).eq('id', fb.id)
+          results.fallbackExpired++
+          log('[cron/reconcile-checkouts] fallback EXPIRADO', { checkoutId: fb.id })
+          continue
+        }
+        results.skipped++
+      } catch (e) {
+        logError('[cron/reconcile-checkouts] erro no fallback', e, { checkoutId: fb.id })
+        results.skipped++
+      }
+    }
+  }
+
   if (alerts.length) {
     const { actionsOn: _ao, ...rest } = results
     await sendBillingOpsAlert({
@@ -159,3 +225,6 @@ export async function GET(req: NextRequest) {
 
 type PendingRow = { id: string; profile_id: string; plan: string; cycle: string; status: string; asaas_customer_id: string | null; asaas_subscription_id: string | null; created_at: string }
 type ProfileRow = { id: string; plan: string | null; plan_status: string | null; plan_cycle: string | null; asaas_subscription_id: string | null }
+// Linha do fallback de cartão morto (reusa planchange-pay-{profile}, sub NULL, discriminada por
+// payment_method 'plan_switch_fallback'). O passo novo chaveia por updated_at (created_at é antigo).
+type FallbackRow = { id: string; profile_id: string | null; asaas_customer_id: string | null; asaas_checkout_session_id: string | null; updated_at: string | null }

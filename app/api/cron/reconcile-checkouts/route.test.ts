@@ -19,7 +19,9 @@ vi.mock('@/lib/asaas', () => ({
   getCustomerSubscriptions: vi.fn(),
   hasConfirmedPaymentForSubscription: vi.fn(),
   detectPlanAndCycleFromValue: vi.fn(),
+  findPaymentByCheckoutSession: vi.fn(),
 }))
+vi.mock('@/lib/plan-switch', () => ({ runCardFallbackBackstop: vi.fn() }))
 vi.mock('@/lib/billing-activation', () => ({
   activatePaidSubscription: vi.fn(),
   isExpectedFullPrice: vi.fn(),
@@ -51,6 +53,45 @@ function makeDb(handlers: Record<string, unknown[]>) {
   return { from }
 }
 
+// Como makeDb, mas grava cada método encadeado (com args) — prova filtros do SELECT (ex. 🛡️ P1-D).
+function makeMethodRecordingDb(handlers: Record<string, unknown[]>, calls: Array<{ table: string; method: string; args: unknown[] }>) {
+  const from = vi.fn((table: string) => {
+    const q = handlers[table] ?? [{ data: null, error: null }]
+    const result = q.length > 1 ? q.shift() : q[0]
+    const proxy: unknown = new Proxy({}, {
+      get(_t, prop) {
+        if (prop === 'then') {
+          return (resolve: (v: unknown) => void, reject: (e: unknown) => void) => Promise.resolve(result).then(resolve, reject)
+        }
+        return (...args: unknown[]) => { calls.push({ table, method: String(prop), args }); return proxy }
+      },
+    })
+    return proxy
+  })
+  return { from }
+}
+
+// Como makeDb, mas captura o PAYLOAD de cada .update() — prova o efeito da expiração (last_event).
+function makeUpdateRecordingDb(handlers: Record<string, unknown[]>, updates: Array<{ table: string; payload: unknown }>) {
+  const from = vi.fn((table: string) => {
+    const q = handlers[table] ?? [{ data: null, error: null }]
+    const result = q.length > 1 ? q.shift() : q[0]
+    const proxy: unknown = new Proxy({}, {
+      get(_t, prop) {
+        if (prop === 'then') {
+          return (resolve: (v: unknown) => void, reject: (e: unknown) => void) => Promise.resolve(result).then(resolve, reject)
+        }
+        if (prop === 'update') return (payload: unknown) => { updates.push({ table, payload }); return proxy }
+        return () => proxy
+      },
+    })
+    return proxy
+  })
+  return { from }
+}
+
+const minsAgo = (m: number) => new Date(Date.now() - m * 60 * 1000).toISOString()
+
 const REQ = { headers: { get: (k: string) => (k === 'authorization' ? 'Bearer test-secret' : null) } } as never
 
 async function load(extraEnv: Record<string, string> = {}) {
@@ -65,7 +106,8 @@ async function load(extraEnv: Record<string, string> = {}) {
   const lock = await import('@/lib/billing-lock')
   const supa = await import('@supabase/supabase-js')
   const resend = await import('@/lib/resend')
-  return { GET: route.GET, asaas, act, lock, supa, resend }
+  const ps = await import('@/lib/plan-switch')
+  return { GET: route.GET, asaas, act, lock, supa, resend, ps }
 }
 
 const PENDING_CK = {
@@ -173,5 +215,98 @@ describe('GET /api/cron/reconcile-checkouts (backstop)', () => {
     expect(body.activated).toBe(0)
     expect(body.alerted).toBe(1)
     expect(vi.mocked(mods.act.activatePaidSubscription)).not.toHaveBeenCalled()
+  })
+
+  // ── Fallback de cartão morto (2026-07-03), commit 5/5 ─────────────────────────────────────────
+  const FB_ROW = {
+    id: 'fb1', profile_id: 'user-9', asaas_customer_id: 'cus_9',
+    asaas_checkout_session_id: 'sess_9', updated_at: minsAgo(20),
+  }
+
+  it('🛡️ (P1-D) passo EXISTENTE exclui a linha do fallback (.neq payment_method no SELECT)', async () => {
+    // O mock não filtra de fato; provamos que o SELECT do passo existente CHAMA
+    // .neq('payment_method','plan_switch_fallback') — o filtro é feito server-side em prod.
+    const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
+    const calls: Array<{ table: string; method: string; args: unknown[] }> = []
+    vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(mods.supa.createClient).mockReturnValue(makeMethodRecordingDb({
+      billing_checkouts: [{ data: [], error: null }, { data: [], error: null }],
+      profiles: [{ data: null, error: null }],
+    }, calls) as never)
+
+    await mods.GET(REQ)
+
+    const hasNeq = calls.some((c) => c.table === 'billing_checkouts' && c.method === 'neq'
+      && c.args[0] === 'payment_method' && c.args[1] === 'plan_switch_fallback')
+    expect(hasNeq).toBe(true)
+  })
+
+  it('linha ≥15min com pagamento CONFIRMED → runCardFallbackBackstop (source reconcile)', async () => {
+    const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
+    vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(mods.asaas.findPaymentByCheckoutSession).mockResolvedValue({ ok: true, payment: { id: 'pay_9', status: 'CONFIRMED' } })
+    vi.mocked(mods.ps.runCardFallbackBackstop).mockResolvedValue('switched')
+    vi.mocked(mods.supa.createClient).mockReturnValue(makeDb({
+      billing_checkouts: [
+        { data: [], error: null },        // passo existente (pendings) — vazio
+        { data: [FB_ROW], error: null },  // passo novo (fallbacks pendentes)
+      ],
+      profiles: [{ data: null, error: null }],
+    }) as never)
+
+    const res = await mods.GET(REQ)
+    const body = await res.json() as { fallbackBackstop: number; fallbackExpired: number }
+
+    expect(vi.mocked(mods.ps.runCardFallbackBackstop)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ customerId: 'cus_9', paymentId: 'pay_9', checkoutSessionId: 'sess_9', source: 'reconcile' }),
+    )
+    expect(body.fallbackBackstop).toBe(1)
+    expect(body.fallbackExpired).toBe(0)
+  })
+
+  it('🛡️ (P1-B) linha ≥15min e <90min SEM pagamento → intocada (não expira cedo, sem backstop)', async () => {
+    const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
+    vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(mods.asaas.findPaymentByCheckoutSession).mockResolvedValue({ ok: true, payment: null })
+    vi.mocked(mods.supa.createClient).mockReturnValue(makeDb({
+      billing_checkouts: [
+        { data: [], error: null },
+        { data: [{ ...FB_ROW, updated_at: minsAgo(45) }], error: null },
+      ],
+      profiles: [{ data: null, error: null }],
+    }) as never)
+
+    const res = await mods.GET(REQ)
+    const body = await res.json() as { fallbackExpired: number; fallbackBackstop: number }
+
+    expect(vi.mocked(mods.ps.runCardFallbackBackstop)).not.toHaveBeenCalled()
+    expect(body.fallbackExpired).toBe(0)
+    expect(body.fallbackBackstop).toBe(0)
+  })
+
+  it('linha ≥90min sem pagamento → status cancelled + last_event CARD_FALLBACK_EXPIRED', async () => {
+    const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
+    const updates: Array<{ table: string; payload: unknown }> = []
+    vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(mods.asaas.findPaymentByCheckoutSession).mockResolvedValue({ ok: true, payment: null })
+    vi.mocked(mods.supa.createClient).mockReturnValue(makeUpdateRecordingDb({
+      billing_checkouts: [
+        { data: [], error: null },
+        { data: [{ ...FB_ROW, updated_at: minsAgo(120) }], error: null },
+        { data: null, error: null }, // resposta do UPDATE
+      ],
+      profiles: [{ data: null, error: null }],
+    }, updates) as never)
+
+    const res = await mods.GET(REQ)
+    const body = await res.json() as { fallbackExpired: number }
+
+    expect(vi.mocked(mods.ps.runCardFallbackBackstop)).not.toHaveBeenCalled()
+    expect(body.fallbackExpired).toBe(1)
+    expect(updates).toContainEqual({
+      table: 'billing_checkouts',
+      payload: { status: 'cancelled', last_event: 'CARD_FALLBACK_EXPIRED' },
+    })
   })
 })

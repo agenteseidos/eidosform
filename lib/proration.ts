@@ -4,17 +4,30 @@
 
 import { PLAN_PRICES } from '@/lib/asaas'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
+import { logWarn } from '@/lib/logger'
 
 export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
-// Fixed at 30/365 to match Asaas's billing cycle (MONTHLY = 30 days, YEARLY = 365).
-// Calendar variations (28-31 day months, leap years) cause cents-level rounding
-// differences — accepted trade-off for predictable proration matching the provider.
+// Régua NOMINAL do ciclo (30/365). Usada em DOIS lugares:
+//  (1) fallback do denominador de proration quando proration_basis_days é NULL (legado);
+//  (2) conversão saldo-vira-tempo (calculateCreditCoverageDays) — a diária nominal do
+//      plano-alvo, base da ida-e-volta estável.
+// NÃO "casa com o provider": o Asaas fatura por mês-calendário (28-31). O casamento real
+// com o provider vem de proration_basis_days (período REAL), não daqui.
 const DAYS_IN_MONTH = 30
 const DAYS_IN_YEAR = 365
 
 function getDaysInCycle(cycle: BillingCycle): number {
   return cycle === 'YEARLY' ? DAYS_IN_YEAR : DAYS_IN_MONTH
+}
+
+/** Resolve o denominador de valoração: base explícita quando presente (≥1), senão a régua
+ *  nominal 30/365 — logando (visibilidade: um caminho de ativação NOVO que esqueceu de
+ *  gravar apareceria aqui num cliente recém-ativado, não só legado). */
+function resolveBasisDays(basisDays: number | null | undefined, cycle: BillingCycle): number {
+  if (typeof basisDays === 'number' && basisDays >= 1) return basisDays
+  logWarn('[proration] proration_basis_days ausente — fallback nominal 30/365', { cycle, basisDays: basisDays ?? null })
+  return getDaysInCycle(cycle)
 }
 
 function getPlanPrice(plan: PlanId, cycle: BillingCycle): number {
@@ -60,6 +73,9 @@ export interface ProrationCreditParams {
   currentPlan: PlanId
   currentCycle: BillingCycle
   planExpiresAt: string // ISO date string
+  /** Denominador de valoração (proration_basis_days do profile). null/undefined → fallback
+   *  30/365 nominal (com log). Ver resolveBasisDays. */
+  basisDays?: number | null
 }
 
 export interface UpgradePriceParams {
@@ -68,6 +84,8 @@ export interface UpgradePriceParams {
   planExpiresAt: string
   newPlan: PlanId
   newCycle: BillingCycle
+  /** Base de valoração do plano ATUAL (repassada a calculateProrationCredit). */
+  basisDays?: number | null
 }
 
 export interface ProrationResult {
@@ -90,12 +108,14 @@ export interface ProrationResult {
  * mesmo plano+ciclo nem converte (identidade exata em plan-change.ts).
  */
 export function calculateProrationCredit(params: ProrationCreditParams): number {
-  const { currentPlan, currentCycle, planExpiresAt } = params
+  const { currentPlan, currentCycle, planExpiresAt, basisDays } = params
 
   const price = getPlanPrice(currentPlan, currentCycle)
   if (price === 0) return 0
 
-  const totalDays = getDaysInCycle(currentCycle)
+  // Denominador = base explícita (período REAL do Asaas / nominal dos switches) quando
+  // presente; senão fallback 30/365 nominal (com log). Antes: getDaysInCycle FIXO.
+  const totalDays = resolveBasisDays(basisDays, currentCycle)
   const remainingDays = remainingPaidDays(planExpiresAt)
   if (remainingDays <= 0) return 0
 
@@ -119,12 +139,13 @@ export function isUpgrade(currentPlan: PlanId, newPlan: PlanId): boolean {
  * Retorna crédito, preço original do novo plano, e preço final.
  */
 export function calculateUpgradePrice(params: UpgradePriceParams): ProrationResult {
-  const { currentPlan, currentCycle, planExpiresAt, newPlan, newCycle } = params
+  const { currentPlan, currentCycle, planExpiresAt, newPlan, newCycle, basisDays } = params
 
   const credit = calculateProrationCredit({
     currentPlan,
     currentCycle,
     planExpiresAt,
+    basisDays,
   })
 
   const originalPrice = getPlanPrice(newPlan, newCycle)
@@ -154,4 +175,61 @@ export function calculateCreditCoverageDays(credit: number, newPlanPrice: number
   // +1 dia espúrio quando a conta fecha exata — pré-requisito da ida-e-volta estável
   // do modelo sem teto.
   return Math.ceil((credit * daysInCycle) / newPlanPrice - 1e-9)
+}
+
+/** Parse 'YYYY-MM-DD' (ou ISO com sufixo) → meia-noite UTC (ms). null se inválido. */
+function parseYmd(s: string | null | undefined): number | null {
+  if (!s || typeof s !== 'string') return null
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return null
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3])
+  const t = Date.UTC(y, mo - 1, d)
+  const dt = new Date(t)
+  // Rejeita datas fora do calendário (ex.: mês 13, dia 32 que o Date "corrige").
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null
+  return t
+}
+
+/** ms UTC + N ciclos CALENDÁRIO (mês/ano; NUNCA +30/365). Clampa o dia ao fim do mês-alvo
+ *  (espelha o clamp do Asaas: 31/jan +1mês → 28/fev). */
+function calendarShift(ms: number, cycle: BillingCycle, sign: 1 | -1): number {
+  const dt = new Date(ms)
+  const y = dt.getUTCFullYear(), m = dt.getUTCMonth(), d = dt.getUTCDate()
+  if (cycle === 'YEARLY') {
+    // 29/fev + N anos → clampa p/ 28/fev em ano não-bissexto.
+    const targetY = y + sign
+    const lastDay = new Date(Date.UTC(targetY, m + 1, 0)).getUTCDate()
+    return Date.UTC(targetY, m, Math.min(d, lastDay))
+  }
+  const targetM = m + sign
+  const lastDay = new Date(Date.UTC(y, targetM + 1, 0)).getUTCDate() // dia 0 do mês seguinte
+  return Date.UTC(y, targetM, Math.min(d, lastDay))
+}
+
+/**
+ * Base de valoração REAL do período pago corrente, em dias-calendário INTEIROS: do
+ * vencimento da cobrança corrente (payment.dueDate) ao PRÓXIMO (subscription.nextDueDate).
+ * Usada na 1ª compra e em TODA renovação. Retorna null quando não dá pra computar com
+ * segurança (o chamador cai no fallback 30/365 + log).
+ *  - Início: paymentDueDate quando presente/coerente; senão nextDueDate − 1 ciclo CALENDÁRIO.
+ *  - Fim: nextDueDate; se o Asaas ainda NÃO avançou (nextDueDate ≤ início), deriva
+ *    início + 1 ciclo CALENDÁRIO (NUNCA +30/365).
+ *  - Guarda sã: fora de [27,32] (MONTHLY) / [359,372] (YEARLY) → null (protege contra
+ *    nextDueDate corrompido inflar a base e sub-creditar o cliente).
+ */
+export function computeProrationBasisDays(
+  cycle: BillingCycle,
+  nextDueDate: string | null | undefined,
+  paymentDueDate?: string | null,
+): number | null {
+  let start = parseYmd(paymentDueDate)
+  let end = parseYmd(nextDueDate)
+  if (start === null && end === null) return null
+  if (start !== null && end === null) end = calendarShift(start, cycle, 1)
+  else if (start === null && end !== null) start = calendarShift(end, cycle, -1)
+  else if (start !== null && end !== null && end <= start) end = calendarShift(start, cycle, 1)
+  const basis = Math.round(((end as number) - (start as number)) / 86_400_000)
+  const [min, max] = cycle === 'YEARLY' ? [359, 372] : [27, 32]
+  if (!Number.isFinite(basis) || basis < min || basis > max) return null
+  return basis
 }

@@ -182,6 +182,7 @@ export async function POST(
     planExpiresAt: profile.plan_expires_at ?? null,
     hasActiveSubscription: Boolean(profile.asaasSubscriptionId),
     hasPaidPeriodRemaining,
+    prorationBasisDays: profile.prorationBasisDays,
     newPlan: plan as PlanId,
     newCycle: cycle,
   })

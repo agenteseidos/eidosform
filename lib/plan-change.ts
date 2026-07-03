@@ -21,6 +21,9 @@ export interface PlanChangeInput {
    * pra reassinar QUALQUER plano — sempre via checkout (cria sub nova). (#2, Sidney 2026-06-08.)
    */
   hasPaidPeriodRemaining?: boolean
+  /** Base de valoração (proration_basis_days) do plano ATUAL do profile — denominador dos
+   *  dias restantes. undefined/null → fallback 30/365 nominal (legado, com log). */
+  prorationBasisDays?: number | null
   newPlan: PlanId
   newCycle: BillingCycle
 }
@@ -51,7 +54,7 @@ function fullPrice(plan: PlanId, cycle: BillingCycle): number {
 }
 
 export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
-  const { currentPlan, currentCycle, planExpiresAt, hasActiveSubscription, hasPaidPeriodRemaining = false, newPlan, newCycle } = input
+  const { currentPlan, currentCycle, planExpiresAt, hasActiveSubscription, hasPaidPeriodRemaining = false, prorationBasisDays, newPlan, newCycle } = input
 
   const isCycleChange = currentPlan === newPlan && currentCycle !== newCycle
   // Downgrade de CICLO (anual→mensal do mesmo plano) é tratado como DOWNGRADE honesto, não
@@ -105,6 +108,7 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
       planExpiresAt,
       newPlan,
       newCycle,
+      basisDays: prorationBasisDays, // base do plano ATUAL
     })
     const prorationC = { credit: r.credit, originalPrice: r.originalPrice, finalPrice: r.finalPrice }
     if (prorationC.finalPrice <= 0) {
@@ -140,6 +144,7 @@ export function computePlanChange(input: PlanChangeInput): PlanChangeResult {
       planExpiresAt,
       newPlan,
       newCycle,
+      basisDays: prorationBasisDays, // base do plano ATUAL
     })
     proration = { credit: r.credit, originalPrice: r.originalPrice, finalPrice: r.finalPrice }
   }

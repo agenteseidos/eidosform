@@ -7,8 +7,7 @@ export default defineConfig({
     environment: 'node',
     exclude: [
       // Testes SCRIPT-STYLE (rodam com `npx tsx <arquivo>`, usam process.exit) — não são
-      // compatíveis com o runner do vitest.
-      'lib/proration.test.ts',
+      // compatíveis com o runner do vitest. (lib/proration.test.ts foi convertido p/ Vitest.)
       'lib/plan-change.test.ts',
       'lib/billing-activation.test.ts',
       'lib/asaas-external-ref.test.ts',

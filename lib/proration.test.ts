@@ -1,300 +1,301 @@
 /**
- * Testes lógicos para lib/proration.ts — Proration & Billing
- * Execute: npx tsx lib/proration.test.ts
+ * Testes de lib/proration.ts — Proration & Billing (suíte Vitest determinística).
  *
- * Cenários cobertos:
- * 1. isUpgrade — todas as combinações de planos
- * 2. calculateProrationCredit — vários tempos restantes
- * 3. calculateUpgradePrice — upgrades anuais, retroativo, downgrade, troca de ciclo
- * 4. Edge cases — crédito cobre plano inteiro, 0 dias restantes, plano expirado
+ * Relógio FIXO (vi.useFakeTimers + setSystemTime): remainingPaidDays lê Date.now(), então
+ * a base temporal precisa ser estável. Usamos meia-tarde BRT (12:00-03:00) para que
+ * `daysFromNow(N)` caia exatamente no mesmo horário N dias à frente → diferença de dias
+ * INTEIROS previsível.
+ *
+ * Cobre:
+ *  - isUpgrade (todas as combinações)
+ *  - calculateProrationCredit / calculateUpgradePrice (base null = fallback 30/365 = números
+ *    IDÊNTICOS ao comportamento pré-mudança; behavior-preserving) + com base explícita
+ *  - saldo-vira-tempo (calculateCreditCoverageDays — inalterado)
+ *  - computeProrationBasisDays (período REAL: 31/30/28/365/366, stale, derivação, fora de banda)
+ *  - casos do plano: (a) mês 31d, (b) fev 28/29, (c) anual 365/366, (d) round-trip 158d base 30,
+ *    (e) cobertura 78/158 base 30, + fallback null→30/365.
  */
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import {
+  calculateProrationCredit,
+  calculateUpgradePrice,
+  calculateCreditCoverageDays,
+  remainingPaidDays,
+  addDaysToTodayBRT,
+  isUpgrade,
+  computeProrationBasisDays,
+} from './proration'
 
-import { calculateProrationCredit, calculateUpgradePrice, calculateCreditCoverageDays, remainingPaidDays, addDaysToTodayBRT, isUpgrade } from './proration'
+// Relógio fixo: meia-tarde BRT.
+const FIXED_NOW = new Date('2026-03-15T12:00:00-03:00')
 
-let passed = 0
-let failed = 0
+beforeAll(() => {
+  vi.useFakeTimers()
+  vi.setSystemTime(FIXED_NOW)
+})
+afterAll(() => {
+  vi.useRealTimers()
+})
 
-function assert(condition: boolean, name: string) {
-  if (condition) {
-    console.log(`✅ ${name}`)
-    passed++
-  } else {
-    console.log(`❌ ${name}`)
-    failed++
-  }
-}
-
-function approx(a: number, b: number, epsilon = 0.01): boolean {
-  return Math.abs(a - b) < epsilon
-}
-
-// Helper: data N dias a partir de agora
+// Helper: data ISO N dias a partir de "agora" (relógio fixo).
 function daysFromNow(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
 }
 
-// ============================================================
-// 1. isUpgrade — todas as combinações
-// ============================================================
-console.log('\n=== isUpgrade ===')
-
-assert(isUpgrade('starter', 'plus'), 'starter → plus is upgrade')
-assert(isUpgrade('starter', 'professional'), 'starter → professional is upgrade')
-assert(isUpgrade('plus', 'professional'), 'plus → professional is upgrade')
-assert(isUpgrade('free', 'starter'), 'free → starter is upgrade')
-assert(isUpgrade('free', 'plus'), 'free → plus is upgrade')
-assert(isUpgrade('free', 'professional'), 'free → professional is upgrade')
-
-assert(!isUpgrade('plus', 'starter'), 'plus → starter is NOT upgrade (downgrade)')
-assert(!isUpgrade('professional', 'plus'), 'professional → plus is NOT upgrade (downgrade)')
-assert(!isUpgrade('professional', 'starter'), 'professional → starter is NOT upgrade (downgrade)')
-assert(!isUpgrade('starter', 'starter'), 'same plan is NOT upgrade')
-assert(!isUpgrade('plus', 'plus'), 'same plan is NOT upgrade')
-assert(!isUpgrade('professional', 'professional'), 'same plan is NOT upgrade')
-assert(!isUpgrade('free', 'free'), 'free → free is NOT upgrade')
+const approx = (a: number, b: number, eps = 0.01) => Math.abs(a - b) < eps
 
 // ============================================================
-// 2. calculateProrationCredit
+// 1. isUpgrade
 // ============================================================
-console.log('\n=== calculateProrationCredit ===')
-
-// Starter mensal R$49, 15 dias restantes de 30
-const credit15 = calculateProrationCredit({
-  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15),
+describe('isUpgrade', () => {
+  it('detecta upgrades', () => {
+    expect(isUpgrade('starter', 'plus')).toBe(true)
+    expect(isUpgrade('starter', 'professional')).toBe(true)
+    expect(isUpgrade('plus', 'professional')).toBe(true)
+    expect(isUpgrade('free', 'starter')).toBe(true)
+    expect(isUpgrade('free', 'plus')).toBe(true)
+    expect(isUpgrade('free', 'professional')).toBe(true)
+  })
+  it('não trata downgrade/igual como upgrade', () => {
+    expect(isUpgrade('plus', 'starter')).toBe(false)
+    expect(isUpgrade('professional', 'plus')).toBe(false)
+    expect(isUpgrade('professional', 'starter')).toBe(false)
+    expect(isUpgrade('starter', 'starter')).toBe(false)
+    expect(isUpgrade('plus', 'plus')).toBe(false)
+    expect(isUpgrade('professional', 'professional')).toBe(false)
+    expect(isUpgrade('free', 'free')).toBe(false)
+  })
 })
-assert(approx(credit15, 24.5), `15 dias starter mensal = R$24.50 (got ${credit15})`)
-
-// Plus anual R$1164, 182 dias (meio ano) restantes de 365
-const credit182 = calculateProrationCredit({
-  currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(182),
-})
-assert(approx(credit182, 580.41), `182 dias plus anual ≈ R$580.41 (got ${credit182})`)
-
-// Plano expirado = 0 crédito
-const creditExpired = calculateProrationCredit({
-  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(-5),
-})
-assert(creditExpired === 0, 'Plano expirado = crédito 0')
-
-// 0 dias restantes (expira agora) = 0 crédito
-const credit0 = calculateProrationCredit({
-  currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(0),
-})
-assert(credit0 === 0, '0 dias restantes = crédito 0')
-
-// 1 dia restante
-const credit1 = calculateProrationCredit({
-  currentPlan: 'professional', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(1),
-})
-assert(approx(credit1, 8.57), `1 dia professional mensal ≈ R$8.57 (got ${credit1})`)
-
-// Plano anual quase cheio (360 dias restantes)
-const credit360 = calculateProrationCredit({
-  currentPlan: 'starter', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(360),
-})
-assert(approx(credit360, 343.23), `360 dias starter anual ≈ R$343.23 (got ${credit360})`)
-
-// SEM TETO de dinheiro (Sidney 2026-06-10, substitui o teto de 2026-06-09): dias restantes
-// acima de 1 ciclo são saldo LEGÍTIMO — o "saldo vira tempo" cria isso (ex.: downgrade
-// Plus→Starter empurra a cobrança 2+ meses) — e valem integralmente na diária do plano.
-// O teto antigo clipava esse saldo pago (perda real, vista no teste de produção 2026-06-10).
-const credit35 = calculateProrationCredit({
-  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(35),
-})
-assert(approx(credit35, 57.17), `35 dias starter mensal = R$57.17 (dias reais, sem teto; got ${credit35})`)
-
-const credit400 = calculateProrationCredit({
-  currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(400),
-})
-assert(approx(credit400, 1275.62), `400 dias plus anual = R$1275.62 (sem teto; got ${credit400})`)
-
-// Borda: exatamente o ciclo cheio (30 dias) dá exatamente o preço do ciclo.
-const creditFullCycle = calculateProrationCredit({
-  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(30),
-})
-assert(creditFullCycle <= 49.0 && creditFullCycle >= 48.5, `30 dias starter mensal ≈ R$49 sem estourar (got ${creditFullCycle})`)
 
 // ============================================================
-// remainingPaidDays / addDaysToTodayBRT — a régua de dias inteiros (BRT)
+// 2. calculateProrationCredit — base null (fallback 30/365) = comportamento atual
 // ============================================================
-console.log('\n=== remainingPaidDays / addDaysToTodayBRT ===')
-
-// Dias INTEIROS de calendário: a fração do fim-de-dia não infla a contagem (era a fonte
-// da deriva que motivou o teto antigo).
-assert(remainingPaidDays(daysFromNow(78)) === 78, `78 dias à frente = 78 dias inteiros (got ${remainingPaidDays(daysFromNow(78))})`)
-assert(remainingPaidDays(daysFromNow(1)) === 1, '1 dia à frente = 1 dia')
-assert(remainingPaidDays(daysFromNow(0)) === 0, 'expira agora = 0 dias')
-assert(remainingPaidDays(daysFromNow(-5)) === 0, 'expirado = 0 dias')
-assert(remainingPaidDays('data-invalida') === 0, 'data inválida = 0 dias')
-
-// Ida-e-volta exata: hoje + remainingPaidDays(exp) cai exatamente no dia de exp (BRT).
-const brtDateOf = (ms: number) => new Date(ms - 3 * 3600 * 1000).toISOString().split('T')[0]
-const target78 = Date.now() + 78 * 24 * 3600 * 1000
-assert(addDaysToTodayBRT(remainingPaidDays(daysFromNow(78))) === brtDateOf(target78), 'ida-e-volta: hoje + dias restantes = dia exato da expiração')
-
-// SEQUÊNCIA anti-farming do modelo SEM teto: entre planos, o ceil concede no máx ~1 dia POR
-// conversão (decisão antiga: favorece o cliente) e a ida-e-volta CONVERGE — repetir NÃO
-// cresce sem limite. (Mesmo plano+ciclo nem converte: identidade exata em plan-change.)
-const STARTER_M = 49
-const c1 = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(35) })
-const d1 = calculateCreditCoverageDays(c1, STARTER_M, 'MONTHLY')
-assert(d1 >= 35 && d1 <= 36, `35 dias reais → cobertura 35–36 (ceil ≤ +1; got ${d1})`)
-const c2 = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(d1) })
-const d2 = calculateCreditCoverageDays(c2, STARTER_M, 'MONTHLY')
-assert(d2 === d1, `ida-e-volta estabiliza: ${d1} → ${d2} (não empilha)`)
-
-// Epsilon do ceil: conta exata com ruído de float NÃO ganha +1 dia espúrio.
-// 58.80 × 30 / 49 = 36.000000000000007 em float64 → deve dar 36, não 37.
-assert(calculateCreditCoverageDays(58.8, STARTER_M, 'MONTHLY') === 36, `coverage exato com ruído de float = 36 (got ${calculateCreditCoverageDays(58.8, STARTER_M, 'MONTHLY')})`)
-
-// ============================================================
-// 3. calculateUpgradePrice — cenários de upgrade anual
-// ============================================================
-console.log('\n=== calculateUpgradePrice: upgrades anuais ===')
-
-// 3a. starter yearly → plus yearly com ~ano cheio restante (360 dias)
-const starterToPlusAnnual = calculateUpgradePrice({
-  currentPlan: 'starter', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(360),
-  newPlan: 'plus', newCycle: 'YEARLY',
+describe('calculateProrationCredit (base null → fallback 30/365, behavior-preserving)', () => {
+  it('15 dias starter mensal = R$24.50', () => {
+    const c = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15) })
+    expect(approx(c, 24.5)).toBe(true)
+  })
+  it('182 dias plus anual ≈ R$580.41', () => {
+    const c = calculateProrationCredit({ currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(182) })
+    expect(approx(c, 580.41)).toBe(true)
+  })
+  it('plano expirado = 0', () => {
+    expect(calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(-5) })).toBe(0)
+  })
+  it('0 dias restantes = 0', () => {
+    expect(calculateProrationCredit({ currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(0) })).toBe(0)
+  })
+  it('1 dia professional mensal ≈ R$8.57', () => {
+    const c = calculateProrationCredit({ currentPlan: 'professional', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(1) })
+    expect(approx(c, 8.57)).toBe(true)
+  })
+  it('360 dias starter anual ≈ R$343.23', () => {
+    const c = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(360) })
+    expect(approx(c, 343.23)).toBe(true)
+  })
+  it('SEM teto: 35 dias starter mensal = R$57.17 (dias reais)', () => {
+    const c = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(35) })
+    expect(approx(c, 57.17)).toBe(true)
+  })
+  it('SEM teto: 400 dias plus anual = R$1275.62', () => {
+    const c = calculateProrationCredit({ currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(400) })
+    expect(approx(c, 1275.62)).toBe(true)
+  })
+  it('30 dias starter mensal ≈ R$49 sem estourar', () => {
+    const c = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(30) })
+    expect(c).toBeLessThanOrEqual(49.0)
+    expect(c).toBeGreaterThanOrEqual(48.5)
+  })
+  it('free = 0', () => {
+    expect(calculateProrationCredit({ currentPlan: 'free', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15) })).toBe(0)
+  })
 })
-assert(approx(starterToPlusAnnual.credit, 343.23), `S→P anual credit ≈ R$343.23 (got ${starterToPlusAnnual.credit})`)
-assert(approx(starterToPlusAnnual.originalPrice, 1164), `S→P anual newPrice = R$1164 (got ${starterToPlusAnnual.originalPrice})`)
-assert(approx(starterToPlusAnnual.finalPrice, 820.77), `S→P anual finalPrice ≈ R$820.77 (got ${starterToPlusAnnual.finalPrice})`)
-assert(starterToPlusAnnual.finalPrice > 0, 'S→P anual finalPrice > 0')
-assert(starterToPlusAnnual.finalPrice < starterToPlusAnnual.originalPrice, 'S→P anual tem desconto')
 
-// 3b. starter yearly → professional yearly
-const starterToProAnnual = calculateUpgradePrice({
-  currentPlan: 'starter', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(365),
-  newPlan: 'professional', newCycle: 'YEARLY',
+// ============================================================
+// 2b. calculateProrationCredit — com BASE EXPLÍCITA (período real)
+// ============================================================
+describe('calculateProrationCredit (base explícita = período REAL do Asaas)', () => {
+  // (a) mês de 31 dias: base 31, 31 dias restantes → crédito = preço EXATO (nunca supera o pago).
+  it('(a) mês 31d: base=31 + 31 dias → R$49.00 (não R$50.63 do fallback 30)', () => {
+    const real = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(31), basisDays: 31 })
+    expect(real).toBe(49)
+    // Documenta a distorção que a base corrige: base null (30) super-credita.
+    const nominal = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(31), basisDays: null })
+    expect(approx(nominal, 50.63)).toBe(true)
+    expect(real).toBeLessThanOrEqual(49)
+    expect(nominal).toBeGreaterThan(49)
+  })
+  it('(a) mês 31d Professional: base=31 + 31 dias → R$257 exato (fallback daria R$265.57)', () => {
+    const real = calculateProrationCredit({ currentPlan: 'professional', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(31), basisDays: 31 })
+    expect(real).toBe(257)
+    const nominal = calculateProrationCredit({ currentPlan: 'professional', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(31), basisDays: null })
+    expect(nominal).toBeGreaterThan(257) // super-credita → empresa perde
+  })
+  // (b) fevereiro 28: base 28, 28 dias → crédito = preço (sem sub-crédito = sem sobrecobrança).
+  it('(b) fev 28d: base=28 + 28 dias → R$257 (fallback 30 SUB-creditaria → cobra o cliente a mais)', () => {
+    const real = calculateProrationCredit({ currentPlan: 'professional', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(28), basisDays: 28 })
+    expect(real).toBe(257)
+    const nominal = calculateProrationCredit({ currentPlan: 'professional', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(28), basisDays: null })
+    expect(nominal).toBeLessThan(257) // base 30 sub-credita → cliente pagaria a mais no upgrade
+    expect(approx(257 - nominal, 17.13, 0.05)).toBe(true) // dano confirmado no briefing (~R$17,13)
+  })
+  // (b) fevereiro bissexto 29 dias.
+  it('(b) fev 29d (bissexto): base=29 + 29 dias → R$257 exato', () => {
+    const real = calculateProrationCredit({ currentPlan: 'professional', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(29), basisDays: 29 })
+    expect(real).toBe(257)
+  })
+  it('base explícita 30 == fallback null (identidade da régua nominal)', () => {
+    const withBase = calculateProrationCredit({ currentPlan: 'plus', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15), basisDays: 30 })
+    const nullBase = calculateProrationCredit({ currentPlan: 'plus', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15), basisDays: null })
+    expect(withBase).toBe(nullBase)
+  })
 })
-assert(approx(starterToProAnnual.credit, 348), `S→Pro anual credit = R$348 (got ${starterToProAnnual.credit})`)
-assert(approx(starterToProAnnual.originalPrice, 2364), `S→Pro anual newPrice = R$2364 (got ${starterToProAnnual.originalPrice})`)
-assert(approx(starterToProAnnual.finalPrice, 2016), `S→Pro anual finalPrice = R$2016 (got ${starterToProAnnual.finalPrice})`)
 
-// 3c. plus yearly → professional yearly (365 dias restantes)
-const plusToProAnnual = calculateUpgradePrice({
-  currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(365),
-  newPlan: 'professional', newCycle: 'YEARLY',
+// ============================================================
+// 3. remainingPaidDays / addDaysToTodayBRT — régua de dias inteiros
+// ============================================================
+describe('remainingPaidDays / addDaysToTodayBRT', () => {
+  it('conta dias inteiros', () => {
+    expect(remainingPaidDays(daysFromNow(78))).toBe(78)
+    expect(remainingPaidDays(daysFromNow(1))).toBe(1)
+    expect(remainingPaidDays(daysFromNow(0))).toBe(0)
+    expect(remainingPaidDays(daysFromNow(-5))).toBe(0)
+    expect(remainingPaidDays('data-invalida')).toBe(0)
+  })
+  it('ida-e-volta: hoje + dias restantes = dia exato da expiração', () => {
+    const brtDateOf = (ms: number) => new Date(ms - 3 * 3600 * 1000).toISOString().split('T')[0]
+    const target78 = Date.now() + 78 * 24 * 3600 * 1000
+    expect(addDaysToTodayBRT(remainingPaidDays(daysFromNow(78)))).toBe(brtDateOf(target78))
+  })
 })
-assert(approx(plusToProAnnual.credit, 1164), `P→Pro anual credit = R$1164 (got ${plusToProAnnual.credit})`)
-assert(approx(plusToProAnnual.originalPrice, 2364), `P→Pro anual newPrice = R$2364 (got ${plusToProAnnual.originalPrice})`)
-assert(approx(plusToProAnnual.finalPrice, 1200), `P→Pro anual finalPrice = R$1200 (got ${plusToProAnnual.finalPrice})`)
 
 // ============================================================
-// 4. Cenário retroativo com poucos dias restantes
+// 4. calculateCreditCoverageDays — saldo-vira-tempo (INALTERADO, nominal 30/365)
 // ============================================================
-console.log('\n=== Retroativo: poucos dias restantes ===')
-
-// starter yearly com 5 dias restantes → plus yearly
-const retro5d = calculateUpgradePrice({
-  currentPlan: 'starter', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(5),
-  newPlan: 'plus', newCycle: 'YEARLY',
+describe('calculateCreditCoverageDays (nominal 30/365 — invariante do round-trip)', () => {
+  it('(e) 1 ciclo exato mensal = 30 dias', () => {
+    expect(calculateCreditCoverageDays(257, 257, 'MONTHLY')).toBe(30)
+  })
+  it('fração usa ceil (favorece o cliente)', () => {
+    expect(calculateCreditCoverageDays(100, 257, 'MONTHLY')).toBe(12)
+    expect(calculateCreditCoverageDays(1164, 257, 'MONTHLY')).toBe(136)
+  })
+  it('guardas: crédito/preço ≤ 0 → 0', () => {
+    expect(calculateCreditCoverageDays(0, 257, 'MONTHLY')).toBe(0)
+    expect(calculateCreditCoverageDays(100, 0, 'MONTHLY')).toBe(0)
+  })
+  it('anual: 1 ciclo exato = 365 dias', () => {
+    expect(calculateCreditCoverageDays(2364, 2364, 'YEARLY')).toBe(365)
+  })
+  it('epsilon do ceil: conta exata com ruído de float não ganha +1 dia', () => {
+    expect(calculateCreditCoverageDays(58.8, 49, 'MONTHLY')).toBe(36)
+  })
+  // (e) cobertura 78 e 158 dias com base 30 (a diária nominal do saldo-vira-tempo).
+  it('(e) coverage de crédito grande: R$127 em Starter → 78 dias; R$257 em Starter → 158 dias', () => {
+    // Plus mensal R$127 vira tempo de Starter (R$49): ceil(127*30/49) = ceil(77.75) = 78.
+    expect(calculateCreditCoverageDays(127, 49, 'MONTHLY')).toBe(78)
+    // Professional mensal R$257 vira tempo de Starter: ceil(257*30/49 - eps) = ceil(157.35) = 158.
+    expect(calculateCreditCoverageDays(257, 49, 'MONTHLY')).toBe(158)
+  })
 })
-assert(approx(retro5d.credit, 4.77), `Retro 5d credit ≈ R$4.77 (got ${retro5d.credit})`)
-assert(approx(retro5d.finalPrice, 1159.23), `Retro 5d finalPrice ≈ R$1159.23 (got ${retro5d.finalPrice})`)
-assert(retro5d.credit < 10, 'Retro 5d crédito é pequeno')
 
-// plus yearly com 3 dias restantes → professional yearly
-const retro3d = calculateUpgradePrice({
-  currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(3),
-  newPlan: 'professional', newCycle: 'YEARLY',
+// ============================================================
+// 5. (d) round-trip Pro→Starter: crédito R$257 → 158 dias (base 30) → volta ≈ R$257.
+//    Assert-negativo: se a base virasse 158 (a ARMADILHA), a volta daria só R$49.
+// ============================================================
+describe('(d) round-trip Pro→Starter (base de saldo-vira-tempo = 30, NUNCA coverageDays)', () => {
+  it('R$257 → 158 dias (base 30) → credit(Starter,158d,base 30) ≈ R$257 (não perde saldo)', () => {
+    const proCredit = 257 // Professional mensal cheio
+    const coverage = calculateCreditCoverageDays(proCredit, 49, 'MONTHLY')
+    expect(coverage).toBe(158)
+    const back = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(coverage), basisDays: 30 })
+    expect(approx(back, 258.07, 0.02)).toBe(true) // 49/30×158 = 258.07 ≈ 257 (ceil concede ≤1 dia; converge)
+    expect(back).toBeGreaterThanOrEqual(257)
+  })
+  it('ARMADILHA travada: base=158 (duração) daria só R$49 → cliente perderia R$208', () => {
+    const trap = calculateProrationCredit({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(158), basisDays: 158 })
+    expect(trap).toBe(49) // exatamente o bug que a régua-30 evita
+  })
 })
-assert(approx(retro3d.credit, 9.57), `Retro 3d credit ≈ R$9.57 (got ${retro3d.credit})`)
-assert(approx(retro3d.finalPrice, 2354.43), `Retro 3d finalPrice ≈ R$2354.43 (got ${retro3d.finalPrice})`)
 
 // ============================================================
-// 5. Mesmo plano com ciclo diferente (mensal → anual)
+// 6. calculateUpgradePrice — cenários preservados (base null = números atuais)
 // ============================================================
-console.log('\n=== Troca de ciclo: mensal → anual ===')
-
-// Starter mensal (15 dias restantes) → Starter anual
-const starterCycleChange = calculateUpgradePrice({
-  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15),
-  newPlan: 'starter', newCycle: 'YEARLY',
+describe('calculateUpgradePrice (base null → behavior-preserving)', () => {
+  it('S→P anual (360 dias)', () => {
+    const r = calculateUpgradePrice({ currentPlan: 'starter', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(360), newPlan: 'plus', newCycle: 'YEARLY' })
+    expect(approx(r.credit, 343.23)).toBe(true)
+    expect(approx(r.originalPrice, 1164)).toBe(true)
+    expect(approx(r.finalPrice, 820.77)).toBe(true)
+  })
+  it('P→Pro anual (365 dias)', () => {
+    const r = calculateUpgradePrice({ currentPlan: 'plus', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(365), newPlan: 'professional', newCycle: 'YEARLY' })
+    expect(approx(r.credit, 1164)).toBe(true)
+    expect(approx(r.finalPrice, 1200)).toBe(true)
+  })
+  it('mensal clássico starter(15d)→plus', () => {
+    const r = calculateUpgradePrice({ currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15), newPlan: 'plus', newCycle: 'MONTHLY' })
+    expect(approx(r.credit, 24.5)).toBe(true)
+    expect(approx(r.finalPrice, 102.5)).toBe(true)
+    expect(r.newPrice).toBe(r.originalPrice)
+  })
+  it('downgrade Pro→Starter anual: crédito cobre tudo → finalPrice 0', () => {
+    const r = calculateUpgradePrice({ currentPlan: 'professional', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(365), newPlan: 'starter', newCycle: 'YEARLY' })
+    expect(r.credit).toBeGreaterThan(0)
+    expect(r.finalPrice).toBe(0)
+  })
+  it('repassa basisDays ao crédito do plano atual', () => {
+    // Pro mensal com 28 dias restantes, base 28 → crédito cheio R$257 cobre Starter (finalPrice 0).
+    const r = calculateUpgradePrice({ currentPlan: 'professional', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(28), newPlan: 'starter', newCycle: 'MONTHLY', basisDays: 28 })
+    expect(r.credit).toBe(257)
+  })
 })
-assert(approx(starterCycleChange.credit, 24.5), `S mensal→anual credit ≈ R$24.50 (got ${starterCycleChange.credit})`)
-assert(approx(starterCycleChange.originalPrice, 348), `S mensal→anual originalPrice = R$348 (got ${starterCycleChange.originalPrice})`)
-assert(approx(starterCycleChange.finalPrice, 323.5), `S mensal→anual finalPrice ≈ R$323.50 (got ${starterCycleChange.finalPrice})`)
 
-// Plus mensal (20 dias restantes) → Plus anual
-const plusCycleChange = calculateUpgradePrice({
-  currentPlan: 'plus', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(20),
-  newPlan: 'plus', newCycle: 'YEARLY',
+// ============================================================
+// 7. (c/f) computeProrationBasisDays — período REAL, derivação e guarda-sã
+// ============================================================
+describe('computeProrationBasisDays (período real do Asaas)', () => {
+  it('(f) renovação mensal: jul→ago = 31 dias', () => {
+    expect(computeProrationBasisDays('MONTHLY', '2026-08-03', '2026-07-03')).toBe(31)
+  })
+  it('(f) renovação mensal: abr→mai = 30 dias', () => {
+    expect(computeProrationBasisDays('MONTHLY', '2026-05-01', '2026-04-01')).toBe(30)
+  })
+  it('(f) renovação mensal cobrindo fevereiro: fev→mar = 28 dias', () => {
+    expect(computeProrationBasisDays('MONTHLY', '2026-03-01', '2026-02-01')).toBe(28)
+  })
+  it('(f) fevereiro bissexto: fev→mar 2028 = 29 dias', () => {
+    expect(computeProrationBasisDays('MONTHLY', '2028-03-01', '2028-02-01')).toBe(29)
+  })
+  it('(c) anual: 2026→2027 = 365 dias', () => {
+    expect(computeProrationBasisDays('YEARLY', '2027-03-15', '2026-03-15')).toBe(365)
+  })
+  it('(c) anual atravessando 29/fev bissexto = 366 dias', () => {
+    // 2027-06-01 → 2028-06-01 inclui 29/fev/2028 → 366 dias.
+    expect(computeProrationBasisDays('YEARLY', '2028-06-01', '2027-06-01')).toBe(366)
+  })
+  it('(f) só nextDueDate → deriva o início por −1 ciclo CALENDÁRIO', () => {
+    // nextDueDate 03/mar sem paymentDueDate → início 03/fev → base 28 (não +30).
+    expect(computeProrationBasisDays('MONTHLY', '2026-03-03')).toBe(28)
+    expect(computeProrationBasisDays('MONTHLY', '2026-08-03')).toBe(31)
+  })
+  it('(f) nextDueDate stale (≤ início): deriva o fim por +1 ciclo CALENDÁRIO', () => {
+    // Asaas ainda não avançou: nextDueDate == paymentDueDate → fim = início + 1 mês.
+    expect(computeProrationBasisDays('MONTHLY', '2026-07-03', '2026-07-03')).toBe(31)
+    // nextDueDate anterior ao pagamento → também deriva +1 ciclo.
+    expect(computeProrationBasisDays('MONTHLY', '2026-06-15', '2026-07-03')).toBe(31)
+  })
+  it('(f) fora da banda sã → null (nextDueDate corrompido não infla a base)', () => {
+    expect(computeProrationBasisDays('MONTHLY', '2027-01-01', '2026-07-03')).toBeNull() // ~182 dias
+    expect(computeProrationBasisDays('YEARLY', '2026-08-03', '2026-07-03')).toBeNull() // ~31 dias p/ anual
+  })
+  it('datas ausentes/inválidas → null', () => {
+    expect(computeProrationBasisDays('MONTHLY', null, null)).toBeNull()
+    expect(computeProrationBasisDays('MONTHLY', undefined)).toBeNull()
+    expect(computeProrationBasisDays('MONTHLY', 'lixo', 'nada')).toBeNull()
+    expect(computeProrationBasisDays('MONTHLY', '2026-13-40')).toBeNull() // data fora do calendário
+  })
+  it('aceita nextDueDate em ISO completo (sufixo de hora)', () => {
+    expect(computeProrationBasisDays('MONTHLY', '2026-08-03T00:00:00.000Z', '2026-07-03')).toBe(31)
+  })
 })
-assert(approx(plusCycleChange.credit, 84.67), `P mensal→anual credit ≈ R$84.67 (got ${plusCycleChange.credit})`)
-assert(approx(plusCycleChange.originalPrice, 1164), `P mensal→anual originalPrice = R$1164 (got ${plusCycleChange.originalPrice})`)
-assert(approx(plusCycleChange.finalPrice, 1079.33), `P mensal→anual finalPrice ≈ R$1079.33 (got ${plusCycleChange.finalPrice})`)
-
-// ============================================================
-// 6. Downgrade bloqueado — isUpgrade retorna false
-// ============================================================
-console.log('\n=== Downgrade: isUpgrade bloqueia ===')
-
-assert(!isUpgrade('professional', 'starter'), 'professional → starter bloqueado')
-assert(!isUpgrade('professional', 'plus'), 'professional → plus bloqueado')
-assert(!isUpgrade('plus', 'starter'), 'plus → starter bloqueado')
-assert(!isUpgrade('professional', 'free'), 'professional → free bloqueado')
-
-// calcularUpgradePrice NÃO bloqueia downgrade internamente — valida que o cálculo existe
-// mas o checkout deve checar isUpgrade antes de chamar
-const downgradeCalc = calculateUpgradePrice({
-  currentPlan: 'professional', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(365),
-  newPlan: 'starter', newCycle: 'YEARLY',
-})
-// Crédito do plano mais caro pode ser maior que o plano mais barato → finalPrice = 0
-assert(downgradeCalc.credit > 0, 'Downgrade calc: crédito > 0')
-assert(downgradeCalc.finalPrice >= 0, 'Downgrade calc: finalPrice >= 0 (nunca negativo)')
-assert(approx(downgradeCalc.finalPrice, 0), 'Downgrade calc: finalPrice = 0 (crédito cobre tudo)')
-
-// ============================================================
-// 7. Edge cases
-// ============================================================
-console.log('\n=== Edge cases ===')
-
-// Crédito cobre o plano inteiro → finalPrice = 0
-const coveredByCredit = calculateUpgradePrice({
-  currentPlan: 'professional', currentCycle: 'YEARLY', planExpiresAt: daysFromNow(365),
-  newPlan: 'starter', newCycle: 'MONTHLY',
-})
-assert(approx(coveredByCredit.finalPrice, 0), 'Crédito cobre tudo: finalPrice = 0')
-
-// Upgrade mensal clássico: starter mensal (15d) → plus mensal
-const monthlyUpgrade = calculateUpgradePrice({
-  currentPlan: 'starter', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15),
-  newPlan: 'plus', newCycle: 'MONTHLY',
-})
-assert(approx(monthlyUpgrade.credit, 24.5), `Mensal upgrade credit ≈ R$24.50 (got ${monthlyUpgrade.credit})`)
-assert(approx(monthlyUpgrade.originalPrice, 127), `Mensal upgrade newPrice = R$127 (got ${monthlyUpgrade.originalPrice})`)
-assert(approx(monthlyUpgrade.finalPrice, 102.5), `Mensal upgrade finalPrice ≈ R$102.50 (got ${monthlyUpgrade.finalPrice})`)
-
-// newPrice e originalPrice são sempre iguais (alias intencional no código)
-assert(monthlyUpgrade.newPrice === monthlyUpgrade.originalPrice, 'newPrice === originalPrice (alias)')
-
-// Plano free = preço 0, crédito 0
-const freeCredit = calculateProrationCredit({
-  currentPlan: 'free', currentCycle: 'MONTHLY', planExpiresAt: daysFromNow(15),
-})
-assert(freeCredit === 0, 'Free plan = crédito 0')
-
-// ============================================================
-// calculateCreditCoverageDays — "saldo em tempo" (ceil, favorece o cliente)
-// ============================================================
-// Crédito/preço exatos não-fracionários → valor inteiro inalterado
-assert(calculateCreditCoverageDays(257, 257, 'MONTHLY') === 30, 'coverage: 1 ciclo exato mensal = 30 dias')
-// Fração: ceil arredonda PRA CIMA (nunca encurta o crédito do cliente)
-// 100 * 30 / 257 = 11.67 → ceil 12
-assert(calculateCreditCoverageDays(100, 257, 'MONTHLY') === 12, 'coverage: fração mensal usa ceil (12, não 11)')
-// 1164 * 30 / 257 = 135.9 → ceil 136
-assert(calculateCreditCoverageDays(1164, 257, 'MONTHLY') === 136, 'coverage: R$1164 em Professional mensal = 136 dias (ceil)')
-// Guardas: preço/crédito <= 0 → 0
-assert(calculateCreditCoverageDays(0, 257, 'MONTHLY') === 0, 'coverage: crédito 0 = 0 dias')
-assert(calculateCreditCoverageDays(100, 0, 'MONTHLY') === 0, 'coverage: preço 0 = 0 dias')
-// Anual: 365 dias no ciclo
-assert(calculateCreditCoverageDays(2364, 2364, 'YEARLY') === 365, 'coverage: 1 ciclo exato anual = 365 dias')
-
-// ============================================================
-// Resultado
-// ============================================================
-console.log(`\n${passed} passed, ${failed} failed`)
-process.exit(failed > 0 ? 1 : 0)

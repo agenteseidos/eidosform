@@ -64,6 +64,7 @@ export async function GET(
     planExpiresAt: profile.plan_expires_at,
     hasActiveSubscription: !!profile.asaasSubscriptionId,
     hasPaidPeriodRemaining,
+    prorationBasisDays: profile.prorationBasisDays,
     newPlan: plan as PlanId,
     newCycle: cycle,
   })

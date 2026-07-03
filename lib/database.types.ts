@@ -183,6 +183,9 @@ export interface Database {
           plan_status: string | null
           plan_expires_at: string | null
           annual_started_at: string | null
+          proration_basis_days: number | null
+          billing_period_start_on: string | null
+          billing_period_end_on: string | null
           asaas_customer_id: string | null
           asaas_subscription_id: string | null
           plan_cycle: string | null

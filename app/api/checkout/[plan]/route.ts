@@ -15,7 +15,8 @@ import { computePlanChange, decidePlanChangeAttempt, type PlanChangeRecoveryRow 
 import { addDaysToTodayBRT } from '@/lib/proration'
 import { executePlanSwitch, nextDueDateAfterFullCycle } from '@/lib/plan-switch'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
-import { checkLaunchScope } from '@/lib/billing-launch-guard'
+import { checkLaunchScope, isCardFallbackEnabled } from '@/lib/billing-launch-guard'
+import { openCardFallbackCheckout, type CardFallbackResult } from '@/lib/card-fallback'
 import { log, logError } from '@/lib/logger'
 import { sendBillingOpsAlert } from '@/lib/resend'
 
@@ -40,6 +41,51 @@ function getServiceSupabase() {
 
 const VALID_PLANS = new Set<string>(PLAN_ORDER.filter((p) => p !== 'free'))
 const VALID_CYCLES = new Set<string>(['MONTHLY', 'YEARLY'])
+
+/**
+ * Allowlist do origin (P3, audit 2026-06-09): o header vem do cliente — sem validar,
+ * qualquer origin spoofado viraria successUrl/cancelUrl do checkout. Só aceita o
+ * canônico/app; senão cai no NEXT_PUBLIC_APP_URL. Compartilhado pela 1ª compra e pelo
+ * fallback de cartão morto (sessão DETACHED) — 2026-07-03.
+ */
+function resolveCallbackOrigin(req: NextRequest): string {
+  const requestOrigin = req.headers.get('origin')
+  const allowedOrigins = new Set(
+    [process.env.NEXT_PUBLIC_APP_URL, 'https://eidosform.com.br', 'https://www.eidosform.com.br'].filter(Boolean)
+  )
+  return (requestOrigin && allowedOrigins.has(requestOrigin))
+    ? requestOrigin
+    : (process.env.NEXT_PUBLIC_APP_URL ?? '')
+}
+
+/**
+ * Mapeia o resultado do openCardFallbackCheckout p/ a resposta HTTP do fallback de cartão
+ * morto (2026-07-03). Sucesso → 200 status 'card_fallback' + URL da sessão DETACHED da
+ * diferença (o front mostra o interstitial e redireciona); falha → status/código do lib.
+ */
+function cardFallbackResponse(
+  fb: CardFallbackResult,
+  ctx: {
+    reason: 'CHARGE_FAILED' | 'CARD_TOKEN_REQUIRED'
+    proration: { credit: number; originalPrice: number; finalPrice: number }
+    plan: string
+    cycle: string
+  }
+): NextResponse {
+  if (!fb.ok) {
+    return NextResponse.json({ error: fb.error, code: fb.code }, { status: fb.status })
+  }
+  return NextResponse.json({
+    status: 'card_fallback',
+    checkoutUrl: fb.checkoutUrl,
+    checkoutId: fb.checkoutId,
+    value: ctx.proration.finalPrice,
+    reason: ctx.reason,
+    proration: ctx.proration,
+    plan: ctx.plan,
+    cycle: ctx.cycle,
+  })
+}
 
 export async function POST(
   req: NextRequest,
@@ -200,10 +246,18 @@ export async function POST(
           action: 'covered_no_charge',
         })
       }
-      return NextResponse.json(
-        { error: 'Sua assinatura foi criada antes da troca automática de planos. Fale com o suporte para concluir a mudança sem custo extra.', code: 'CARD_TOKEN_REQUIRED' },
-        { status: 409 }
-      )
+      // ── FALLBACK DE CARTÃO MORTO — Site 1: token AUSENTE (2026-07-03) ──
+      // Mudança PAGA (change.action === 'checkout' por construção: credit_covered retornou
+      // acima) sem token salvo. Sem customerId não há como abrir sessão (anomalia — mantém
+      // o 409); flag OFF idem (comportamento atual byte a byte). Flag ON + customer: NÃO
+      // retorna — segue pro lock com token null e o Caso 2 abre a sessão DETACHED da
+      // diferença em vez de cobrar por token.
+      if (!customerId || !isCardFallbackEnabled()) {
+        return NextResponse.json(
+          { error: 'Sua assinatura foi criada antes da troca automática de planos. Fale com o suporte para concluir a mudança sem custo extra.', code: 'CARD_TOKEN_REQUIRED' },
+          { status: 409 }
+        )
+      }
     }
 
     // LOCK por profile em volta de TODA a operação (inclusive a cobrança avulsa) — o
@@ -227,7 +281,9 @@ export async function POST(
           db: sSupa,
           profileId: profile.profileId,
           customerId,
-          cardToken: token,
+          // token nunca é null aqui: credit_covered sem token retornou no early-return
+          // (covered_no_charge) — só a mudança PAGA (Caso 2/fallback) passa com token null.
+          cardToken: token!,
           expectedOldSubscriptionId: profile.asaasSubscriptionId ?? null,
           plan: plan as PlanId,
           cycle,
@@ -271,6 +327,26 @@ export async function POST(
       const { attemptId, savedPaymentId } = decidePlanChangeAttempt(prevRow as PlanChangeRecoveryRow | null, plan, cycle, randomUUID())
       const planChangeRef = `${buildPlanChangeReference(profile.profileId, plan, cycle)}|attempt:${attemptId}`
 
+      // ── FALLBACK DE CARTÃO MORTO — Site 1: token AUSENTE (2026-07-03) ──
+      // Chegou aqui sem token (flag ON + customer presente, ver guard antes do lock): não há
+      // o que cobrar por token — abre a sessão DETACHED hospedada da diferença. O upsert do
+      // openCardFallbackCheckout grava a linha 'pending'/'plan_switch_fallback' ANTES da
+      // sessão (fail-closed); a conclusão fica com o backstop (webhook/DLQ/cron).
+      if (!token) {
+        const fb = await openCardFallbackCheckout(sSupa, {
+          profileId: profile.profileId,
+          customerId,
+          currentSubscriptionId: profile.asaasSubscriptionId ?? null,
+          plan: plan as PlanId,
+          cycle,
+          attemptId,
+          proration,
+          origin: resolveCallbackOrigin(req),
+          reason: 'CARD_TOKEN_REQUIRED',
+        })
+        return cardFallbackResponse(fb, { reason: 'CARD_TOKEN_REQUIRED', proration, plan, cycle })
+      }
+
       const { error: recErr } = await sSupa
         .from('billing_checkouts')
         .upsert({
@@ -288,6 +364,9 @@ export async function POST(
           original_price: proration.originalPrice,
           proration_credit: proration.credit,
           final_price: proration.finalPrice,
+          // Retomada via token NÃO herda session id de fallback abandonado: com null, um
+          // pagamento tardio da sessão velha cai em session-mismatch → manual (🛡️ P0).
+          asaas_checkout_session_id: null,
         }, { onConflict: 'checkout_id' })
       if (recErr) {
         logError('[checkout] Mudança paga — falha ao gravar linha de recuperação; abortando ANTES de cobrar', recErr, { userId: profile.profileId })
@@ -339,6 +418,24 @@ export async function POST(
           } else if (recheck.ok) {
             // recheck OK e NÃO achou → cobrança genuinamente não criada → falha limpa.
             logError('[checkout] Mudança paga — cobrança avulsa FALHOU (avulso não criado)', err, { userId: profile.profileId, plan, cycle, value: proration.finalPrice })
+            // ── FALLBACK DE CARTÃO MORTO — Site 2: token MORTO/recusado (2026-07-03) ──
+            // Em vez do 402 sem saída, abre a sessão DETACHED hospedada p/ pagar a diferença
+            // com OUTRO cartão (mesmo attemptId; o upsert do fallback re-grava a linha como
+            // 'pending'/'plan_switch_fallback' + session id). Flag OFF → 402 atual intocado.
+            if (isCardFallbackEnabled()) {
+              const fb = await openCardFallbackCheckout(sSupa, {
+                profileId: profile.profileId,
+                customerId,
+                currentSubscriptionId: profile.asaasSubscriptionId ?? null,
+                plan: plan as PlanId,
+                cycle,
+                attemptId,
+                proration,
+                origin: resolveCallbackOrigin(req),
+                reason: 'CHARGE_FAILED',
+              })
+              return cardFallbackResponse(fb, { reason: 'CHARGE_FAILED', proration, plan, cycle })
+            }
             await sSupa.from('billing_checkouts').update({ status: 'cancelled', last_event: 'PLAN_CHANGE_CHARGE_FAILED' }).eq('checkout_id', recoveryCheckoutId)
             return NextResponse.json(
               { error: 'Não conseguimos cobrar no seu cartão salvo. Verifique o cartão nas configurações ou fale com o suporte.', code: 'CHARGE_FAILED' },
@@ -483,16 +580,9 @@ export async function POST(
       ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly
       : PLAN_PRICES[plan as keyof typeof PLAN_PRICES].yearly
     const price = basePrice
-    // Allowlist do origin (P3, audit 2026-06-09): o header vem do cliente — sem validar,
-    // qualquer origin spoofado viraria successUrl/cancelUrl do checkout. Só aceita o
-    // canônico/app; senão cai no NEXT_PUBLIC_APP_URL.
-    const requestOrigin = req.headers.get('origin')
-    const allowedOrigins = new Set(
-      [process.env.NEXT_PUBLIC_APP_URL, 'https://eidosform.com.br', 'https://www.eidosform.com.br'].filter(Boolean)
-    )
-    const origin = (requestOrigin && allowedOrigins.has(requestOrigin))
-      ? requestOrigin
-      : (process.env.NEXT_PUBLIC_APP_URL ?? '')
+    // Origin validado pela allowlist (hoistado p/ resolveCallbackOrigin — compartilhado
+    // com o fallback de cartão morto).
+    const origin = resolveCallbackOrigin(req)
     const successUrl = `${origin}/billing?checkout=success`
     const cancelUrl = `${origin}/billing?checkout=cancelled`
     const expiredUrl = `${origin}/billing?checkout=expired`

@@ -26,6 +26,9 @@ interface CheckoutResponse {
   nextChargeDate?: string
   action?: string
   message?: string
+  // Fallback de cartão morto (2026-07-03): status 'card_fallback' + valor da diferença.
+  reason?: string
+  value?: number
 }
 
 interface PreviewResponse {
@@ -82,8 +85,10 @@ function CheckoutContent() {
   const normalized = normalizePlan(plan)
   const isValid = normalized !== 'free' && PAID_PLANS.includes(normalized)
 
-  const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing' | 'confirm' | 'downgrade' | 'covered'>('loading')
+  const [state, setState] = useState<'loading' | 'error' | 'already' | 'missing-billing' | 'confirm' | 'downgrade' | 'covered' | 'card-fallback'>('loading')
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
+  // Fallback de cartão morto: sessão hospedada p/ pagar a diferença com OUTRO cartão.
+  const [fallbackInfo, setFallbackInfo] = useState<{ url: string; value?: number; reason?: string } | null>(null)
   const [downgradeConfirmText, setDowngradeConfirmText] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [missingFields, setMissingFields] = useState<string[]>([])
@@ -181,6 +186,15 @@ function CheckoutContent() {
       // Downgrade: processado ao fim do período (informativo, sem checkout).
       if (json.isDowngrade) {
         window.location.href = '/billing'
+        return
+      }
+
+      // Fallback de cartão morto (2026-07-03): o cartão salvo falhou/não existe e o backend
+      // abriu uma sessão hospedada p/ pagar SÓ a diferença com outro cartão. Interstitial
+      // antes de redirecionar — o usuário esperava cobrança no cartão salvo, não um checkout.
+      if (res.ok && json.status === 'card_fallback' && json.checkoutUrl) {
+        setFallbackInfo({ url: json.checkoutUrl, value: json.value, reason: json.reason })
+        setState('card-fallback')
         return
       }
 
@@ -405,6 +419,37 @@ function CheckoutContent() {
           <Button onClick={() => router.push('/billing')} className="bg-slate-900 hover:bg-slate-800 text-white">
             Ir para cobrança
           </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Fallback de cartão morto: interstitial (tom âmbar, layout do card de erro — mas NÃO é
+  // beco sem saída: dá o caminho de concluir a mudança pagando a diferença com outro cartão).
+  if (state === 'card-fallback' && fallbackInfo) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-6 max-w-md px-6">
+          <div className="flex justify-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900">Seu cartão salvo não funcionou</h1>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 text-left leading-relaxed">
+            Não conseguimos cobrar no cartão salvo. Você pode concluir a mudança pagando só a
+            diferença ({brl(fallbackInfo.value ?? 0)}) com outro cartão — o novo cartão fica
+            salvo para as próximas cobranças.
+          </div>
+          <div className="flex gap-3 justify-center">
+            <Button
+              onClick={() => { window.location.href = fallbackInfo.url }}
+              className="bg-[#F5B731] hover:bg-[#F5B731]/90 text-black font-semibold"
+            >
+              Pagar com outro cartão
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/billing')}>
+              Voltar ao billing
+            </Button>
+          </div>
         </div>
       </div>
     )

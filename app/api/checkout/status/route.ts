@@ -48,7 +48,7 @@ export async function GET() {
       .single(),
     supabase
       .from('billing_checkouts')
-      .select('id, status, last_event, updated_at, asaas_subscription_id, asaas_customer_id, plan, cycle')
+      .select('id, status, last_event, updated_at, asaas_subscription_id, asaas_customer_id, plan, cycle, payment_method')
       .eq('profile_id', user.id)
       // Ignora linhas internas de recuperação do Caminho D (status='recovering'): elas
       // existem numa janela antes do PUT no Asaas e não devem guiar o polling. (P2 round 4.)
@@ -92,6 +92,17 @@ export async function GET() {
   }
   if (checkout?.status === 'overdue') {
     return NextResponse.json({ status: 'expired' })
+  }
+
+  // ── FALLBACK DE CARTÃO MORTO (2026-07-03): short-circuit anti-ruído ──
+  // Linha 'pending' do fallback = sessão DETACHED aguardando pagamento; NÃO consultar o
+  // Asaas. A linha tem asaas_subscription_id NULL, então o slow-path cairia no lookup por
+  // customer e elegeria a sub ANTIGA (única ativa); o guard de preço-cheio falharia e
+  // sendBillingOpsAlert dispararia a CADA tick de 4s do overlay (alert-storm — não há
+  // rate-limit no alerta). Quem conclui a troca é o backstop (webhook/DLQ/cron); o overlay
+  // só precisa esperar o profile refletir o alvo (fast-path acima).
+  if (checkout?.status === 'pending' && checkout?.payment_method === 'plan_switch_fallback') {
+    return NextResponse.json({ status: 'pending' })
   }
 
   // ── Slow path: still pending → ask Asaas directly ──

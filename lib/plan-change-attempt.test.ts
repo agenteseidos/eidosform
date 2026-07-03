@@ -36,6 +36,22 @@ describe('decidePlanChangeAttempt (P0-A: identidade por TENTATIVA, não por alvo
     const prev = { plan: 'plus', cycle: 'MONTHLY', status: 'recovering', asaas_payment_id: null, planchange_attempt_id: null }
     expect(decidePlanChangeAttempt(prev, 'plus', 'MONTHLY', 'fresh-6').attemptId).toBe('fresh-6')
   })
+
+  // Fallback de cartão morto (2026-07-03): a linha do fallback usa status 'pending' +
+  // payment_method 'plan_switch_fallback' e asaas_payment_id NULL até o pagamento da sessão.
+  // payment_method NÃO entra na decisão (a identidade é alvo+status+attemptId) — estes casos
+  // provam que o retry do POST continua a MESMA tentativa (sessão nova, mesmo attempt) e que
+  // mirar outro alvo supersede a tentativa (o pagamento tardio da velha cai em
+  // session-mismatch → manual, nunca é confundido com a nova).
+  it('linha pending do FALLBACK (plan_switch_fallback) mesmo alvo → attempt CONTINUADO', () => {
+    const prev = { plan: 'plus', cycle: 'MONTHLY', status: 'pending', asaas_payment_id: null, planchange_attempt_id: 'att_fb' }
+    expect(decidePlanChangeAttempt(prev, 'plus', 'MONTHLY', 'fresh-7')).toEqual({ attemptId: 'att_fb', savedPaymentId: null })
+  })
+
+  it('linha pending do FALLBACK com alvo DIFERENTE → tentativa NOVA', () => {
+    const prev = { plan: 'plus', cycle: 'MONTHLY', status: 'pending', asaas_payment_id: null, planchange_attempt_id: 'att_fb' }
+    expect(decidePlanChangeAttempt(prev, 'professional', 'MONTHLY', 'fresh-8')).toEqual({ attemptId: 'fresh-8', savedPaymentId: null })
+  })
 })
 
 describe('externalReference com |attempt: não quebra o webhook backstop', () => {

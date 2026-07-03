@@ -266,6 +266,9 @@ export interface Database {
           asaas_subscription_id: string | null
           asaas_payment_id: string | null
           planchange_attempt_id: string | null
+          // Discriminador do fluxo (migration 20260422_payment_method_column): billingType do
+          // webhook ou 'plan_switch_token'/'plan_switch_fallback' nas trocas de plano.
+          payment_method: string | null
           plan: string
           cycle: string
           status: string
@@ -281,6 +284,7 @@ export interface Database {
           asaas_subscription_id?: string | null
           asaas_payment_id?: string | null
           planchange_attempt_id?: string | null
+          payment_method?: string | null
           plan: string
           cycle: string
           status?: string
@@ -296,6 +300,7 @@ export interface Database {
           asaas_subscription_id?: string | null
           asaas_payment_id?: string | null
           planchange_attempt_id?: string | null
+          payment_method?: string | null
           plan?: string
           cycle?: string
           status?: string

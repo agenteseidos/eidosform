@@ -15,6 +15,13 @@ const MVP_ONLY = process.env.BILLING_MVP_ONLY === 'true' // OFF por padrão (kil
 // Planos permitidos p/ primeira compra QUANDO o kill-switch está ON (modo restrito de emergência).
 const ALLOWED_PLANS = (process.env.BILLING_ALLOWED_PLANS ?? 'starter').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
 
+/** Fallback de cartão morto: abre checkout DETACHED da diferença quando o token salvo
+ *  falha/não existe. OFF por padrão até o E2E de produção passar (inverter depois,
+ *  espelhando o histórico do BILLING_MVP_ONLY). Gateia SÓ a criação da sessão — os
+ *  caminhos de conclusão (webhook/DLQ/cron) ficam sempre ativos (dinheiro já pago). */
+const CARD_FALLBACK = process.env.BILLING_CARD_FALLBACK === 'true'
+export function isCardFallbackEnabled(): boolean { return CARD_FALLBACK }
+
 export type LaunchBlock = { status: number; body: { error: string; code: string } }
 
 /** null = checkout permitido no escopo atual; senão o bloqueio (status + body) p/ a rota usar. */

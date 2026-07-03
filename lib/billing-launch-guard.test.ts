@@ -65,3 +65,22 @@ describe('checkLaunchScope (kill-switch BILLING_MVP_ONLY)', () => {
     expect(checkLaunchScope({ currentPlan: effective, targetPlan: 'plus', cycle: 'MONTHLY' })?.body.code).toBe('PLAN_CHANGE_DISABLED')
   })
 })
+
+describe('isCardFallbackEnabled (flag BILLING_CARD_FALLBACK — fallback de cartão morto)', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('default: OFF — feature inerte em produção até o E2E passar (commits deployáveis a qualquer momento)', async () => {
+    const { isCardFallbackEnabled } = await load()
+    expect(isCardFallbackEnabled()).toBe(false)
+  })
+
+  it("BILLING_CARD_FALLBACK='true' liga o fallback", async () => {
+    const { isCardFallbackEnabled } = await load({ BILLING_CARD_FALLBACK: 'true' })
+    expect(isCardFallbackEnabled()).toBe(true)
+  })
+
+  it("qualquer valor ≠ 'true' (ex. '1') NÃO liga — opt-in explícito, espelho do BILLING_MVP_ONLY", async () => {
+    const { isCardFallbackEnabled } = await load({ BILLING_CARD_FALLBACK: '1' })
+    expect(isCardFallbackEnabled()).toBe(false)
+  })
+})

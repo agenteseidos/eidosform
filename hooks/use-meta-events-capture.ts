@@ -1,19 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-
-const STANDARD_META_EVENTS = new Set([
-  'PageView',
-  'ViewContent',
-  'Search',
-  'AddToCart',
-  'AddToWishlist',
-  'InitiateCheckout',
-  'AddPaymentInfo',
-  'Purchase',
-  'Lead',
-  'CompleteRegistration',
-])
+import { isRecordableMetaEvent } from '@/lib/pixel-events'
 
 declare global {
   interface Window {
@@ -49,7 +37,7 @@ export function useMetaEventsCapture(enabled: boolean) {
       setCapturedEvents(prev => {
         const merged = new Set(prev)
         for (const name of buf) {
-          if (!STANDARD_META_EVENTS.has(name)) merged.add(name)
+          if (isRecordableMetaEvent(name)) merged.add(name)
         }
         return merged.size === prev.length ? prev : Array.from(merged)
       })

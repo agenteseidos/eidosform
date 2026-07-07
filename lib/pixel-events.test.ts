@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchesCondition, evaluateAnswerSetEvents, sanitizeAnswerSetEvents } from './pixel-events'
+import { matchesCondition, evaluateAnswerSetEvents, sanitizeAnswerSetEvents, isRecordableMetaEvent } from './pixel-events'
 import type { AnswerSetEvent, PixelEventCondition } from '@/types/pixel-events'
 
 const cond = (operator: PixelEventCondition['operator'], value = ''): PixelEventCondition =>
@@ -181,5 +181,26 @@ describe('sanitizeAnswerSetEvents', () => {
     ])
     expect(out![0].minMatches).toBeUndefined()
     expect(out![0].match).toBe('all')
+  })
+})
+
+describe('isRecordableMetaEvent (carimbo em responses.meta_events)', () => {
+  it('padrão de conversão entra: Lead, Purchase, CompleteRegistration, InitiateCheckout', () => {
+    for (const n of ['Lead', 'Purchase', 'CompleteRegistration', 'InitiateCheckout']) {
+      expect(isRecordableMetaEvent(n)).toBe(true)
+    }
+  })
+
+  it('padrão genérico/ruidoso fica de fora', () => {
+    for (const n of ['PageView', 'ViewContent', 'Search', 'AddToCart', 'AddToWishlist', 'AddPaymentInfo']) {
+      expect(isRecordableMetaEvent(n)).toBe(false)
+    }
+  })
+
+  it('eventos personalizados sempre entram; vazio não', () => {
+    expect(isRecordableMetaEvent('LeadQualificado')).toBe(true)
+    expect(isRecordableMetaEvent('QualquerNome')).toBe(true)
+    expect(isRecordableMetaEvent('')).toBe(false)
+    expect(isRecordableMetaEvent('  ')).toBe(false)
   })
 })

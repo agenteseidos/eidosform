@@ -255,6 +255,26 @@ export const STANDARD_PIXEL_EVENTS = [
   'ViewContent',
 ] as const
 
+/**
+ * Decide se um evento capturado do fbq entra no `responses.meta_events` (o
+ * "carimbo" de conversão da resposta, exibido na lista de respostas e nos
+ * exports). Eventos padrão genéricos/ruidosos ficam de fora; os padrão de
+ * CONVERSÃO (Lead, Purchase, CompleteRegistration, InitiateCheckout) e todos
+ * os nomes personalizados são gravados — decisão de produto 2026-07-07.
+ */
+const SUPPRESSED_META_EVENTS = new Set([
+  'PageView',
+  'ViewContent',
+  'Search',
+  'AddToCart',
+  'AddToWishlist',
+  'AddPaymentInfo',
+])
+
+export function isRecordableMetaEvent(name: string): boolean {
+  return name.trim() !== '' && !SUPPRESSED_META_EVENTS.has(name)
+}
+
 export const OPERATOR_LABELS: Record<string, string> = {
   equals: 'é igual a',
   not_equals: 'não é igual a',

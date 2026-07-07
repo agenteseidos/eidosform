@@ -136,7 +136,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       new Date(response.submitted_at).toLocaleString('pt-BR'),
       response.completed ? 'Sim' : 'Não',
       ...questionIds.map(qid => answerMap[qid] ?? ''),
-      (response.meta_events || []).join('; '),
+      (response.meta_events || []).join(', '),
       ...UTM_KEYS.map(k => response[k] ?? ''),
     ]
     rows.push(row.map(escapeCSV).join(','))

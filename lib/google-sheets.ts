@@ -252,7 +252,7 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
     const now = new Date()
     const timestamp = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
     const metaEventsValue = Array.isArray(answers.meta_events)
-      ? (answers.meta_events as unknown[]).map(formatAnswerValue).join('; ')
+      ? (answers.meta_events as unknown[]).map(formatAnswerValue).join(', ')
       : ''
 
     const row = finalHeaders.map((header) => {

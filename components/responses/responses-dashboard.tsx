@@ -816,7 +816,7 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
                         <TableCell className="max-w-[280px]">
                           <span className="line-clamp-2 text-sm text-slate-700">
                             {Array.isArray(response.meta_events) && response.meta_events.length > 0
-                              ? response.meta_events.join('; ')
+                              ? response.meta_events.join(', ')
                               : '-'}
                           </span>
                         </TableCell>

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
-import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents } from '@/lib/pixel-events'
+import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
@@ -578,12 +578,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
       // Combinar metaEvents (state) com o buffer global, garantindo eventos disparados
       // entre o último tick do hook (500ms) e o submit — mais os nomes calculados acima.
-      const STANDARD = new Set(['PageView','ViewContent','Search','AddToCart','AddToWishlist','InitiateCheckout','AddPaymentInfo','Purchase','Lead','CompleteRegistration'])
+      // isRecordableMetaEvent: customs + padrão de conversão entram; genéricos (PageView…) não.
       const buffered = (typeof window !== 'undefined' && window.__eidosCapturedFbqEvents) || []
       const allMetaEvents = Array.from(new Set([
         ...metaEvents,
-        ...buffered.filter(n => !STANDARD.has(n)),
-        ...pendingEventNames.filter(n => !STANDARD.has(n)),
+        ...buffered.filter(isRecordableMetaEvent),
+        ...pendingEventNames.filter(isRecordableMetaEvent),
       ]))
 
       const res = await fetch('/api/responses', {

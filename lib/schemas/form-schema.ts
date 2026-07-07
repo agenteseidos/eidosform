@@ -65,25 +65,30 @@ const ConditionalGroupSchema = z
 // Grupo primeiro para a união casar o formato novo antes do legado.
 const ConditionalLogicSchema = z.union([ConditionalGroupSchema, ConditionalRuleSchema])
 
+// Condição compartilhada pelos pixel events (por pergunta e completionEvent)
+const PixelEventConditionSchema = z
+  .object({
+    operator: z.enum([
+      'equals',
+      'not_equals',
+      'contains',
+      'not_contains',
+      'greater_than',
+      'less_than',
+      'is_empty',
+      'is_not_empty',
+      'one_of',
+      'not_one_of',
+    ]),
+    value: z.string().max(2000),
+  })
+  .strip()
+
 // Pixel event rule (one entry inside QuestionConfig.pixelEvents)
 const PixelEventRuleSchema = z
   .object({
     id: z.string().min(1).max(120),
-    condition: z
-      .object({
-        operator: z.enum([
-          'equals',
-          'not_equals',
-          'contains',
-          'not_contains',
-          'greater_than',
-          'less_than',
-          'is_empty',
-          'is_not_empty',
-        ]),
-        value: z.string().max(2000),
-      })
-      .strip(),
+    condition: PixelEventConditionSchema,
     event: z
       .object({
         type: z.enum(['standard', 'custom']),
@@ -215,6 +220,32 @@ export const QuestionSchema = z.discriminatedUnion('type', [
 
 export type QuestionPayload = z.infer<typeof QuestionSchema>
 
+// Evento de conclusão com parâmetros derivados das respostas (pixels.completionEvent)
+const CompletionEventParamRuleSchema = z
+  .object({
+    param: z.string().min(1).max(60).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, {
+      message: 'nome de parâmetro deve ser identificador simples (letras, números, _)',
+    }),
+    questionId: z.string().min(1).max(120),
+    condition: PixelEventConditionSchema,
+    valueIfTrue: z.string().max(120).optional(),
+    valueIfFalse: z.string().max(120).optional(),
+    countsTowardCounter: z.boolean().optional(),
+  })
+  .strip()
+
+const CompletionEventSchema = z
+  .object({
+    name: z.string().min(1).max(120),
+    staticParams: z
+      .record(z.string().max(60), z.string().max(200))
+      .refine(obj => Object.keys(obj).length <= 15, { message: 'máximo de 15 parâmetros fixos' })
+      .optional(),
+    paramRules: z.array(CompletionEventParamRuleSchema).max(20).optional(),
+    counterParam: z.string().min(1).max(60).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/).optional(),
+  })
+  .strip()
+
 const PixelsSchema = z
   .object({
     metaPixelId: z.string().max(40).nullable().optional(),
@@ -222,6 +253,7 @@ const PixelsSchema = z
     googleAdsLabel: z.string().max(80).nullable().optional(),
     tiktokPixelId: z.string().max(40).nullable().optional(),
     gtmId: z.string().max(40).nullable().optional(),
+    completionEvent: z.union([CompletionEventSchema, z.null()]).optional(),
   })
   .passthrough()
 

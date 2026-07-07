@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Image from 'next/image'
-import { Form, QuestionConfig, Json } from '@/lib/database.types'
+import { Form, QuestionConfig, Json, PixelConfig } from '@/lib/database.types'
 import { PixelEventRule } from '@/types/pixel-events'
 import { getTheme, getThemeCSSVariables } from '@/lib/themes'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
-import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent } from '@/lib/pixel-events'
+import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, fireCompletionEventWithParams } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
@@ -566,6 +566,11 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       // entre no buffer __eidosCapturedFbqEvents e seja salvo junto com a response.
       const completeEventPre = form.pixel_event_on_complete
       if (completeEventPre) fireNamedPixelEvent(completeEventPre)
+
+      // Evento de conclusão com parâmetros derivados das respostas
+      // (pixels.completionEvent) — também antes do POST, pelo mesmo motivo.
+      const completionEventCfg = (form.pixels as PixelConfig | null)?.completionEvent
+      if (completionEventCfg) fireCompletionEventWithParams(completionEventCfg, finalAnswers as Record<string, unknown>)
 
       // Combinar metaEvents (state) com o buffer global, garantindo eventos disparados
       // entre o último tick do hook (500ms) e o submit — incluindo o on_complete acima.

@@ -3,7 +3,7 @@
  * Avalia regras por pergunta e dispara eventos no Meta Pixel.
  */
 
-import { PixelEventRule, PixelEventCondition, PixelEventConfig } from '@/types/pixel-events'
+import { PixelEventRule, PixelEventCondition, PixelEventConfig, CompletionEventConfig } from '@/types/pixel-events'
 
 declare global {
   interface Window {
@@ -58,8 +58,18 @@ export function matchesCondition(answer: unknown, condition: PixelEventCondition
     case 'less_than': return parseNumericValue(normalizedAnswer) < parseNumericValue(value)
     case 'is_empty': return normalizedAnswer.trim() === ''
     case 'is_not_empty': return normalizedAnswer.trim() !== ''
+    // Lista de valores separados por "|" — casa se a resposta for igual a
+    // qualquer um deles (comparação exata, case-insensitive).
+    case 'one_of':
+      return splitOptionList(valueLower).includes(answerLower.trim())
+    case 'not_one_of':
+      return !splitOptionList(valueLower).includes(answerLower.trim())
     default: return false
   }
+}
+
+function splitOptionList(value: string): string[] {
+  return value.split('|').map(v => v.trim()).filter(v => v !== '')
 }
 
 export function firePixelEvent(event: PixelEventConfig) {
@@ -159,6 +169,54 @@ export function evaluatePixelEvents(pixelEvents: PixelEventRule[] | undefined, a
   }
 }
 
+/**
+ * Monta os parâmetros do evento de conclusão a partir das respostas.
+ * Exportada separada do disparo pra ser testável e reutilizável (ex.: CAPI futura).
+ */
+export function buildCompletionEventParams(
+  config: CompletionEventConfig,
+  answers: Record<string, unknown>,
+): Record<string, string> {
+  const params: Record<string, string> = { ...(config.staticParams || {}) }
+  let positives = 0
+  for (const rule of config.paramRules || []) {
+    if (!rule.param || !rule.questionId) continue
+    const matched = matchesCondition(answers[rule.questionId], rule.condition)
+    params[rule.param] = matched ? (rule.valueIfTrue ?? 'sim') : (rule.valueIfFalse ?? 'nao')
+    if (matched && rule.countsTowardCounter !== false) positives++
+  }
+  if (config.counterParam) params[config.counterParam] = String(positives)
+  return params
+}
+
+/**
+ * Dispara o evento de conclusão com parâmetros (forms.pixels.completionEvent).
+ * Mesmo padrão dos demais: dataLayer imediato, fbq/ttq com retry de carregamento.
+ */
+export function fireCompletionEventWithParams(
+  config: CompletionEventConfig | null | undefined,
+  answers: Record<string, unknown>,
+) {
+  if (!config?.name || typeof window === 'undefined') return
+  const params = buildCompletionEventParams(config, answers)
+  pushDataLayerEvent(config.name, params)
+  fireFbqCustomWithParams(config.name, params)
+  fireTtqEvent(config.name, params)
+}
+
+function fireFbqCustomWithParams(name: string, params: Record<string, string>, retries = 10) {
+  if (!name || typeof window === 'undefined') return
+  const { fbq } = window
+  if (!fbq) {
+    if (retries > 0) {
+      setTimeout(() => fireFbqCustomWithParams(name, params, retries - 1), 300)
+    }
+    return
+  }
+  recordCapturedEvent(name)
+  fbq('trackCustom', name, params)
+}
+
 export const STANDARD_PIXEL_EVENTS = [
   'Lead',
   'Purchase',
@@ -177,6 +235,8 @@ export const OPERATOR_LABELS: Record<string, string> = {
   less_than: 'é menor que',
   is_empty: 'está vazio',
   is_not_empty: 'não está vazio',
+  one_of: 'é uma das opções (separe com |)',
+  not_one_of: 'não é nenhuma das opções (separe com |)',
 }
 
-export const VALUE_OPERATORS = ['equals', 'not_equals', 'contains', 'not_contains', 'greater_than', 'less_than']
+export const VALUE_OPERATORS = ['equals', 'not_equals', 'contains', 'not_contains', 'greater_than', 'less_than', 'one_of', 'not_one_of']

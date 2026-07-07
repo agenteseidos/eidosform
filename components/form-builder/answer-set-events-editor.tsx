@@ -62,7 +62,7 @@ function ConditionRow({ cond, questions, onChange, onRemove }: {
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-1.5">
+    <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-1.5 min-w-0">
       <div className="flex items-center gap-1.5">
         <select
           value={q ? cond.questionId : ''}
@@ -92,7 +92,7 @@ function ConditionRow({ cond, questions, onChange, onRemove }: {
       <select
         value={cond.condition.operator}
         onChange={(e) => onChange({ ...cond, condition: { ...cond.condition, operator: e.target.value as PixelEventConditionOperator } })}
-        className="w-full text-sm rounded-md border px-2 py-1.5 bg-white text-slate-800"
+        className="w-full min-w-0 max-w-full text-sm rounded-md border px-2 py-1.5 bg-white text-slate-800"
       >
         {Object.entries(OPERATOR_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
       </select>
@@ -103,7 +103,7 @@ function ConditionRow({ cond, questions, onChange, onRemove }: {
               key={opt}
               type="button"
               onClick={() => toggleOption(opt)}
-              className={`text-xs rounded-full border px-2.5 py-1 transition-colors ${
+              className={`text-xs rounded-full border px-2.5 py-1 transition-colors max-w-full whitespace-normal break-words text-left ${
                 selected.has(opt)
                   ? 'border-emerald-400 bg-emerald-50 text-emerald-800'
                   : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
@@ -143,7 +143,7 @@ function EventCard({ ev, index, questions, onChange, onRemove }: {
   }
 
   return (
-    <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-3 space-y-2.5">
+    <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-3 space-y-2.5 min-w-0">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Evento {index + 1}</span>
         <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-red-500 hover:text-red-600" onClick={onRemove}>

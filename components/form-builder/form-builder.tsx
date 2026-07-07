@@ -1266,7 +1266,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     </div>
                   )}
 
-                  <fieldset disabled={!canUsePixels} className={`space-y-4 ${!canUsePixels ? 'opacity-60' : ''}`}>
+                  {/* min-w-0: fieldset tem min-inline-size:min-content por padrão — sem isso,
+                      selects com opções longas (editor de conjuntos) alargam e cortam o painel */}
+                  <fieldset disabled={!canUsePixels} className={`space-y-4 min-w-0 ${!canUsePixels ? 'opacity-60' : ''}`}>
                     {/* Meta Pixel — agrupado com Eventos */}
                     <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-4">
                       <div className="flex items-center gap-3">

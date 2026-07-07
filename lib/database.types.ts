@@ -549,6 +549,7 @@ export interface Database {
           utm_campaign: string | null
           utm_term: string | null
           utm_content: string | null
+          url_params: Record<string, string> | null
           sheets_row_index: number | null
           submitted_at: string
           created_at: string
@@ -567,6 +568,7 @@ export interface Database {
           utm_campaign?: string | null
           utm_term?: string | null
           utm_content?: string | null
+          url_params?: Record<string, string> | null
           sheets_row_index?: number | null
           submitted_at?: string
           created_at?: string
@@ -583,6 +585,7 @@ export interface Database {
           utm_campaign?: string | null
           utm_term?: string | null
           utm_content?: string | null
+          url_params?: Record<string, string> | null
           sheets_row_index?: number | null
           updated_at?: string
         }

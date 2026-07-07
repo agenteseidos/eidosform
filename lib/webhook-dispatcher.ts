@@ -24,6 +24,8 @@ export interface WebhookPayload {
   lead?: ExtractedLead
   data: Record<string, unknown>
   fields?: WebhookFieldMeta[]
+  /** Campos ocultos capturados da URL do form (hidden fields), já sanitizados */
+  url_params?: Record<string, string>
 }
 
 /**
@@ -172,10 +174,12 @@ export async function dispatchWebhook(params: {
   fields?: WebhookFieldMeta[]
   /** Canonical lead fields (name/email/phone) extracted from response */
   lead?: ExtractedLead
+  /** Campos ocultos capturados da URL (hidden fields), já sanitizados */
+  urlParams?: Record<string, string> | null
   /** Owner email for DLQ notification after all retries fail */
   ownerEmail?: string
 }): Promise<{ success: boolean; statusCode?: number; error?: string }> {
-  const { webhookUrl, formId, responseId, responseData, fields, lead, ownerEmail } = params
+  const { webhookUrl, formId, responseId, responseData, fields, lead, urlParams, ownerEmail } = params
 
   // WEBHOOK_SECRET is mandatory — abort without it (P0-INT1)
   const webhookSecret = process.env.WEBHOOK_SECRET
@@ -199,6 +203,7 @@ export async function dispatchWebhook(params: {
     ...(lead ? { lead } : {}),
     data: responseData,
     ...(fields && fields.length > 0 ? { fields } : {}),
+    ...(urlParams && Object.keys(urlParams).length > 0 ? { url_params: urlParams } : {}),
   }
 
   // Canonical JSON: sort keys so HMAC is deterministic across retries (P1-INT2)

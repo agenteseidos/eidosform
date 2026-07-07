@@ -17,6 +17,7 @@ import { logError } from '@/lib/logger'
 import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
+import { sanitizeUrlParams } from '@/lib/url-params'
 import { sendNewResponseNotification } from '@/lib/resend'
 import { filterQuestionsByPlan } from '@/lib/questions'
 
@@ -140,6 +141,9 @@ export async function POST(req: NextRequest) {
     utm_term: typeof body.utm_term === 'string' ? body.utm_term : null,
     utm_content: typeof body.utm_content === 'string' ? body.utm_content : null,
   }
+  // Campos ocultos via URL — re-sanitizados no servidor (fail-open: inválido
+  // é descartado, nunca rejeita o submit). null quando não sobra nada.
+  const urlParams = sanitizeUrlParams(body.url_params)
 
   // Honeypot: if _hp_ field is filled, silently accept but don't save (bot trap)
   if (body._hp_ && String(body._hp_).length > 0) {
@@ -330,15 +334,18 @@ export async function POST(req: NextRequest) {
   let responseId: string
   let responseMetaEvents: string[] = []
   let existingSheetsRowIndex: number | null = null
+  let effectiveUrlParams: Record<string, string> | null = urlParams
 
   if (existingResponseId && existingResponse) {
     const { data: updated, error: updateError } = await supabase
       .from('responses')
-      .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData } as ResponseUpdate)
+      // url_params: só sobrescreve com valor novo VÁLIDO — upgrade parcial→final
+      // sem params no body PRESERVA a identidade capturada na parcial.
+      .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
-      .select('id, meta_events, sheets_row_index')
-      .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null } | null; error: unknown }
+      .select('id, meta_events, sheets_row_index, url_params')
+      .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
 
     if (updateError || !updated) {
       return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
@@ -347,11 +354,13 @@ export async function POST(req: NextRequest) {
     responseId = updated.id
     responseMetaEvents = Array.isArray((updated as { meta_events?: unknown }).meta_events) ? ((updated as { meta_events: string[] }).meta_events) : []
     existingSheetsRowIndex = updated.sheets_row_index ?? existingResponse.sheets_row_index ?? null
+    // Identidade efetiva pro Sheets/webhook: a do body, ou a preservada da parcial.
+    effectiveUrlParams = urlParams ?? sanitizeUrlParams(updated.url_params) ?? null
     await supabase.from('answer_items').delete().eq('response_id', responseId)
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
-      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData } as ResponseInsert)
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData, url_params: urlParams } as ResponseInsert)
       .select('id, meta_events')
       .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string } | null }
 
@@ -483,6 +492,7 @@ export async function POST(req: NextRequest) {
             answers: answers as Record<string, unknown>,
             questionIdToLabel,
             utmData,
+            urlParams: effectiveUrlParams,
             responseId,
             status: 'Completo',
             rowIndex: sheetsRowIndex,
@@ -540,6 +550,7 @@ export async function POST(req: NextRequest) {
           responseData: answers as Record<string, unknown>,
           fields,
           lead,
+          urlParams: effectiveUrlParams,
         }).catch((err) => logError('Failed to dispatch webhook', err))
       )
     }

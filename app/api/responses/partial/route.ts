@@ -8,6 +8,7 @@ import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import type { QuestionConfig, ResponseInsert } from '@/lib/database.types'
 import { getEffectivePlan } from '@/lib/plans'
 import { filterQuestionsByPlan } from '@/lib/questions'
+import { sanitizeUrlParams } from '@/lib/url-params'
 
 // POST /api/responses/partial
 //
@@ -90,6 +91,8 @@ export async function POST(req: NextRequest) {
     utm_term: typeof body.utm_term === 'string' ? body.utm_term : null,
     utm_content: typeof body.utm_content === 'string' ? body.utm_content : null,
   }
+  // Campos ocultos via URL — re-sanitizados no servidor (fail-open).
+  const urlParams = sanitizeUrlParams(body.url_params)
 
   if (!form_id || typeof form_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(form_id)) {
     return NextResponse.json({ error: 'ID do formulário inválido' }, { status: 400, headers: CORS_HEADERS })
@@ -177,19 +180,19 @@ export async function POST(req: NextRequest) {
     if (!verifyPartialToken(partialToken, existingResponseId)) {
       // Sem prova de posse (token ausente/ inválido) — trata como nova response
       // em vez de atualizar a existente. Não vaza se o id existe ou não.
-      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
+      return await createPartialResponse({ supabase, form, answers: valid, utmData, urlParams, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
     }
 
     // UPDATE
     const { data: existing } = await supabase
       .from('responses')
-      .select('id, sheets_row_index, form_id, completed')
+      .select('id, sheets_row_index, form_id, completed, url_params')
       .eq('id', existingResponseId)
-      .single() as { data: { id: string; sheets_row_index: number | null; form_id: string; completed: boolean } | null; error: unknown }
+      .single() as { data: { id: string; sheets_row_index: number | null; form_id: string; completed: boolean; url_params?: Record<string, string> | null } | null; error: unknown }
 
     if (!existing || existing.form_id !== form_id) {
       // Trata como nova response — cliente pode ter ID stale
-      return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
+      return await createPartialResponse({ supabase, form, answers: valid, utmData, urlParams, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
     }
     if (existing.completed) {
       // Já foi finalizado — não regredir pra parcial
@@ -198,37 +201,41 @@ export async function POST(req: NextRequest) {
     responseId = existing.id
     currentRowIndex = existing.sheets_row_index
 
+    // url_params: novo valor válido atualiza; ausente PRESERVA o da parcial.
+    const effectiveUrlParams = urlParams ?? sanitizeUrlParams(existing.url_params) ?? null
     const { error: updateError } = await supabase
       .from('responses')
       .update({
         answers: valid as Record<string, import('@/lib/database.types').Json>,
         last_question_answered: lastQuestionOk,
         ...utmData,
+        ...(urlParams ? { url_params: urlParams } : {}),
       })
       .eq('id', responseId)
     if (updateError) {
       logError('[partial] update responses failed', updateError, { responseId })
       return NextResponse.json({ error: 'Erro ao salvar progresso' }, { status: 500, headers: CORS_HEADERS })
     }
+
+    // Upsert no Sheets (gating pelo plano + integração habilitada)
+    await syncToSheetsIfEnabled({
+      supabase,
+      form,
+      answers: valid,
+      utmData,
+      urlParams: effectiveUrlParams,
+      responseId,
+      formQuestions: effectiveQuestions,
+      currentRowIndex,
+    })
+
+    return NextResponse.json(
+      { response_id: responseId, partial_token: signPartialToken(responseId) },
+      { status: 200, headers: CORS_HEADERS }
+    )
   } else {
-    return await createPartialResponse({ supabase, form, answers: valid, utmData, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
+    return await createPartialResponse({ supabase, form, answers: valid, utmData, urlParams, lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions })
   }
-
-  // Upsert no Sheets (gating pelo plano + integração habilitada)
-  await syncToSheetsIfEnabled({
-    supabase,
-    form,
-    answers: valid,
-    utmData,
-    responseId,
-    formQuestions: effectiveQuestions,
-    currentRowIndex,
-  })
-
-  return NextResponse.json(
-    { response_id: responseId, partial_token: signPartialToken(responseId) },
-    { status: 200, headers: CORS_HEADERS }
-  )
 }
 
 async function createPartialResponse(opts: {
@@ -236,10 +243,11 @@ async function createPartialResponse(opts: {
   form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
   answers: Record<string, unknown>
   utmData: Record<string, string | null>
+  urlParams: Record<string, string> | null
   lastQuestionAnswered: unknown
   formQuestions: QuestionConfig[]
 }): Promise<NextResponse> {
-  const { supabase, form, answers, utmData, lastQuestionAnswered, formQuestions } = opts
+  const { supabase, form, answers, utmData, urlParams, lastQuestionAnswered, formQuestions } = opts
   const insertPayload: ResponseInsert = {
     form_id: form.id,
     answers: answers as Record<string, import('@/lib/database.types').Json>,
@@ -250,6 +258,7 @@ async function createPartialResponse(opts: {
     utm_campaign: utmData.utm_campaign,
     utm_term: utmData.utm_term,
     utm_content: utmData.utm_content,
+    url_params: urlParams,
   }
 
   const { data: created, error: insertError } = await supabase
@@ -268,6 +277,7 @@ async function createPartialResponse(opts: {
     form,
     answers,
     utmData,
+    urlParams,
     responseId: created.id,
     formQuestions,
     currentRowIndex: null,
@@ -284,11 +294,12 @@ async function syncToSheetsIfEnabled(opts: {
   form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
   answers: Record<string, unknown>
   utmData: Record<string, string | null>
+  urlParams: Record<string, string> | null
   responseId: string
   formQuestions: QuestionConfig[]
   currentRowIndex: number | null
 }): Promise<void> {
-  const { supabase, form, answers, utmData, responseId, formQuestions, currentRowIndex } = opts
+  const { supabase, form, answers, utmData, urlParams, responseId, formQuestions, currentRowIndex } = opts
   if (!form.google_sheets_enabled || !form.google_sheets_id) return
 
   // Plano: o gating é feito no builder (toggle só fica disponível pra Plus+).
@@ -305,6 +316,7 @@ async function syncToSheetsIfEnabled(opts: {
       answers,
       questionIdToLabel,
       utmData,
+      urlParams,
       responseId,
       status: 'Parcial',
       rowIndex: currentRowIndex,

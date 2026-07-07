@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
+import { captureUrlParams, getUrlParams, clearUrlParams } from '@/lib/url-params'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
 import { createClient } from '@/lib/supabase/client'
 import { isValidLooseUrl } from '@/lib/validators'
@@ -353,6 +354,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           answers: pending.answers,
           last_question_answered: pending.lastQuestionId,
           ...utms,
+          url_params: getUrlParams(form.id) ?? undefined,
         }),
       })
       if (res.ok) {
@@ -397,6 +399,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           answers: pending.answers,
           last_question_answered: pending.lastQuestionId,
           ...utms,
+          url_params: getUrlParams(form.id) ?? undefined,
           // sendBeacon não suporta headers — incluímos o response_id no body
           // e o endpoint aceita ambos (header tem prioridade).
           response_id: publicResponseIdRef.current ?? undefined,
@@ -596,6 +599,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           last_question_answered: currentQuestion?.id ?? null,
           respondent_id: respondentId,
           ...utms,
+          url_params: getUrlParams(form.id) ?? undefined,
           meta_events: allMetaEvents,
         }),
       })
@@ -636,6 +640,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         window.localStorage.removeItem(PUBLIC_PARTIAL_STORAGE_KEY)
         window.localStorage.removeItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY)
       } catch { /* ignore */ }
+      // Identidade da URL consumida — nova resposta na mesma aba não herda a antiga.
+      clearUrlParams(form.id)
       setIsSubmitted(true)
       if (form.redirect_url) {
         const redirectDelay = form.redirect_delay != null ? Number(form.redirect_delay) : 2800
@@ -659,6 +665,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
   useEffect(() => {
     captureUtms()
+    // Campos ocultos (?nome=...&email=...): captura no mount, escopado por form.
+    captureUrlParams(form.id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Pixel event: ao iniciar formulário (sem welcome screen)

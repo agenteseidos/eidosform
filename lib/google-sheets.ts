@@ -6,6 +6,10 @@ const UTM_COLUMNS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 
 const RESPONSE_ID_COLUMN = 'response_id'
 const STATUS_COLUMN = 'status'
 const STATUS_COMPLETE = 'Completo'
+// Campos ocultos de identidade (url_params) com coluna fixa logo após Data/Hora
+// (B/C/D). Planilhas conectadas ANTES desta feature não ganham as colunas
+// automaticamente — re-vincular/aba nova (decisão do briefing campos-ocultos §13.9).
+const IDENTITY_COLUMNS = ['nome', 'email', 'telefone'] as const
 
 /**
  * Parse the row index (1-based) from a Sheets API range like "Respostas!A47:H47".
@@ -110,9 +114,9 @@ export async function connectSpreadsheet(
   const existingHeaders = headerRes.data.values?.[0] as string[] | undefined
 
   if (!existingHeaders || existingHeaders.length === 0) {
-    // Header row: Data/Hora | response_id | status | field labels | meta_events | UTMs
-    // response_id+status logo após Data/Hora pra ficar visível e filtrável.
-    const headers = ['Data/Hora', RESPONSE_ID_COLUMN, STATUS_COLUMN, ...fieldLabels, META_EVENTS_COLUMN, ...UTM_COLUMNS]
+    // Header row: Data/Hora | nome | email | telefone | response_id | status | field labels | meta_events | UTMs
+    // Identidade (campos ocultos da URL) em B/C/D pra leitura rápida da planilha.
+    const headers = ['Data/Hora', ...IDENTITY_COLUMNS, RESPONSE_ID_COLUMN, STATUS_COLUMN, ...fieldLabels, META_EVENTS_COLUMN, ...UTM_COLUMNS]
 
     await sheets.spreadsheets.values.update({
       spreadsheetId,
@@ -175,6 +179,8 @@ interface UpsertOptions {
   answers: Record<string, unknown>
   questionIdToLabel: Record<string, string>
   utmData: Record<string, string | null>
+  /** Campos ocultos da URL (hidden fields) — preenche as colunas de identidade. */
+  urlParams?: Record<string, string> | null
   responseId: string
   status: 'Parcial' | 'Completo'
   /** Se fornecido, atualiza a row existente nesse índice em vez de appendar. */
@@ -188,7 +194,7 @@ interface UpsertOptions {
  * número em `responses.sheets_row_index` pra updates futuros sem scan.
  */
 export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResult> {
-  const { spreadsheetId, fieldLabels, answers, questionIdToLabel, utmData, responseId, status, rowIndex } = opts
+  const { spreadsheetId, fieldLabels, answers, questionIdToLabel, utmData, urlParams, responseId, status, rowIndex } = opts
   try {
     const auth = getAuth()
     const sheets = google.sheets({ version: 'v4', auth })
@@ -205,14 +211,30 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
     const hasStatus = existingHeaders.includes(STATUS_COLUMN)
     const utmStartIndex = existingHeaders.findIndex((h) => UTM_COLUMNS.includes(h))
     const metaEventsIndex = existingHeaders.indexOf(META_EVENTS_COLUMN)
+    // Colunas de identidade (campos ocultos) moram ENTRE Data/Hora e response_id —
+    // a distinção é POSICIONAL: uma pergunta do form intitulada "email" fica depois
+    // de response_id/status e continua sendo coluna de dados. Preservar as presentes;
+    // nunca inserir em planilha antiga (deslocaria dados/fórmulas do cliente).
+    const responseIdIdx = existingHeaders.indexOf(RESPONSE_ID_COLUMN)
+    const identityZoneEnd = responseIdIdx > 0 ? responseIdIdx : 0
+    const presentIdentity = existingHeaders.length === 0
+      ? [...IDENTITY_COLUMNS]
+      : IDENTITY_COLUMNS.filter((c) => {
+          const i = existingHeaders.indexOf(c)
+          return i > 0 && i < identityZoneEnd
+        })
 
     // Onde terminam os campos de dados (antes do meta_events/UTMs)
     const endOfDataIdx = metaEventsIndex >= 0
       ? metaEventsIndex
       : (utmStartIndex >= 0 ? utmStartIndex : existingHeaders.length)
-    // Slice após Data/Hora (col A), pulando response_id/status se já existem
-    const dataStartIdx = 1 + (hasResponseId ? 1 : 0) + (hasStatus ? 1 : 0)
-    const dataHeaders = existingHeaders.slice(dataStartIdx, endOfDataIdx)
+    // Campos de dados = tudo antes do meta_events/UTMs que não é coluna especial
+    // (identidade só conta como especial dentro da zona posicional dela)
+    const dataHeaders = existingHeaders.slice(0, endOfDataIdx).filter((h, i) => {
+      if (h === 'Data/Hora' || h === RESPONSE_ID_COLUMN || h === STATUS_COLUMN) return false
+      if ((IDENTITY_COLUMNS as readonly string[]).includes(h) && i > 0 && i < identityZoneEnd) return false
+      return true
+    })
 
     const newLabels = fieldLabels.filter((label) => !dataHeaders.includes(label))
     const needsHeaderUpdate = !hasResponseId || !hasStatus || newLabels.length > 0 || existingHeaders.length === 0
@@ -220,6 +242,7 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
     if (needsHeaderUpdate) {
       const updatedHeaders = [
         'Data/Hora',
+        ...presentIdentity,
         RESPONSE_ID_COLUMN,
         STATUS_COLUMN,
         ...dataHeaders,
@@ -255,8 +278,15 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
       ? (answers.meta_events as unknown[]).map(formatAnswerValue).join(', ')
       : ''
 
-    const row = finalHeaders.map((header) => {
+    const finalResponseIdIdx = finalHeaders.indexOf(RESPONSE_ID_COLUMN)
+    const row = finalHeaders.map((header, idx) => {
       if (header === 'Data/Hora') return timestamp
+      // Identidade: só na zona posicional (antes de response_id) — pergunta do
+      // form intitulada "email" continua recebendo a RESPOSTA, não o url_param.
+      if (
+        (IDENTITY_COLUMNS as readonly string[]).includes(header) &&
+        idx > 0 && finalResponseIdIdx > 0 && idx < finalResponseIdIdx
+      ) return urlParams?.[header] ?? ''
       if (header === RESPONSE_ID_COLUMN) return responseId
       if (header === STATUS_COLUMN) return status
       if (header === META_EVENTS_COLUMN) return metaEventsValue

@@ -1,5 +1,5 @@
 import { JumpRule } from "@/lib/jump-logic"
-import { PixelEventRule, CompletionEventConfig } from "@/types/pixel-events"
+import { PixelEventRule, AnswerSetEvent } from "@/types/pixel-events"
 import { PlanId } from "@/lib/plans"
 
 export type Json =
@@ -122,7 +122,7 @@ export interface PixelConfig {
   googleAdsLabel?: string    // Google Ads Conversion Label
   tiktokPixelId?: string     // TikTok Pixel ID
   gtmId?: string             // Google Tag Manager Container ID (GTM-XXXXXXX)
-  completionEvent?: CompletionEventConfig // Evento de conclusão com parâmetros derivados das respostas
+  answerSetEvents?: AnswerSetEvent[] // Eventos por conjunto de respostas (máx. 10 por form)
 }
 
 // Database tables

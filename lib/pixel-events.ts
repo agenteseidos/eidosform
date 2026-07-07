@@ -3,7 +3,7 @@
  * Avalia regras por pergunta e dispara eventos no Meta Pixel.
  */
 
-import { PixelEventRule, PixelEventCondition, PixelEventConfig, CompletionEventConfig } from '@/types/pixel-events'
+import { PixelEventRule, PixelEventCondition, PixelEventConfig, AnswerSetEvent } from '@/types/pixel-events'
 
 declare global {
   interface Window {
@@ -44,6 +44,22 @@ function parseNumericValue(value: string): number {
 }
 
 export function matchesCondition(answer: unknown, condition: PixelEventCondition): boolean {
+  // Resposta em array (checkboxes): avaliar elemento a elemento — operador
+  // positivo casa se ALGUMA opção marcada casar; negativo é a negação exata
+  // do positivo correspondente ("não marcou X"). O join(', ') antigo quebrava
+  // equals/one_of com múltiplas opções marcadas.
+  if (Array.isArray(answer)) {
+    const items = answer.filter(a => a !== null && a !== undefined && String(a).trim() !== '')
+    switch (condition.operator) {
+      case 'is_empty': return items.length === 0
+      case 'is_not_empty': return items.length > 0
+      case 'not_equals': return !items.some(a => matchesCondition(a, { ...condition, operator: 'equals' }))
+      case 'not_contains': return !items.some(a => matchesCondition(a, { ...condition, operator: 'contains' }))
+      case 'not_one_of': return !items.some(a => matchesCondition(a, { ...condition, operator: 'one_of' }))
+      default: return items.some(a => matchesCondition(a, condition))
+    }
+  }
+
   const { operator, value } = condition
   const normalizedAnswer = normalizeAnswer(answer)
   const answerLower = normalizedAnswer.toLowerCase()
@@ -170,51 +186,64 @@ export function evaluatePixelEvents(pixelEvents: PixelEventRule[] | undefined, a
 }
 
 /**
- * Monta os parâmetros do evento de conclusão a partir das respostas.
- * Exportada separada do disparo pra ser testável e reutilizável (ex.: CAPI futura).
+ * Avalia os eventos por conjunto de respostas (forms.pixels.answerSetEvents)
+ * e devolve os NOMES (deduplicados) dos eventos que devem disparar. Pura e
+ * testável — o disparo em si fica com o caller (player), que só dispara após
+ * o POST da response ter sucesso.
+ *
+ * `existingQuestionIds`: condição apontando pra pergunta que não existe mais
+ * no form = NÃO batida, inclusive pra operadores negativos (not_equals etc.) —
+ * sem isso, pergunta apagada viraria falso positivo e contaminaria a campanha.
+ * Pergunta que existe mas não foi respondida avalia normalmente (is_empty é
+ * caso de uso legítimo).
  */
-export function buildCompletionEventParams(
-  config: CompletionEventConfig,
+export function evaluateAnswerSetEvents(
+  events: AnswerSetEvent[] | null | undefined,
   answers: Record<string, unknown>,
-): Record<string, string> {
-  const params: Record<string, string> = { ...(config.staticParams || {}) }
-  let positives = 0
-  for (const rule of config.paramRules || []) {
-    if (!rule.param || !rule.questionId) continue
-    const matched = matchesCondition(answers[rule.questionId], rule.condition)
-    params[rule.param] = matched ? (rule.valueIfTrue ?? 'sim') : (rule.valueIfFalse ?? 'nao')
-    if (matched && rule.countsTowardCounter !== false) positives++
+  existingQuestionIds: Set<string>,
+): string[] {
+  const names: string[] = []
+  for (const ev of events || []) {
+    const name = (ev.name || '').trim()
+    const conditions = ev.conditions || []
+    if (!name || conditions.length === 0) continue
+    const matched = conditions.filter(c =>
+      existingQuestionIds.has(c.questionId) && matchesCondition(answers[c.questionId], c.condition),
+    ).length
+    // minMatches > nº de condições (config inválida que o Zod passou a rejeitar,
+    // mas pode existir em JSONB antigo) = nunca dispara — conservador, não gera
+    // conversão inesperada. minMatches ausente em 'at_least' = exige todas.
+    const required = ev.match === 'all'
+      ? conditions.length
+      : Math.max(1, ev.minMatches ?? conditions.length)
+    if (matched >= required && !names.includes(name)) names.push(name)
   }
-  if (config.counterParam) params[config.counterParam] = String(positives)
-  return params
+  return names
 }
 
 /**
- * Dispara o evento de conclusão com parâmetros (forms.pixels.completionEvent).
- * Mesmo padrão dos demais: dataLayer imediato, fbq/ttq com retry de carregamento.
+ * Prepara answerSetEvents pro save: descarta rascunhos que o Zod rejeitaria
+ * (evento sem nome, condição sem pergunta) sem quebrar o save do form inteiro,
+ * e clampa minMatches em [1, nº de condições]. Devolve undefined quando não
+ * sobra nada (JSON.stringify remove a chave do payload).
  */
-export function fireCompletionEventWithParams(
-  config: CompletionEventConfig | null | undefined,
-  answers: Record<string, unknown>,
-) {
-  if (!config?.name || typeof window === 'undefined') return
-  const params = buildCompletionEventParams(config, answers)
-  pushDataLayerEvent(config.name, params)
-  fireFbqCustomWithParams(config.name, params)
-  fireTtqEvent(config.name, params)
-}
-
-function fireFbqCustomWithParams(name: string, params: Record<string, string>, retries = 10) {
-  if (!name || typeof window === 'undefined') return
-  const { fbq } = window
-  if (!fbq) {
-    if (retries > 0) {
-      setTimeout(() => fireFbqCustomWithParams(name, params, retries - 1), 300)
-    }
-    return
+export function sanitizeAnswerSetEvents(events: AnswerSetEvent[] | null | undefined): AnswerSetEvent[] | undefined {
+  const clean: AnswerSetEvent[] = []
+  for (const ev of events || []) {
+    const name = (ev.name || '').trim()
+    const conditions = (ev.conditions || []).filter(c => (c.questionId || '').trim() !== '').slice(0, 20)
+    if (!name || conditions.length === 0) continue
+    clean.push({
+      id: ev.id,
+      name,
+      match: ev.match === 'at_least' ? 'at_least' : 'all',
+      ...(ev.match === 'at_least'
+        ? { minMatches: Math.min(Math.max(1, ev.minMatches ?? 1), conditions.length) }
+        : {}),
+      conditions,
+    })
   }
-  recordCapturedEvent(name)
-  fbq('trackCustom', name, params)
+  return clean.length > 0 ? clean.slice(0, 10) : undefined
 }
 
 export const STANDARD_PIXEL_EVENTS = [

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
 import { toast } from 'sonner'
-import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, fireCompletionEventWithParams } from '@/lib/pixel-events'
+import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
@@ -562,21 +562,29 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         } catch { /* ignore */ }
       }
 
-      // Disparar pixel_event_on_complete ANTES do POST pra que o nome do evento
-      // entre no buffer __eidosCapturedFbqEvents e seja salvo junto com a response.
-      const completeEventPre = form.pixel_event_on_complete
-      if (completeEventPre) fireNamedPixelEvent(completeEventPre)
-
-      // Evento de conclusão com parâmetros derivados das respostas
-      // (pixels.completionEvent) — também antes do POST, pelo mesmo motivo.
-      const completionEventCfg = (form.pixels as PixelConfig | null)?.completionEvent
-      if (completionEventCfg) fireCompletionEventWithParams(completionEventCfg, finalAnswers as Record<string, unknown>)
+      // Eventos de conclusão (on_complete + conjuntos de respostas): AVALIADOS
+      // antes do POST — só os nomes, pra entrarem em meta_events de forma
+      // determinística (sem depender do buffer/fbq já ter carregado). O DISPARO
+      // nos pixels acontece só depois do POST bem-sucedido: envio que falhou
+      // não pode virar conversão no Meta/GTM/TikTok.
+      const completeEventName = (form.pixel_event_on_complete || '').trim()
+      const answerSetNames = evaluateAnswerSetEvents(
+        (form.pixels as PixelConfig | null)?.answerSetEvents,
+        finalAnswers as Record<string, unknown>,
+        new Set(questions.map(q => q.id)),
+      )
+      // Set dedupa evento de conjunto homônimo do on_complete (dispara uma vez).
+      const pendingEventNames = Array.from(new Set([completeEventName, ...answerSetNames].filter(Boolean)))
 
       // Combinar metaEvents (state) com o buffer global, garantindo eventos disparados
-      // entre o último tick do hook (500ms) e o submit — incluindo o on_complete acima.
+      // entre o último tick do hook (500ms) e o submit — mais os nomes calculados acima.
       const STANDARD = new Set(['PageView','ViewContent','Search','AddToCart','AddToWishlist','InitiateCheckout','AddPaymentInfo','Purchase','Lead','CompleteRegistration'])
       const buffered = (typeof window !== 'undefined' && window.__eidosCapturedFbqEvents) || []
-      const allMetaEvents = Array.from(new Set([...metaEvents, ...buffered.filter(n => !STANDARD.has(n))]))
+      const allMetaEvents = Array.from(new Set([
+        ...metaEvents,
+        ...buffered.filter(n => !STANDARD.has(n)),
+        ...pendingEventNames.filter(n => !STANDARD.has(n)),
+      ]))
 
       const res = await fetch('/api/responses', {
         method: 'POST',
@@ -617,9 +625,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       // gatilho de conversão no GTM mesmo sem configurar evento por bloco. Vai só
       // pro dataLayer — não toca no Meta.
       pushDataLayerEvent('form_submit', { form_id: form.id })
-      // pixel_event_on_complete já foi disparado antes do POST (linha ~410) pra entrar
-      // no buffer meta_events da response. Não disparar novamente aqui pra evitar dupla
-      // contagem no Events Manager.
+      // Disparo pós-sucesso dos eventos de conclusão (on_complete + conjuntos):
+      // os nomes já foram enviados em meta_events no payload acima. Com
+      // redirect_url, o delay padrão de 2800ms dá janela pro retry do fbq/ttq.
+      for (const name of pendingEventNames) fireNamedPixelEvent(name)
       // Limpa o response_id do partial público — submit final consumou a row.
       publicResponseIdRef.current = null
       publicPartialTokenRef.current = null

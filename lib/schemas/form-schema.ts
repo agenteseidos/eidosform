@@ -65,7 +65,7 @@ const ConditionalGroupSchema = z
 // Grupo primeiro para a união casar o formato novo antes do legado.
 const ConditionalLogicSchema = z.union([ConditionalGroupSchema, ConditionalRuleSchema])
 
-// Condição compartilhada pelos pixel events (por pergunta e completionEvent)
+// Condição compartilhada pelos pixel events (por pergunta e answerSetEvents)
 const PixelEventConditionSchema = z
   .object({
     operator: z.enum([
@@ -220,31 +220,39 @@ export const QuestionSchema = z.discriminatedUnion('type', [
 
 export type QuestionPayload = z.infer<typeof QuestionSchema>
 
-// Evento de conclusão com parâmetros derivados das respostas (pixels.completionEvent)
-const CompletionEventParamRuleSchema = z
+// Eventos por conjunto de respostas (pixels.answerSetEvents)
+const AnswerSetConditionSchema = z
   .object({
-    param: z.string().min(1).max(60).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, {
-      message: 'nome de parâmetro deve ser identificador simples (letras, números, _)',
-    }),
     questionId: z.string().min(1).max(120),
     condition: PixelEventConditionSchema,
-    valueIfTrue: z.string().max(120).optional(),
-    valueIfFalse: z.string().max(120).optional(),
-    countsTowardCounter: z.boolean().optional(),
   })
   .strip()
 
-const CompletionEventSchema = z
+const AnswerSetEventSchema = z
   .object({
-    name: z.string().min(1).max(120),
-    staticParams: z
-      .record(z.string().max(60), z.string().max(200))
-      .refine(obj => Object.keys(obj).length <= 15, { message: 'máximo de 15 parâmetros fixos' })
-      .optional(),
-    paramRules: z.array(CompletionEventParamRuleSchema).max(20).optional(),
-    counterParam: z.string().min(1).max(60).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/).optional(),
+    id: z.string().min(1).max(120),
+    name: z.string().trim().min(1).max(120),
+    match: z.enum(['all', 'at_least']),
+    minMatches: z.number().int().min(1).max(20).optional(),
+    conditions: z.array(AnswerSetConditionSchema).min(1).max(20),
   })
   .strip()
+  .superRefine((ev, ctx) => {
+    if (ev.match !== 'at_least') return
+    if (ev.minMatches === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['minMatches'],
+        message: 'minMatches é obrigatório quando match é "at_least"',
+      })
+    } else if (ev.minMatches > ev.conditions.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['minMatches'],
+        message: 'minMatches não pode exceder o número de condições',
+      })
+    }
+  })
 
 const PixelsSchema = z
   .object({
@@ -253,7 +261,7 @@ const PixelsSchema = z
     googleAdsLabel: z.string().max(80).nullable().optional(),
     tiktokPixelId: z.string().max(40).nullable().optional(),
     gtmId: z.string().max(40).nullable().optional(),
-    completionEvent: z.union([CompletionEventSchema, z.null()]).optional(),
+    answerSetEvents: z.array(AnswerSetEventSchema).max(10).optional(),
   })
   .passthrough()
 

@@ -40,36 +40,28 @@ export interface FormPixelEvents {
 }
 
 /**
- * Evento de conclusão com parâmetros derivados das respostas.
- * Vive em `forms.pixels.completionEvent` (JSONB). No submit, o player avalia
- * cada paramRule contra a resposta da pergunta referenciada e monta os
- * parâmetros do evento; `counterParam` recebe a contagem de regras positivas.
- * Caso de uso: conversão personalizada no Meta filtrando por parâmetro
- * (ex.: "positivos é igual a 3 ou 4") — o Meta não faz E-lógico entre eventos
- * distintos, só entre parâmetros de um mesmo disparo.
+ * Eventos por conjunto de respostas (answer-set events).
+ * Vivem em `forms.pixels.answerSetEvents` (JSONB). No submit, o player conta
+ * quantas condições batem contra as respostas finais e dispara o evento
+ * nomeado quando todas (`all`) ou pelo menos `minMatches` (`at_least`) baterem.
+ * Caso de uso: qualificar lead pelo conjunto de respostas e otimizar a
+ * campanha (Meta/Google/TikTok) pelo evento que só dispara pra esses leads.
  */
-export interface CompletionEventParamRule {
-  /** Nome do parâmetro enviado no evento (ex.: "formado") */
-  param: string
+export interface AnswerSetCondition {
   /** Pergunta cuja resposta alimenta a condição */
   questionId: string
   condition: PixelEventCondition
-  /** Valor do parâmetro quando a condição bate (default: "sim") */
-  valueIfTrue?: string
-  /** Valor quando não bate (default: "nao") */
-  valueIfFalse?: string
-  /** Se false, a regra não soma no counterParam (default: true) */
-  countsTowardCounter?: boolean
+  // extensão futura (scoring com pesos): weight?: number
 }
 
-export interface CompletionEventConfig {
-  /** Nome do evento custom (ex.: "PesquisaCompleta") */
+export interface AnswerSetEvent {
+  id: string
+  /** Nome do evento custom (ex.: "LeadQualificado") */
   name: string
-  /** Parâmetros fixos enviados sempre (ex.: { lancamento: "rcgt0826" }) */
-  staticParams?: Record<string, string>
-  paramRules?: CompletionEventParamRule[]
-  /** Nome do parâmetro que recebe a contagem de regras positivas (ex.: "positivos") */
-  counterParam?: string
+  match: 'all' | 'at_least'
+  /** Obrigatório quando match='at_least' (1..nº de condições) */
+  minMatches?: number
+  conditions: AnswerSetCondition[]
 }
 
 /** Operadores válidos para validação server-side */

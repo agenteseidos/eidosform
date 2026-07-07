@@ -87,6 +87,8 @@ import { LogicMap } from './logic-map'
 import { RightPanel } from './right-panel'
 import { WhatsAppPanel } from './whatsapp-panel'
 import { getContentBlockPreview } from '@/lib/content-block'
+import { AnswerSetEventsEditor } from './answer-set-events-editor'
+import { sanitizeAnswerSetEvents } from '@/lib/pixel-events'
 
 // B03: Mapeamento de tipo de campo → ícone + cor para sidebar
 const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> = {
@@ -440,7 +442,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     thank_you_description: form.thank_you_description || null,
     thank_you_button_text: form.thank_you_button_text || null,
     thank_you_button_url: form.thank_you_button_url || null,
-    pixels,
+    // answerSetEvents: descarta rascunhos incompletos (evento sem nome/condição)
+    // pra um card em edição não derrubar o save do form inteiro no Zod.
+    pixels: { ...pixels, answerSetEvents: sanitizeAnswerSetEvents(pixels.answerSetEvents) },
     redirect_url: form.redirect_url || null,
     webhook_url: form.webhook_url || null,
     pixel_event_on_start: form.pixel_event_on_start || null,
@@ -1383,6 +1387,28 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                         placeholder="GTM-XXXXXXX"
                       />
+                    </div>
+
+                    {/* Eventos por conjunto de respostas (answer-set events) */}
+                    <div className="p-4 rounded-lg border border-slate-200 bg-slate-50 space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                          <Crosshair className="w-4 h-4 text-emerald-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">Eventos por conjunto de respostas</p>
+                          <p className="text-xs text-slate-500">Dispare um evento no envio quando a combinação de respostas indicar, por exemplo, um lead qualificado — e otimize sua campanha por ele.</p>
+                        </div>
+                      </div>
+                      <AnswerSetEventsEditor
+                        events={pixels.answerSetEvents || []}
+                        questions={questions}
+                        onChange={(events) => {
+                          setPixels({ ...pixels, answerSetEvents: events.length ? events : undefined })
+                          setHasUnsavedChanges(true)
+                        }}
+                      />
+                      <p className="text-xs text-slate-400">O evento é enviado ao Meta Pixel, TikTok e dataLayer (GTM/Google) configurados acima, no envio do formulário.</p>
                     </div>
                   </fieldset>
                 </section>

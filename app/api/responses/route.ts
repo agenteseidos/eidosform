@@ -489,7 +489,9 @@ export async function POST(req: NextRequest) {
           const result = await upsertSubmission({
             spreadsheetId,
             fieldLabels,
-            answers: answers as Record<string, unknown>,
+            // meta_events junto: é de onde a coluna meta_events da planilha lê
+            // (sem isso ela fica sempre vazia — gap corrigido em 2026-07-07).
+            answers: { ...(answers as Record<string, unknown>), meta_events: responseMetaEvents },
             questionIdToLabel,
             utmData,
             urlParams: effectiveUrlParams,

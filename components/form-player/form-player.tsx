@@ -165,6 +165,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   // Handshake antecipado: 1 tentativa por sessão — fetch imediato na primeira
   // resposta (com defer_sheets) só pra capturar id/token cedo.
   const handshakeStartedRef = useRef(false)
+  // Referência fresca pro retry de save falho (definida após runPublicPartialSave).
+  const runPublicPartialSaveRef = useRef<((deferSheets?: boolean) => Promise<void>) | null>(null)
 
   // Lista de perguntas visíveis com base nas respostas atuais
   const visibleQuestions = useMemo(
@@ -413,6 +415,20 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Retry de save parcial que falhou (HTTP != 2xx ou rede): só se ainda há
+  // estado não persistido, sem timer já armado e sem submit em curso. Sem isto,
+  // uma aba aberta e PARADA cujo save de 60s falhasse ficaria invisível na
+  // planilha pra sempre (achado Codex 2026-07-08) — o beacon só cobre
+  // fechamento/troca de aba.
+  const scheduleRetryAfterFailedSave = useCallback(() => {
+    if (isSubmittedRef.current || !unsavedPartialRef.current || publicPartialTimerRef.current) return
+    publicPartialTimerRef.current = setTimeout(() => {
+      publicPartialTimerRef.current = null
+      void runPublicPartialSaveRef.current?.()
+    }, PUBLIC_PARTIAL_IDLE_MS)
+   
+  }, [])
+
   const runPublicPartialSave = useCallback(async (deferSheets = false) => {
     // Pendente do timer OU, se ainda há estado não exportado (ex.: só o
     // handshake deferido rodou), o snapshot cumulativo — é o que permite ao
@@ -465,10 +481,20 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         // beacon do fechamento). Sem o (b), o beacon não disparava e o parcial
         // ficava invisível na planilha (bug pego no teste de prod 2026-07-08).
         if (!pendingPartialPayloadRef.current && !deferSheets) unsavedPartialRef.current = false
+      } else {
+        scheduleRetryAfterFailedSave()
       }
-    } catch { /* fire-and-forget, log no servidor */ }
+    } catch {
+      // Rede caiu no meio do save: sem retry, uma aba aberta e PARADA ficaria
+      // invisível na planilha pra sempre (achado Codex 2026-07-08) — o beacon
+      // só cobre fechamento/troca de aba. Re-agenda no mesmo cadence de 60s.
+      scheduleRetryAfterFailedSave()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.id, publicPartialEnabled, getOrCreateSessionKey, nextPartialRevision, rotatePartialSession])
+  }, [form.id, publicPartialEnabled, getOrCreateSessionKey, nextPartialRevision, rotatePartialSession, scheduleRetryAfterFailedSave])
+
+  // Mantém a referência fresca pro retry (definido antes desta função).
+  runPublicPartialSaveRef.current = runPublicPartialSave
 
   const schedulePublicPartialSave = useCallback((currentAnswers: Record<string, Json>, lastQuestionId: string) => {
     if (!publicPartialEnabled || isSubmittedRef.current) return

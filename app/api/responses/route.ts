@@ -288,6 +288,11 @@ export async function POST(req: NextRequest) {
     ? hashSessionKey(rawSessionKey)
     : null
   let existingResponse: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null } | null = null
+  // true quando o alvo do UPDATE é uma parcial ANÔNIMA adotada por posse
+  // (token ou session key) — nesses caminhos o UPDATE é condicionado a
+  // completed=false: dois submits concorrentes da mesma tentativa não podem
+  // ambos executar side effects (achado Codex 2026-07-08).
+  let anonymousAdoption = false
 
   if (existingResponseId) {
     // P0-2: Verify ownership — respondent_id from cookie must match the response's respondent_id
@@ -319,6 +324,19 @@ export async function POST(req: NextRequest) {
       !!fetched.respondent_id && fetched.respondent_id === bodyRespondentId
     if (isAnonymousPartialUpgrade || isAuthenticatedOwner) {
       existingResponse = fetched
+      anonymousAdoption = isAnonymousPartialUpgrade
+    } else if (
+      fetched.respondent_id === null &&
+      fetched.completed === true &&
+      verifyPartialToken(partialToken, existingResponseId)
+    ) {
+      // Idempotência (achado Codex 2026-07-08): submit repetido da MESMA
+      // tentativa via id+token — a row já foi completada pelo primeiro submit.
+      // Antes caía no 403; agora responde sucesso sem repetir side effects.
+      return NextResponse.json(
+        { response_id: fetched.id, completed: true, already_completed: true },
+        { status: 200, headers: CORS_HEADERS }
+      )
     } else if (fetched.respondent_id === null && fetched.completed === false) {
       // Parcial anônima sem token válido (cliente antigo em voo ou id forjado):
       // não sobrescreve — degrada para criar uma resposta nova. Não perde lead
@@ -356,6 +374,7 @@ export async function POST(req: NextRequest) {
         })
         existingResponseId = bySession.id
         existingResponse = bySession
+        anonymousAdoption = true
       }
     }
   }
@@ -381,17 +400,38 @@ export async function POST(req: NextRequest) {
   let createdFresh = false
 
   if (existingResponseId && existingResponse) {
-    const { data: updated, error: updateError } = await supabase
+    let updateQuery = supabase
       .from('responses')
       // url_params: só sobrescreve com valor novo VÁLIDO — upgrade parcial→final
       // sem params no body PRESERVA a identidade capturada na parcial.
       .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
+    // Adoção anônima: UPDATE condicional — se outro submit da mesma tentativa
+    // completou no meio, este não casa nenhuma linha e vira already_completed
+    // (idempotente de verdade: side effects rodam UMA vez).
+    if (anonymousAdoption) {
+      updateQuery = updateQuery.eq('completed', false)
+    }
+    const { data: updated, error: updateError } = await updateQuery
       .select('id, meta_events, sheets_row_index, url_params')
       .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
 
     if (updateError || !updated) {
+      if (anonymousAdoption) {
+        const { data: check } = await supabase
+          .from('responses')
+          .select('id, completed')
+          .eq('id', existingResponseId)
+          .maybeSingle() as { data: { id: string; completed: boolean } | null; error: unknown }
+        if (check?.completed) {
+          console.warn('[responses] corrida de dupla submissão — resposta idempotente', { formId: form_id, responseId: check.id })
+          return NextResponse.json(
+            { response_id: check.id, completed: true, already_completed: true },
+            { status: 200, headers: CORS_HEADERS }
+          )
+        }
+      }
       return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
     }
 
@@ -437,8 +477,24 @@ export async function POST(req: NextRequest) {
             .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
             .eq('id', raced.id)
             .eq('form_id', form_id as string)
+            // condicional: se outro submit completou a row entre o select e o
+            // update, não sobrescreve — cai no re-check idempotente abaixo.
+            .eq('completed', false)
             .select('id, meta_events, sheets_row_index, url_params')
             .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
+          if (adoptError || !adopted) {
+            const { data: recheck } = await supabase
+              .from('responses')
+              .select('id, completed')
+              .eq('id', raced.id)
+              .maybeSingle() as { data: { id: string; completed: boolean } | null; error: unknown }
+            if (recheck?.completed) {
+              return NextResponse.json(
+                { response_id: recheck.id, completed: true, already_completed: true },
+                { status: 200, headers: CORS_HEADERS }
+              )
+            }
+          }
           if (!adoptError && adopted) {
             responseId = adopted.id
             responseMetaEvents = Array.isArray(adopted.meta_events) ? adopted.meta_events : []

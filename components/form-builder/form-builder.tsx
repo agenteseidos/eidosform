@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
 import { normalizeConditional } from '@/lib/form-logic-engine'
+import { shouldApplyEcho, nextAutosaveDelay, hasPendingEdits } from '@/lib/autosave-policy'
 import { questionTypes, createDefaultQuestion, getQuestionTypeInfo, questionTypeAllowed, QUESTION_TYPE_MIN_PLAN } from '@/lib/questions'
 import { PLANS } from '@/lib/plan-definitions'
 import { themes, themeList } from '@/lib/themes'
@@ -117,6 +118,13 @@ const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> =
 function getQuestionVisual(type: string) {
   return questionTypeVisuals[type] || { icon: FileText, color: 'text-slate-400' }
 }
+
+// Autosave por INATIVIDADE: cada edição re-arma o timer; salva só depois de
+// AUTOSAVE_IDLE_MS sem interação. O teto AUTOSAVE_MAX_WAIT_MS limita quanto tempo
+// digitação contínua pode adiar o save (inofensivo à digitação — o eco do servidor
+// só é aplicado quando nada mudou durante o voo; ver shouldApplyEcho).
+const AUTOSAVE_IDLE_MS = 4000
+const AUTOSAVE_MAX_WAIT_MS = 30000
 
 interface UserInfo {
   email: string
@@ -280,7 +288,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Camada 1 — quando o save tomar 409 (outra aba alterou o form), pausamos o autosave
   // e pedimos recarregar, em vez de seguir sobrescrevendo a versão mais nova.
-  const [hasConflict, setHasConflict] = useState(false)
+  // (Estado síncrono em hasConflictRef, abaixo; o antigo useState ficou órfão quando o
+  // efeito de autosave keyado nele foi substituído pelo debounce do markDirty.)
 
   // Fix (2026-06-18) — salvamento em FILA (single-flight). Evita que o autosave e o
   // "Salvar" manual (ou dois saves seguidos) rodem ao mesmo tempo e disparem um FALSO
@@ -297,6 +306,38 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   // closure defasada) consiga revertê-lo e gerar um FALSO "conflito de versão". Só o
   // próprio salvamento o atualiza, de forma síncrona, com o version que o servidor devolve.
   const versionRef = useRef<number | undefined>(initialForm.version)
+
+  // Fix (2026-07-08) — revisão local do editor. Incrementa SINCRONAMENTE a cada
+  // mutação (markDirty); é a base de duas garantias que o booleano hasUnsavedChanges
+  // não dá: (1) o eco do save (setForm(updatedForm)) só é aplicado se nenhuma edição
+  // aconteceu depois do snapshot enviado — senão apagaria texto digitado durante o
+  // voo da requisição; (2) o timer do autosave consulta pendência por ref fresca,
+  // sem closure defasada. dirtyRef NÃO serve pra isso: ele só vira true quando o
+  // timer dispara, então uma tecla no meio do voo passaria despercebida.
+  const editSeqRef = useRef(0)                       // revisão local corrente
+  const savedSeqRef = useRef(0)                      // última revisão persistida
+  const firstEditAtRef = useRef<number | null>(null) // início da pendência (teto de espera)
+  // requestSave é definido mais abaixo (depende da fila); o timer acessa via ref,
+  // no mesmo padrão do buildPayloadRef.
+  const requestSaveRef = useRef<((manual?: boolean) => Promise<boolean>) | null>(null)
+
+  // Toda mutação do editor passa por aqui: marca pendência e re-arma o debounce.
+  // O save só dispara depois de AUTOSAVE_IDLE_MS sem interação (cada chamada zera o
+  // timer), limitado pelo teto AUTOSAVE_MAX_WAIT_MS desde a primeira edição pendente.
+  const markDirty = useCallback(() => {
+    editSeqRef.current += 1
+    setHasUnsavedChanges(true)
+    if (hasConflictRef.current) return // conflito 409: autosave pausado até recarregar
+    if (firstEditAtRef.current === null) firstEditAtRef.current = Date.now()
+    const delay = nextAutosaveDelay(Date.now(), firstEditAtRef.current, AUTOSAVE_IDLE_MS, AUTOSAVE_MAX_WAIT_MS)
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null
+      if (hasPendingEdits(editSeqRef.current, savedSeqRef.current) && !hasConflictRef.current) {
+        void requestSaveRef.current?.(false)
+      }
+    }, delay)
+  }, [])
 
   const selectedQuestion = questions.find(q => q.id === selectedQuestionId)
   const isMobileUtilityTab = activeTab === 'integrations' || activeTab === 'share' || activeTab === 'logic'
@@ -379,7 +420,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       if (error) throw error
       const { data: { publicUrl } } = supabase.storage.from('form-images').getPublicUrl(path)
       setForm(prev => ({ ...prev, welcome_image_url: publicUrl }))
-      setHasUnsavedChanges(true)
+      markDirty()
       toast.success('Imagem enviada com sucesso!')
     } catch (err) {
       console.error(err)
@@ -387,12 +428,12 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     } finally {
       setIsUploadingImage(false)
     }
-  }, [form.id, supabase, setForm, setHasUnsavedChanges])
+  }, [form.id, supabase, setForm, markDirty])
 
   const handleRemoveWelcomeImage = useCallback(async () => {
     setForm(prev => ({ ...prev, welcome_image_url: null }))
-    setHasUnsavedChanges(true)
-  }, [setForm, setHasUnsavedChanges])
+    markDirty()
+  }, [setForm, markDirty])
 
   const buildFormPayload = useCallback((status?: FormStatus) => ({
     title: form.title,
@@ -508,7 +549,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
   // Camada 1 — conflito de versão: pausa o autosave e pede recarregar (não sobrescreve).
   const notifyVersionConflict = useCallback(() => {
-    setHasConflict(true)
     hasConflictRef.current = true
     setSaveStatus('error')
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
@@ -533,13 +573,24 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
         setSaveStatus('saving')
         try {
           const builder = buildPayloadRef.current
+          // Revisão local embarcada NESTE payload. O eco do servidor reflete este
+          // snapshot; se o usuário digitar durante o voo (editSeq avança), aplicar o
+          // eco reverteria o texto novo — então ele é descartado e o timer re-armado
+          // pelo markDirty cuida do próximo save.
+          const seqAtBuild = editSeqRef.current
           const updatedForm = builder ? await updateFormViaApi(builder()) : undefined
           if (updatedForm) {
             // Sincroniza a versão IMEDIATAMENTE (sem esperar o re-render), pra a próxima
             // rodada do worker já mandar o expectedVersion fresco e não tomar 409 falso.
             versionRef.current = (updatedForm as { version?: number }).version ?? versionRef.current
-            setForm(updatedForm)
-            setHasUnsavedChanges(false)
+            savedSeqRef.current = seqAtBuild
+            if (shouldApplyEcho(seqAtBuild, editSeqRef.current)) {
+              // Nada mudou durante o voo: seguro aplicar o eco (traz normalizações do
+              // servidor, ex. https:// em URLs) e zerar a pendência.
+              setForm(updatedForm)
+              setHasUnsavedChanges(false)
+              firstEditAtRef.current = null
+            }
             setSaveStatus('saved')
             setTimeout(() => setSaveStatus('idle'), 2000)
             saveOkRef.current = true
@@ -592,24 +643,39 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     })
   }, [drainSaves])
 
+  // Mantém a referência fresca p/ o timer do markDirty (definido antes desta função).
+  requestSaveRef.current = requestSave
+
   // Cancela um autosave AGENDADO (timer) — usado antes de salvar manual/publicar.
   const cancelPendingAutosave = useCallback(() => {
     if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null }
   }, [])
+
+  // Campo perdeu o foco (focusout borbulha até o container raiz): se há pendência
+  // com autosave agendado, antecipa o save — o usuário parou de digitar ali.
+  const handleEditorBlur = useCallback(() => {
+    if (autosaveTimerRef.current && hasPendingEdits(editSeqRef.current, savedSeqRef.current) && !hasConflictRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+      void requestSave(false)
+    }
+  }, [requestSave])
 
   // Espera um save em voo terminar (usado antes de publicar/despublicar).
   const waitForSaveIdle = useCallback(async () => {
     while (savingRef.current) { await new Promise(resolve => setTimeout(resolve, 50)) }
   }, [])
 
+  // (O efeito antigo de autosave — timer de 1500ms keyado no booleano hasUnsavedChanges —
+  // foi substituído pelo debounce por inatividade dentro do markDirty: o timer antigo NÃO
+  // zerava a cada tecla e disparava o save em plena digitação.)
+
+  // Desmonte: cancela timer pendente pra não disparar save após unmount.
   useEffect(() => {
-    if (!hasUnsavedChanges || hasConflict) return
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = setTimeout(() => { void requestSave(false) }, 1500)
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     }
-  }, [hasUnsavedChanges, hasConflict, requestSave])
+  }, [])
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     cancelPendingAutosave()
@@ -641,15 +707,26 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     setIsSaving(true)
     try {
       const builder = buildPayloadRef.current
+      const seqAtBuild = editSeqRef.current
       const payload = { ...(builder ? builder() : buildFormPayload()), status: 'published' as FormStatus }
       const updated = await updateFormViaApi(payload)
       if (updated) {
         versionRef.current = (updated as { version?: number }).version ?? versionRef.current
-        setForm(updated)
-      } else setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
+        savedSeqRef.current = seqAtBuild
+        if (shouldApplyEcho(seqAtBuild, editSeqRef.current)) {
+          setForm(updated)
+          setHasUnsavedChanges(false)
+          firstEditAtRef.current = null
+        } else {
+          // Edição durante o voo: não sobrescreve o estado local; só reflete o status.
+          setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
+        }
+      } else {
+        setForm(prev => ({ ...prev, status: 'published' as FormStatus }))
+        setHasUnsavedChanges(false)
+      }
       toast.success(form.status === 'published' ? 'Alterações publicadas!' : 'Formulário publicado!')
       setShowPublishDialog(false)
-      setHasUnsavedChanges(false)
     } catch (error) {
       if ((error as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return }
       toast.error(error instanceof Error ? error.message : 'Falha ao atualizar status')
@@ -665,11 +742,19 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     setIsSaving(true)
     try {
       const builder = buildPayloadRef.current
+      const seqAtBuild = editSeqRef.current
       const payload = { ...(builder ? builder() : buildFormPayload()), status: 'draft' as FormStatus }
       const updated = await updateFormViaApi(payload)
       if (updated) {
         versionRef.current = (updated as { version?: number }).version ?? versionRef.current
-        setForm(updated)
+        savedSeqRef.current = seqAtBuild
+        if (shouldApplyEcho(seqAtBuild, editSeqRef.current)) {
+          setForm(updated)
+          setHasUnsavedChanges(false)
+          firstEditAtRef.current = null
+        } else {
+          setForm(prev => ({ ...prev, status: 'draft' as FormStatus }))
+        }
       } else setForm(prev => ({ ...prev, status: 'draft' as FormStatus }))
       toast.success('Formulário movido para rascunho')
     } catch (error) {
@@ -693,7 +778,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     setQuestions([...questions, newQuestion])
     setSelectedQuestionId(newQuestion.id)
     setShowAddQuestion(false)
-    setHasUnsavedChanges(true)
+    markDirty()
   }
 
   const updateQuestion = (id: string, updates: Partial<QuestionConfig>) => {
@@ -707,7 +792,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       }
       return updated
     }))
-    setHasUnsavedChanges(true)
+    markDirty()
   }
 
   const deleteQuestion = (id: string) => {
@@ -723,7 +808,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     if (selectedQuestionId === deleteDialog.questionId) {
       setSelectedQuestionId(null)
     }
-    setHasUnsavedChanges(true)
+    markDirty()
     setDeleteDialog({ open: false, questionId: null, label: '' })
   }
 
@@ -736,12 +821,12 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     newQuestions.splice(idx + 1, 0, clone)
     setQuestions(newQuestions)
     setSelectedQuestionId(clone.id)
-    setHasUnsavedChanges(true)
+    markDirty()
   }
 
   const handleReorder = (newOrder: QuestionConfig[]) => {
     setQuestions(newOrder)
-    setHasUnsavedChanges(true)
+    markDirty()
   }
 
   const formUrl = typeof window !== 'undefined' ? `${window.location.origin}/f/${form.slug}` : `/f/${form.slug}`
@@ -756,7 +841,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
   return (
     <>
-    <div className="flex flex-col h-screen supports-[height:100dvh]:h-[100dvh] bg-slate-50 overflow-x-hidden">
+    <div className="flex flex-col h-screen supports-[height:100dvh]:h-[100dvh] bg-slate-50 overflow-x-hidden" onBlur={handleEditorBlur}>
       {/* Header */}
       <header className="min-h-14 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-2 px-3 sm:px-4 py-2 min-w-0 overflow-hidden">
@@ -783,7 +868,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                 value={form.title}
                 onChange={(e) => {
                   setForm(prev => ({ ...prev, title: e.target.value }))
-                  setHasUnsavedChanges(true)
+                  markDirty()
                 }}
                 className="w-full min-w-0 max-w-[150px] sm:max-w-[220px] truncate text-xs sm:text-base font-semibold border-0 border-b-2 border-transparent bg-transparent rounded-none focus-visible:ring-0 focus-visible:border-blue-500 hover:border-slate-300 px-1 pr-7 transition-colors"
                 placeholder="Sem título"
@@ -931,10 +1016,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               selectedQuestionId={selectedQuestionId}
               onSelectQuestion={(id) => { setSelectedQuestionId(id); setSidebarSection(null); setMobilePanel('editor') }}
               onUpdateQuestion={updateQuestion}
-              onReorderQuestions={(qs) => { setQuestions(qs); setHasUnsavedChanges(true) }}
+              onReorderQuestions={(qs) => { setQuestions(qs); markDirty() }}
               onAddQuestion={() => setShowAddQuestion(true)}
               formPixelEvents={{ onStart: form.pixel_event_on_start || null, onComplete: form.pixel_event_on_complete || null }}
-              onUpdateFormPixel={(updates) => { setForm(prev => ({ ...prev, ...updates })); setHasUnsavedChanges(true) }}
+              onUpdateFormPixel={(updates) => { setForm(prev => ({ ...prev, ...updates })); markDirty() }}
               hasPixelPlan={userPlan === 'plus' || userPlan === 'professional'}
             />
           </div>
@@ -1136,7 +1221,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         key={theme.id}
                         onClick={() => {
                           setForm(prev => ({ ...prev, theme: theme.id }))
-                          setHasUnsavedChanges(true)
+                          markDirty()
                         }}
                         className={`
                           p-3 rounded-lg border-2 transition-all text-left
@@ -1172,7 +1257,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     value={form.description || ''}
                     onChange={(e) => {
                       setForm(prev => ({ ...prev, description: e.target.value }))
-                      setHasUnsavedChanges(true)
+                      markDirty()
                     }}
                     className="mt-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="Descrição opcional..."
@@ -1190,7 +1275,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     value={form.redirect_url || ''}
                     onChange={(e) => {
                       setForm(prev => ({ ...prev, redirect_url: e.target.value || null }))
-                      setHasUnsavedChanges(true)
+                      markDirty()
                     }}
                     className="mt-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="https://exemplo.com/obrigado"
@@ -1212,7 +1297,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       checked={form.is_closed ?? false}
                       onCheckedChange={(checked) => {
                         setForm(prev => ({ ...prev, is_closed: checked }))
-                        setHasUnsavedChanges(true)
+                        markDirty()
                       }}
                     />
                   </div>
@@ -1226,7 +1311,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         checked={form.hide_branding ?? false}
                         onCheckedChange={(checked) => {
                           setForm(prev => ({ ...prev, hide_branding: checked }))
-                          setHasUnsavedChanges(true)
+                          markDirty()
                         }}
                       />
                     </div>
@@ -1287,7 +1372,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           value={pixels.metaPixelId || ''}
                           onChange={(e) => {
                             setPixels({ ...pixels, metaPixelId: e.target.value || undefined })
-                            setHasUnsavedChanges(true)
+                            markDirty()
                           }}
                           className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white"
                           placeholder="123456789012345"
@@ -1303,7 +1388,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                               value={form.pixel_event_on_start || ''}
                               onChange={(e) => {
                                 setForm(prev => ({ ...prev, pixel_event_on_start: e.target.value || null }))
-                                setHasUnsavedChanges(true)
+                                markDirty()
                               }}
                               className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white"
                               placeholder="ex: FormStarted"
@@ -1316,7 +1401,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                               value={form.pixel_event_on_complete || ''}
                               onChange={(e) => {
                                 setForm(prev => ({ ...prev, pixel_event_on_complete: e.target.value || null }))
-                                setHasUnsavedChanges(true)
+                                markDirty()
                               }}
                               className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white"
                               placeholder="ex: Lead"
@@ -1344,7 +1429,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           value={pixels.googleAdsId || ''}
                           onChange={(e) => {
                             setPixels({ ...pixels, googleAdsId: e.target.value || undefined })
-                            setHasUnsavedChanges(true)
+                            markDirty()
                           }}
                           className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                           placeholder="AW-XXXXXXXXX"
@@ -1357,7 +1442,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           value={pixels.googleAdsLabel || ''}
                           onChange={(e) => {
                             setPixels({ ...pixels, googleAdsLabel: e.target.value || undefined })
-                            setHasUnsavedChanges(true)
+                            markDirty()
                           }}
                           className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                           placeholder="AbCdEfGhIj"
@@ -1371,7 +1456,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         value={pixels.tiktokPixelId || ''}
                         onChange={(e) => {
                           setPixels({ ...pixels, tiktokPixelId: e.target.value || undefined })
-                          setHasUnsavedChanges(true)
+                          markDirty()
                         }}
                         className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                         placeholder="CXXXXXXXXXXXXXXXXX"
@@ -1384,7 +1469,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         value={pixels.gtmId || ''}
                         onChange={(e) => {
                           setPixels({ ...pixels, gtmId: e.target.value || undefined })
-                          setHasUnsavedChanges(true)
+                          markDirty()
                         }}
                         className="mt-1.5 text-slate-900 placeholder:text-slate-400"
                         placeholder="GTM-XXXXXXX"
@@ -1407,7 +1492,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         questions={questions}
                         onChange={(events) => {
                           setPixels({ ...pixels, answerSetEvents: events.length ? events : undefined })
-                          setHasUnsavedChanges(true)
+                          markDirty()
                         }}
                       />
                       <p className="text-xs text-slate-400">O evento é enviado ao Meta Pixel, TikTok e dataLayer (GTM/Google) configurados acima, no envio do formulário.</p>
@@ -1635,7 +1720,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         value={form.webhook_url || ''}
                         onChange={(e) => {
                           setForm(prev => ({ ...prev, webhook_url: e.target.value || null }))
-                          setHasUnsavedChanges(true)
+                          markDirty()
                         }}
                         className="text-slate-900 placeholder:text-slate-400 text-sm"
                         placeholder="https://webhook.site/seu-endpoint"
@@ -1676,7 +1761,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           checked={form.notify_email_enabled ?? false}
                           onCheckedChange={(checked) => {
                             setForm(prev => ({ ...prev, notify_email_enabled: checked }))
-                            setHasUnsavedChanges(true)
+                            markDirty()
                           }}
                         />
                       )}
@@ -1693,7 +1778,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           value={form.notify_email ?? ""}
                           onChange={(e) => {
                             setForm(prev => ({ ...prev, notify_email: e.target.value || null }))
-                            setHasUnsavedChanges(true)
+                            markDirty()
                           }}
                           className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
                           placeholder="equipe@empresa.com"
@@ -1711,7 +1796,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       userPlan={userPlan}
                       onUpdateForm={(updates) => {
                         setForm(prev => ({ ...prev, ...updates }))
-                        setHasUnsavedChanges(true)
+                        markDirty()
                       }}
                       isLoading={false}
                     />
@@ -1840,7 +1925,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         const slug = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
                         setForm(prev => ({ ...prev, slug }))
                         setSlugError(validateSlug(slug))
-                        setHasUnsavedChanges(true)
+                        markDirty()
                       }}
                       className={`flex-1 text-slate-900 placeholder:text-slate-400 ${slugError ? 'border-red-400 focus-visible:border-red-500' : ''}`}
                       placeholder="meu-formulario"
@@ -2003,7 +2088,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
               form={form}
               onUpdateForm={(updates) => {
                 setForm(prev => ({ ...prev, ...updates }))
-                setHasUnsavedChanges(true)
+                markDirty()
               }}
               onWelcomeImageUpload={handleWelcomeImageUpload}
               onRemoveWelcomeImage={handleRemoveWelcomeImage}

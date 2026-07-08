@@ -17,6 +17,8 @@ import { logError } from '@/lib/logger'
 import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
+import { isValidSessionKey, hashSessionKey, hashLogPrefix } from '@/lib/partial-session'
+import { extractIdentity, identitiesMatch } from '@/lib/identity-match'
 import { sanitizeUrlParams } from '@/lib/url-params'
 import { sendNewResponseNotification } from '@/lib/resend'
 import { filterQuestionsByPlan } from '@/lib/questions'
@@ -46,7 +48,7 @@ const MAX_ANSWER_KEYS = 200
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Response-Id, X-Partial-Token',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Response-Id, X-Partial-Token, X-Partial-Session',
   'Access-Control-Max-Age': '86400',
 }
 
@@ -277,6 +279,14 @@ export async function POST(req: NextRequest) {
   // A1 (auditoria 2026-06-10): prova de posse da parcial anônima.
   const partialToken = req.headers.get('x-partial-token')
     || (typeof body.partial_token === 'string' ? body.partial_token : null)
+  // Session key (fix duplicatas 2026-07-08): bearer secret da tentativa de
+  // preenchimento — faz o submit convergir pra parcial criada por sendBeacon,
+  // cuja resposta (response_id/token) o cliente nunca conseguiu ler.
+  const rawSessionKey = req.headers.get('x-partial-session')
+    || (typeof body.partial_session === 'string' ? body.partial_session : null)
+  const sessionHash = rawSessionKey !== null && isValidSessionKey(rawSessionKey)
+    ? hashSessionKey(rawSessionKey)
+    : null
   let existingResponse: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null } | null = null
 
   if (existingResponseId) {
@@ -319,6 +329,37 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Adoção por session key (fix 2026-07-08): sem id+token, mas com a key da
+  // sessão — a posse da key prova a posse da parcial (mesma força do token).
+  if (!existingResponseId && sessionHash) {
+    const { data: bySession } = await supabase
+      .from('responses')
+      .select('id, respondent_id, completed, sheets_row_index')
+      .eq('form_id', form_id as string)
+      .eq('partial_session_hash', sessionHash)
+      .maybeSingle() as { data: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null } | null; error: unknown }
+    if (bySession) {
+      if (bySession.completed) {
+        // Submit repetido da MESMA tentativa (double-click/retry): idempotente —
+        // não cria response nova, não consome cota, não repete side effects.
+        console.warn('[responses] submit repetido da mesma session — resposta idempotente', {
+          formId: form_id, hashPrefix: hashLogPrefix(sessionHash), responseId: bySession.id,
+        })
+        return NextResponse.json(
+          { response_id: bySession.id, completed: true, already_completed: true },
+          { status: 200, headers: CORS_HEADERS }
+        )
+      }
+      if (bySession.respondent_id === null) {
+        console.log('[responses] submit adotou parcial via session key', {
+          formId: form_id, hashPrefix: hashLogPrefix(sessionHash), responseId: bySession.id,
+        })
+        existingResponseId = bySession.id
+        existingResponse = bySession
+      }
+    }
+  }
+
   // Bug #1: ALWAYS check response limit before accepting (not just completed)
   let newResponseLimitCheck: Awaited<ReturnType<typeof checkAndIncrementResponseCount>> | null = null
   if (!existingResponseId) {
@@ -335,6 +376,9 @@ export async function POST(req: NextRequest) {
   let responseMetaEvents: string[] = []
   let existingSheetsRowIndex: number | null = null
   let effectiveUrlParams: Record<string, string> | null = urlParams
+  // true só quando o submit criou response NOVA (sem adotar parcial) — alimenta
+  // o detector passivo de duplicatas (Fase 3 em avaliação; log-only).
+  let createdFresh = false
 
   if (existingResponseId && existingResponse) {
     const { data: updated, error: updateError } = await supabase
@@ -360,19 +404,65 @@ export async function POST(req: NextRequest) {
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
-      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData, url_params: urlParams } as ResponseInsert)
+      // partial_session_hash no INSERT: se um handshake/beacon da mesma sessão
+      // correr em paralelo, o índice único faz um dos dois perder (23505) e
+      // adotar a row do outro — o banco garante a convergência.
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData, url_params: urlParams, ...(sessionHash ? { partial_session_hash: sessionHash } : {}) } as ResponseInsert)
       .select('id, meta_events')
-      .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string } | null }
+      .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string; code?: string } | null }
 
     if (insertError || !newResponse) {
-      // PII fora dos logs (P3): respondent_id identifica o usuário — loga só presença.
-      logError('Failed to insert response:', insertError, { form_id: form_id, has_respondent: Boolean(respondent_id) })
-      return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
+      // 23505 no índice (form_id, partial_session_hash): a parcial da MESMA
+      // sessão nasceu durante este submit (handshake/beacon em voo). Adota-a
+      // e completa por cima, como no caminho normal de upgrade.
+      if (insertError?.code === '23505' && sessionHash) {
+        const { data: raced } = await supabase
+          .from('responses')
+          .select('id, respondent_id, completed, sheets_row_index, url_params')
+          .eq('form_id', form_id as string)
+          .eq('partial_session_hash', sessionHash)
+          .maybeSingle() as { data: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
+        if (raced?.completed) {
+          return NextResponse.json(
+            { response_id: raced.id, completed: true, already_completed: true },
+            { status: 200, headers: CORS_HEADERS }
+          )
+        }
+        if (raced && raced.respondent_id === null) {
+          console.log('[responses] corrida de INSERT no submit resolvida por adoção (23505)', {
+            formId: form_id, hashPrefix: hashLogPrefix(sessionHash), responseId: raced.id,
+          })
+          const { data: adopted, error: adoptError } = await supabase
+            .from('responses')
+            .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
+            .eq('id', raced.id)
+            .eq('form_id', form_id as string)
+            .select('id, meta_events, sheets_row_index, url_params')
+            .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
+          if (!adoptError && adopted) {
+            responseId = adopted.id
+            responseMetaEvents = Array.isArray(adopted.meta_events) ? adopted.meta_events : []
+            existingSheetsRowIndex = adopted.sheets_row_index ?? raced.sheets_row_index ?? null
+            effectiveUrlParams = urlParams ?? sanitizeUrlParams(adopted.url_params) ?? null
+            await supabase.from('answer_items').delete().eq('response_id', responseId)
+          } else {
+            logError('Failed to adopt raced partial on submit:', adoptError, { form_id })
+            return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
+          }
+        } else {
+          logError('Insert 23505 sem parcial adotável:', insertError, { form_id })
+          return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
+        }
+      } else {
+        // PII fora dos logs (P3): respondent_id identifica o usuário — loga só presença.
+        logError('Failed to insert response:', insertError, { form_id: form_id, has_respondent: Boolean(respondent_id) })
+        return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
+      }
+    } else {
+      responseId = newResponse.id
+      responseMetaEvents = Array.isArray(newResponse.meta_events) ? newResponse.meta_events : []
+      createdFresh = true
     }
-
-    responseId = newResponse.id
-    responseMetaEvents = Array.isArray(newResponse.meta_events) ? newResponse.meta_events : []
-
   }
 
   // Inserir answer_items normalizados para analytics
@@ -562,6 +652,15 @@ export async function POST(req: NextRequest) {
     await Promise.allSettled(postSubmitTasks)
   }
 
+  // Detector PASSIVO de duplicatas (Fase 3 em avaliação — auditoria Codex
+  // 2026-07-08): quando o submit criou response NOVA e completa, loga se existe
+  // parcial recente do mesmo form com identidade (e-mail/telefone) coincidente.
+  // SÓ LOG — nenhuma ação. Mede a duplicação residual (storage perdido/webview)
+  // pra decidir com número se a reconciliação da Fase 3 vale o risco.
+  if (createdFresh && completed) {
+    await logPossibleDuplicatePartial(supabase, form_id as string, responseId, effectiveQuestions, answers as Record<string, unknown>, urlParams)
+  }
+
   // Resposta anônima incompleta: devolve a prova de posse (A1) para o cliente
   // poder completar via upsert depois — o response_id sozinho não autoriza mais.
   const issuePartialToken = !completed && typeof respondent_id !== 'string'
@@ -662,4 +761,51 @@ export async function GET(req: NextRequest) {
       total_pages: Math.ceil((count ?? 0) / limit),
     },
   })
+}
+
+// ── Detector passivo de duplicatas (log-only) ────────────────────────────────
+// Fase 3 (reconciliação por identidade) está EM AVALIAÇÃO — decisão da
+// auditoria: medir a duplicação residual pós-Fase 1 antes de implementar.
+// Este detector NUNCA age: identidade identifica, não prova posse.
+async function logPossibleDuplicatePartial(
+  supabase: ReturnType<typeof createAdminClient>,
+  formId: string,
+  newResponseId: string,
+  questions: QuestionConfig[],
+  answers: Record<string, unknown>,
+  urlParams: Record<string, string> | null
+): Promise<void> {
+  try {
+    const newIdentity = extractIdentity(questions, answers, urlParams)
+    if (!newIdentity.email && !newIdentity.phone) return
+
+    const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+    const { data: partials } = await supabase
+      .from('responses')
+      .select('id, answers, url_params, created_at')
+      .eq('form_id', formId)
+      .eq('completed', false)
+      .gte('created_at', cutoff)
+      .neq('id', newResponseId)
+      .order('created_at', { ascending: false })
+      .limit(25) as { data: { id: string; answers: Record<string, unknown> | null; url_params?: Record<string, string> | null; created_at: string }[] | null; error: unknown }
+    if (!partials?.length) return
+
+    for (const p of partials) {
+      const pIdentity = extractIdentity(questions, p.answers, sanitizeUrlParams(p.url_params))
+      if (identitiesMatch(newIdentity, pIdentity)) {
+        // Sem PII no log: só ids, o TIPO do campo que casou e a idade da parcial.
+        console.warn('[reconcile-detector] parcial recente com identidade coincidente (log-only)', {
+          formId,
+          completedResponseId: newResponseId,
+          partialResponseId: p.id,
+          matchedOn: newIdentity.email && pIdentity.email === newIdentity.email ? 'email' : 'phone',
+          partialAgeMin: Math.round((Date.now() - new Date(p.created_at).getTime()) / 60000),
+        })
+        return // primeiro match basta pra medição
+      }
+    }
+  } catch (e) {
+    logError('[reconcile-detector] failed', e, { formId })
+  }
 }

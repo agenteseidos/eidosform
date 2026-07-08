@@ -131,12 +131,34 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const PUBLIC_PARTIAL_IDLE_MS = 60_000
   const PUBLIC_PARTIAL_STORAGE_KEY = `eidosform_partial_response_id_${form.id}`
   const PUBLIC_PARTIAL_TOKEN_STORAGE_KEY = `eidosform_partial_token_${form.id}`
+  const PUBLIC_PARTIAL_SESSION_STORAGE_KEY = `eidosform_partial_session_${form.id}`
+  const PUBLIC_PARTIAL_REVISION_STORAGE_KEY = `eidosform_partial_revision_${form.id}`
   const publicPartialTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const publicResponseIdRef = useRef<string | null>(null)
   // Prova de posse da parcial anônima (A1): emitida pelo servidor na criação,
   // exigida em qualquer UPDATE — o response_id sozinho não autoriza mais.
   const publicPartialTokenRef = useRef<string | null>(null)
   const pendingPartialPayloadRef = useRef<{ answers: Record<string, Json>; lastQuestionId: string } | null>(null)
+  // Fix duplicatas (2026-07-08): session key gerada AQUI e persistida ANTES de
+  // qualquer rede — identifica UMA tentativa de preenchimento. Vai em todo save
+  // (fetch/beacon/submit); o servidor converge tudo pra MESMA response via
+  // índice único (form_id, hash). Resolve o furo do sendBeacon: ele não devolve
+  // resposta, então o response_id criado no fechamento da aba se perdia.
+  const publicSessionKeyRef = useRef<string | null>(null)
+  // Revisão crescente por save — o servidor rejeita revisão menor que a
+  // armazenada (saves fora de ordem não regridem respostas). Persiste junto
+  // com a key: vivem e morrem juntas no mesmo storage.
+  const publicRevisionRef = useRef(0)
+  // Snapshot cumulativo das respostas correntes — o beacon de fechamento envia
+  // ISTO (não o payload pendente do timer, que um fetch em voo já pode ter
+  // limpado — corrida apontada na auditoria Codex 2026-07-08).
+  const latestPartialPayloadRef = useRef<{ answers: Record<string, Json>; lastQuestionId: string } | null>(null)
+  // Há mudança ainda não persistida? O beacon só dispara quando true — sem
+  // isto, toda troca de aba re-enviaria o snapshot já salvo (spam no Sheets).
+  const unsavedPartialRef = useRef(false)
+  // Handshake antecipado: 1 tentativa por sessão — fetch imediato na primeira
+  // resposta (com defer_sheets) só pra capturar id/token cedo.
+  const handshakeStartedRef = useRef(false)
 
   // Lista de perguntas visíveis com base nas respostas atuais
   const visibleQuestions = useMemo(
@@ -325,7 +347,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   // Só ativa se o form tem Sheets habilitado (gating via prop).
   const publicPartialEnabled = Boolean((form as { google_sheets_enabled?: boolean }).google_sheets_enabled)
 
-  // Hidrata response_id de localStorage (lead voltou no mesmo navegador).
+  // Hidrata response_id/token/session/revisão de localStorage (lead voltou no
+  // mesmo navegador — retoma a MESMA tentativa de preenchimento).
   useEffect(() => {
     if (!publicPartialEnabled) return
     try {
@@ -333,11 +356,59 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       if (stored) publicResponseIdRef.current = stored
       const storedToken = window.localStorage.getItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY)
       if (storedToken) publicPartialTokenRef.current = storedToken
+      const storedSession = window.localStorage.getItem(PUBLIC_PARTIAL_SESSION_STORAGE_KEY)
+      if (storedSession) publicSessionKeyRef.current = storedSession
+      const storedRevision = Number(window.localStorage.getItem(PUBLIC_PARTIAL_REVISION_STORAGE_KEY))
+      if (Number.isInteger(storedRevision) && storedRevision > 0) publicRevisionRef.current = storedRevision
     } catch { /* ignore storage failures */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicPartialEnabled])
 
-  const runPublicPartialSave = useCallback(async () => {
+  // Session key da tentativa: gerada e PERSISTIDA antes de qualquer rede.
+  const getOrCreateSessionKey = useCallback((): string => {
+    if (publicSessionKeyRef.current) return publicSessionKeyRef.current
+    let key: string
+    try {
+      key = crypto.randomUUID()
+    } catch {
+      // webviews antigas sem randomUUID: 32 hex de getRandomValues
+      const bytes = new Uint8Array(16)
+      crypto.getRandomValues(bytes)
+      key = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+    }
+    publicSessionKeyRef.current = key
+    try { window.localStorage.setItem(PUBLIC_PARTIAL_SESSION_STORAGE_KEY, key) } catch { /* ignore */ }
+    return key
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Próxima revisão (persistida junto com a key).
+  const nextPartialRevision = useCallback((): number => {
+    publicRevisionRef.current += 1
+    try { window.localStorage.setItem(PUBLIC_PARTIAL_REVISION_STORAGE_KEY, String(publicRevisionRef.current)) } catch { /* ignore */ }
+    return publicRevisionRef.current
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Storage velho pós-submit (already_completed sem submit nesta sessão):
+  // rotaciona pra uma tentativa NOVA — o servidor nunca cria a partir de key
+  // consumida; o cliente se recupera sozinho.
+  const rotatePartialSession = useCallback(() => {
+    publicResponseIdRef.current = null
+    publicPartialTokenRef.current = null
+    publicSessionKeyRef.current = null
+    publicRevisionRef.current = 0
+    handshakeStartedRef.current = false
+    try {
+      window.localStorage.removeItem(PUBLIC_PARTIAL_STORAGE_KEY)
+      window.localStorage.removeItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY)
+      window.localStorage.removeItem(PUBLIC_PARTIAL_SESSION_STORAGE_KEY)
+      window.localStorage.removeItem(PUBLIC_PARTIAL_REVISION_STORAGE_KEY)
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const runPublicPartialSave = useCallback(async (deferSheets = false) => {
     const pending = pendingPartialPayloadRef.current
     if (!pending || !publicPartialEnabled || isSubmittedRef.current) return
     pendingPartialPayloadRef.current = null
@@ -345,20 +416,32 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (publicResponseIdRef.current) headers['x-response-id'] = publicResponseIdRef.current
       if (publicPartialTokenRef.current) headers['x-partial-token'] = publicPartialTokenRef.current
+      headers['x-partial-session'] = getOrCreateSessionKey()
       const utms = getUtms()
       const res = await fetch('/api/responses/partial', {
         method: 'POST',
         headers,
+        // keepalive: o save disparado perto do fechamento da aba sobrevive ao
+        // unload (defesa secundária; a garantia de convergência é o índice único).
+        keepalive: true,
         body: JSON.stringify({
           form_id: form.id,
           answers: pending.answers,
           last_question_answered: pending.lastQuestionId,
+          partial_revision: nextPartialRevision(),
+          ...(deferSheets ? { defer_sheets: true } : {}),
           ...utms,
           url_params: getUrlParams(form.id) ?? undefined,
         }),
       })
       if (res.ok) {
         const data = await res.json().catch(() => null)
+        if (data?.skipped === 'already_completed' && !isSubmittedRef.current) {
+          // Storage de uma tentativa JÁ CONCLUÍDA (submit anterior sem limpeza):
+          // rotaciona pra tentativa nova — próximo save cria row fresca.
+          rotatePartialSession()
+          return
+        }
         if (data?.response_id) {
           publicResponseIdRef.current = data.response_id
           try { window.localStorage.setItem(PUBLIC_PARTIAL_STORAGE_KEY, data.response_id) } catch { /* ignore */ }
@@ -367,15 +450,32 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           publicPartialTokenRef.current = data.partial_token
           try { window.localStorage.setItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY, data.partial_token) } catch { /* ignore */ }
         }
+        // Persistiu: só marca "tudo salvo" se nenhuma mudança nova chegou no voo.
+        if (!pendingPartialPayloadRef.current) unsavedPartialRef.current = false
       }
     } catch { /* fire-and-forget, log no servidor */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.id, publicPartialEnabled])
+  }, [form.id, publicPartialEnabled, getOrCreateSessionKey, nextPartialRevision, rotatePartialSession])
 
   const schedulePublicPartialSave = useCallback((currentAnswers: Record<string, Json>, lastQuestionId: string) => {
     if (!publicPartialEnabled || isSubmittedRef.current) return
     if (Object.keys(currentAnswers).length === 0) return
     pendingPartialPayloadRef.current = { answers: currentAnswers, lastQuestionId }
+    // Snapshot cumulativo — fonte do beacon de fechamento (nunca é "limpo" por
+    // um fetch em voo, ao contrário do pendingPartialPayloadRef).
+    latestPartialPayloadRef.current = { answers: currentAnswers, lastQuestionId }
+    unsavedPartialRef.current = true
+    // Handshake antecipado (fix 2026-07-08): a PRIMEIRA resposta dispara um
+    // save imediato via fetch — único canal que devolve response_id/token —
+    // com defer_sheets (a linha da planilha continua nascendo no próximo save,
+    // como antes). Sem isto, quem preenchia rápido e fechava a aba só salvava
+    // via sendBeacon, que não tem resposta → o id se perdia → duplicata.
+    if (!publicResponseIdRef.current && !handshakeStartedRef.current) {
+      handshakeStartedRef.current = true
+      if (publicPartialTimerRef.current) { clearTimeout(publicPartialTimerRef.current); publicPartialTimerRef.current = null }
+      void runPublicPartialSave(true)
+      return
+    }
     if (publicPartialTimerRef.current) clearTimeout(publicPartialTimerRef.current)
     publicPartialTimerRef.current = setTimeout(() => {
       publicPartialTimerRef.current = null
@@ -385,25 +485,32 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
   // Flush imediato quando a aba fica oculta/fechada — cobre "lead abandonou
   // antes dos 60s". sendBeacon é a forma confiável de enviar durante unload.
+  // Envia o snapshot CUMULATIVO (latestPartialPayloadRef): o pendente do timer
+  // pode ter sido consumido por um fetch em voo — o que perdia dados no
+  // fechamento (corrida da auditoria Codex 2026-07-08). A session key no body
+  // garante que, mesmo concorrendo com o fetch, tudo converge pra mesma row.
   useEffect(() => {
     if (!publicPartialEnabled) return
     const flush = () => {
-      const pending = pendingPartialPayloadRef.current
-      if (!pending || isSubmittedRef.current) return
-      pendingPartialPayloadRef.current = null
+      const snapshot = latestPartialPayloadRef.current
+      if (!snapshot || !unsavedPartialRef.current || isSubmittedRef.current) return
       if (publicPartialTimerRef.current) { clearTimeout(publicPartialTimerRef.current); publicPartialTimerRef.current = null }
+      pendingPartialPayloadRef.current = null
+      unsavedPartialRef.current = false
       try {
         const utms = getUtms()
         const payload = {
           form_id: form.id,
-          answers: pending.answers,
-          last_question_answered: pending.lastQuestionId,
+          answers: snapshot.answers,
+          last_question_answered: snapshot.lastQuestionId,
+          partial_revision: nextPartialRevision(),
           ...utms,
           url_params: getUrlParams(form.id) ?? undefined,
-          // sendBeacon não suporta headers — incluímos o response_id no body
+          // sendBeacon não suporta headers — incluímos as credenciais no body
           // e o endpoint aceita ambos (header tem prioridade).
           response_id: publicResponseIdRef.current ?? undefined,
           partial_token: publicPartialTokenRef.current ?? undefined,
+          partial_session: publicSessionKeyRef.current ?? undefined,
         }
         const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
         navigator.sendBeacon('/api/responses/partial', blob)
@@ -416,7 +523,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', flush)
     }
-  }, [publicPartialEnabled, form.id])
+   
+  }, [publicPartialEnabled, form.id, nextPartialRevision])
 
   // Salva resposta parcial com debounce (2s) — só se autenticado e plano permitir
   function savePartialResponseDebounced(currentAnswers: Record<string, Json>, lastQuestionId: string) {
@@ -552,6 +660,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       if (!responseId && publicResponseIdRef.current && publicPartialTokenRef.current) {
         headers['x-partial-token'] = publicPartialTokenRef.current
       }
+      // Session key (fix duplicatas 2026-07-08): mesmo SEM response_id (parcial
+      // criada por sendBeacon, cuja resposta o cliente nunca leu), o submit
+      // converge pra mesma row via (form_id, hash) no servidor.
+      if (!responseId && publicSessionKeyRef.current) {
+        headers['x-partial-session'] = publicSessionKeyRef.current
+      }
 
       const utms = getUtms()
 
@@ -633,12 +747,22 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       // os nomes já foram enviados em meta_events no payload acima. Com
       // redirect_url, o delay padrão de 2800ms dá janela pro retry do fbq/ttq.
       for (const name of pendingEventNames) fireNamedPixelEvent(name)
-      // Limpa o response_id do partial público — submit final consumou a row.
+      // Limpa as credenciais do partial público — submit final consumou a row.
+      // A session key TAMBÉM: ela identifica UMA tentativa; preenchimento novo
+      // na mesma aba/navegador nasce com key nova (o índice único no servidor
+      // nunca deixaria a key consumida criar outra row).
       publicResponseIdRef.current = null
       publicPartialTokenRef.current = null
+      publicSessionKeyRef.current = null
+      publicRevisionRef.current = 0
+      handshakeStartedRef.current = false
+      unsavedPartialRef.current = false
+      latestPartialPayloadRef.current = null
       try {
         window.localStorage.removeItem(PUBLIC_PARTIAL_STORAGE_KEY)
         window.localStorage.removeItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY)
+        window.localStorage.removeItem(PUBLIC_PARTIAL_SESSION_STORAGE_KEY)
+        window.localStorage.removeItem(PUBLIC_PARTIAL_REVISION_STORAGE_KEY)
       } catch { /* ignore */ }
       // Identidade da URL consumida — nova resposta na mesma aba não herda a antiga.
       clearUrlParams(form.id)

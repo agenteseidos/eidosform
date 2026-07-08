@@ -551,6 +551,8 @@ export interface Database {
           utm_content: string | null
           url_params: Record<string, string> | null
           sheets_row_index: number | null
+          partial_session_hash: string | null
+          partial_revision: number | null
           submitted_at: string
           created_at: string
           updated_at: string
@@ -570,6 +572,8 @@ export interface Database {
           utm_content?: string | null
           url_params?: Record<string, string> | null
           sheets_row_index?: number | null
+          partial_session_hash?: string | null
+          partial_revision?: number | null
           submitted_at?: string
           created_at?: string
           updated_at?: string
@@ -587,6 +591,8 @@ export interface Database {
           utm_content?: string | null
           url_params?: Record<string, string> | null
           sheets_row_index?: number | null
+          partial_session_hash?: string | null
+          partial_revision?: number | null
           updated_at?: string
         }
         Relationships: []

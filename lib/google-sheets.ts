@@ -16,6 +16,18 @@ const IDENTITY_COLUMNS = ['nome', 'email', 'telefone'] as const
  * Used to capture the row position after `values.append`, so the same row can
  * be updated later (partial → completo) without scanning the whole sheet.
  */
+// Índice de coluna (0-based) → letra A1 (A..Z, AA..AZ, ...)
+function columnLetter(index: number): string {
+  let n = index + 1
+  let letter = ''
+  while (n > 0) {
+    const rem = (n - 1) % 26
+    letter = String.fromCharCode(65 + rem) + letter
+    n = Math.floor((n - 1) / 26)
+  }
+  return letter
+}
+
 function parseRowIndexFromRange(range: string | null | undefined): number | null {
   if (!range) return null
   const match = range.match(/!\w+(\d+)(?::|$)/)
@@ -296,6 +308,38 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
         requestBody: { values: [row] },
       })
       return { rowIndex }
+    }
+
+    // 4.5) Idempotência sem índice (fix 2026-07-08, auditoria Codex): um append
+    // anterior pode ter FUNCIONADO com a resposta da API falhando — o índice
+    // ficou null no banco e o retry duplicaria a linha. Antes de appendar,
+    // procura o response_id na coluna própria; achou → UPDATE naquela linha.
+    // Regra explícita em multiplicidade: a MENOR linha vence + log da anomalia.
+    const respIdColIdx = finalHeaders.indexOf(RESPONSE_ID_COLUMN)
+    if (respIdColIdx >= 0) {
+      const col = columnLetter(respIdColIdx)
+      const colRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `Respostas!${col}2:${col}`,
+      })
+      const colValues = (colRes.data.values ?? []) as string[][]
+      const matches: number[] = []
+      colValues.forEach((cell, i) => {
+        if (cell?.[0] === responseId) matches.push(i + 2)
+      })
+      if (matches.length > 0) {
+        if (matches.length > 1) {
+          logError('[google-sheets] response_id em múltiplas linhas — usando a menor', null, { responseId, rows: matches.join(',') })
+        }
+        const foundRow = matches[0]
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `Respostas!A${foundRow}`,
+          valueInputOption: 'RAW',
+          requestBody: { values: [row] },
+        })
+        return { rowIndex: foundRow }
+      }
     }
 
     const appendRes = await sheets.spreadsheets.values.append({

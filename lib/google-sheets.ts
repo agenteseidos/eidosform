@@ -28,10 +28,16 @@ function columnLetter(index: number): string {
   return letter
 }
 
-function parseRowIndexFromRange(range: string | null | undefined): number | null {
+export function parseRowIndexFromRange(range: string | null | undefined): number | null {
   if (!range) return null
-  const match = range.match(/!\w+(\d+)(?::|$)/)
-  return match ? parseInt(match[1], 10) : null
+  // Pega a célula inicial APÓS o nome da aba ("Respostas!A11:Q11" → 11).
+  // ⚠️ A regex antiga (/!\w+(\d+)/) tinha \w+ GULOSO: "A11" casava \w+="A1" e
+  // capturava só "1" — TODA linha ≥10 era gravada truncada em sheets_row_index,
+  // e o update seguinte escrevia na LINHA ERRADA da planilha (bug pego em
+  // produção 2026-07-08, sheets_row 1/2 para appends nas linhas 11/12).
+  const cell = range.split('!').pop() ?? ''
+  const match = cell.match(/^([A-Za-z]+)(\d+)/)
+  return match ? parseInt(match[2], 10) : null
 }
 
 function getAuth() {

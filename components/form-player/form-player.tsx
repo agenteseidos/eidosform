@@ -55,6 +55,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const [navigationHistory, setNavigationHistory] = useState<string[]>([])
   const metaEvents = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
   const partialResponsesEnabled = (ownerPlan === 'plus' || ownerPlan === 'professional')
+  // Fluxo público de parciais (session key + Sheets). Quando ativo, ele é o
+  // ÚNICO fluxo de parcial — inclusive pra respondente LOGADO. Rodar o fluxo
+  // autenticado em paralelo criava DUAS responses da mesma pessoa (a anônima
+  // do público + a com respondent_id do auth) e o submit priorizava a auth →
+  // a parcial pública ficava órfã na planilha (duplicata pega em prod 2026-07-08).
+  const publicPartialEnabled = Boolean((form as { google_sheets_enabled?: boolean }).google_sheets_enabled)
   const [isEmbedded, setIsEmbedded] = useState<boolean | null>(null)
 
   // Detect iframe embedding
@@ -76,7 +82,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         if (cancelled) return
         isAuthenticatedRef.current = !!session
 
-        if (session && partialResponsesEnabled) {
+        if (session && partialResponsesEnabled && !publicPartialEnabled) {
           loadPartialProgress()
         }
       } catch {
@@ -340,12 +346,11 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
   }, [form.welcome_enabled, navigationHistory])
 
-  // ── Partial público (anônimo) → /api/responses/partial ──────────────────────
-  // Cria/atualiza uma row no Sheets enquanto o lead avança, com debounce de 60s
-  // de inatividade. Cobre o caso "lead respondeu 2 perguntas e abandonou" —
-  // que antes só virava row no Sheets se ele clicasse Enviar/jump-submit.
-  // Só ativa se o form tem Sheets habilitado (gating via prop).
-  const publicPartialEnabled = Boolean((form as { google_sheets_enabled?: boolean }).google_sheets_enabled)
+  // ── Partial público → /api/responses/partial ────────────────────────────────
+  // Cria/atualiza uma row no Sheets enquanto o lead avança: handshake na 1ª
+  // resposta, debounce de 60s e beacon no fechamento. Vale pra TODO respondente
+  // (anônimo ou logado) quando o form tem Sheets — publicPartialEnabled é
+  // declarado no topo do componente, junto do gating do fluxo autenticado.
 
   // Hidrata response_id/token/session/revisão de localStorage (lead voltou no
   // mesmo navegador — retoma a MESMA tentativa de preenchimento).
@@ -538,6 +543,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   // Salva resposta parcial com debounce (2s) — só se autenticado e plano permitir
   function savePartialResponseDebounced(currentAnswers: Record<string, Json>, lastQuestionId: string) {
     if (!isAuthenticatedRef.current || !partialResponsesEnabled) return
+    // Com o fluxo público ativo (Sheets), ele é o único — rodar os dois em
+    // paralelo criava DUAS responses pro mesmo preenchimento (dup 2026-07-08).
+    if (publicPartialEnabled) return
     if (isSubmittedRef.current) return
 
     if (partialSaveTimerRef.current) clearTimeout(partialSaveTimerRef.current)

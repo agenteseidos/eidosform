@@ -305,23 +305,49 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
       return labelToValue[header] ?? ''
     })
 
-    // 4) UPDATE direto se temos o índice; senão APPEND e captura o índice
+    // 4) Com índice: VERIFICA a linha antes de escrever (fix 2026-07-08 v2).
+    // O índice gravado pode estar ERRADO: truncado pelo bug antigo do parse
+    // (linha 11 anotada como 1), ou defasado porque o dono APAGOU/reordenou
+    // linhas da planilha (tudo abaixo desloca). Escrever sem conferir
+    // sobrescreveria a linha de OUTRO lead. Regra: só escreve no índice se o
+    // response_id DAQUELA linha bater; senão, cai no lookup (4.5), que acha a
+    // linha certa ou appenda no fim — e o índice correto volta pro banco.
+    const respIdColIdx = finalHeaders.indexOf(RESPONSE_ID_COLUMN)
     if (rowIndex && rowIndex > 1) {
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `Respostas!A${rowIndex}`,
-        valueInputOption: 'RAW',
-        requestBody: { values: [row] },
-      })
-      return { rowIndex }
+      let verified = false
+      if (respIdColIdx >= 0) {
+        const colV = columnLetter(respIdColIdx)
+        const cellRes = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `Respostas!${colV}${rowIndex}`,
+        })
+        const cellVal = cellRes.data.values?.[0]?.[0]
+        if (cellVal === responseId) {
+          verified = true
+        } else {
+          logError('[google-sheets] índice gravado não confere com a linha — relocalizando', null, { responseId, rowIndex, encontrado: typeof cellVal === 'string' ? String(cellVal).slice(0, 8) : null })
+        }
+      } else {
+        // planilha muito antiga sem coluna response_id: sem como conferir —
+        // mantém o comportamento anterior (escreve no índice gravado).
+        verified = true
+      }
+      if (verified) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `Respostas!A${rowIndex}`,
+          valueInputOption: 'RAW',
+          requestBody: { values: [row] },
+        })
+        return { rowIndex }
+      }
     }
 
-    // 4.5) Idempotência sem índice (fix 2026-07-08, auditoria Codex): um append
-    // anterior pode ter FUNCIONADO com a resposta da API falhando — o índice
-    // ficou null no banco e o retry duplicaria a linha. Antes de appendar,
-    // procura o response_id na coluna própria; achou → UPDATE naquela linha.
+    // 4.5) Idempotência sem índice confiável (fix 2026-07-08, auditoria Codex):
+    // cobre índice ausente (append anterior FUNCIONOU mas a resposta da API
+    // falhou), índice truncado e linha deslocada por deleção manual. Procura o
+    // response_id na coluna própria; achou → UPDATE naquela linha.
     // Regra explícita em multiplicidade: a MENOR linha vence + log da anomalia.
-    const respIdColIdx = finalHeaders.indexOf(RESPONSE_ID_COLUMN)
     if (respIdColIdx >= 0) {
       const col = columnLetter(respIdColIdx)
       const colRes = await sheets.spreadsheets.values.get({

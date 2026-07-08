@@ -1561,10 +1561,13 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                     google_sheets_url: `https://docs.google.com/spreadsheets/d/${form.google_sheets_id}`,
                                   }),
                                 })
+                                const data = await res.json().catch(() => null)
                                 if (!res.ok) {
-                                  const data = await res.json().catch(() => ({}))
-                                  throw new Error(data.error || 'Falha ao testar conexão')
+                                  throw new Error(data?.error || 'Falha ao testar conexão')
                                 }
+                                // PATCH fora da fila também incrementa version no servidor:
+                                // sem sincronizar, o próximo autosave tomaria 409 FALSO.
+                                versionRef.current = (data?.form as { version?: number } | undefined)?.version ?? versionRef.current
                                 toast.success('Conexão funcionando!', { id: 'sheets-test' })
                               } catch (err: unknown) {
                                 const message = err instanceof Error ? err.message : 'Falha ao testar conexão'
@@ -1590,6 +1593,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                   }),
                                 })
                                 if (!res.ok) throw new Error('Erro ao desconectar')
+                                const data = await res.json().catch(() => null)
+                                // PATCH fora da fila incrementa version — sincroniza p/ evitar 409 falso.
+                                versionRef.current = (data?.form as { version?: number } | undefined)?.version ?? versionRef.current
                                 setForm(prev => ({ ...prev, google_sheets_enabled: false, google_sheets_id: null }))
                                 setSheetsTitle('')
                                 setHasUnsavedChanges(false)
@@ -1666,6 +1672,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                   throw new Error(data.error || 'Não foi possível conectar a planilha. Tente novamente.')
                                 }
                                 const updated = data.form
+                                // PATCH fora da fila incrementa version — sincroniza p/ evitar 409 falso.
+                                versionRef.current = (updated as { version?: number } | undefined)?.version ?? versionRef.current
                                 setForm(prev => ({
                                   ...prev,
                                   google_sheets_id: updated.google_sheets_id,

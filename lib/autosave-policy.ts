@@ -30,3 +30,14 @@ export function nextAutosaveDelay(
 export function hasPendingEdits(currentSeq: number, savedSeq: number): boolean {
   return currentSeq > savedSeq
 }
+
+/**
+ * Próximo valor do versionRef ao receber um `version` do servidor. O ref JAMAIS
+ * regride (regressão = expectedVersion defasado = 409 falso no save seguinte);
+ * respostas fora de ordem ou payloads sem version são ignorados. `undefined`
+ * inicial (form pré-migration) é substituído pelo primeiro version válido.
+ */
+export function nextVersionRef(current: number | undefined, incoming: unknown): number | undefined {
+  if (typeof incoming !== 'number' || !Number.isFinite(incoming)) return current
+  return current === undefined ? incoming : Math.max(current, incoming)
+}

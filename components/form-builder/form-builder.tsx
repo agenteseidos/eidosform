@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
 import { normalizeConditional } from '@/lib/form-logic-engine'
-import { shouldApplyEcho, nextAutosaveDelay, hasPendingEdits } from '@/lib/autosave-policy'
+import { shouldApplyEcho, nextAutosaveDelay, hasPendingEdits, nextVersionRef } from '@/lib/autosave-policy'
 import { questionTypes, createDefaultQuestion, getQuestionTypeInfo, questionTypeAllowed, QUESTION_TYPE_MIN_PLAN } from '@/lib/questions'
 import { PLANS } from '@/lib/plan-definitions'
 import { themes, themeList } from '@/lib/themes'
@@ -301,11 +301,23 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const hasConflictRef = useRef(false)               // espelho síncrono de hasConflict
   const buildPayloadRef = useRef<(() => ReturnType<typeof buildFormPayload>) | null>(null)
   const saveWaitersRef = useRef<Array<(ok: boolean) => void>>([])
+  // Fix (2026-07-08, achado de auditoria) — PATCHes fora-do-payload (Google Sheets)
+  // rodavam em PARALELO com o autosave (blur → save + clique → PATCH cego) e geravam
+  // 409 falso ou dupla-gravação da mesma versão. Agora são JOBS enfileirados aqui e
+  // executados DENTRO do worker single-flight: uma requisição de escrita por vez.
+  const oobJobsRef = useRef<Array<() => Promise<void>>>([])
   // Fonte da verdade do controle de concorrência. O `version` é METADADO, não conteúdo
   // editável: vive FORA do estado `form` para que nenhuma edição de UI (setForm com
   // closure defasada) consiga revertê-lo e gerar um FALSO "conflito de versão". Só o
   // próprio salvamento o atualiza, de forma síncrona, com o version que o servidor devolve.
   const versionRef = useRef<number | undefined>(initialForm.version)
+
+  // Único caminho de escrita do versionRef a partir de resposta do servidor.
+  // nextVersionRef garante monotonicidade (nunca regride, mesmo com respostas
+  // fora de ordem) — regressão viraria expectedVersion defasado = 409 falso.
+  const syncVersionRef = useCallback((incoming: unknown) => {
+    versionRef.current = nextVersionRef(versionRef.current, incoming)
+  }, [])
 
   // Fix (2026-07-08) — revisão local do editor. Incrementa SINCRONAMENTE a cada
   // mutação (markDirty); é a base de duas garantias que o booleano hasUnsavedChanges
@@ -568,7 +580,20 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     savingRef.current = true
     setIsSaving(true)
     try {
-      while (dirtyRef.current && !hasConflictRef.current) {
+      while ((dirtyRef.current || oobJobsRef.current.length > 0) && !hasConflictRef.current) {
+        // Jobs fora-do-payload (Sheets) rodam AQUI pra nunca correrem em paralelo
+        // com um save de payload — mesma fila, uma escrita por vez. O job lê
+        // versionRef na execução (fresco) e sincroniza a resposta.
+        const oobJob = oobJobsRef.current.shift()
+        if (oobJob) {
+          await oobJob()
+          // deixa o re-render aplicar o setForm do job (ex.: google_sheets_id do
+          // connect) antes de um eventual save de payload na próxima volta
+          if ((dirtyRef.current || oobJobsRef.current.length > 0) && !hasConflictRef.current) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+          }
+          continue
+        }
         dirtyRef.current = false
         setSaveStatus('saving')
         try {
@@ -582,7 +607,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
           if (updatedForm) {
             // Sincroniza a versão IMEDIATAMENTE (sem esperar o re-render), pra a próxima
             // rodada do worker já mandar o expectedVersion fresco e não tomar 409 falso.
-            versionRef.current = (updatedForm as { version?: number }).version ?? versionRef.current
+            syncVersionRef((updatedForm as { version?: number }).version)
             savedSeqRef.current = seqAtBuild
             if (shouldApplyEcho(seqAtBuild, editSeqRef.current)) {
               // Nada mudou durante o voo: seguro aplicar o eco (traz normalizações do
@@ -620,14 +645,14 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       savingRef.current = false
       setIsSaving(false)
     }
-    // mudança que chegou na brecha do finally → continua drenando
-    if (dirtyRef.current && !hasConflictRef.current) { return drainSaves() }
+    // mudança/job que chegou na brecha do finally → continua drenando
+    if ((dirtyRef.current || oobJobsRef.current.length > 0) && !hasConflictRef.current) { return drainSaves() }
     // drenou: resolve quem estava esperando esta leva de saves
     const ok = saveOkRef.current && !hasConflictRef.current
     const waiters = saveWaitersRef.current
     saveWaitersRef.current = []
     waiters.forEach(w => w(ok))
-  }, [updateFormViaApi, notifyVersionConflict])
+  }, [updateFormViaApi, notifyVersionConflict, syncVersionRef])
 
   // Pede um save. `manual` só controla o toast de sucesso. Resolve quando a fila drena.
   const requestSave = useCallback((manual = false): Promise<boolean> => {
@@ -645,6 +670,18 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
 
   // Mantém a referência fresca p/ o timer do markDirty (definido antes desta função).
   requestSaveRef.current = requestSave
+
+  // Enfileira um PATCH fora-do-payload (Sheets) na MESMA fila single-flight dos
+  // saves — nunca em paralelo com um autosave. Se um conflito 409 pausar a fila
+  // antes de o job rodar, ele fica retido (a UI já exige recarregar a página).
+  const runExclusive = useCallback((job: () => Promise<void>): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      oobJobsRef.current.push(async () => {
+        try { await job() } finally { resolve() }
+      })
+      void drainSaves()
+    })
+  }, [drainSaves])
 
   // Cancela um autosave AGENDADO (timer) — usado antes de salvar manual/publicar.
   const cancelPendingAutosave = useCallback(() => {
@@ -704,6 +741,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     cancelPendingAutosave()
     await waitForSaveIdle()
     if (hasConflictRef.current) { notifyVersionConflict(); return }
+    // Segura o lock da fila durante o PATCH: um autosave (timer/blur) que dispare
+    // no meio do voo só ENFILEIRA (drainSaves early-return) — drena no finally.
+    // Sem isso, editar durante o publish geraria PATCH concorrente → 409 falso.
+    savingRef.current = true
     setIsSaving(true)
     try {
       const builder = buildPayloadRef.current
@@ -711,7 +752,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       const payload = { ...(builder ? builder() : buildFormPayload()), status: 'published' as FormStatus }
       const updated = await updateFormViaApi(payload)
       if (updated) {
-        versionRef.current = (updated as { version?: number }).version ?? versionRef.current
+        syncVersionRef((updated as { version?: number }).version)
         savedSeqRef.current = seqAtBuild
         if (shouldApplyEcho(seqAtBuild, editSeqRef.current)) {
           setForm(updated)
@@ -731,7 +772,12 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       if ((error as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return }
       toast.error(error instanceof Error ? error.message : 'Falha ao atualizar status')
     } finally {
+      savingRef.current = false
       setIsSaving(false)
+      // Drena edições/jobs que se acumularam enquanto o lock estava com o publish.
+      // Roda MESMO sob conflito: nesse caso drainSaves não faz PATCH nenhum — só
+      // resolve com false quem ficou aguardando (requestSave) e retém os jobs.
+      if (dirtyRef.current || oobJobsRef.current.length > 0) void drainSaves()
     }
   }
 
@@ -739,6 +785,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     cancelPendingAutosave()
     await waitForSaveIdle()
     if (hasConflictRef.current) { notifyVersionConflict(); return }
+    // Mesmo lock do publish: autosave que dispare no voo só enfileira.
+    savingRef.current = true
     setIsSaving(true)
     try {
       const builder = buildPayloadRef.current
@@ -746,7 +794,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       const payload = { ...(builder ? builder() : buildFormPayload()), status: 'draft' as FormStatus }
       const updated = await updateFormViaApi(payload)
       if (updated) {
-        versionRef.current = (updated as { version?: number }).version ?? versionRef.current
+        syncVersionRef((updated as { version?: number }).version)
         savedSeqRef.current = seqAtBuild
         if (shouldApplyEcho(seqAtBuild, editSeqRef.current)) {
           setForm(updated)
@@ -761,7 +809,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       if ((error as { conflict?: boolean })?.conflict) { notifyVersionConflict(); return }
       toast.error(error instanceof Error ? error.message : 'Falha ao despublicar')
     } finally {
+      savingRef.current = false
       setIsSaving(false)
+      // mesma regra do publish: drena mesmo sob conflito (resolve waiters, sem PATCH)
+      if (dirtyRef.current || oobJobsRef.current.length > 0) void drainSaves()
     }
   }
 
@@ -1551,7 +1602,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={async () => {
+                            onClick={() => void runExclusive(async () => {
                               try {
                                 toast.loading('Testando conexão...', { id: 'sheets-test' })
                                 const res = await fetch(`/api/forms/${form.id}`, {
@@ -1559,21 +1610,26 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
                                     google_sheets_url: `https://docs.google.com/spreadsheets/d/${form.google_sheets_id}`,
+                                    // lido AQUI (execução do job, já serializado) — fresco por construção
+                                    expectedVersion: versionRef.current,
                                   }),
                                 })
                                 const data = await res.json().catch(() => null)
                                 if (!res.ok) {
+                                  if (res.status === 409 && data?.code === 'version_conflict') {
+                                    toast.dismiss('sheets-test')
+                                    notifyVersionConflict()
+                                    return
+                                  }
                                   throw new Error(data?.error || 'Falha ao testar conexão')
                                 }
-                                // PATCH fora da fila também incrementa version no servidor:
-                                // sem sincronizar, o próximo autosave tomaria 409 FALSO.
-                                versionRef.current = (data?.form as { version?: number } | undefined)?.version ?? versionRef.current
+                                syncVersionRef((data?.form as { version?: number } | undefined)?.version)
                                 toast.success('Conexão funcionando!', { id: 'sheets-test' })
                               } catch (err: unknown) {
                                 const message = err instanceof Error ? err.message : 'Falha ao testar conexão'
                                 toast.error(message, { id: 'sheets-test' })
                               }
-                            }}
+                            })}
                             className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-800 font-medium py-1.5 px-3 rounded-md border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
@@ -1581,7 +1637,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           </button>
                           <button
                             type="button"
-                            onClick={async () => {
+                            onClick={() => void runExclusive(async () => {
                               try {
                                 toast.loading('Desconectando...', { id: 'sheets-disconnect' })
                                 const res = await fetch(`/api/forms/${form.id}`, {
@@ -1590,20 +1646,29 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                                   body: JSON.stringify({
                                     google_sheets_enabled: false,
                                     google_sheets_id: null,
+                                    expectedVersion: versionRef.current,
                                   }),
                                 })
-                                if (!res.ok) throw new Error('Erro ao desconectar')
                                 const data = await res.json().catch(() => null)
-                                // PATCH fora da fila incrementa version — sincroniza p/ evitar 409 falso.
-                                versionRef.current = (data?.form as { version?: number } | undefined)?.version ?? versionRef.current
+                                if (!res.ok) {
+                                  if (res.status === 409 && data?.code === 'version_conflict') {
+                                    toast.dismiss('sheets-disconnect')
+                                    notifyVersionConflict()
+                                    return
+                                  }
+                                  throw new Error(data?.error || 'Erro ao desconectar')
+                                }
+                                syncVersionRef((data?.form as { version?: number } | undefined)?.version)
                                 setForm(prev => ({ ...prev, google_sheets_enabled: false, google_sheets_id: null }))
                                 setSheetsTitle('')
-                                setHasUnsavedChanges(false)
+                                // só zera a flag se não houver OUTRAS edições pendentes
+                                if (!hasPendingEdits(editSeqRef.current, savedSeqRef.current)) setHasUnsavedChanges(false)
                                 toast.success('Planilha desconectada', { id: 'sheets-disconnect' })
-                              } catch {
-                                toast.error('Erro ao desconectar planilha', { id: 'sheets-disconnect' })
+                              } catch (err: unknown) {
+                                const message = err instanceof Error ? err.message : 'Erro ao desconectar planilha'
+                                toast.error(message, { id: 'sheets-disconnect' })
                               }
-                            }}
+                            })}
                             className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 font-medium py-1.5 px-3 rounded-md border border-red-200 bg-white hover:bg-red-50 transition-colors ml-auto"
                           >
                             <Unlink className="w-3.5 h-3.5" />
@@ -1652,41 +1717,49 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                           />
                           <button
                             type="button"
-                            onClick={async () => {
+                            onClick={() => {
                               const url = sheetsUrl.trim()
                               if (!url) {
                                 toast.error('Link de planilha inválido. Cole a URL completa do Google Sheets.')
                                 return
                               }
-                              try {
-                                toast.loading('Conectando planilha...', { id: 'sheets-connect' })
-                                const res = await fetch(`/api/forms/${form.id}`, {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    google_sheets_url: url,
-                                  }),
-                                })
-                                const data = await res.json()
-                                if (!res.ok) {
-                                  throw new Error(data.error || 'Não foi possível conectar a planilha. Tente novamente.')
+                              void runExclusive(async () => {
+                                try {
+                                  toast.loading('Conectando planilha...', { id: 'sheets-connect' })
+                                  const res = await fetch(`/api/forms/${form.id}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      google_sheets_url: url,
+                                      expectedVersion: versionRef.current,
+                                    }),
+                                  })
+                                  const data = await res.json().catch(() => null)
+                                  if (!res.ok) {
+                                    if (res.status === 409 && data?.code === 'version_conflict') {
+                                      toast.dismiss('sheets-connect')
+                                      notifyVersionConflict()
+                                      return
+                                    }
+                                    throw new Error(data?.error || 'Não foi possível conectar a planilha. Tente novamente.')
+                                  }
+                                  const updated = data.form
+                                  syncVersionRef((updated as { version?: number } | undefined)?.version)
+                                  setForm(prev => ({
+                                    ...prev,
+                                    google_sheets_id: updated.google_sheets_id,
+                                    google_sheets_enabled: true,
+                                  }))
+                                  setSheetsUrl('')
+                                  if (data.google_sheets_title) setSheetsTitle(data.google_sheets_title)
+                                  // só zera a flag se não houver OUTRAS edições pendentes
+                                  if (!hasPendingEdits(editSeqRef.current, savedSeqRef.current)) setHasUnsavedChanges(false)
+                                  toast.success('Planilha conectada com sucesso!', { id: 'sheets-connect' })
+                                } catch (err: unknown) {
+                                  const message = err instanceof Error ? err.message : 'Não foi possível conectar a planilha. Tente novamente.'
+                                  toast.error(message, { id: 'sheets-connect' })
                                 }
-                                const updated = data.form
-                                // PATCH fora da fila incrementa version — sincroniza p/ evitar 409 falso.
-                                versionRef.current = (updated as { version?: number } | undefined)?.version ?? versionRef.current
-                                setForm(prev => ({
-                                  ...prev,
-                                  google_sheets_id: updated.google_sheets_id,
-                                  google_sheets_enabled: true,
-                                }))
-                                setSheetsUrl('')
-                                if (data.google_sheets_title) setSheetsTitle(data.google_sheets_title)
-                                setHasUnsavedChanges(false)
-                                toast.success('Planilha conectada com sucesso!', { id: 'sheets-connect' })
-                              } catch (err: unknown) {
-                                const message = err instanceof Error ? err.message : 'Não foi possível conectar a planilha. Tente novamente.'
-                                toast.error(message, { id: 'sheets-connect' })
-                              }
+                              })
                             }}
                             className="w-full py-2 px-3 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
                           >

@@ -9,7 +9,7 @@
  * inatividade com teto de espera, (c) se há pendência.
  */
 import { describe, it, expect } from 'vitest'
-import { shouldApplyEcho, nextAutosaveDelay, hasPendingEdits } from './autosave-policy'
+import { shouldApplyEcho, nextAutosaveDelay, hasPendingEdits, nextVersionRef } from './autosave-policy'
 
 describe('shouldApplyEcho', () => {
   it('aplica o eco quando nenhuma edição aconteceu durante o voo', () => {
@@ -89,5 +89,32 @@ describe('hasPendingEdits', () => {
     // savedSeq avança pro seqAtBuild (5), mas editSeq já está em 6 → segue pendente
     // (o eco foi descartado e o próximo timer salva a revisão 6).
     expect(hasPendingEdits(6, 5)).toBe(true)
+  })
+})
+
+describe('nextVersionRef', () => {
+  it('avança normalmente com respostas em ordem', () => {
+    expect(nextVersionRef(10, 11)).toBe(11)
+  })
+
+  it('NUNCA regride: resposta velha (V11) chegando depois da nova (V12) é ignorada', () => {
+    // Achado da auditoria 2026-07-08: PATCHes fora de ordem devolviam o ref
+    // pra trás → expectedVersion defasado → 409 falso no save seguinte.
+    expect(nextVersionRef(12, 11)).toBe(12)
+  })
+
+  it('version igual é idempotente', () => {
+    expect(nextVersionRef(12, 12)).toBe(12)
+  })
+
+  it('undefined inicial (form pré-migration) adota o primeiro version válido', () => {
+    expect(nextVersionRef(undefined, 7)).toBe(7)
+  })
+
+  it('resposta sem version (undefined/null/NaN) preserva o valor atual', () => {
+    expect(nextVersionRef(10, undefined)).toBe(10)
+    expect(nextVersionRef(10, null)).toBe(10)
+    expect(nextVersionRef(10, NaN)).toBe(10)
+    expect(nextVersionRef(undefined, undefined)).toBe(undefined)
   })
 })

@@ -409,7 +409,11 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   }, [])
 
   const runPublicPartialSave = useCallback(async (deferSheets = false) => {
+    // Pendente do timer OU, se ainda há estado não exportado (ex.: só o
+    // handshake deferido rodou), o snapshot cumulativo — é o que permite ao
+    // save de 60s materializar a linha do Sheets sem nova interação.
     const pending = pendingPartialPayloadRef.current
+      ?? (unsavedPartialRef.current ? latestPartialPayloadRef.current : null)
     if (!pending || !publicPartialEnabled || isSubmittedRef.current) return
     pendingPartialPayloadRef.current = null
     try {
@@ -450,8 +454,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           publicPartialTokenRef.current = data.partial_token
           try { window.localStorage.setItem(PUBLIC_PARTIAL_TOKEN_STORAGE_KEY, data.partial_token) } catch { /* ignore */ }
         }
-        // Persistiu: só marca "tudo salvo" se nenhuma mudança nova chegou no voo.
-        if (!pendingPartialPayloadRef.current) unsavedPartialRef.current = false
+        // Persistiu: marca "tudo salvo" só se (a) nada novo chegou no voo E
+        // (b) o save NÃO foi deferido do Sheets — o handshake grava só no
+        // banco; a linha da planilha ainda depende do próximo save (60s ou
+        // beacon do fechamento). Sem o (b), o beacon não disparava e o parcial
+        // ficava invisível na planilha (bug pego no teste de prod 2026-07-08).
+        if (!pendingPartialPayloadRef.current && !deferSheets) unsavedPartialRef.current = false
       }
     } catch { /* fire-and-forget, log no servidor */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -472,9 +480,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     // via sendBeacon, que não tem resposta → o id se perdia → duplicata.
     if (!publicResponseIdRef.current && !handshakeStartedRef.current) {
       handshakeStartedRef.current = true
-      if (publicPartialTimerRef.current) { clearTimeout(publicPartialTimerRef.current); publicPartialTimerRef.current = null }
       void runPublicPartialSave(true)
-      return
+      // NÃO retorna: o timer de 60s abaixo continua armado — é ele que exporta
+      // pro Sheets o que o handshake deferiu, caso a pessoa pare de interagir
+      // sem fechar a aba (timing de visibilidade igual ao de antes do fix).
     }
     if (publicPartialTimerRef.current) clearTimeout(publicPartialTimerRef.current)
     publicPartialTimerRef.current = setTimeout(() => {

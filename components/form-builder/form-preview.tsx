@@ -192,7 +192,7 @@ export function FormPreview({
                 />
               ) : (
                 question.description && (
-                  <p className="text-sm opacity-70 mb-4" style={{ color: theme.textColor }}>
+                  <p className="text-sm opacity-70 mb-4 whitespace-pre-line" style={{ color: theme.textColor }}>
                     {question.description}
                   </p>
                 )

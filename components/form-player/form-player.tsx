@@ -998,7 +998,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.48 }}
-            className="text-base md:text-lg opacity-70"
+            className="text-base md:text-lg opacity-70 whitespace-pre-line"
             style={{ color: theme.textColor }}
           >
             {form.thank_you_description || 'Sua resposta foi registrada com sucesso.'}
@@ -1157,7 +1157,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.28 }}
-              className="text-base md:text-lg opacity-70 mb-8"
+              className="text-base md:text-lg opacity-70 mb-8 whitespace-pre-line"
               style={{ color: theme.textColor }}
             >
               {form.welcome_description}
@@ -1317,7 +1317,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                       initial={{ opacity: 0, y: 14 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.17 }}
-                      className="text-base md:text-lg opacity-70 mb-6 sm:mb-8"
+                      className="text-base md:text-lg opacity-70 mb-6 sm:mb-8 whitespace-pre-line"
                       style={{ color: theme.textColor }}
                     >
                       {currentQuestion.description}

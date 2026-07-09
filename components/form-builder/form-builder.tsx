@@ -414,9 +414,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   // B06: Autosave com debounce de 1500ms
   const handleWelcomeImageUpload = useCallback(async (file: File) => {
     if (!file) return
-    const allowedTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/gif']
+    const allowedTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/gif', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
-      toast.error('Formato não suportado. Use SVG, PNG, JPG ou GIF.')
+      toast.error('Formato não suportado. Use SVG, PNG, JPG, GIF ou WEBP.')
       return
     }
     if (file.size > 2 * 1024 * 1024) {

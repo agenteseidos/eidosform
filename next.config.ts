@@ -56,6 +56,17 @@ const embeddableFormHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // next/image bloqueia host remoto por padrão — sem isto, imagens servidas do
+  // Supabase Storage (welcome image, anexos) quebram no <Image> (400 no /_next/image).
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+        pathname: '/storage/v1/object/public/**',
+      },
+    ],
+  },
   async headers() {
     return [
       {

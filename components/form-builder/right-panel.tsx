@@ -134,13 +134,13 @@ export function RightPanel({
                         <div className="flex flex-col items-center gap-1">
                           <Upload className="w-5 h-5 text-slate-400" />
                           <span className="text-xs text-slate-500">Clique ou arraste</span>
-                          <span className="text-[10px] text-slate-500">SVG, PNG, JPG, GIF, WEBP (até 2MB)</span>
+                          <span className="text-[10px] text-slate-500">PNG, JPG, GIF, WEBP (até 2MB)</span>
                         </div>
                       )}
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".svg,.png,.jpg,.jpeg,.gif,.webp"
+                        accept=".png,.jpg,.jpeg,.gif,.webp"
                         className="hidden"
                         onChange={(e) => { const file = e.target.files?.[0]; if (file && onWelcomeImageUpload) onWelcomeImageUpload(file); e.target.value = '' }}
                       />

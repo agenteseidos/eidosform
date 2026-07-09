@@ -3,7 +3,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
 import { normalizeConditional } from '@/lib/form-logic-engine'
 import { shouldApplyEcho, nextAutosaveDelay, hasPendingEdits, nextVersionRef } from '@/lib/autosave-policy'
@@ -251,8 +250,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   const canUsePixels = userPlan === 'plus' || userPlan === 'professional'
   const canUseSheets = userPlan !== 'free' // Starter+
   const router = useRouter()
-  const supabase = createClient()
-  
+
   const [form, setForm] = useState(initialForm)
   const [pixels, setPixels] = useState(initialForm.pixels || {})
   const [questions, setQuestions] = useState<QuestionConfig[]>(
@@ -414,9 +412,11 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   // B06: Autosave com debounce de 1500ms
   const handleWelcomeImageUpload = useCallback(async (file: File) => {
     if (!file) return
-    const allowedTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/gif', 'image/webp']
+    // SVG removido: o PATCH /api/forms/[id] bloqueia .svg em welcome_image_url
+    // (P2-B, XSS) — aceitar aqui criava upload que depois não salvava.
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
-      toast.error('Formato não suportado. Use SVG, PNG, JPG, GIF ou WEBP.')
+      toast.error('Formato não suportado. Use PNG, JPG, GIF ou WEBP.')
       return
     }
     if (file.size > 2 * 1024 * 1024) {
@@ -425,24 +425,27 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
     }
     setIsUploadingImage(true)
     try {
-      const ext = file.name.split('.').pop() || 'png'
-      const filename = `${Date.now()}.${ext}`
-      const path = `welcome/${form.id}/${filename}`
-      const { error } = await supabase.storage.from('form-images').upload(path, file, { upsert: true })
-      if (error) throw error
-      const { data: { publicUrl } } = supabase.storage.from('form-images').getPublicUrl(path)
-      setForm(prev => ({ ...prev, welcome_image_url: publicUrl }))
+      // Upload server-side (service role + validação de conteúdo + ownership).
+      // O upload browser→Storage direto dependia de RLS e quebrava.
+      const body = new FormData()
+      body.append('file', file)
+      const res = await fetch(`/api/forms/${form.id}/welcome-image`, { method: 'POST', body })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.url) {
+        toast.error(data?.error || 'Erro ao enviar imagem.')
+        return
+      }
+      setForm(prev => ({ ...prev, welcome_image_url: data.url }))
       markDirty()
       toast.success('Imagem enviada com sucesso!')
     } catch (err) {
       console.error(err)
-      // Mostra a causa real (ex.: violação de RLS) — o genérico esconde o diagnóstico
       const detail = err instanceof Error && err.message ? ` (${err.message})` : ''
       toast.error(`Erro ao enviar imagem.${detail}`)
     } finally {
       setIsUploadingImage(false)
     }
-  }, [form.id, supabase, setForm, markDirty])
+  }, [form.id, setForm, markDirty])
 
   const handleRemoveWelcomeImage = useCallback(async () => {
     setForm(prev => ({ ...prev, welcome_image_url: null }))

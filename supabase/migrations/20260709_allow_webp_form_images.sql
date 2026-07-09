@@ -1,20 +1,15 @@
--- Permite upload de WEBP no bucket form-images (imagem da tela de boas-vindas).
--- Contexto: o bucket form-images foi criado manualmente (2026-03) com uma policy
--- de INSERT que restringe as extensões antigas (svg/png/jpg/jpeg/gif) — ela não
--- está nas migrations. Em vez de editar essa policy às cegas, adiciona-se uma
--- policy PERMISSIVA extra (policies permissivas fazem OR entre si): autenticado
--- pode inserir .webp em form-images. Zero impacto no comportamento existente.
--- Diagnóstico 2026-07-09: bucket sem allowed_mime_types (null) e upload webp com
--- service_role passa — o bloqueio é só a policy RLS do papel authenticated.
+-- HIGIENE do bucket form-images (2026-07-09) — NÃO é a solução do upload.
+--
+-- Contexto: o upload da imagem de boas-vindas (browser → storage direto, RLS)
+-- estava quebrado pra TODOS os formatos: não existia NENHUMA policy de INSERT
+-- em storage.objects. Durante o diagnóstico foram criadas manualmente 2 policies
+-- (webp-only e depois uma completa). A solução DEFINITIVA virou rota server-side
+-- (POST /api/forms/[id]/welcome-image, service role + magic bytes + ownership),
+-- então essas policies ficaram desnecessárias — e deixavam qualquer usuário
+-- autenticado escrever no bucket. Este script só remove as sobras.
 --
 -- ⚠️ Migration MANUAL: rodar no SQL Editor do Supabase Dashboard (produção).
 
-CREATE POLICY "Authenticated pode subir webp em form-images"
-ON storage.objects FOR INSERT TO authenticated
-WITH CHECK (
-  bucket_id = 'form-images'
-  AND (
-    storage."extension"(name) = 'webp'
-    OR (metadata ->> 'mimetype') = 'image/webp'
-  )
-);
+DROP POLICY IF EXISTS "Authenticated pode subir webp em form-images" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated pode subir imagens em form-images" ON storage.objects;
+-- (storage.prefixes não existe neste projeto — nenhuma policy foi criada lá)

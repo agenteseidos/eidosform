@@ -969,7 +969,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           initial={{ opacity: 0, scale: 0.92, y: 24 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="text-center max-w-lg w-full px-4"
+          className="text-center max-w-lg md:max-w-2xl w-full px-4"
         >
           <motion.div
             initial={{ scale: 0, rotate: -90 }}
@@ -1071,7 +1071,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           initial={{ opacity: 0, scale: 0.92, y: 24 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="text-center max-w-lg w-full px-4"
+          className="text-center max-w-lg md:max-w-2xl w-full px-4"
         >
           <motion.div
             initial={{ scale: 0, rotate: -90 }}
@@ -1137,7 +1137,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           initial={{ opacity: 0, scale: 0.92, y: 24 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="text-center max-w-lg w-full px-4"
+          className="text-center max-w-lg md:max-w-2xl w-full px-4"
         >
           <motion.h1
             initial={{ opacity: 0, y: 20 }}

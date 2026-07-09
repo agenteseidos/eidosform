@@ -436,7 +436,9 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
       toast.success('Imagem enviada com sucesso!')
     } catch (err) {
       console.error(err)
-      toast.error('Erro ao enviar imagem.')
+      // Mostra a causa real (ex.: violação de RLS) — o genérico esconde o diagnóstico
+      const detail = err instanceof Error && err.message ? ` (${err.message})` : ''
+      toast.error(`Erro ao enviar imagem.${detail}`)
     } finally {
       setIsUploadingImage(false)
     }

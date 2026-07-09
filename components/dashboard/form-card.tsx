@@ -90,7 +90,7 @@ export function FormCard({
           <Link 
             href={`/forms/${form.id}/edit`}
             title={form.title || 'Formulário sem título'}
-            className="text-lg font-semibold text-slate-900 hover:text-blue-600 truncate block transition-colors"
+            className="text-lg font-semibold text-slate-900 hover:text-blue-600 line-clamp-4 break-words transition-colors"
           >
             {form.title || 'Formulário sem título'}
           </Link>

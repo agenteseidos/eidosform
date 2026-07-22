@@ -1,0 +1,9 @@
+[Unit]
+Description=Healthcheck do WhatsApp do EidosForm (notificacao de lead - wacli/3457)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/sidney/eidosform/services/whatsapp/healthcheck.sh
+# Roda como root: precisa reiniciar o PM2 do sidney (sudo -u) e ler o .env de producao.

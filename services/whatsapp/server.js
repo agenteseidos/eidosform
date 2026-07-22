@@ -517,7 +517,12 @@ async function tryWacliSend(phone, message) {
 
 async function doWacliSend(phone, message) {
   try {
-    const cleanMessage = message.replace(/\n/g, ' ').trim();
+    // Quebras de linha PRESERVADAS: a notificação de lead manda pergunta e
+    // resposta em linhas separadas ({respostas}), e o achatamento antigo
+    // (\n -> espaço) colava tudo num parágrafo ilegível. A mensagem vai como
+    // argumento de execFile (sem shell), então \n não tem risco de injeção.
+    // Normaliza CRLF só para o WhatsApp não renderizar o \r.
+    const cleanMessage = message.replace(/\r\n?/g, '\n').trim();
     // Converte 9 digitos para 8 se necessário (Brasil)
     const cleaned = phone.replace(/\D/g, '');
     if (cleaned.length === 13 && cleaned.startsWith('55')) {

@@ -41,6 +41,21 @@ export async function sendWhatsAppOnFormResponse(params: {
       mappedAnswers[label] = String(value ?? '')
     }
 
+    // Bloco {respostas}: todas as perguntas respondidas, uma por bloco.
+    // Montado a partir de form.questions (ordem do FORMULÁRIO) e não de
+    // mappedAnswers, que segue a ordem do objeto answers — essa não é a ordem
+    // em que o lead viu as perguntas.
+    const formatAnswer = (value: unknown): string =>
+      Array.isArray(value)
+        ? value.map((v) => String(v ?? '').trim()).filter(Boolean).join(', ')
+        : String(value ?? '').trim()
+
+    const respostasValue = (params.form.questions ?? [])
+      .map((q) => ({ title: (q.title ?? '').trim(), answer: formatAnswer(responseData[q.id]) }))
+      .filter((pair) => pair.title && pair.answer) // pergunta sem resposta é omitida
+      .map((pair) => `${pair.title}\n${pair.answer}`)
+      .join('\n\n')
+
     // Find name, email, phone by scanning question titles.
     // Tenta match exato primeiro (evita "nome da empresa" casar com "nome");
     // só cai pro includes se nenhum título bater exatamente.
@@ -104,6 +119,9 @@ export async function sendWhatsAppOnFormResponse(params: {
       data: dataValue,
       dia_semana: diaSemanaValue,
       ...mappedAnswers,
+      // Depois de mappedAnswers de propósito: {respostas} é placeholder
+      // documentado, então ganha de uma pergunta intitulada "Respostas".
+      respostas: respostasValue,
     }
 
     // Delegate everything to the send endpoint (settings fetch + template build + delivery)

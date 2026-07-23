@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { formatAnswerValue } from '@/lib/answer-format'
 import { sanitizeCellValue } from '@/lib/sanitize-formula'
 
 interface QuestionRow {
@@ -22,11 +23,9 @@ interface ResponseRow {
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const
 
 function cellValue(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) return sanitizeCellValue(value.join('; '))
-  if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
-  if (typeof value === 'object') return sanitizeCellValue(JSON.stringify(value))
-  return sanitizeCellValue(String(value))
+  // Formatter de domínio: arquivo/endereço/calendly legíveis em vez de JSON cru
+  // (auditoria Codex 2026-07-23). Sanitização anti-injeção preservada por fora.
+  return sanitizeCellValue(formatAnswerValue(value, { sink: 'export' }))
 }
 
 const PT_TO_MM = 0.3528 // 1pt em mm

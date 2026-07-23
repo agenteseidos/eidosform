@@ -450,10 +450,13 @@ const PhoneQuestion = React.memo(function PhoneQuestion({ question, value, onCha
 })
 
 // ── Calendly Question ──
+type CalendlyAnswer = string | { event_uri: string; invitee_uri?: string }
+
 interface CalendlyQuestionProps {
   question: QuestionConfig
-  value: string
-  onChange: (value: string) => void
+  /** string legada (uri) OU objeto novo {event_uri, invitee_uri} */
+  value: CalendlyAnswer | null
+  onChange: (value: CalendlyAnswer) => void
   theme: ThemeConfig
   onSubmit: (skipValidation?: boolean, valueOverride?: Json) => void
 }
@@ -466,13 +469,20 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
   React.useEffect(() => {
     if (!calendlyUrl || scriptLoadedRef.current) return
 
-    // Listen for Calendly events to capture scheduled event
+    // Listen for Calendly events to capture scheduled event.
+    // SEGURANÇA (auditoria Codex 2026-07-23): valida a ORIGEM do postMessage —
+    // sem isso, qualquer janela podia forjar 'calendly.event_scheduled'.
     const handleMessage = (e: MessageEvent) => {
+      if (!/^https:\/\/([a-z0-9-]+\.)?calendly\.com$/.test(e.origin)) return
       if (e.data?.event === 'calendly.event_scheduled') {
         const eventUri = e.data?.payload?.event?.uri || 'scheduled'
-        onChange(eventUri)
+        const inviteeUri = e.data?.payload?.invitee?.uri || ''
+        // Objeto novo: event_uri + invitee_uri (permite enriquecer data/hora via
+        // API depois). O formatter e o export tratam string legada E objeto.
+        const answer = { event_uri: eventUri, ...(inviteeUri ? { invitee_uri: inviteeUri } : {}) }
+        onChange(answer)
         // Auto-advance after scheduling
-        setTimeout(() => onSubmit(true, eventUri), 800)
+        setTimeout(() => onSubmit(true, answer as unknown as Json), 800)
       }
     }
     window.addEventListener('message', handleMessage)
@@ -1275,7 +1285,7 @@ export const QuestionRenderer = React.memo(function QuestionRenderer({
       return (
         <CalendlyQuestion
           question={question}
-          value={value as string}
+          value={value as string | { event_uri: string; invitee_uri?: string } | null}
           onChange={(v) => onChange(v as Json)}
           theme={theme}
           onSubmit={onSubmit}

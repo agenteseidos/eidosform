@@ -1,4 +1,5 @@
 import { google } from 'googleapis'
+import { formatAnswerValue as formatDomainAnswer } from '@/lib/answer-format'
 import { logError } from '@/lib/logger'
 
 const META_EVENTS_COLUMN = 'meta_events'
@@ -413,10 +414,7 @@ export async function appendSubmission(
 }
 
 function formatAnswerValue(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (Array.isArray(value)) return value.join(', ')
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value)
+  // Delegado ao formatter de domínio: arquivo/endereço/calendly legíveis em vez
+  // de JSON cru (auditoria Codex 2026-07-23). Nome local preservado pros call sites.
+  return formatDomainAnswer(value, { sink: 'export' })
 }

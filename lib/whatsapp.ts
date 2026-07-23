@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { DEFAULT_WHATSAPP_MESSAGE_TEMPLATE } from '@/lib/whatsapp-template'
 import { Database } from '@/lib/database.types'
 import {
   FormWhatsAppSettings,
@@ -63,7 +64,7 @@ export async function createWhatsAppSettings(
         enabled: data.enabled ?? false,
         owner_phone: data.owner_phone,
         message_template:
-          data.message_template ?? 'Nova resposta em {form_name}: {nome}',
+          data.message_template ?? DEFAULT_WHATSAPP_MESSAGE_TEMPLATE,
         instance_name: data.instance_name ?? 'default',
         rate_limit_per_hour: data.rate_limit_per_hour ?? 100,
         created_by: userId,

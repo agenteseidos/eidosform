@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { buildMessage, SAMPLE_LEAD_DATA } from '@/lib/whatsapp-template'
 import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS } from '@/lib/plan-limits'
@@ -128,7 +129,9 @@ export async function POST(
       )
     }
 
-    // Connectivity test only — send template raw (no variable substitution)
+    // Renderiza o template com DADOS DE EXEMPLO — antes ia cru e o usuário
+    // recebia "{respostas}" literal no WhatsApp (auditoria Codex 2026-07-23).
+    const renderedMessage = buildMessage(message_template, SAMPLE_LEAD_DATA)
     const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/whatsapp/send`, {
       method: 'POST',
       headers: {
@@ -137,7 +140,7 @@ export async function POST(
       },
       body: JSON.stringify({
         to: owner_phone,
-        message: message_template,
+        message: renderedMessage,
       }),
     })
 

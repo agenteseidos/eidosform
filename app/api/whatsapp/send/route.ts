@@ -6,6 +6,7 @@ import { PLANS } from '@/lib/plan-limits'
 import { getEffectivePlan, type PlanId } from '@/lib/plans'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
+import { buildMessage } from '@/lib/whatsapp-template'
 
 const MAX_SENDS_PER_HOUR = 100
 
@@ -28,6 +29,7 @@ async function checkWhatsAppRateLimit(
 
 interface FormAwareRequest {
   formId: string
+  idempotencyKey?: string
   leadData: {
     name?: string
     email?: string
@@ -55,49 +57,9 @@ function normalizeValue(value: string): string {
 }
 
 /**
- * Build message from template and lead data.
- * Normalizes Unicode (NFKC) on all substituted values to prevent homoglyph attacks (P1-N2).
- */
-function buildMessage(template: string, leadData: FormAwareRequest['leadData']): string {
-  let msg = template.normalize('NFKC')
-
-  // Named variables (higher priority). Aceita variantes com hífen (ex.: {e-mail}).
-  msg = msg.replace(/\{form_name\}/gi, `*${normalizeValue(String(leadData.form_name || 'Formulário'))}*`) // nome do form em negrito no WhatsApp (só no envio, não na UI)
-  msg = msg.replace(/\{nome\}/gi, normalizeValue(String(leadData.name || leadData.nome || 'Lead')))
-  msg = msg.replace(/\{e-?mail\}/gi, normalizeValue(String(leadData.email || 'N/A')))
-  msg = msg.replace(/\{phone\}/gi, normalizeValue(String(leadData.phone || leadData.telefone || 'N/A')))
-  msg = msg.replace(/\{response_id\}/gi, normalizeValue(String(leadData.response_id || 'N/A')))
-  msg = msg.replace(/\{response_link\}/gi, normalizeValue(String(leadData.response_link || 'N/A')))
-  // {meta_events}: com eventos → substitui; SEM eventos → apaga a LINHA inteira do
-  // template (evita "Eventos Meta:" pendurado sem valor na mensagem).
-  const metaEventsValue = normalizeValue(String(leadData.meta_events || ''))
-  if (metaEventsValue) msg = msg.replace(/\{meta_events\}/gi, metaEventsValue)
-  else msg = msg.replace(/^.*\{meta_events\}.*(?:\r?\n|$)/gim, '')
-
-  // Catch-all: substitui {qualquer chave} restante.
-  // Aceita chaves com hífen, espaço e acento (ex.: {telefone_contato}, {telefone de contato}).
-  // A comparação é feita por chave normalizada (lowercase, sem acento, só alfanumérico)
-  // para casar o que o dono digita no template com o título real da pergunta.
-  const normKey = (k: string): string =>
-    k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
-  const normalizedLead = new Map<string, unknown>()
-  for (const [k, v] of Object.entries(leadData)) {
-    const nk = normKey(k)
-    if (nk && !normalizedLead.has(nk)) normalizedLead.set(nk, v)
-  }
-  msg = msg.replace(/\{([^{}\n]+)\}/g, (match, rawKey: string) => {
-    const nk = normKey(rawKey)
-    if (normalizedLead.has(nk)) return normalizeValue(String(normalizedLead.get(nk) ?? ''))
-    return match // chave desconhecida: mantém literal em vez de apagar
-  })
-
-  return msg
-}
-
-/**
  * Send message via WhatsApp VPS server
  */
-async function sendViaVps(phone: string, message: string): Promise<{ messageId: string }> {
+async function sendViaVps(phone: string, message: string, idempotencyKey?: string): Promise<{ messageId: string; duplicate?: boolean }> {
   const cleanPhone = phone.replace(/\D/g, '')
 
   try {
@@ -110,6 +72,7 @@ async function sendViaVps(phone: string, message: string): Promise<{ messageId: 
       body: JSON.stringify({
         to: cleanPhone,
         message,
+        ...(idempotencyKey ? { idempotencyKey } : {}),
       }),
       signal: AbortSignal.timeout(30_000),
     })
@@ -192,7 +155,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (!isInternal) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
       }
-      return await handleDirectSend(body as unknown as DirectSendRequest & { formId?: string })
+      return await handleDirectSend(body as unknown as DirectSendRequest & { formId?: string; idempotencyKey?: string })
     }
 
     return NextResponse.json(
@@ -274,10 +237,11 @@ async function handleFormAwareSend(
 
   // 5. Send via VPS
   try {
-    const result = await sendViaVps(settings.owner_phone, message)
+    const result = await sendViaVps(settings.owner_phone, message, data.idempotencyKey)
     return NextResponse.json({
       success: true,
       messageId: result.messageId,
+      duplicate: result.duplicate ?? false,
       timestamp: new Date().toISOString(),
     })
   } catch (err) {
@@ -294,7 +258,7 @@ async function handleFormAwareSend(
   }
 }
 
-async function handleDirectSend(data: DirectSendRequest & { formId?: string }): Promise<NextResponse> {
+async function handleDirectSend(data: DirectSendRequest & { formId?: string; idempotencyKey?: string }): Promise<NextResponse> {
   const cleanPhone = data.to.replace(/\D/g, '')
 
   // P2: Plan gate when formId is present
@@ -342,7 +306,7 @@ async function handleDirectSend(data: DirectSendRequest & { formId?: string }): 
   }
 
   try {
-    const result = await sendViaVps(cleanPhone, data.message)
+    const result = await sendViaVps(cleanPhone, data.message, data.idempotencyKey)
     return NextResponse.json({
       success: true,
       messageId: result.messageId,

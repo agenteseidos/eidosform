@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { formatAnswerValue } from '@/lib/answer-format'
 import { createClient } from '@/lib/supabase/server'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { buildExcelExport } from '@/lib/export-excel'
@@ -117,7 +118,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   const escapeCSV = (value: unknown): string => {
-    const str = sanitizeCellValue(Array.isArray(value) ? value.join('; ') : String(value ?? ''))
+    // formatAnswerValue: arquivo/endereço/calendly legíveis — nunca [object Object]
+    // (auditoria Codex 2026-07-23). sanitizeCellValue continua DEPOIS (anti-injeção).
+    const str = sanitizeCellValue(formatAnswerValue(value, { sink: 'export' }))
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
       return `"${str.replace(/"/g, '""')}"`
     }

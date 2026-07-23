@@ -23,6 +23,28 @@ const LOG_FILE = path.join(__dirname, 'server.log');
 const QR_FILE = path.join(__dirname, 'latest-qr.txt');
 const QR_PNG_FILE = path.join(__dirname, 'latest-qr.png');
 const STATUS_FILE = path.join(__dirname, 'status.json');
+const IDEMP_FILE = path.join(__dirname, 'sent-keys.json');
+const IDEMP_TTL_MS = 48 * 3600 * 1000;
+// Corrida daemon×send (auditoria Codex 2026-07-23): o watchdog religava o
+// `sync --follow` NO MEIO de um send (store locked). Enquanto houver envio em
+// voo, ninguém religa o daemon.
+let sendInFlight = 0;
+// Idempotência persistente por chave (formId:responseId etc.) — dedup de retry
+// do app e de resubmissão; sobrevive a restart do serviço.
+const idempMap = new Map();
+try {
+  const raw = require('fs').readFileSync(IDEMP_FILE, 'utf8');
+  for (const [k, v] of Object.entries(JSON.parse(raw))) idempMap.set(k, v);
+} catch {}
+function idempPrune() {
+  const now = Date.now();
+  for (const [k, v] of idempMap) if (!v || now - v.ts > IDEMP_TTL_MS) idempMap.delete(k);
+  while (idempMap.size > 5000) idempMap.delete(idempMap.keys().next().value);
+}
+function idempSave() {
+  idempPrune();
+  fs.writeFile(IDEMP_FILE, JSON.stringify(Object.fromEntries(idempMap)), { mode: 0o600 }).catch(() => {});
+}
 const STATUS_REFRESH_S = 5;
 
 let wacliChild = null;
@@ -314,6 +336,7 @@ function scanForRetryReceipts(text) {
 
 function spawnDaemon() {
   if (daemonChild) return;
+  if (sendInFlight > 0) { scheduleDaemonRestart(1000); return; }
   if (!status.authenticated) {
     log('[daemon] not authenticated, skipping daemon start');
     return;
@@ -391,10 +414,12 @@ function scheduleDaemonRestart(delayMs = 1000) {
  */
 async function withDaemonPaused(fn) {
   const next = sendQueue.then(async () => {
+    sendInFlight += 1;
     await stopDaemon();
     try {
       return await fn();
     } finally {
+      sendInFlight -= 1;
       scheduleDaemonRestart(1000);
     }
   });
@@ -445,7 +470,7 @@ async function refreshStatus() {
     // Watchdog: if we're authenticated but the daemon isn't running and no
     // restart is scheduled, kick one off. Covers the case where wacli was
     // re-paired out-of-band or the daemon died silently.
-    if (status.authenticated && !daemonChild && !daemonRestartTimer && !wacliChild) {
+    if (status.authenticated && !daemonChild && !daemonRestartTimer && !wacliChild && sendInFlight === 0) {
       log('[status] Authenticated without daemon — scheduling start');
       scheduleDaemonRestart(1000);
     }
@@ -637,21 +662,30 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply
     return reply.code(429).send({ error: 'Too many requests' });
   }
 
-  const { to, message } = req.body;
+  const { to, message, idempotencyKey } = req.body;
   if (!to || !message) {
     return reply.code(400).send({ error: 'Missing to or message' });
+  }
+
+  // Idempotência: chave repetida em 48h devolve o resultado anterior SEM reenviar.
+  if (idempotencyKey && idempMap.has(idempotencyKey)) {
+    const prev = idempMap.get(idempotencyKey);
+    log(`[send] Duplicate suppressed key=${idempotencyKey} (msgId: ${prev.messageId})`);
+    return reply.send({ success: true, messageId: prev.messageId, duplicate: true });
   }
 
   const result = await sendWithFallback(to, message);
 
   if (!result.success) {
-    log(`[send] Error: ${result.error}`);
+    log(`[send] Error key=${idempotencyKey || '-'}: ${result.error}`);
     return reply.code(500).send({ error: 'Failed to send message', details: result.error });
   }
 
-  log(`[send] Success: ${hashPhone(to)} (msgId: ${result.messageId})`);
+  const messageId = result.messageId || `vps-${Date.now()}`;
+  if (idempotencyKey) { idempMap.set(idempotencyKey, { ts: Date.now(), messageId }); idempSave(); }
+  log(`[send] Success key=${idempotencyKey || '-'}: ${hashPhone(to)} (msgId: ${messageId})`);
   // P2: Ensure messageId is always present in response
-  return reply.send({ success: true, messageId: result.messageId || `vps-${Date.now()}` });
+  return reply.send({ success: true, messageId });
 });
 
 fastify.post('/api/whatsapp/disconnect', { onRequest: requireAuth }, async (req, reply) => {

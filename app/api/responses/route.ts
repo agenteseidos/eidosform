@@ -1,5 +1,5 @@
 import type { ResponseInsert, ResponseUpdate, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
@@ -606,6 +606,7 @@ export async function POST(req: NextRequest) {
             responseId,
             responseData: answers as Record<string, unknown>,
             meta_events: responseMetaEvents,
+            urlParams: effectiveUrlParams,
             form: {
               id: form.id,
               title: form.title,
@@ -705,7 +706,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (postSubmitTasks.length > 0) {
-    await Promise.allSettled(postSubmitTasks)
+    // Auditoria Codex 2026-07-23: o submit do LEAD esperava as notificações
+    // (WhatsApp podia segurar até 30s). `after()` devolve a resposta JÁ e roda
+    // as tarefas depois, sem risco de freeze na Vercel. Fallback: fora de um
+    // request scope (testes), `after` lança — aí degrada pro comportamento antigo.
+    try {
+      after(async () => { await Promise.allSettled(postSubmitTasks) })
+    } catch {
+      await Promise.allSettled(postSubmitTasks)
+    }
   }
 
   // Detector PASSIVO de duplicatas (Fase 3 em avaliação — auditoria Codex

@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { MessageCircle, Loader2, Send, AlertCircle, Plus, ChevronDown } from 'lucide-react'
 import { FormWhatsAppSettings } from '@/lib/types/whatsapp'
 import { PLAN_ORDER } from '@/lib/plans'
+import { DEFAULT_WHATSAPP_MESSAGE_TEMPLATE } from '@/lib/whatsapp-template'
 
 interface WhatsAppPanelProps {
   formId: string
@@ -61,6 +62,7 @@ const TEMPLATE_VARIABLE_GROUPS: TemplateVariableGroup[] = [
       { key: '{nome_completo}',  description: 'Nome inteiro capitalizado',                 example: 'João Silva da Costa' },
       { key: '{email}',          description: 'Email do respondente',                      example: 'joao@exemplo.com' },
       { key: '{telefone}',       description: 'Telefone do respondente',                   example: '+55 11 99999-0000' },
+      { key: '{whatsapp_link}',  description: 'Link wa.me pra responder o lead (some sem telefone)', example: 'https://wa.me/5511999990000' },
     ],
   },
   {
@@ -88,7 +90,7 @@ const TEMPLATE_VARIABLE_GROUPS: TemplateVariableGroup[] = [
   },
 ]
 
-const DEFAULT_MESSAGE_TEMPLATE = 'Nova resposta em {form_name}: {nome}'
+const DEFAULT_MESSAGE_TEMPLATE = DEFAULT_WHATSAPP_MESSAGE_TEMPLATE
 
 function normalizeSettingsSnapshot(
   settings: Pick<FormWhatsAppSettings, 'enabled' | 'owner_phone' | 'message_template'>
@@ -256,7 +258,6 @@ export function WhatsAppPanel({
 
   const validated = enabled && ownerPhone && validatePhoneNumber(ownerPhone)
   const charCount = messageTemplate.length
-  const isCharCountWarning = charCount > 160
 
   // Referência ao textarea pra inserir variáveis na posição do cursor.
   const templateTextareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -397,8 +398,8 @@ export function WhatsAppPanel({
                   <Label htmlFor="whatsapp-template" className="text-xs font-medium text-slate-600">
                     Template da Mensagem
                   </Label>
-                  <span className={`text-[10px] font-medium ${isCharCountWarning ? 'text-amber-600' : 'text-slate-500'}`}>
-                    {isSaving ? 'salvando…' : `${charCount}/160`}
+                  <span className="text-[10px] font-medium text-slate-500">
+                    {isSaving ? 'salvando…' : `${charCount} caracteres no template`}
                   </span>
                 </div>
                 <Textarea
@@ -457,11 +458,6 @@ export function WhatsAppPanel({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                {isCharCountWarning && (
-                  <p className="text-[10px] text-amber-600 mt-2">
-                    ⚠️ Mensagens com mais de 160 caracteres podem ser divididas em SMS múltiplos
-                  </p>
-                )}
               </div>
 
               {/* WhatsApp Instance Dropdown (hidden for now) */}

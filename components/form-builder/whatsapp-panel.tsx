@@ -160,62 +160,59 @@ export function WhatsAppPanel({
     loadSettings()
   }, [formId])
 
-  // Auto-save on change (debounce 3s) — only after initial load, silent on success
-  useEffect(() => {
+  // Salvamento silencioso e reutilizável (usado pelo save-on-blur E pela rede de
+  // segurança). Só salva se houve mudança real; ao salvar, atualiza o snapshot base
+  // pra não re-salvar o mesmo conteúdo repetidamente.
+  const saveSettings = useCallback(async () => {
     if (!settingsInitialized || !initialSnapshot) return
-
-    const currentSnapshot = normalizeSettingsSnapshot({
+    const snapshot = normalizeSettingsSnapshot({
       enabled,
       owner_phone: ownerPhone,
       message_template: messageTemplate,
     })
+    if (snapshot === initialSnapshot) return // nada mudou desde o último save
 
-    if (currentSnapshot === initialSnapshot) return
-
-    const timer = setTimeout(() => {
-      const saveSettings = async () => {
-        try {
-          setIsSaving(true)
-
-          // Validate phone if enabled
-          if (enabled && ownerPhone && !validatePhoneNumber(ownerPhone)) {
-            setPhoneError('Número muito curto. Inclua o código do país (55) e o DDD.')
-            return
-          }
-
-          setPhoneError(null)
-
-          // Upsert via unified endpoint
-          const response = await fetch(`/api/forms/${formId}/whatsapp`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              enabled,
-              owner_phone: ownerPhone,
-              message_template: messageTemplate,
-            }),
-          })
-
-          if (!response.ok) {
-            const error = await response.json()
-            toast.error(`Erro ao salvar: ${error.error || 'Erro desconhecido'}`)
-            return
-          }
-
-          // Silent success — no toast on auto-save to avoid interrupting typing
-        } catch (error) {
-          console.error('Error saving WhatsApp settings:', error)
-          toast.error('Erro ao salvar configurações de WhatsApp')
-        } finally {
-          setIsSaving(false)
-        }
+    try {
+      setIsSaving(true)
+      if (enabled && ownerPhone && !validatePhoneNumber(ownerPhone)) {
+        setPhoneError('Número muito curto. Inclua o código do país (55) e o DDD.')
+        return
       }
-
-      saveSettings()
-    }, 3000) // 3 second debounce — gives user time to type without interruption
-
-    return () => clearTimeout(timer)
+      setPhoneError(null)
+      const response = await fetch(`/api/forms/${formId}/whatsapp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, owner_phone: ownerPhone, message_template: messageTemplate }),
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        toast.error(`Erro ao salvar: ${error.error || 'Erro desconhecido'}`)
+        return
+      }
+      setInitialSnapshot(snapshot) // marca como salvo → evita re-save do mesmo conteúdo
+    } catch (error) {
+      console.error('Error saving WhatsApp settings:', error)
+      toast.error('Erro ao salvar configurações de WhatsApp')
+    } finally {
+      setIsSaving(false)
+    }
   }, [enabled, ownerPhone, messageTemplate, formId, settingsInitialized, initialSnapshot])
+
+  // O save principal é ON-BLUR (ver onBlur nos campos) — salva ao sair do campo, sem
+  // interromper a digitação. Este debounce é só REDE DE SEGURANÇA longa (10s): pega o
+  // toggle e o caso raro de o usuário ficar parado no campo sem sair. 10s é longo o
+  // bastante pra não travar quem está escrevendo.
+  useEffect(() => {
+    if (!settingsInitialized || !initialSnapshot) return
+    const snapshot = normalizeSettingsSnapshot({
+      enabled,
+      owner_phone: ownerPhone,
+      message_template: messageTemplate,
+    })
+    if (snapshot === initialSnapshot) return
+    const timer = setTimeout(() => { saveSettings() }, 10000)
+    return () => clearTimeout(timer)
+  }, [enabled, ownerPhone, messageTemplate, settingsInitialized, initialSnapshot, saveSettings])
 
   const handleToggle = useCallback((checked: boolean) => {
     setEnabled(checked)
@@ -380,7 +377,8 @@ export function WhatsAppPanel({
                       setPhoneError(null)
                     }
                   }}
-                  disabled={isLoading || isSaving}
+                  onBlur={() => saveSettings()}
+                  disabled={isLoading}
                   placeholder="5511999999999"
                   maxLength={15}
                   className={`text-sm ${phoneError ? 'border-red-500 focus:border-red-500' : ''}`}
@@ -400,7 +398,7 @@ export function WhatsAppPanel({
                     Template da Mensagem
                   </Label>
                   <span className={`text-[10px] font-medium ${isCharCountWarning ? 'text-amber-600' : 'text-slate-500'}`}>
-                    {charCount}/160
+                    {isSaving ? 'salvando…' : `${charCount}/160`}
                   </span>
                 </div>
                 <Textarea
@@ -408,7 +406,8 @@ export function WhatsAppPanel({
                   ref={templateTextareaRef}
                   value={messageTemplate}
                   onChange={(e) => setMessageTemplate(e.target.value)}
-                  disabled={isLoading || isSaving}
+                  onBlur={() => saveSettings()}
+                  disabled={isLoading}
                   placeholder={DEFAULT_MESSAGE_TEMPLATE}
                   className="text-sm min-h-[80px]"
                 />
@@ -420,7 +419,7 @@ export function WhatsAppPanel({
                         variant="outline"
                         size="sm"
                         className="h-7 text-xs gap-1.5 text-slate-700"
-                        disabled={isLoading || isSaving}
+                        disabled={isLoading}
                       >
                         <Plus className="w-3 h-3" />
                         Inserir variável

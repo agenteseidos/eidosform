@@ -122,6 +122,10 @@ export async function sendWhatsAppOnFormResponse(params: {
       // Depois de mappedAnswers de propósito: {respostas} é placeholder
       // documentado, então ganha de uma pergunta intitulada "Respostas".
       respostas: respostasValue,
+      // {meta_events}: eventos do Pixel/CAPI disparados neste preenchimento
+      // (PageView, Lead, LeadQualificado...), separados por vírgula. A coluna
+      // responses.meta_events já alimenta PDF e Sheets; aqui entra no WhatsApp.
+      meta_events: (params.meta_events ?? []).join(', '),
     }
 
     // Delegate everything to the send endpoint (settings fetch + template build + delivery)

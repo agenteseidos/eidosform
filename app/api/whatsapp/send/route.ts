@@ -68,7 +68,11 @@ function buildMessage(template: string, leadData: FormAwareRequest['leadData']):
   msg = msg.replace(/\{phone\}/gi, normalizeValue(String(leadData.phone || leadData.telefone || 'N/A')))
   msg = msg.replace(/\{response_id\}/gi, normalizeValue(String(leadData.response_id || 'N/A')))
   msg = msg.replace(/\{response_link\}/gi, normalizeValue(String(leadData.response_link || 'N/A')))
-  msg = msg.replace(/\{meta_events\}/gi, normalizeValue(String(leadData.meta_events || '')))
+  // {meta_events}: com eventos → substitui; SEM eventos → apaga a LINHA inteira do
+  // template (evita "Eventos Meta:" pendurado sem valor na mensagem).
+  const metaEventsValue = normalizeValue(String(leadData.meta_events || ''))
+  if (metaEventsValue) msg = msg.replace(/\{meta_events\}/gi, metaEventsValue)
+  else msg = msg.replace(/^.*\{meta_events\}.*(?:\r?\n|$)/gim, '')
 
   // Catch-all: substitui {qualquer chave} restante.
   // Aceita chaves com hífen, espaço e acento (ex.: {telefone_contato}, {telefone de contato}).

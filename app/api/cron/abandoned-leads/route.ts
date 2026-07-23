@@ -29,7 +29,12 @@ import { log, logError } from '@/lib/logger'
 
 const THRESHOLD_MIN = Number(process.env.ABANDONED_LEAD_MINUTES || 30)
 const LOOKBACK_HOURS = 72
-const BATCH_LIMIT = 20
+// Cada envio leva ~5s (VPS serializa o wacli); o teto da função Vercel é 30s.
+// Lote pequeno + guarda de tempo evitam o FUNCTION_INVOCATION_TIMEOUT (que, com
+// claim-first, deixaria claims órfãos = leads suprimidos sem alerta). O timer de
+// 15min drena o resto. Achado no teste real 23/07.
+const BATCH_LIMIT = 4
+const TIME_BUDGET_MS = 22_000
 
 export const dynamic = 'force-dynamic'
 
@@ -111,10 +116,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }))
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'
+  const startedAt = Date.now()
   let sent = 0
+  let cortadoPorTempo = false
 
   for (const partial of partials) {
     if (sent >= BATCH_LIMIT) break
+    if (Date.now() - startedAt > TIME_BUDGET_MS) { cortadoPorTempo = true; break }
     if (alreadyAlerted.has(partial.id)) { stats.jaAvisados += 1; continue }
     const form = formMap.get(partial.form_id)
     if (!form || !ownerPlanOk.get(form.user_id)) continue
@@ -196,6 +204,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  log('[abandoned-leads] run', stats)
-  return NextResponse.json({ ok: true, thresholdMin: THRESHOLD_MIN, relogio: 'last_activity_at (última atividade real)', ...stats })
+  log('[abandoned-leads] run', { ...stats, cortadoPorTempo })
+  return NextResponse.json({ ok: true, thresholdMin: THRESHOLD_MIN, relogio: 'last_activity_at (última atividade real)', cortadoPorTempo, ...stats })
 }

@@ -62,7 +62,7 @@ function buildMessage(template: string, leadData: FormAwareRequest['leadData']):
   let msg = template.normalize('NFKC')
 
   // Named variables (higher priority). Aceita variantes com hífen (ex.: {e-mail}).
-  msg = msg.replace(/\{form_name\}/gi, normalizeValue(String(leadData.form_name || 'Formulário')))
+  msg = msg.replace(/\{form_name\}/gi, `*${normalizeValue(String(leadData.form_name || 'Formulário'))}*`) // nome do form em negrito no WhatsApp (só no envio, não na UI)
   msg = msg.replace(/\{nome\}/gi, normalizeValue(String(leadData.name || leadData.nome || 'Lead')))
   msg = msg.replace(/\{e-?mail\}/gi, normalizeValue(String(leadData.email || 'N/A')))
   msg = msg.replace(/\{phone\}/gi, normalizeValue(String(leadData.phone || leadData.telefone || 'N/A')))

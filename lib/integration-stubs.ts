@@ -53,7 +53,7 @@ export async function sendWhatsAppOnFormResponse(params: {
     const respostasValue = (params.form.questions ?? [])
       .map((q) => ({ title: (q.title ?? '').trim(), answer: formatAnswer(responseData[q.id]) }))
       .filter((pair) => pair.title && pair.answer) // pergunta sem resposta é omitida
-      .map((pair) => `${pair.title}\n${pair.answer}`)
+      .map((pair) => `*${pair.title}*\n${pair.answer}`) // pergunta em negrito no WhatsApp (asterisco único)
       .join('\n\n')
 
     // Find name, email, phone by scanning question titles.

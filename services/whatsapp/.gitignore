@@ -9,3 +9,5 @@ server.log
 latest-qr.*
 status.json
 logs/
+sent-keys.json
+sent-keys.json.*

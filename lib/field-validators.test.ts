@@ -297,3 +297,30 @@ describe('pruneOffPathAnswers — ponto-fixo e retomada (Codex Rodada 6)', () =>
     expect(r.removedKeys).toEqual(['ramoA'])
   })
 })
+
+describe('validateCalendly — string legada E objeto novo (P0-2 auditoria Codex 23/07)', () => {
+  const cal = (extra: Partial<QuestionConfig> = {}) => q('calendly', { calendlyUrl: 'https://calendly.com/x/30min', ...extra } as Partial<QuestionConfig>)
+
+  it('aceita a string legada (uri do evento ou "scheduled")', () => {
+    expect(validateFieldValue(cal(), 'https://api.calendly.com/scheduled_events/abc').valid).toBe(true)
+    expect(validateFieldValue(cal(), 'https://calendly.com/scheduled_events/abc').valid).toBe(true)
+    expect(validateFieldValue(cal(), 'scheduled').valid).toBe(true)
+  })
+
+  it('aceita o objeto novo {event_uri, invitee_uri}', () => {
+    expect(validateFieldValue(cal(), { event_uri: 'https://api.calendly.com/scheduled_events/abc' }).valid).toBe(true)
+    expect(validateFieldValue(cal(), {
+      event_uri: 'https://api.calendly.com/scheduled_events/abc',
+      invitee_uri: 'https://api.calendly.com/scheduled_events/abc/invitees/x',
+    }).valid).toBe(true)
+  })
+
+  it('rejeita uris fora do domínio calendly e chaves estranhas', () => {
+    expect(validateFieldValue(cal(), 'https://malicioso.com/x').valid).toBe(false)
+    expect(validateFieldValue(cal(), { event_uri: 'https://malicioso.com/x' }).valid).toBe(false)
+    expect(validateFieldValue(cal(), { event_uri: 'https://api.calendly.com/e/1', extra: 'x' } as unknown as Record<string, unknown>).valid).toBe(false)
+    expect(validateFieldValue(cal(), { invitee_uri: 'https://api.calendly.com/i/1' }).valid).toBe(false)
+    expect(validateFieldValue(cal(), 42).valid).toBe(false)
+    expect(validateFieldValue(cal(), ['https://api.calendly.com/e/1']).valid).toBe(false)
+  })
+})

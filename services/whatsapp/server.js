@@ -24,7 +24,7 @@ const QR_FILE = path.join(__dirname, 'latest-qr.txt');
 const QR_PNG_FILE = path.join(__dirname, 'latest-qr.png');
 const STATUS_FILE = path.join(__dirname, 'status.json');
 const IDEMP_FILE = path.join(__dirname, 'sent-keys.json');
-const IDEMP_TTL_MS = 48 * 3600 * 1000;
+const IDEMP_TTL_MS = 96 * 3600 * 1000; // > janela de abandono (72h) + margem — auditoria Codex
 // Corrida daemon×send (auditoria Codex 2026-07-23): o watchdog religava o
 // `sync --follow` NO MEIO de um send (store locked). Enquanto houver envio em
 // voo, ninguém religa o daemon.
@@ -35,15 +35,37 @@ const idempMap = new Map();
 try {
   const raw = require('fs').readFileSync(IDEMP_FILE, 'utf8');
   for (const [k, v] of Object.entries(JSON.parse(raw))) idempMap.set(k, v);
-} catch {}
+} catch (err) {
+  if (err.code !== 'ENOENT') {
+    // JSON corrompido (escrita interrompida na era pré-atômica): preserva o
+    // arquivo pra perícia e começa vazio — auditoria Codex P1-2.
+    console.error(`[idemp] arquivo ilegível (${err.message}) — movendo pra .corrupt`);
+    try { require('fs').renameSync(IDEMP_FILE, IDEMP_FILE + '.corrupt'); } catch {}
+  }
+}
 function idempPrune() {
   const now = Date.now();
-  for (const [k, v] of idempMap) if (!v || now - v.ts > IDEMP_TTL_MS) idempMap.delete(k);
+  for (const [k, v] of idempMap) if (!v || !v.ts || now - v.ts > IDEMP_TTL_MS) idempMap.delete(k);
   while (idempMap.size > 5000) idempMap.delete(idempMap.keys().next().value);
 }
-function idempSave() {
+function idempGet(key) {
+  const v = idempMap.get(key);
+  if (v && v.ts && Date.now() - v.ts > IDEMP_TTL_MS) { idempMap.delete(key); return undefined; }
+  return v;
+}
+async function idempSave() {
+  // Atômico (tmp+rename) e AWAITED — antes era fire-and-forget e uma escrita
+  // interrompida corrompia o JSON inteiro (auditoria Codex P1-2).
   idempPrune();
-  fs.writeFile(IDEMP_FILE, JSON.stringify(Object.fromEntries(idempMap)), { mode: 0o600 }).catch(() => {});
+  const serializavel = {};
+  for (const [k, v] of idempMap) if (v && v.messageId) serializavel[k] = { ts: v.ts, messageId: v.messageId };
+  const tmp = IDEMP_FILE + '.tmp';
+  try {
+    await fs.writeFile(tmp, JSON.stringify(serializavel), { mode: 0o600 });
+    await fs.rename(tmp, IDEMP_FILE);
+  } catch (err) {
+    log(`[idemp] ERRO ao persistir sent-keys: ${err.message}`);
+  }
 }
 const STATUS_REFRESH_S = 5;
 
@@ -667,23 +689,54 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply
     return reply.code(400).send({ error: 'Missing to or message' });
   }
 
-  // Idempotência: chave repetida em 48h devolve o resultado anterior SEM reenviar.
-  if (idempotencyKey && idempMap.has(idempotencyKey)) {
-    const prev = idempMap.get(idempotencyKey);
-    log(`[send] Duplicate suppressed key=${idempotencyKey} (msgId: ${prev.messageId})`);
-    return reply.send({ success: true, messageId: prev.messageId, duplicate: true });
+  // Idempotência COALESCIDA (auditoria Codex P1-1): a reserva é SÍNCRONA —
+  // duas requests simultâneas com a mesma chave nunca chegam ambas ao wacli;
+  // a segunda espera a Promise da primeira e responde duplicate:true.
+  if (idempotencyKey) {
+    const prev = idempGet(idempotencyKey);
+    if (prev && prev.messageId) {
+      log(`[send] Duplicate suppressed key=${idempotencyKey} (msgId: ${prev.messageId})`);
+      return reply.send({ success: true, messageId: prev.messageId, duplicate: true });
+    }
+    if (prev && prev.promise) {
+      const r = await prev.promise;
+      if (r && r.success) {
+        const msgId = r.messageId || 'vps-coalesced';
+        log(`[send] Duplicate coalesced key=${idempotencyKey} (msgId: ${msgId})`);
+        return reply.send({ success: true, messageId: msgId, duplicate: true });
+      }
+      // primeira tentativa falhou → esta request vira a nova titular (retry)
+    }
+    const entry = { ts: Date.now() };
+    entry.promise = sendWithFallback(to, message).then(async (r) => {
+      if (r.success) {
+        entry.messageId = r.messageId || `vps-${Date.now()}`;
+        delete entry.promise;
+        await idempSave();
+      } else {
+        idempMap.delete(idempotencyKey); // falha libera a chave pro retry
+      }
+      return r;
+    }).catch((err) => { idempMap.delete(idempotencyKey); return { success: false, error: String(err) }; });
+    idempMap.set(idempotencyKey, entry); // reserva ANTES de await
+    const result = await entry.promise;
+    if (!result.success) {
+      log(`[send] Error key=${idempotencyKey}: ${result.error}`);
+      return reply.code(500).send({ error: 'Failed to send message', details: result.error });
+    }
+    log(`[send] Success key=${idempotencyKey}: ${hashPhone(to)} (msgId: ${entry.messageId})`);
+    return reply.send({ success: true, messageId: entry.messageId });
   }
 
   const result = await sendWithFallback(to, message);
 
   if (!result.success) {
-    log(`[send] Error key=${idempotencyKey || '-'}: ${result.error}`);
+    log(`[send] Error key=-: ${result.error}`);
     return reply.code(500).send({ error: 'Failed to send message', details: result.error });
   }
 
   const messageId = result.messageId || `vps-${Date.now()}`;
-  if (idempotencyKey) { idempMap.set(idempotencyKey, { ts: Date.now(), messageId }); idempSave(); }
-  log(`[send] Success key=${idempotencyKey || '-'}: ${hashPhone(to)} (msgId: ${messageId})`);
+  log(`[send] Success key=-: ${hashPhone(to)} (msgId: ${messageId})`);
   // P2: Ensure messageId is always present in response
   return reply.send({ success: true, messageId });
 });

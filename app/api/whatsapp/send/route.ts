@@ -95,7 +95,7 @@ async function sendViaVps(phone: string, message: string, idempotencyKey?: strin
     // `||` (não `??`): a VPS pode devolver messageId como string vazia quando o
     // wacli não expõe `data.id` — `??` deixaria passar o "" e a telemetria
     // chegava como `msgId: N/A`. Ver briefing-whatsapp-msgid-perdido.md.
-    return { messageId: data.messageId || `vps-${Date.now()}` }
+    return { messageId: data.messageId || `vps-${Date.now()}`, duplicate: data.duplicate === true }
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error)
 
@@ -241,7 +241,7 @@ async function handleFormAwareSend(
     return NextResponse.json({
       success: true,
       messageId: result.messageId,
-      duplicate: result.duplicate ?? false,
+      duplicate: result.duplicate === true,
       timestamp: new Date().toISOString(),
     })
   } catch (err) {
@@ -268,24 +268,36 @@ async function handleDirectSend(data: DirectSendRequest & { formId?: string; ide
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { cookies: { getAll: () => [], setAll: () => {} } }
     )
-    const { data: formData } = await supabase
+    const { data: formData, error: formErr } = await supabase
       .from('forms')
       .select('user_id')
       .eq('id', data.formId)
       .single()
-    if (formData?.user_id) {
-      const { data: ownerProfile } = await supabase
-        .from('profiles')
-        .select('plan, plan_expires_at')
-        .eq('id', formData.user_id)
-        .single()
-      const plan = getEffectivePlan(ownerProfile) as PlanId
-      if (!PLANS[plan]?.whatsappNotifications) {
-        return NextResponse.json(
-          { success: false, error: 'WhatsApp requires Plus or Professional plan' },
-          { status: 403 }
-        )
-      }
+    // Fail-CLOSED (auditoria Codex 2026-07-23): erro/ausência de form ou perfil
+    // não pode liberar o envio — com formId presente, o gate é obrigatório.
+    if (formErr || !formData?.user_id) {
+      return NextResponse.json(
+        { success: false, error: 'Form not found for plan gate' },
+        { status: 403 }
+      )
+    }
+    const { data: ownerProfile, error: profErr } = await supabase
+      .from('profiles')
+      .select('plan, plan_expires_at')
+      .eq('id', formData.user_id)
+      .single()
+    if (profErr || !ownerProfile) {
+      return NextResponse.json(
+        { success: false, error: 'Owner profile not found for plan gate' },
+        { status: 403 }
+      )
+    }
+    const plan = getEffectivePlan(ownerProfile) as PlanId
+    if (!PLANS[plan]?.whatsappNotifications) {
+      return NextResponse.json(
+        { success: false, error: 'WhatsApp requires Plus or Professional plan' },
+        { status: 403 }
+      )
     }
   } else {
     logWarn('[whatsapp/send] Direct send without formId — no plan gate applied')
@@ -310,6 +322,7 @@ async function handleDirectSend(data: DirectSendRequest & { formId?: string; ide
     return NextResponse.json({
       success: true,
       messageId: result.messageId,
+      duplicate: result.duplicate === true,
       timestamp: new Date().toISOString(),
     })
   } catch (err) {

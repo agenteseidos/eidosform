@@ -2,32 +2,29 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { PLANS } from '@/lib/plan-limits'
 import { getEffectivePlan, type PlanId } from '@/lib/plans'
-import { buildLeadData, logWhatsAppSend } from '@/lib/integration-stubs'
+import { buildLeadData } from '@/lib/integration-stubs'
 import { buildMessage, ABANDONED_LEAD_TEMPLATE } from '@/lib/whatsapp-template'
 import { log, logError } from '@/lib/logger'
 
 /**
  * CRON — Alerta de LEAD ABANDONADO por WhatsApp (pedido Sidney 2026-07-23).
+ * REESCRITO após auditoria Codex (REPROVADO v1):
  *
- * Um lead que começou a preencher, deixou dados úteis (telefone) e parou há mais
- * de ABANDONED_LEAD_MINUTES é um lead morno passando batido. Este cron acha esses
- * parciais e manda pro dono do form o MESMO tipo de notificação do lead completo,
- * marcada como "Lead incompleto".
+ * P0-1: a v1 consultava `updated_at`, que NÃO EXISTE em produção, e engolia o
+ * erro 42703 respondendo ok:true — um no-op mascarado. Agora:
+ *  - Relógio = `submitted_at` (DEFAULT now() do banco no INSERT da parcial e
+ *    nunca reescrito) ⇒ semântica "COMEÇOU há ≥N min e não finalizou" — que é
+ *    exatamente o pedido original do Sidney ("30 minutos de início e não
+ *    finalizou"). Upgrade futuro p/ inatividade real: migration
+ *    `last_activity_at` em supabase/migrations-manual/ (aplicar e trocar aqui).
+ *  - TODA query checa `error` e o run responde 500 com o estágio que falhou.
+ *    Nenhum erro de banco vira "ok" nunca mais.
  *
- * Desenho (com as travas da conversa de 23/07):
- * - SÓ dispara se houver TELEFONE utilizável (answers ou url_params) — abandono
- *   sem contato é alerta inútil ("opção C": só abandono acionável).
- * - Dedup DURÁVEL: 1 alerta por resposta, registrado em form_whatsapp_logs com
- *   status 'abandoned_alert' (não usa memória).
- * - Se o lead COMPLETAR depois do alerta, a notificação normal sai — o alerta
- *   nunca suprime o fluxo padrão.
- * - Gates idênticos ao envio normal: form_whatsapp_settings.enabled + plano Plus+
- *   (revalidado no /api/whatsapp/send via formId) + idempotência na VPS.
- * - Janela de segurança: só respostas paradas entre THRESHOLD e LOOKBACK (72h) —
- *   nunca ressuscita abandono antigo em massa.
- *
- * Agendado por systemd timer na VPS (eidosform-abandoned.timer, 15/15min) com
- * Authorization: Bearer CRON_SECRET — mesmo padrão dos crons de billing.
+ * P1-3: dedup agora é CLAIM-FIRST — o marcador 'abandoned_alert' é inserido em
+ * form_whatsapp_logs ANTES do envio (claim); falha no envio ⇒ marcador é
+ * removido (libera retry no próximo run); falha na REMOÇÃO é logada como
+ * crítica. Runs do timer são serializados pelo systemd (oneshot); a barreira
+ * final contra corrida é a idempotencyKey coalescida na VPS.
  */
 
 const THRESHOLD_MIN = Number(process.env.ABANDONED_LEAD_MINUTES || 30)
@@ -44,6 +41,11 @@ function admin() {
   )
 }
 
+function fail(stage: string, error: unknown): NextResponse {
+  logError(`[abandoned-leads] FALHA no estágio '${stage}'`, error)
+  return NextResponse.json({ ok: false, stage, error: String((error as { message?: string })?.message ?? error).slice(0, 300) }, { status: 500 })
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET
   if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) {
@@ -56,117 +58,144 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const lookbackIso = new Date(now - LOOKBACK_HOURS * 3_600_000).toISOString()
   const stats = { candidatos: 0, enviados: 0, semTelefone: 0, jaAvisados: 0, falhas: 0 }
 
-  try {
-    // 1) forms com WhatsApp ligado
-    const { data: settingsRows } = await supabase
-      .from('form_whatsapp_settings')
-      .select('form_id, enabled, owner_phone')
-      .eq('enabled', true)
-    const enabledFormIds = (settingsRows ?? []).filter(s => s.owner_phone).map(s => s.form_id)
-    if (enabledFormIds.length === 0) return NextResponse.json({ ok: true, ...stats })
+  // 1) forms com WhatsApp ligado
+  const { data: settingsRows, error: settingsErr } = await supabase
+    .from('form_whatsapp_settings')
+    .select('form_id, enabled, owner_phone')
+    .eq('enabled', true)
+  if (settingsErr) return fail('settings', settingsErr)
+  const enabledFormIds = (settingsRows ?? []).filter(s => s.owner_phone).map(s => s.form_id)
+  if (enabledFormIds.length === 0) return NextResponse.json({ ok: true, ...stats })
 
-    // 2) parciais parados na janela [lookback, cutoff]
-    const { data: partials } = await supabase
-      .from('responses')
-      .select('id, form_id, answers, url_params, meta_events, updated_at')
-      .eq('completed', false)
-      .lt('updated_at', cutoffIso)
-      .gt('updated_at', lookbackIso)
-      .in('form_id', enabledFormIds)
-      .order('updated_at', { ascending: true })
-      .limit(BATCH_LIMIT * 3) // margem pros que serão filtrados (dedup/telefone)
-    if (!partials || partials.length === 0) return NextResponse.json({ ok: true, ...stats })
-    stats.candidatos = partials.length
+  // 2) parciais que COMEÇARAM na janela [lookback, cutoff] e não finalizaram
+  const { data: partials, error: partialsErr } = await supabase
+    .from('responses')
+    .select('id, form_id, answers, url_params, meta_events, submitted_at')
+    .eq('completed', false)
+    .lt('submitted_at', cutoffIso)
+    .gt('submitted_at', lookbackIso)
+    .in('form_id', enabledFormIds)
+    .order('submitted_at', { ascending: true })
+    .limit(BATCH_LIMIT * 3) // margem pros filtrados (dedup/telefone)
+  if (partialsErr) return fail('partials', partialsErr)
+  if (!partials || partials.length === 0) return NextResponse.json({ ok: true, ...stats })
+  stats.candidatos = partials.length
 
-    // 3) dedup durável: quem já recebeu 'abandoned_alert' sai da fila
-    const responseIds = partials.map(p => p.id)
-    const { data: alerted } = await supabase
+  // 3) dedup durável: quem já tem claim 'abandoned_alert' sai da fila
+  const responseIds = partials.map(p => p.id)
+  const { data: alerted, error: alertedErr } = await supabase
+    .from('form_whatsapp_logs')
+    .select('response_id')
+    .eq('status', 'abandoned_alert')
+    .in('response_id', responseIds)
+  if (alertedErr) return fail('dedup-select', alertedErr)
+  const alreadyAlerted = new Set((alerted ?? []).map(a => a.response_id))
+
+  // 4) dados dos forms + plano dos donos
+  const formIds = [...new Set(partials.map(p => p.form_id))]
+  const { data: forms, error: formsErr } = await supabase
+    .from('forms')
+    .select('id, title, user_id, questions')
+    .in('id', formIds)
+  if (formsErr) return fail('forms', formsErr)
+  const formMap = new Map((forms ?? []).map(f => [f.id, f]))
+  const ownerIds = [...new Set((forms ?? []).map(f => f.user_id))]
+  const { data: owners, error: ownersErr } = await supabase
+    .from('profiles')
+    .select('id, plan, plan_expires_at')
+    .in('id', ownerIds)
+  if (ownersErr) return fail('owners', ownersErr)
+  const ownerPlanOk = new Map((owners ?? []).map(o => {
+    const plan = getEffectivePlan(o) as PlanId
+    return [o.id, Boolean(PLANS[plan]?.whatsappNotifications)]
+  }))
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'
+  let sent = 0
+
+  for (const partial of partials) {
+    if (sent >= BATCH_LIMIT) break
+    if (alreadyAlerted.has(partial.id)) { stats.jaAvisados += 1; continue }
+    const form = formMap.get(partial.form_id)
+    if (!form || !ownerPlanOk.get(form.user_id)) continue
+
+    const minutosDesdeInicio = Math.round((now - new Date(partial.submitted_at as string).getTime()) / 60_000)
+    const leadData = buildLeadData({
+      formId: partial.form_id,
+      responseId: partial.id,
+      responseData: (partial.answers ?? {}) as Record<string, unknown>,
+      meta_events: (partial.meta_events ?? []) as string[],
+      urlParams: (partial.url_params ?? null) as Record<string, string> | null,
+      form: form as { id: string; title: string | null; user_id: string; questions?: Array<{ id: string; title?: string; type?: string }> },
+      appUrl,
+    })
+    leadData.abandono_minutos = String(minutosDesdeInicio)
+
+    // Trava: sem telefone utilizável (mesma faixa do {whatsapp_link}: 10-15
+    // dígitos), o alerta não é acionável — pula.
+    const phoneDigits = String(leadData.phone ?? '').replace(/\D/g, '')
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) { stats.semTelefone += 1; continue }
+
+    const message = buildMessage(ABANDONED_LEAD_TEMPLATE, leadData)
+    const settings = (settingsRows ?? []).find(s => s.form_id === partial.form_id)
+    if (!settings?.owner_phone) continue
+
+    // 5) CLAIM-FIRST: reserva o marcador ANTES de enviar. Se o insert falhar,
+    // NÃO envia (fail-closed). Se o envio falhar, remove o claim (retry no
+    // próximo run); falha na remoção é crítica (alerta pode ficar suprimido).
+    const { error: claimErr } = await (supabase as unknown as { from: (t: string) => { insert: (d: Record<string, unknown>) => Promise<{ error: unknown }> } })
       .from('form_whatsapp_logs')
-      .select('response_id')
-      .eq('status', 'abandoned_alert')
-      .in('response_id', responseIds)
-    const alreadyAlerted = new Set((alerted ?? []).map(a => a.response_id))
-
-    // 4) dados dos forms + plano dos donos
-    const formIds = [...new Set(partials.map(p => p.form_id))]
-    const { data: forms } = await supabase
-      .from('forms')
-      .select('id, title, user_id, questions')
-      .in('id', formIds)
-    const formMap = new Map((forms ?? []).map(f => [f.id, f]))
-    const ownerIds = [...new Set((forms ?? []).map(f => f.user_id))]
-    const { data: owners } = await supabase
-      .from('profiles')
-      .select('id, plan, plan_expires_at')
-      .in('id', ownerIds)
-    const ownerPlanOk = new Map((owners ?? []).map(o => {
-      const plan = getEffectivePlan(o) as PlanId
-      return [o.id, Boolean(PLANS[plan]?.whatsappNotifications)]
-    }))
-
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'
-    let sent = 0
-
-    for (const partial of partials) {
-      if (sent >= BATCH_LIMIT) break
-      if (alreadyAlerted.has(partial.id)) { stats.jaAvisados += 1; continue }
-      const form = formMap.get(partial.form_id)
-      if (!form || !ownerPlanOk.get(form.user_id)) continue
-
-      const minutosParado = Math.round((now - new Date(partial.updated_at as string).getTime()) / 60_000)
-      const leadData = buildLeadData({
-        formId: partial.form_id,
-        responseId: partial.id,
-        responseData: (partial.answers ?? {}) as Record<string, unknown>,
-        meta_events: (partial.meta_events ?? []) as string[],
-        urlParams: (partial.url_params ?? null) as Record<string, string> | null,
-        form: form as { id: string; title: string | null; user_id: string; questions?: Array<{ id: string; title?: string; type?: string }> },
-        appUrl,
+      .insert({
+        form_id: partial.form_id,
+        response_id: partial.id,
+        phone_number: phoneDigits,
+        message_sent: '',
+        status: 'abandoned_alert',
+        wacli_message_id: null,
+        error_message: null,
       })
-      leadData.abandono_minutos = String(minutosParado)
+    if (claimErr) { stats.falhas += 1; logError('[abandoned-leads] claim falhou — envio abortado', claimErr); continue }
 
-      // Trava: sem telefone utilizável, o alerta não é acionável — pula.
-      const phoneDigits = String(leadData.phone ?? '').replace(/\D/g, '')
-      if (phoneDigits.length < 10) { stats.semTelefone += 1; continue }
-
-      const message = buildMessage(ABANDONED_LEAD_TEMPLATE, leadData)
-      const settings = (settingsRows ?? []).find(s => s.form_id === partial.form_id)
-      if (!settings?.owner_phone) continue
-
-      try {
-        const res = await fetch(`${appUrl}/api/whatsapp/send`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.INTERNAL_API_SECRET || ''}`,
-          },
-          body: JSON.stringify({
-            to: settings.owner_phone,
-            message,
-            formId: partial.form_id, // direct-send com formId = mantém o gate de plano
-            idempotencyKey: `abandoned:${partial.form_id}:${partial.id}`,
-          }),
-        })
-        const result = await res.json().catch(() => ({})) as { success?: boolean; messageId?: string; error?: string }
-        if (res.ok && result.success) {
-          // O log é o DEDUP — só marca quando realmente saiu.
-          await logWhatsAppSend(partial.form_id, partial.id, 'abandoned_alert', result.messageId ?? null, null, phoneDigits)
-          stats.enviados += 1
-          sent += 1
-        } else {
-          stats.falhas += 1
-          log('[abandoned-leads] send falhou', { responseId: partial.id, status: res.status, error: result.error ?? null })
-        }
-      } catch (err) {
+    let sendOk = false
+    try {
+      const res = await fetch(`${appUrl}/api/whatsapp/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.INTERNAL_API_SECRET || ''}`,
+        },
+        body: JSON.stringify({
+          to: settings.owner_phone,
+          message,
+          formId: partial.form_id, // direct-send com formId = gate de plano fail-closed
+          idempotencyKey: `abandoned:${partial.form_id}:${partial.id}`,
+        }),
+      })
+      const result = await res.json().catch(() => ({})) as { success?: boolean; messageId?: string; error?: string }
+      sendOk = res.ok && result.success === true
+      if (sendOk) {
+        stats.enviados += 1
+        sent += 1
+      } else {
         stats.falhas += 1
-        logError('[abandoned-leads] erro no envio', err)
+        log('[abandoned-leads] send falhou', { responseId: partial.id, status: res.status, error: result.error ?? null })
       }
+    } catch (err) {
+      stats.falhas += 1
+      logError('[abandoned-leads] erro no envio', err)
     }
 
-    log('[abandoned-leads] run', stats)
-    return NextResponse.json({ ok: true, thresholdMin: THRESHOLD_MIN, ...stats })
-  } catch (err) {
-    logError('[abandoned-leads] run failed', err)
-    return NextResponse.json({ ok: false, error: 'internal' }, { status: 500 })
+    if (!sendOk) {
+      // libera o claim pro retry — e grita se nem isso der certo
+      const { error: unclaimErr } = await supabase
+        .from('form_whatsapp_logs')
+        .delete()
+        .eq('response_id', partial.id)
+        .eq('status', 'abandoned_alert')
+      if (unclaimErr) logError('[abandoned-leads] CRÍTICO: claim órfão não removido — alerta deste response ficará suprimido', { responseId: partial.id, unclaimErr })
+    }
   }
+
+  log('[abandoned-leads] run', stats)
+  return NextResponse.json({ ok: true, thresholdMin: THRESHOLD_MIN, relogio: 'submitted_at (início do preenchimento)', ...stats })
 }

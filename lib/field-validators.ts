@@ -424,15 +424,37 @@ function validateContentBlock(value: unknown): FieldValidationResult {
   return { valid: true }
 }
 
+const CALENDLY_URI_RE = /^https:\/\/(api\.)?calendly\.com\//
+
+function validCalendlyUriString(value: string): boolean {
+  return value === 'scheduled' || CALENDLY_URI_RE.test(value)
+}
+
 function validateCalendly(value: unknown, calendlyUrl?: string, required?: boolean): FieldValidationResult {
   if (required && !calendlyUrl) {
     return { valid: false, error: 'Campo Calendly obrigatório não possui URL de agendamento configurada' }
   }
-  if (typeof value !== 'string') {
-    return { valid: false, error: 'Agendamento Calendly deve ser texto' }
+  // P0-2 (auditoria Codex 2026-07-23): o player passou a gravar
+  // { event_uri, invitee_uri } e este validador só aceitava string — TODO
+  // agendamento real levava 422 no submit. Aceita os DOIS formatos na
+  // transição, com validação estrita das URIs Calendly.
+  if (typeof value === 'string') {
+    if (!validCalendlyUriString(value)) {
+      return { valid: false, error: 'Valor do agendamento Calendly inválido' }
+    }
+    return { valid: true }
   }
-  if (value !== 'scheduled' && !value.startsWith('https://')) {
-    return { valid: false, error: 'Valor do agendamento Calendly inválido' }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const v = value as { event_uri?: unknown; invitee_uri?: unknown }
+    const keys = Object.keys(v)
+    const allowed = keys.every((k) => k === 'event_uri' || k === 'invitee_uri')
+    if (!allowed || typeof v.event_uri !== 'string' || !validCalendlyUriString(v.event_uri)) {
+      return { valid: false, error: 'Valor do agendamento Calendly inválido' }
+    }
+    if (v.invitee_uri !== undefined && (typeof v.invitee_uri !== 'string' || !CALENDLY_URI_RE.test(v.invitee_uri))) {
+      return { valid: false, error: 'Valor do agendamento Calendly inválido' }
+    }
+    return { valid: true }
   }
-  return { valid: true }
+  return { valid: false, error: 'Agendamento Calendly deve ser texto' }
 }

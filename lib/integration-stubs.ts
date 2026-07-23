@@ -124,6 +124,10 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
   const diaSemanaValue = sp({ weekday: 'long' })
 
   return {
+    // Perguntas com título customizado ENTRAM PRIMEIRO: os campos canônicos
+    // abaixo vencem colisões (auditoria Codex 2026-07-23 — antes uma pergunta
+    // intitulada "telefone" sobrescrevia o phone canônico e o {whatsapp_link}).
+    ...mappedAnswers,
     // {nome} agora é o PRIMEIRO nome capitalizado; antes era o que o lead
     // digitou cru (caixa baixa estragava o "Oi {nome}!").
     name: firstNameValue,
@@ -141,9 +145,7 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
     horario: horarioValue,
     data: dataValue,
     dia_semana: diaSemanaValue,
-    ...mappedAnswers,
-    // Depois de mappedAnswers de propósito: {respostas} é placeholder
-    // documentado, então ganha de uma pergunta intitulada "Respostas".
+    // {respostas} é placeholder documentado — ganha de pergunta "Respostas".
     respostas: respostasValue,
     // {meta_events}: eventos do Pixel/CAPI disparados neste preenchimento
     // (PageView, Lead, LeadQualificado...), separados por vírgula. A coluna

@@ -19,7 +19,7 @@ export const DEFAULT_WHATSAPP_MESSAGE_TEMPLATE = [
 /** Template FIXO do alerta de lead abandonado (não editável pelo usuário na v1). */
 export const ABANDONED_LEAD_TEMPLATE = [
   '⚠️ *Lead incompleto* em {form_name}',
-  'Começou a preencher e parou há mais de {abandono_minutos} min.',
+  'Começou a preencher há {abandono_minutos} min e não finalizou.',
   '',
   '{respostas}',
   '',

@@ -322,6 +322,16 @@ export async function POST(req: NextRequest) {
       verifyPartialToken(partialToken, existingResponseId)
     const isAuthenticatedOwner =
       !!fetched.respondent_id && fetched.respondent_id === bodyRespondentId
+    if (isAuthenticatedOwner && fetched.completed === true) {
+      // P1-4 (auditoria Codex 2026-07-23): resubmissão AUTENTICADA de resposta
+      // já finalizada repetia e-mail/Sheets/CAPI/webhook a cada replay. Mesmo
+      // tratamento idempotente do caminho anônimo: 200 already_completed, sem
+      // UPDATE e sem side effects.
+      return NextResponse.json(
+        { response_id: fetched.id, completed: true, already_completed: true },
+        { status: 200, headers: CORS_HEADERS }
+      )
+    }
     if (isAnonymousPartialUpgrade || isAuthenticatedOwner) {
       existingResponse = fetched
       anonymousAdoption = isAnonymousPartialUpgrade
@@ -712,7 +722,11 @@ export async function POST(req: NextRequest) {
     // request scope (testes), `after` lança — aí degrada pro comportamento antigo.
     try {
       after(async () => { await Promise.allSettled(postSubmitTasks) })
-    } catch {
+    } catch (err) {
+      // Fallback esperado só FORA de request scope (vitest). Qualquer outra
+      // falha de after() é anômala — loga antes de degradar pro modo síncrono
+      // (auditoria Codex 2026-07-23: catch silencioso ocultava erro real).
+      logError('[responses] after() indisponível — degradando para pós-submit síncrono', err)
       await Promise.allSettled(postSubmitTasks)
     }
   }

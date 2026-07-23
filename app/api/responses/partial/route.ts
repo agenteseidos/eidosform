@@ -290,6 +290,10 @@ async function updatePartialResponse(opts: {
     .update({
       answers: valid as Record<string, import('@/lib/database.types').Json>,
       last_question_answered: lastQuestionOk,
+      // Bate o relógio de atividade a cada autosave — é o que o cron de lead
+      // abandonado usa pra saber "quando foi a ÚLTIMA vez que mexeu" (não mais
+      // "quando começou"). Coluna criada 2026-07-23 (migration manual).
+      last_activity_at: new Date().toISOString(),
       ...utmData,
       ...(urlParams ? { url_params: urlParams } : {}),
       ...(revision !== null ? { partial_revision: revision } : {}),

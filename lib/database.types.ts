@@ -554,8 +554,17 @@ export interface Database {
           partial_session_hash: string | null
           partial_revision: number | null
           submitted_at: string
+          // ⚠️ created_at/updated_at NÃO EXISTEM na tabela real (auditoria
+          // Codex 2026-07-23, erro 42703 ao consultar) — este arquivo de tipos
+          // está desatualizado nesse ponto; pendência de regenerar via CLI
+          // do Supabase contra o schema real. Mantido aqui só pra não quebrar
+          // call-sites que talvez já assumam esse shape incorreto.
           created_at: string
           updated_at: string
+          // Coluna REAL, criada 2026-07-23 (migration manual
+          // supabase/migrations-manual/2026-07-23-notificacoes-whatsapp.sql),
+          // batida a cada autosave parcial — relógio do cron de lead abandonado.
+          last_activity_at: string
         }
         Insert: {
           id?: string
@@ -577,6 +586,7 @@ export interface Database {
           submitted_at?: string
           created_at?: string
           updated_at?: string
+          last_activity_at?: string
         }
         Update: {
           respondent_id?: string | null
@@ -594,6 +604,7 @@ export interface Database {
           partial_session_hash?: string | null
           partial_revision?: number | null
           updated_at?: string
+          last_activity_at?: string
         }
         Relationships: []
       }

@@ -12,11 +12,11 @@ import { log, logError } from '@/lib/logger'
  *
  * P0-1: a v1 consultava `updated_at`, que NÃO EXISTE em produção, e engolia o
  * erro 42703 respondendo ok:true — um no-op mascarado. Agora:
- *  - Relógio = `submitted_at` (DEFAULT now() do banco no INSERT da parcial e
- *    nunca reescrito) ⇒ semântica "COMEÇOU há ≥N min e não finalizou" — que é
- *    exatamente o pedido original do Sidney ("30 minutos de início e não
- *    finalizou"). Upgrade futuro p/ inatividade real: migration
- *    `last_activity_at` em supabase/migrations-manual/ (aplicar e trocar aqui).
+ *  - Relógio = `last_activity_at` (migration manual aplicada 2026-07-23:
+ *    coluna nova, DEFAULT now(), atualizada a cada autosave parcial em
+ *    /api/responses/partial e /api/forms/[id]/partial-response) ⇒ semântica
+ *    "PAROU DE MEXER há ≥N min", mais precisa que "começou" — pega quem ficou
+ *    30min só na primeira pergunta OU quem avançou bastante e travou no fim.
  *  - TODA query checa `error` e o run responde 500 com o estágio que falhou.
  *    Nenhum erro de banco vira "ok" nunca mais.
  *
@@ -67,15 +67,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const enabledFormIds = (settingsRows ?? []).filter(s => s.owner_phone).map(s => s.form_id)
   if (enabledFormIds.length === 0) return NextResponse.json({ ok: true, ...stats })
 
-  // 2) parciais que COMEÇARAM na janela [lookback, cutoff] e não finalizaram
+  // 2) parciais SEM ATIVIDADE na janela [lookback, cutoff] e não finalizadas
   const { data: partials, error: partialsErr } = await supabase
     .from('responses')
-    .select('id, form_id, answers, url_params, meta_events, submitted_at')
+    .select('id, form_id, answers, url_params, meta_events, last_activity_at')
     .eq('completed', false)
-    .lt('submitted_at', cutoffIso)
-    .gt('submitted_at', lookbackIso)
+    .lt('last_activity_at', cutoffIso)
+    .gt('last_activity_at', lookbackIso)
     .in('form_id', enabledFormIds)
-    .order('submitted_at', { ascending: true })
+    .order('last_activity_at', { ascending: true })
     .limit(BATCH_LIMIT * 3) // margem pros filtrados (dedup/telefone)
   if (partialsErr) return fail('partials', partialsErr)
   if (!partials || partials.length === 0) return NextResponse.json({ ok: true, ...stats })
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const form = formMap.get(partial.form_id)
     if (!form || !ownerPlanOk.get(form.user_id)) continue
 
-    const minutosDesdeInicio = Math.round((now - new Date(partial.submitted_at as string).getTime()) / 60_000)
+    const minutosDesdeInicio = Math.round((now - new Date(partial.last_activity_at as string).getTime()) / 60_000)
     const leadData = buildLeadData({
       formId: partial.form_id,
       responseId: partial.id,
@@ -197,5 +197,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   log('[abandoned-leads] run', stats)
-  return NextResponse.json({ ok: true, thresholdMin: THRESHOLD_MIN, relogio: 'submitted_at (início do preenchimento)', ...stats })
+  return NextResponse.json({ ok: true, thresholdMin: THRESHOLD_MIN, relogio: 'last_activity_at (última atividade real)', ...stats })
 }

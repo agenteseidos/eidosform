@@ -218,6 +218,8 @@ export async function PUT(
       .update({
         answers: sanitizedAnswers as Record<string, import('@/lib/database.types').Json>,
         last_question_answered: lastQuestionOk,
+        // Idem: relógio de atividade pro cron de lead abandonado.
+        last_activity_at: new Date().toISOString(),
       })
       .eq('id', existing.id)
       .select('id')

@@ -37,14 +37,27 @@ describe('formatAnswerValue', () => {
     expect(formatAnswerValue({ rua: 'Rua Só', cidade: 'JP' })).toBe('Rua Só, JP')
   })
 
-  it('calendly: uri string e objeto viram "Agendamento realizado"', () => {
+  it('calendly whatsapp: URI de API é OMITIDA (não é link clicável — só o ✅)', () => {
+    // api.calendly.com = endpoint autenticado; abrir no navegador dá "Unauthenticated".
+    // No WhatsApp NÃO pode aparecer (link quebrado engana o vendedor).
     expect(formatAnswerValue('https://api.calendly.com/scheduled_events/xyz'))
-      .toBe('✅ Agendamento realizado\nhttps://api.calendly.com/scheduled_events/xyz')
+      .toBe('✅ Agendamento realizado')
+    expect(formatAnswerValue({ event_uri: 'https://api.calendly.com/scheduled_events/abc' }))
+      .toBe('✅ Agendamento realizado')
     expect(formatAnswerValue('scheduled')).toBe('✅ Agendamento realizado')
-    expect(formatAnswerValue({ event_uri: 'https://api.calendly.com/e/1', invitee_uri: 'https://api.calendly.com/i/2' }, { sink: 'export' }))
-      .toBe('Agendamento realizado (https://api.calendly.com/e/1)')
     // string comum NÃO vira agendamento
     expect(formatAnswerValue('texto normal')).toBe('texto normal')
+  })
+
+  it('calendly whatsapp: página VIEWÁVEL (não-api) mantém o link', () => {
+    expect(formatAnswerValue('https://calendly.com/fulano/30min'))
+      .toBe('✅ Agendamento realizado\nhttps://calendly.com/fulano/30min')
+  })
+
+  it('calendly export: mantém a URI (mesmo de API) como rastro', () => {
+    expect(formatAnswerValue({ event_uri: 'https://api.calendly.com/e/1', invitee_uri: 'https://api.calendly.com/i/2' }, { sink: 'export' }))
+      .toBe('Agendamento realizado (https://api.calendly.com/e/1)')
+    expect(formatAnswerValue('scheduled', { sink: 'export' })).toBe('Agendamento realizado')
   })
 
   it('primitivos e arrays simples preservam comportamento', () => {

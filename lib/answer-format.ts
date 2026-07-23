@@ -50,6 +50,14 @@ function isCalendlyAnswer(v: unknown): v is Record<string, unknown> {
 const isCalendlyUri = (s: string) =>
   s === 'scheduled' || /^https:\/\/(api\.)?calendly\.com\//.test(s)
 
+// `api.calendly.com/...` é ENDPOINT DE API (exige token; abrir no navegador devolve
+// "Unauthenticated") — NUNCA é link clicável pro vendedor. Só tratamos como link útil
+// uma página calendly.com VIEWÁVEL (ex.: reschedule/cancel do invitee). Hoje o widget
+// só captura a URI de API, então na prática o WhatsApp mostra apenas o "✅". Enriquecer
+// com data/hora real do agendamento = feature futura (precisa credencial da API Calendly).
+const isViewableCalendlyUrl = (s: string) =>
+  /^https:\/\/(?!api\.)([a-z0-9-]+\.)?calendly\.com\//i.test(s)
+
 function formatFile(v: FileAnswer, sink: AnswerSink): string {
   const name = typeof v.name === 'string' && v.name.trim() ? v.name.trim() : ''
   const url = typeof v.url === 'string' ? v.url.trim() : ''
@@ -74,9 +82,18 @@ function formatAddress(v: Record<string, unknown>, _sink: AnswerSink): string {
 }
 
 function formatCalendly(uri: string, sink: AnswerSink): string {
-  const link = uri === 'scheduled' ? '' : uri
-  if (sink === 'whatsapp') return link ? `✅ Agendamento realizado\n${link}` : '✅ Agendamento realizado'
-  return link ? `Agendamento realizado (${link})` : 'Agendamento realizado'
+  if (sink === 'whatsapp') {
+    // WhatsApp é pra ação humana imediata: só anexa link se for VIEWÁVEL. URI de API
+    // (o único formato que o widget captura hoje) é omitida — link quebrado engana o
+    // vendedor. Sem link viewável, "✅ Agendamento realizado" já basta: o Calendly
+    // manda a confirmação com data/hora por conta própria pro dono do form.
+    const link = uri && uri !== 'scheduled' && isViewableCalendlyUrl(uri) ? uri : ''
+    return link ? `✅ Agendamento realizado\n${link}` : '✅ Agendamento realizado'
+  }
+  // Export é registro/rastreabilidade — mantém a URI (mesmo de API), que dá pra
+  // resolver depois via API. Ninguém "clica" numa célula de planilha.
+  const record = uri && uri !== 'scheduled' ? uri : ''
+  return record ? `Agendamento realizado (${record})` : 'Agendamento realizado'
 }
 
 /** Fallback seguro pra objeto desconhecido: "chave: valor" legível, nunca [object Object]. */

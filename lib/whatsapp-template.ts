@@ -98,5 +98,8 @@ export function buildMessage(template: string, leadData: Record<string, unknown>
     return match // chave desconhecida: mantém literal em vez de apagar
   })
 
-  return msg
+  // Colapsa buracos: um {respostas} vazio (lead abandonou na 1ª pergunta) ou
+  // linhas self-hide deixam 3+ quebras seguidas. Máx. 1 linha em branco. Os
+  // \n\n entre blocos de {respostas} (exatamente 2) são preservados.
+  return msg.replace(/\n{3,}/g, '\n\n').trim()
 }

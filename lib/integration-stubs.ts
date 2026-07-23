@@ -65,18 +65,24 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
     .map((pair) => `*${pair.title}*\n${pair.answer}`) // pergunta em negrito no WhatsApp (asterisco único)
     .join('\n\n')
 
-  // Find name, email, phone by scanning question titles.
-  // Tenta match exato primeiro (evita "nome da empresa" casar com "nome");
-  // só cai pro includes se nenhum título bater exatamente.
-  const findByLabel = (...labels: string[]): string => {
+  // Busca de identidade por título de pergunta, separada em EXATA e DIFUSA
+  // (includes). A difusa é perigosa: "telefone da empresa" casa "telefone".
+  // Por isso a ordem final de prioridade (abaixo) coloca os url_params ENTRE
+  // a exata e a difusa — um telefone secundário digitado não pode roubar a
+  // identidade do lead vinda da URL da campanha (bug pego no teste real 23/07;
+  // era o P2 de colisão apontado pela auditoria Codex).
+  const findByLabelExact = (...labels: string[]): string => {
     for (const label of labels) {
       for (const [key, val] of Object.entries(mappedAnswers)) {
-        if (key === label) return val
+        if (key === label && val) return val
       }
     }
+    return ''
+  }
+  const findByLabelFuzzy = (...labels: string[]): string => {
     for (const label of labels) {
       for (const [key, val] of Object.entries(mappedAnswers)) {
-        if (key.includes(label)) return val
+        if (key.includes(label) && val) return val
       }
     }
     return ''
@@ -107,12 +113,18 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
     return ''
   }
 
-  const fullNameRaw = findByLabel(...NAME_QUESTION_KEYWORDS) || fromUrl('nome', 'name')
+  // Prioridade p/ cada identidade: (1) tipo canônico da pergunta → (2) título
+  // EXATO → (3) parâmetro da URL (identidade da campanha) → (4) título DIFUSO
+  // (último recurso). Assim url_params vence "telefone da empresa" & cia.
+  const nameKw = [...NAME_QUESTION_KEYWORDS]
+  const fullNameRaw = findByLabelExact(...nameKw) || fromUrl('nome', 'name') || findByLabelFuzzy(...nameKw)
   const fullNameValue = fullNameRaw ? capitalizeFullName(fullNameRaw) : ''
   const firstNameValue = firstName(fullNameRaw) || 'Lead'
-  const emailValue = findByType('email') || findByLabel('email', 'e-mail') || fromUrl('email', 'e-mail') || 'N/A'
-  const phoneValue = findByType('phone') || findByLabel('telefone', 'phone', 'celular', 'whatsapp')
-    || fromUrl('telefone', 'phone', 'celular', 'whatsapp', 'tel') || ''
+  const emailValue = findByType('email') || findByLabelExact('email', 'e-mail')
+    || fromUrl('email', 'e-mail') || findByLabelFuzzy('email', 'e-mail') || 'N/A'
+  const phoneValue = findByType('phone') || findByLabelExact('telefone', 'phone', 'celular', 'whatsapp')
+    || fromUrl('telefone', 'phone', 'celular', 'whatsapp', 'tel')
+    || findByLabelFuzzy('telefone', 'phone', 'celular', 'whatsapp') || ''
 
   // Variáveis de data/hora — usa fuso de São Paulo pra render natural pro
   // dono brasileiro. Calculadas no momento do envio (não persistidas).

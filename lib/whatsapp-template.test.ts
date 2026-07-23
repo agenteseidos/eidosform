@@ -40,3 +40,18 @@ describe('buildMessage', () => {
     expect(buildMessage('{inventada}', {})).toBe('{inventada}')
   })
 })
+
+describe('buildMessage — limpeza de buracos (23/07)', () => {
+  it('colapsa 3+ quebras (respostas vazia + linha self-hide) em no máx. 1 branco', () => {
+    const t = '⚠️ Título\nsub\n\n{respostas}\n\n💬 Responder: {whatsapp_link}\n*Eventos:* {meta_events}'
+    const msg = buildMessage(t, { respostas: '', phone: '5583999376704', meta_events: '' })
+    expect(msg).not.toMatch(/\n{3,}/)          // sem buraco triplo
+    expect(msg).toContain('💬 Responder: https://wa.me/5583999376704')
+    expect(msg).not.toMatch(/Eventos/)          // linha vazia sumiu
+    expect(msg.endsWith('5583999376704')).toBe(true) // trim no fim
+  })
+  it('preserva o \\n\\n entre blocos de {respostas}', () => {
+    const msg = buildMessage('{respostas}', { respostas: '*P1*\nR1\n\n*P2*\nR2' })
+    expect(msg).toBe('*P1*\nR1\n\n*P2*\nR2')
+  })
+})

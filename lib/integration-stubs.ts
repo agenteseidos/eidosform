@@ -88,13 +88,20 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
     return ''
   }
 
-  // Find by canonical question type — more robust than scanning titles
+  // Find by canonical question type — more robust than scanning titles.
+  // P2-4 (2ª auditoria Codex): usava `.find()` e PARAVA na primeira pergunta do
+  // tipo mesmo se estivesse vazia — um form com duas perguntas `phone` onde a
+  // primeira ficou em branco perdia o telefone que o lead realmente preencheu.
+  // Agora percorre todas e devolve a primeira resposta NÃO VAZIA.
   const findByType = (...types: string[]): string => {
     if (!params.form.questions) return ''
     for (const t of types) {
-      const q = params.form.questions.find(q => q.type === t)
-      if (q && q.id && responseData[q.id] != null) {
-        return String(responseData[q.id])
+      for (const q of params.form.questions) {
+        if (q.type !== t || !q.id) continue
+        const raw = responseData[q.id]
+        if (raw == null) continue
+        const value = String(raw).trim()
+        if (value) return value
       }
     }
     return ''

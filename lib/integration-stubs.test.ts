@@ -32,6 +32,20 @@ describe('buildLeadData — identidade e precedência (bug real 23/07)', () => {
     expect(lead.phone).toBe('5583912345678')      // o que o lead digitou
   })
 
+  it('P2-4: segunda pergunta do MESMO tipo é usada quando a primeira veio vazia', () => {
+    // Antes: `.find()` parava na primeira pergunta tipo phone mesmo VAZIA e o
+    // telefone que o lead realmente preencheu era ignorado.
+    const lead = buildLeadData({
+      formId: 'f', responseId: 'r', appUrl: 'https://x',
+      form: { id: 'f', title: 'F', user_id: 'u', questions: [
+        { id: 'tel1', type: 'phone', title: 'Telefone fixo (opcional)' },
+        { id: 'tel2', type: 'phone', title: 'Seu WhatsApp?' },
+      ] },
+      responseData: { tel1: '   ', tel2: '5583999376704' },
+    })
+    expect(lead.phone).toBe('5583999376704')
+  })
+
   it('title reservado não sobrescreve o phone canônico (spread de mappedAnswers primeiro)', () => {
     const lead = buildLeadData({
       formId: 'f', responseId: 'r', appUrl: 'https://x',

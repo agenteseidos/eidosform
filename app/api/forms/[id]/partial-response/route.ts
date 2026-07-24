@@ -213,6 +213,10 @@ export async function PUT(
   let responseId: string
 
   if (existing) {
+    // P2-5 (2ª auditoria Codex): o UPDATE não era condicionado a completed=false.
+    // Se o submit final entrasse entre o SELECT e este UPDATE, o autosave
+    // sobrescrevia as respostas de uma resposta JÁ FINALIZADA e ainda bumpava
+    // last_activity_at. Agora é compare-and-set.
     const { data: updated, error: updateError } = await supabase
       .from('responses')
       .update({
@@ -222,12 +226,22 @@ export async function PUT(
         last_activity_at: new Date().toISOString(),
       })
       .eq('id', existing.id)
+      .eq('completed', false)
       .select('id')
-      .single()
+      .maybeSingle()
 
-    if (updateError || !updated) {
+    if (updateError) {
       logError('Failed to update partial response', updateError, { formId, respondentId: user.id })
       return NextResponse.json({ error: 'Erro ao salvar progresso' }, { status: 500, headers: CORS_HEADERS })
+    }
+    if (!updated) {
+      // Zero linhas = a resposta foi finalizada nesse meio-tempo. Não é erro:
+      // não há progresso a salvar num form já enviado.
+      log('Partial autosave ignorado — resposta já finalizada', { formId, responseId: existing.id })
+      return NextResponse.json(
+        { response_id: existing.id, already_completed: true },
+        { status: 200, headers: CORS_HEADERS }
+      )
     }
     responseId = updated.id
   } else {
@@ -239,11 +253,34 @@ export async function PUT(
         answers: sanitizedAnswers as Record<string, import('@/lib/database.types').Json>,
         completed: false,
         last_question_answered: lastQuestionOk,
+        last_activity_at: new Date().toISOString(),
       })
       .select('id')
       .single()
 
     if (insertError || !created) {
+      // P2-5: dois PUTs simultâneos podiam AMBOS não achar parcial e inserir,
+      // deixando DUAS rows incompletas — uma é completada e a outra vira falso
+      // abandono. Com o índice único parcial (migration), o perdedor recebe
+      // 23505 e adota a row do vencedor em vez de duplicar.
+      if ((insertError as { code?: string } | null)?.code === '23505') {
+        const { data: winner } = await supabase
+          .from('responses')
+          .select('id')
+          .eq('form_id', formId)
+          .eq('respondent_id', user.id)
+          .eq('completed', false)
+          .order('submitted_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (winner) {
+          log('Partial autosave adotou parcial concorrente (23505)', { formId, responseId: winner.id })
+          return NextResponse.json(
+            { response_id: winner.id },
+            { status: 200, headers: CORS_HEADERS }
+          )
+        }
+      }
       logError('Failed to create partial response', insertError, { formId, respondentId: user.id })
       return NextResponse.json({ error: 'Erro ao salvar progresso' }, { status: 500, headers: CORS_HEADERS })
     }

@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS } from '@/lib/plan-limits'
 import { getEffectivePlan, type PlanId } from '@/lib/plans'
+import { isValidWhatsAppPhone, whatsAppDigits } from '@/lib/phone'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -151,8 +152,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Permitir limpar o número
         updateData.owner_phone = null
       } else {
-        const cleaned = String(owner_phone).replace(/\D/g, '')
-        if (cleaned.length < 10 || cleaned.length > 15) {
+        // Regra ÚNICA (lib/phone) — P2-2: aqui aceitava ≥10 enquanto o envio
+        // exigia ≥11, então dava pra salvar config que nunca enviava.
+        const cleaned = whatsAppDigits(owner_phone)
+        if (!isValidWhatsAppPhone(cleaned)) {
           return NextResponse.json(
             { error: 'Número de WhatsApp inválido. Use formato: 5511999999999' },
             { status: 400 }

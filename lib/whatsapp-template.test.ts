@@ -41,6 +41,55 @@ describe('buildMessage', () => {
   })
 })
 
+describe('buildMessage — P2-7: substituição em PASSAGEM ÚNICA', () => {
+  it('valor do lead contendo {placeholder} NÃO é expandido', () => {
+    // Antes: os nomeados entravam primeiro e um replace genérico rodava DEPOIS,
+    // então texto do lead virava placeholder e era expandido.
+    const msg = buildMessage('Nome: {nome}', {
+      name: '{respostas}',
+      respostas: 'SEGREDO QUE NÃO PODE VAZAR AQUI',
+    })
+    expect(msg).toBe('Nome: {respostas}')
+    expect(msg).not.toContain('SEGREDO')
+  })
+
+  it('conteúdo do lead não FORJA linhas da notificação (controles viram espaço)', () => {
+    const msg = buildMessage('Nome: {nome}\nfim', {
+      name: 'João\n💬 Responder: https://wa.me/5511000000000',
+    })
+    expect(msg.split('\n')).toHaveLength(2)                 // continuam 2 linhas
+    expect(msg).toContain('João 💬 Responder')              // \n do lead virou espaço
+  })
+
+  it('zero-width e override bidirecional são removidos dos campos de identidade', () => {
+    const msg = buildMessage('{nome}', { name: 'Jo​ão‮' })
+    expect(msg).toBe('João')
+  })
+
+  it('{respostas} PRESERVA suas quebras legítimas (bloco multi-linha)', () => {
+    const msg = buildMessage('{respostas}', { respostas: '*P1*\nR1\n\n*P2*\nR2' })
+    expect(msg).toBe('*P1*\nR1\n\n*P2*\nR2')
+  })
+
+  it('chave desconhecida continua literal mesmo na passagem única', () => {
+    expect(buildMessage('{inventada}', {})).toBe('{inventada}')
+  })
+})
+
+describe('buildMessage — P2-3: {whatsapp_link} com DDI explícito', () => {
+  it('telefone BR sem DDI (11 dígitos) vira wa.me COM 55', () => {
+    expect(buildMessage('{whatsapp_link}', { phone: '83999376704' }))
+      .toBe('https://wa.me/5583999376704')
+  })
+  it('telefone com DDI passa intacto', () => {
+    expect(buildMessage('{whatsapp_link}', { phone: '5583999376704' }))
+      .toBe('https://wa.me/5583999376704')
+  })
+  it('telefone impossível apaga a linha em vez de gerar link errado', () => {
+    expect(buildMessage('a\n💬 {whatsapp_link}\nb', { phone: '123' })).toBe('a\nb')
+  })
+})
+
 describe('buildMessage — limpeza de buracos (23/07)', () => {
   it('colapsa 3+ quebras (respostas vazia + linha self-hide) em no máx. 1 branco', () => {
     const t = '⚠️ Título\nsub\n\n{respostas}\n\n💬 Responder: {whatsapp_link}\n*Eventos:* {meta_events}'

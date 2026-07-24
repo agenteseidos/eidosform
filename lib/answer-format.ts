@@ -97,15 +97,30 @@ function formatCalendly(uri: string, sink: AnswerSink): string {
 }
 
 /** Fallback seguro pra objeto desconhecido: "chave: valor" legível, nunca [object Object]. */
-function formatUnknownObject(v: Record<string, unknown>, sink: AnswerSink): string {
+function formatUnknownObject(v: Record<string, unknown>, sink: AnswerSink, depth: number): string {
   const parts = Object.entries(v)
     .filter(([, val]) => val !== null && val !== undefined && val !== '')
-    .map(([k, val]) => `${k}: ${formatAnswerValue(val, { sink })}`)
+    .map(([k, val]) => `${k}: ${formatAtDepth(val, { sink }, depth + 1)}`)
   return parts.join(', ')
 }
 
+/**
+ * P2-6 (2ª auditoria Codex): a recursão não tinha teto. Um objeto/array aninhado
+ * malformado (ou hostil) podia estourar a pilha ou gerar uma mensagem
+ * desproporcional — e, no cron, derrubar o LOTE INTEIRO junto. Teto de
+ * profundidade + de tamanho: degradação previsível em vez de exceção.
+ */
+const MAX_DEPTH = 6
+const MAX_OUTPUT_CHARS = 4000
+
 export function formatAnswerValue(value: unknown, opts: FormatAnswerOptions = {}): string {
+  const out = formatAtDepth(value, opts, 0)
+  return out.length > MAX_OUTPUT_CHARS ? `${out.slice(0, MAX_OUTPUT_CHARS)}…` : out
+}
+
+function formatAtDepth(value: unknown, opts: FormatAnswerOptions, depth: number): string {
   const sink: AnswerSink = opts.sink ?? 'whatsapp'
+  if (depth > MAX_DEPTH) return '…'
 
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') {
@@ -116,7 +131,7 @@ export function formatAnswerValue(value: unknown, opts: FormatAnswerOptions = {}
   if (typeof value === 'number') return String(value)
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
   if (Array.isArray(value)) {
-    const items = value.map((v) => formatAnswerValue(v, opts)).filter(Boolean)
+    const items = value.map((v) => formatAtDepth(v, opts, depth + 1)).filter(Boolean)
     // arquivos múltiplos: um por linha no WhatsApp; demais listas: vírgula
     const multiline = sink === 'whatsapp' && value.some(isFileAnswer)
     return items.join(multiline ? '\n' : ', ')
@@ -128,7 +143,7 @@ export function formatAnswerValue(value: unknown, opts: FormatAnswerOptions = {}
       return formatCalendly(uri || 'scheduled', sink)
     }
     if (isAddressAnswer(value)) return formatAddress(value, sink)
-    return formatUnknownObject(value as Record<string, unknown>, sink)
+    return formatUnknownObject(value as Record<string, unknown>, sink, depth)
   }
   return String(value)
 }

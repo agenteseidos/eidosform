@@ -7,6 +7,7 @@ import { getEffectivePlan, type PlanId } from '@/lib/plans'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
 import { buildMessage } from '@/lib/whatsapp-template'
+import { isValidWhatsAppPhone } from '@/lib/phone'
 
 const MAX_SENDS_PER_HOUR = 100
 
@@ -43,10 +44,12 @@ interface DirectSendRequest {
   message: string
 }
 
-function isValidPhoneNumber(phone: string): boolean {
-  const cleaned = phone.replace(/\D/g, '')
-  return cleaned.length >= 11 && cleaned.length <= 15
-}
+/**
+ * P2-2 (auditoria Codex 2026-07-23): esta função exigia ≥11 dígitos enquanto o
+ * painel e o PUT aceitavam ≥10 — dava pra SALVAR e HABILITAR uma configuração
+ * que nunca enviava, em silêncio. Regra única agora vive em lib/phone.
+ */
+const isValidPhoneNumber = isValidWhatsAppPhone
 
 /**
  * Normalize and sanitize a template value before substitution.
@@ -195,24 +198,40 @@ async function handleFormAwareSend(
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { cookies: { getAll: () => [], setAll: () => {} } }
   )
-  const { data: formData } = await supabase
+  // P1-7 (auditoria Codex 2026-07-23): este caminho — o usado pelo submit normal
+  // — ignorava o `error` da query. Form ausente/erro de banco PULAVA o bloco
+  // inteiro e o envio seguia SEM gate de plano (fail-OPEN). O direct-send já
+  // tinha sido corrigido; aqui não. Agora é fail-CLOSED igual.
+  const { data: formData, error: formErr } = await supabase
     .from('forms')
     .select('user_id')
     .eq('id', data.formId)
     .single()
-  if (formData?.user_id) {
-    const { data: ownerProfile } = await supabase
-      .from('profiles')
-      .select('plan, plan_expires_at')
-      .eq('id', formData.user_id)
-      .single()
-    const plan = getEffectivePlan(ownerProfile) as PlanId
-    if (!PLANS[plan]?.whatsappNotifications) {
-      return NextResponse.json(
-        { success: false, error: 'WhatsApp requires Plus or Professional plan' },
-        { status: 403 }
-      )
-    }
+  if (formErr || !formData?.user_id) {
+    logError(`[whatsapp/send] gate de plano: form ${data.formId} não resolvido`, formErr)
+    return NextResponse.json(
+      { success: false, error: 'Form not found for plan gate' },
+      { status: 403 }
+    )
+  }
+  const { data: ownerProfile, error: profErr } = await supabase
+    .from('profiles')
+    .select('plan, plan_expires_at')
+    .eq('id', formData.user_id)
+    .single()
+  if (profErr || !ownerProfile) {
+    logError(`[whatsapp/send] gate de plano: perfil do dono não resolvido (form ${data.formId})`, profErr)
+    return NextResponse.json(
+      { success: false, error: 'Owner profile not found for plan gate' },
+      { status: 403 }
+    )
+  }
+  const plan = getEffectivePlan(ownerProfile) as PlanId
+  if (!PLANS[plan]?.whatsappNotifications) {
+    return NextResponse.json(
+      { success: false, error: 'WhatsApp requires Plus or Professional plan' },
+      { status: 403 }
+    )
   }
 
   // 2. Rate limit check — keyed by form + phone to isolate noisy forms (P1-N3)

@@ -417,18 +417,26 @@ export async function POST(req: NextRequest) {
       .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
       .eq('id', existingResponseId)
       .eq('form_id', form_id as string)
-    // Adoção anônima: UPDATE condicional — se outro submit da mesma tentativa
+    // UPDATE condicional (compare-and-set) — se outro submit da mesma tentativa
     // completou no meio, este não casa nenhuma linha e vira already_completed
     // (idempotente de verdade: side effects rodam UMA vez).
-    if (anonymousAdoption) {
-      updateQuery = updateQuery.eq('completed', false)
-    }
+    //
+    // P1-6 (2ª auditoria Codex 2026-07-23): o CAS só era aplicado à adoção
+    // ANÔNIMA. No caminho AUTENTICADO, duas requests simultâneas liam ambas
+    // `completed=false` (o guard de replay é sequencial e não pega corrida) e
+    // as DUAS atualizavam e disparavam e-mail, Sheets, CAPI e webhook — só o
+    // WhatsApp era deduplicado, lá na VPS. Agora vale pros dois caminhos:
+    // nenhuma resposta já finalizada é sobrescrita.
+    updateQuery = updateQuery.eq('completed', false)
     const { data: updated, error: updateError } = await updateQuery
       .select('id, meta_events, sheets_row_index, url_params')
       .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
 
     if (updateError || !updated) {
-      if (anonymousAdoption) {
+      // P1-6: o recheck de corrida vale pros DOIS caminhos (antes só o anônimo).
+      // Zero linhas casadas + row já completa = outra request ganhou; responder
+      // already_completed em vez de erro, sem repetir side effects.
+      {
         const { data: check } = await supabase
           .from('responses')
           .select('id, completed')

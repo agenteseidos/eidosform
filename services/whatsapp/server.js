@@ -25,6 +25,8 @@ const QR_PNG_FILE = path.join(__dirname, 'latest-qr.png');
 const STATUS_FILE = path.join(__dirname, 'status.json');
 const IDEMP_FILE = path.join(__dirname, 'sent-keys.json');
 const IDEMP_TTL_MS = 96 * 3600 * 1000; // > janela de abandono (72h) + margem — auditoria Codex
+/** Teto de tentativas de virar titular da chave de idempotência (P1-8). */
+const MAX_IDEMP_ACQUIRE_ATTEMPTS = 5;
 // Corrida daemon×send (auditoria Codex 2026-07-23): o watchdog religava o
 // `sync --follow` NO MEIO de um send (store locked). Enquanto houver envio em
 // voo, ninguém religa o daemon.
@@ -613,8 +615,25 @@ async function doWacliSend(phone, message) {
       error: result.error
     };
   } catch (err) {
-    return { success: false, error: err.message };
+    // P1-5 (auditoria Codex 2026-07-23): `err.message` do execFile inclui o
+    // COMANDO INTEIRO — ou seja, `--to <telefone>` e `--message <mensagem
+    // completa>`. Devolver/logar esse texto vazava PII (telefone, nome, título
+    // do form, conteúdo da notificação) no server.log e na resposta HTTP.
+    // Nunca propagar o bruto: só metadados do processo.
+    return { success: false, error: safeExecError(err) };
   }
+}
+
+/**
+ * P1-5: descreve uma falha de processo SEM vazar argumentos. Só código de saída,
+ * sinal e timeout — nada que tenha vindo do payload.
+ */
+function safeExecError(err) {
+  if (!err || typeof err !== 'object') return 'wacli_failed';
+  if (err.killed === true || err.signal) return 'wacli_timeout_or_killed';
+  if (typeof err.code === 'string') return `wacli_spawn_${err.code}`;
+  if (Number.isInteger(err.code)) return `wacli_exit_${err.code}`;
+  return 'wacli_failed';
 }
 
 async function sendWithFallback(phone, message) {
@@ -693,36 +712,58 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply
   // duas requests simultâneas com a mesma chave nunca chegam ambas ao wacli;
   // a segunda espera a Promise da primeira e responde duplicate:true.
   if (idempotencyKey) {
-    const prev = idempGet(idempotencyKey);
-    if (prev && prev.messageId) {
-      log(`[send] Duplicate suppressed key=${idempotencyKey} (msgId: ${prev.messageId})`);
-      return reply.send({ success: true, messageId: prev.messageId, duplicate: true });
-    }
-    if (prev && prev.promise) {
-      const r = await prev.promise;
-      if (r && r.success) {
-        const msgId = r.messageId || 'vps-coalesced';
-        log(`[send] Duplicate coalesced key=${idempotencyKey} (msgId: ${msgId})`);
-        return reply.send({ success: true, messageId: msgId, duplicate: true });
+    let entry = null;
+    // P1-8 (2ª auditoria Codex): AQUISIÇÃO EM LOOP. Antes, quando a tentativa
+    // coalescida FALHAVA, todos os waiters saíam do `await` juntos e cada um
+    // instalava a própria reserva, sobrescrevendo a dos outros e enfileirando
+    // vários envios no wacli. Agora, depois de QUALQUER await, o mapa é
+    // reconsultado; só instala reserva quem chegar num ponto sem await entre o
+    // `idempGet` e o `idempMap.set` (atômico no event loop do Node).
+    for (let attempt = 0; attempt < MAX_IDEMP_ACQUIRE_ATTEMPTS; attempt++) {
+      const prev = idempGet(idempotencyKey);
+      if (prev && prev.messageId) {
+        log(`[send] Duplicate suppressed key=${idempotencyKey} (msgId: ${prev.messageId})`);
+        return reply.send({ success: true, messageId: prev.messageId, duplicate: true });
       }
-      // primeira tentativa falhou → esta request vira a nova titular (retry)
-    }
-    const entry = { ts: Date.now() };
-    entry.promise = sendWithFallback(to, message).then(async (r) => {
-      if (r.success) {
-        entry.messageId = r.messageId || `vps-${Date.now()}`;
-        delete entry.promise;
-        await idempSave();
-      } else {
-        idempMap.delete(idempotencyKey); // falha libera a chave pro retry
+      if (prev && prev.promise) {
+        const r = await prev.promise;
+        if (r && r.success) {
+          const msgId = r.messageId || 'vps-coalesced';
+          log(`[send] Duplicate coalesced key=${idempotencyKey} (msgId: ${msgId})`);
+          return reply.send({ success: true, messageId: msgId, duplicate: true });
+        }
+        continue; // titular falhou: RECONSULTA em vez de instalar reserva cega
       }
-      return r;
-    }).catch((err) => { idempMap.delete(idempotencyKey); return { success: false, error: String(err) }; });
-    idempMap.set(idempotencyKey, entry); // reserva ANTES de await
+      const fresh = { ts: Date.now() };
+      fresh.promise = sendWithFallback(to, message).then(async (r) => {
+        if (r.success) {
+          fresh.messageId = r.messageId || `vps-${Date.now()}`;
+          delete fresh.promise;
+          await idempSave();
+        } else {
+          idempMap.delete(idempotencyKey); // falha libera a chave pro retry
+        }
+        return r;
+      }).catch((err) => {
+        idempMap.delete(idempotencyKey);
+        return { success: false, error: safeExecError(err) };
+      });
+      idempMap.set(idempotencyKey, fresh); // reserva ANTES de qualquer await
+      entry = fresh;
+      break;
+    }
+    if (!entry) {
+      // Nem virei titular nem observei sucesso dentro do teto de tentativas:
+      // contenção alta. Melhor 503 (o chamador re-tenta) do que enfileirar envio.
+      log(`[send] Contention key=${idempotencyKey}: desisti após ${MAX_IDEMP_ACQUIRE_ATTEMPTS} tentativas`);
+      return reply.code(503).send({ error: 'Send contention, retry later' });
+    }
     const result = await entry.promise;
     if (!result.success) {
+      // P1-5: nada de `details` — o motivo já é um código seguro, mas a resposta
+      // HTTP não devolve texto de erro do processo pra não reabrir o vazamento.
       log(`[send] Error key=${idempotencyKey}: ${result.error}`);
-      return reply.code(500).send({ error: 'Failed to send message', details: result.error });
+      return reply.code(500).send({ error: 'Failed to send message' });
     }
     log(`[send] Success key=${idempotencyKey}: ${hashPhone(to)} (msgId: ${entry.messageId})`);
     return reply.send({ success: true, messageId: entry.messageId });
@@ -732,7 +773,7 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply
 
   if (!result.success) {
     log(`[send] Error key=-: ${result.error}`);
-    return reply.code(500).send({ error: 'Failed to send message', details: result.error });
+    return reply.code(500).send({ error: 'Failed to send message' });
   }
 
   const messageId = result.messageId || `vps-${Date.now()}`;

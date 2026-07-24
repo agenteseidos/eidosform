@@ -73,6 +73,27 @@ describe('formatAnswerValue', () => {
     expect(formatAnswerValue({ plano: 'plus', ciclo: 'anual' })).toBe('plano: plus, ciclo: anual')
   })
 
+  it('P2-6: aninhamento profundo degrada em vez de estourar a pilha', () => {
+    // No cron, uma exceção aqui derrubava o LOTE inteiro.
+    let deep: Record<string, unknown> = { fim: 'x' }
+    for (let i = 0; i < 200; i++) deep = { nivel: deep }
+    expect(() => formatAnswerValue(deep)).not.toThrow()
+    expect(formatAnswerValue(deep)).toContain('…')
+  })
+
+  it('P2-6: saída desproporcional é truncada', () => {
+    const gigante = { texto: 'A'.repeat(50_000) }
+    const out = formatAnswerValue(gigante)
+    expect(out.length).toBeLessThanOrEqual(4001)
+    expect(out.endsWith('…')).toBe(true)
+  })
+
+  it('P2-6: array profundo também não explode', () => {
+    let arr: unknown = ['fim']
+    for (let i = 0; i < 200; i++) arr = [arr]
+    expect(() => formatAnswerValue(arr)).not.toThrow()
+  })
+
   it('html/content blocks são marcados como não-resposta', () => {
     expect(NON_ANSWER_QUESTION_TYPES.has('html_block')).toBe(true)
     expect(NON_ANSWER_QUESTION_TYPES.has('content_block')).toBe(true)

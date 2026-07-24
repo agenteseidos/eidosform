@@ -6,6 +6,8 @@
  * Este módulo é puro (sem deps de servidor) — importável por client e server.
  */
 
+import { toWhatsAppDigits } from './phone'
+
 export const DEFAULT_WHATSAPP_MESSAGE_TEMPLATE = [
   '🔔 *Novo lead* em {form_name}',
   '',
@@ -16,10 +18,14 @@ export const DEFAULT_WHATSAPP_MESSAGE_TEMPLATE = [
   '*Eventos Meta:* {meta_events}',
 ].join('\n')
 
-/** Template FIXO do alerta de lead abandonado (não editável pelo usuário na v1). */
+/**
+ * Template FIXO do alerta de lead abandonado (não editável pelo usuário na v1).
+ * P2-8: o relógio virou "última atividade", então "começou a preencher há X min"
+ * era semanticamente FALSO (o lead pode ter mexido por 20min e parado há 30).
+ */
 export const ABANDONED_LEAD_TEMPLATE = [
   '⚠️ *Lead incompleto* em {form_name}',
-  'Começou a preencher há {abandono_minutos} min e não finalizou.',
+  'Sem atividade há {abandono_minutos} min — não finalizou.',
   '',
   '{respostas}',
   '',
@@ -43,11 +49,33 @@ export const SAMPLE_LEAD_DATA: Record<string, unknown> = {
 }
 
 /**
- * Normalize and sanitize a template value before substitution.
- * NFKC normalization prevents Unicode homoglyph injection (P1-N2).
+ * P2-7: conteúdo do lead não pode FORJAR linhas da notificação nem esconder
+ * texto. Duas classes recebem tratamento DIFERENTE, de propósito:
+ *  - `\p{Cf}` (formatação invisível: zero-width, overrides bidirecionais) é
+ *    REMOVIDA — não separa palavras, só serve pra enganar quem lê.
+ *  - `\p{Cc}` (controle: \n, \r, \t) vira ESPAÇO — era um separador legítimo,
+ *    e apagá-lo grudaria palavras ("João\nSilva" → "JoãoSilva").
  */
-function normalizeValue(value: string): string {
-  return value.normalize('NFKC')
+const INVISIBLE_FORMAT = /\p{Cf}/gu
+const CONTROL_CHARS = /\p{Cc}/gu
+/** Controles EXCETO \n (blocos legítimos multi-linha: {respostas}, anexos). */
+const CONTROL_EXCEPT_NEWLINE = /[^\n\P{Cc}]/gu
+
+function sanitizeSingleLine(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .replace(INVISIBLE_FORMAT, '')
+    .replace(CONTROL_CHARS, ' ')
+    .replace(/ {2,}/g, ' ')
+    .trim()
+}
+
+function sanitizeMultiLine(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .replace(/\r\n?/g, '\n')
+    .replace(INVISIBLE_FORMAT, '')
+    .replace(CONTROL_EXCEPT_NEWLINE, ' ')
 }
 
 /** Remove do template a(s) linha(s) que contêm o placeholder (self-hide). */
@@ -55,47 +83,65 @@ function dropLineWith(msg: string, placeholder: RegExp): string {
   return msg.replace(new RegExp(`^.*${placeholder.source}.*(?:\\r?\\n|$)`, 'gim'), '')
 }
 
+const normalizeKey = (k: string) =>
+  k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
+
 /**
  * Build message from template and lead data.
  * - {form_name} sai em *negrito* (só na mensagem, não na UI).
  * - {meta_events} e {whatsapp_link} apagam a LINHA inteira quando não há valor.
- * - {whatsapp_link}: link wa.me com telefone NORMALIZADO (só dígitos) — nunca usar
- *   {telefone} cru numa URL (pode vir com +, espaços, máscara). Decisão Codex.
+ * - {whatsapp_link}: wa.me com telefone normalizado via lib/phone (P2-3 — 10/11
+ *   dígitos ganham DDI 55; fora da faixa a linha some, nunca chuta número).
+ *
+ * P2-7 — SUBSTITUIÇÃO EM PASSAGEM ÚNICA: antes os valores nomeados entravam
+ * primeiro e DEPOIS rodava um replace genérico, então um valor do lead contendo
+ * "{respostas}" era expandido. Agora cada placeholder do TEMPLATE é resolvido
+ * uma vez só; o que entra não é reescaneado.
  */
 export function buildMessage(template: string, leadData: Record<string, unknown>): string {
   let msg = template.normalize('NFKC')
 
-  // {whatsapp_link}: telefone → só dígitos; some a linha se não houver telefone útil
-  const rawPhone = String(leadData.phone ?? leadData.telefone ?? '')
-  const digits = rawPhone.replace(/\D/g, '')
-  if (digits.length >= 10 && digits.length <= 15) {
-    msg = msg.replace(/\{whatsapp_link\}/gi, `https://wa.me/${digits}`)
-  } else {
-    msg = dropLineWith(msg, /\{whatsapp_link\}/)
-  }
+  // Self-hide roda ANTES da interpolação — não pode ser acionado por conteúdo
+  // do lead (confirmado pela auditoria).
+  const waDigits = toWhatsAppDigits(leadData.phone ?? leadData.telefone)
+  if (!waDigits) msg = dropLineWith(msg, /\{whatsapp_link\}/)
 
-  // Named variables (higher priority). Aceita variantes com hífen (ex.: {e-mail}).
-  msg = msg.replace(/\{form_name\}/gi, `*${normalizeValue(String(leadData.form_name || 'Formulário'))}*`)
-  msg = msg.replace(/\{nome\}/gi, normalizeValue(String(leadData.name || leadData.nome || 'Lead')))
-  msg = msg.replace(/\{e-?mail\}/gi, normalizeValue(String(leadData.email || 'N/A')))
-  msg = msg.replace(/\{phone\}/gi, normalizeValue(String(leadData.phone || leadData.telefone || 'N/A')))
-  msg = msg.replace(/\{response_id\}/gi, normalizeValue(String(leadData.response_id || 'N/A')))
-  msg = msg.replace(/\{response_link\}/gi, normalizeValue(String(leadData.response_link || 'N/A')))
+  const metaEventsValue = sanitizeSingleLine(leadData.meta_events)
+  if (!metaEventsValue) msg = dropLineWith(msg, /\{meta_events\}/)
 
-  // {meta_events}: com eventos → substitui; SEM eventos → apaga a LINHA inteira
-  const metaEventsValue = normalizeValue(String(leadData.meta_events || ''))
-  if (metaEventsValue) msg = msg.replace(/\{meta_events\}/gi, metaEventsValue)
-  else msg = dropLineWith(msg, /\{meta_events\}/)
-
-  // Chaves restantes: casa por label normalizado (mappedAnswers etc.)
-  const normalizeKey = (k: string) =>
-    k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
   const normalizedLead = new Map<string, unknown>()
   for (const [k, v] of Object.entries(leadData)) normalizedLead.set(normalizeKey(k), v)
+
+  // Resolve UM placeholder. `undefined` ⇒ mantém literal (chave desconhecida
+  // não apaga conteúdo do usuário).
+  const resolve = (rawKey: string): string | undefined => {
+    const nk = normalizeKey(rawKey)
+    switch (nk) {
+      case 'whatsapplink':
+        return waDigits ? `https://wa.me/${waDigits}` : ''
+      case 'formname':
+        return `*${sanitizeSingleLine(leadData.form_name || 'Formulário')}*`
+      case 'nome':
+      case 'name':
+        return sanitizeSingleLine(leadData.name || leadData.nome || 'Lead')
+      case 'email':
+        return sanitizeSingleLine(leadData.email || 'N/A')
+      case 'phone':
+        return sanitizeSingleLine(leadData.phone || leadData.telefone || 'N/A')
+      case 'responseid':
+        return sanitizeSingleLine(leadData.response_id || 'N/A')
+      case 'responselink':
+        return sanitizeSingleLine(leadData.response_link || 'N/A')
+      case 'metaevents':
+        return metaEventsValue
+    }
+    if (normalizedLead.has(nk)) return sanitizeMultiLine(normalizedLead.get(nk))
+    return undefined
+  }
+
   msg = msg.replace(/\{([^{}\n]+)\}/g, (match, rawKey: string) => {
-    const nk = normalizeKey(String(rawKey))
-    if (normalizedLead.has(nk)) return normalizeValue(String(normalizedLead.get(nk) ?? ''))
-    return match // chave desconhecida: mantém literal em vez de apagar
+    const value = resolve(String(rawKey))
+    return value === undefined ? match : value
   })
 
   // Colapsa buracos: um {respostas} vazio (lead abandonou na 1ª pergunta) ou

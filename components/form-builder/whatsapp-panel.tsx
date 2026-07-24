@@ -18,6 +18,7 @@ import { MessageCircle, Loader2, Send, AlertCircle, Plus, ChevronDown } from 'lu
 import { FormWhatsAppSettings } from '@/lib/types/whatsapp'
 import { PLAN_ORDER } from '@/lib/plans'
 import { DEFAULT_WHATSAPP_MESSAGE_TEMPLATE } from '@/lib/whatsapp-template'
+import { isValidWhatsAppPhone } from '@/lib/phone'
 
 interface WhatsAppPanelProps {
   formId: string
@@ -35,11 +36,9 @@ function isPlusPlan(plan: string | null | undefined): boolean {
   return PLAN_ORDER.indexOf(normalizedPlan as typeof PLAN_ORDER[number]) >= PLAN_ORDER.indexOf('plus')
 }
 
-// Phone validation (digits only, 10-15 chars)
-function validatePhoneNumber(phone: string): boolean {
-  const digits = phone.replace(/\D/g, '')
-  return digits.length >= 10 && digits.length <= 15
-}
+// Regra ÚNICA (lib/phone) — P2-2: painel, PUT e envio divergiam e dava pra
+// salvar/habilitar uma configuração que o envio recusava em silêncio.
+const validatePhoneNumber = isValidWhatsAppPhone
 
 // Available template variables — fixed list, all guaranteed to resolve in buildMessage.
 // Agrupadas pra renderizar o popover de inserção com categorias claras.

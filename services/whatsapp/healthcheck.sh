@@ -31,24 +31,47 @@ STATUS_MAX_AGE=45          # status.json mais velho que isso = loop de refresh m
 REALERT_SECONDS=$((6*3600)) # re-alerta a cada 6h enquanto seguir caído
 ALERT_TO=$(grep -oP '^ADMIN_ALERT_EMAIL=\K.*' "$ENVFILE" 2>/dev/null | tr -d '"'"'"'\r')
 ALERT_TO=${ALERT_TO:-sidney@institutoeidos.com.br}
+# 2º canal REDUNDANTE (2026-07-24). Motivo: o e-mail primário (domínio próprio)
+# caiu por falta de pagamento do servidor, o Resend viu o bounce e SUPRIMIU o
+# endereço em silêncio — por ~17h todo alerta teria sido descartado sem aviso.
+# Um endereço independente (Gmail) fecha esse buraco: enviamos um e-mail SEPARADO
+# pra cada destinatário, então supressão/queda de um NÃO afeta a entrega do outro.
+ALERT_TO_2=$(grep -oP '^ADMIN_ALERT_EMAIL_2=\K.*' "$ENVFILE" 2>/dev/null | tr -d '"'"'"'\r')
+ALERT_TO_2=${ALERT_TO_2:-medeiros.sco@gmail.com}
+# Lista deduplicada de destinatários (uma linha cada; ignora vazios/repetidos).
+ALERT_RECIPIENTS=$(printf '%s\n%s\n' "$ALERT_TO" "$ALERT_TO_2" | awk 'NF && !seen[$0]++')
 FROM='EidosForm Monitor <noreply@eidosform.com.br>'
 RESEND_KEY=$(grep -oP '^RESEND_API_KEY=\K.*' "$ENVFILE" 2>/dev/null | tr -d '"'"'"'\r')
 
 mkdir -p "$STATEDIR"
 
 # ── envio de e-mail (Resend) ──────────────────────────────────────────────────
+# Manda um e-mail SEPARADO por destinatário (redundância real): se um endereço
+# estiver suprimido/fora, o outro ainda recebe. Enviar os dois num único campo
+# "to" faria o Resend tratar como UMA mensagem — perderia a independência.
+# Retorna 0 se PELO MENOS UM envio foi aceito.
 send_email() {
-  local subject="$1" body="$2"
+  local subject="$1" body="$2" rcpt resp ok=1
   if [ -z "$RESEND_KEY" ]; then
     logger -t eidosform-wpp-hc "SEM RESEND_API_KEY — alerta não enviado: $subject"
     return 1
   fi
-  curl -s --max-time 15 https://api.resend.com/emails \
-    -H "Authorization: Bearer $RESEND_KEY" \
-    -H 'Content-Type: application/json' \
-    --data-binary @- >/dev/null 2>&1 <<JSON
-{"from":$(json_str "$FROM"),"to":[$(json_str "$ALERT_TO")],"subject":$(json_str "$subject"),"text":$(json_str "$body")}
+  while IFS= read -r rcpt; do
+    [ -z "$rcpt" ] && continue
+    resp=$(curl -s --max-time 15 https://api.resend.com/emails \
+      -H "Authorization: Bearer $RESEND_KEY" \
+      -H 'Content-Type: application/json' \
+      --data-binary @- 2>/dev/null <<JSON
+{"from":$(json_str "$FROM"),"to":[$(json_str "$rcpt")],"subject":$(json_str "$subject"),"text":$(json_str "$body")}
 JSON
+)
+    if printf '%s' "$resp" | grep -q '"id"'; then
+      ok=0
+    else
+      logger -t eidosform-wpp-hc "FALHA ao enviar alerta p/ $rcpt: $(printf '%s' "$resp" | head -c 200)"
+    fi
+  done <<< "$ALERT_RECIPIENTS"
+  return $ok
 }
 
 # escapa string p/ JSON sem depender de jq

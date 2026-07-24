@@ -31,44 +31,6 @@ const MAX_IDEMP_ACQUIRE_ATTEMPTS = 5;
 // `sync --follow` NO MEIO de um send (store locked). Enquanto houver envio em
 // voo, ninguém religa o daemon.
 let sendInFlight = 0;
-// Idempotência persistente por chave (formId:responseId etc.) — dedup de retry
-// do app e de resubmissão; sobrevive a restart do serviço.
-const idempMap = new Map();
-try {
-  const raw = require('fs').readFileSync(IDEMP_FILE, 'utf8');
-  for (const [k, v] of Object.entries(JSON.parse(raw))) idempMap.set(k, v);
-} catch (err) {
-  if (err.code !== 'ENOENT') {
-    // JSON corrompido (escrita interrompida na era pré-atômica): preserva o
-    // arquivo pra perícia e começa vazio — auditoria Codex P1-2.
-    console.error(`[idemp] arquivo ilegível (${err.message}) — movendo pra .corrupt`);
-    try { require('fs').renameSync(IDEMP_FILE, IDEMP_FILE + '.corrupt'); } catch {}
-  }
-}
-function idempPrune() {
-  const now = Date.now();
-  for (const [k, v] of idempMap) if (!v || !v.ts || now - v.ts > IDEMP_TTL_MS) idempMap.delete(k);
-  while (idempMap.size > 5000) idempMap.delete(idempMap.keys().next().value);
-}
-function idempGet(key) {
-  const v = idempMap.get(key);
-  if (v && v.ts && Date.now() - v.ts > IDEMP_TTL_MS) { idempMap.delete(key); return undefined; }
-  return v;
-}
-async function idempSave() {
-  // Atômico (tmp+rename) e AWAITED — antes era fire-and-forget e uma escrita
-  // interrompida corrompia o JSON inteiro (auditoria Codex P1-2).
-  idempPrune();
-  const serializavel = {};
-  for (const [k, v] of idempMap) if (v && v.messageId) serializavel[k] = { ts: v.ts, messageId: v.messageId };
-  const tmp = IDEMP_FILE + '.tmp';
-  try {
-    await fs.writeFile(tmp, JSON.stringify(serializavel), { mode: 0o600 });
-    await fs.rename(tmp, IDEMP_FILE);
-  } catch (err) {
-    log(`[idemp] ERRO ao persistir sent-keys: ${err.message}`);
-  }
-}
 const STATUS_REFRESH_S = 5;
 
 let wacliChild = null;
@@ -83,6 +45,29 @@ const log = async (msg) => {
   console.log(msg);
   await fs.appendFile(LOG_FILE, line).catch(() => {});
 };
+
+// Idempotência persistente por chave (formId:responseId etc.) — dedup de retry
+// do app e de resubmissão; sobrevive a restart do serviço.
+//
+// A lógica MORA em ./idempotency.js desde 2026-07-23: é código de CONCORRÊNCIA e
+// precisava de teste (o P1-8 — waiters virando titulares em massa — chegou a
+// produção justamente porque este arquivo não era coberto pela suíte). O módulo
+// é testado em idempotency.test.js; aqui só o instanciamos.
+//
+// ⚠️ FICA DEPOIS DE `log` DE PROPÓSITO: `log` é `const` (zona morta temporal) e
+// `idemp.load()` chama o logger quando o sent-keys.json está corrompido. Com o
+// bloco lá em cima, um arquivo corrompido derrubava o serviço no boot com
+// ReferenceError — em vez de degradar como foi projetado.
+const { createIdempotencyStore } = require('./idempotency');
+const idemp = createIdempotencyStore({
+  file: IDEMP_FILE,
+  ttlMs: IDEMP_TTL_MS,
+  maxAcquireAttempts: MAX_IDEMP_ACQUIRE_ATTEMPTS,
+  log: (msg) => log(msg),
+  // P1-5: erro de processo nunca vira texto cru (carrega telefone e mensagem).
+  sanitizeError: (err) => safeExecError(err),
+});
+idemp.load();
 
 // Convert ASCII QR to PNG base64
 async function asciiToPngBase64(ascii) {
@@ -712,61 +697,28 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply
   // duas requests simultâneas com a mesma chave nunca chegam ambas ao wacli;
   // a segunda espera a Promise da primeira e responde duplicate:true.
   if (idempotencyKey) {
-    let entry = null;
-    // P1-8 (2ª auditoria Codex): AQUISIÇÃO EM LOOP. Antes, quando a tentativa
-    // coalescida FALHAVA, todos os waiters saíam do `await` juntos e cada um
-    // instalava a própria reserva, sobrescrevendo a dos outros e enfileirando
-    // vários envios no wacli. Agora, depois de QUALQUER await, o mapa é
-    // reconsultado; só instala reserva quem chegar num ponto sem await entre o
-    // `idempGet` e o `idempMap.set` (atômico no event loop do Node).
-    for (let attempt = 0; attempt < MAX_IDEMP_ACQUIRE_ATTEMPTS; attempt++) {
-      const prev = idempGet(idempotencyKey);
-      if (prev && prev.messageId) {
-        log(`[send] Duplicate suppressed key=${idempotencyKey} (msgId: ${prev.messageId})`);
-        return reply.send({ success: true, messageId: prev.messageId, duplicate: true });
-      }
-      if (prev && prev.promise) {
-        const r = await prev.promise;
-        if (r && r.success) {
-          const msgId = r.messageId || 'vps-coalesced';
-          log(`[send] Duplicate coalesced key=${idempotencyKey} (msgId: ${msgId})`);
-          return reply.send({ success: true, messageId: msgId, duplicate: true });
-        }
-        continue; // titular falhou: RECONSULTA em vez de instalar reserva cega
-      }
-      const fresh = { ts: Date.now() };
-      fresh.promise = sendWithFallback(to, message).then(async (r) => {
-        if (r.success) {
-          fresh.messageId = r.messageId || `vps-${Date.now()}`;
-          delete fresh.promise;
-          await idempSave();
-        } else {
-          idempMap.delete(idempotencyKey); // falha libera a chave pro retry
-        }
-        return r;
-      }).catch((err) => {
-        idempMap.delete(idempotencyKey);
-        return { success: false, error: safeExecError(err) };
-      });
-      idempMap.set(idempotencyKey, fresh); // reserva ANTES de qualquer await
-      entry = fresh;
-      break;
+    // Toda a coalescência (incl. a aquisição em loop do P1-8) mora no módulo
+    // ./idempotency.js, que É TESTADO. Aqui só traduzimos o resultado em HTTP.
+    const r = await idemp.run(idempotencyKey, () => sendWithFallback(to, message));
+
+    if (r.status === 'duplicate') {
+      log(`[send] Duplicate suppressed key=${idempotencyKey} (msgId: ${r.messageId})`);
+      return reply.send({ success: true, messageId: r.messageId, duplicate: true });
     }
-    if (!entry) {
-      // Nem virei titular nem observei sucesso dentro do teto de tentativas:
-      // contenção alta. Melhor 503 (o chamador re-tenta) do que enfileirar envio.
+    if (r.status === 'contention') {
+      // Nem virei titular nem observei sucesso dentro do teto de tentativas.
+      // Melhor 503 (o chamador re-tenta) do que enfileirar mais um envio.
       log(`[send] Contention key=${idempotencyKey}: desisti após ${MAX_IDEMP_ACQUIRE_ATTEMPTS} tentativas`);
       return reply.code(503).send({ error: 'Send contention, retry later' });
     }
-    const result = await entry.promise;
-    if (!result.success) {
+    if (r.status === 'failed') {
       // P1-5: nada de `details` — o motivo já é um código seguro, mas a resposta
       // HTTP não devolve texto de erro do processo pra não reabrir o vazamento.
-      log(`[send] Error key=${idempotencyKey}: ${result.error}`);
+      log(`[send] Error key=${idempotencyKey}: ${r.error}`);
       return reply.code(500).send({ error: 'Failed to send message' });
     }
-    log(`[send] Success key=${idempotencyKey}: ${hashPhone(to)} (msgId: ${entry.messageId})`);
-    return reply.send({ success: true, messageId: entry.messageId });
+    log(`[send] Success key=${idempotencyKey}: ${hashPhone(to)} (msgId: ${r.messageId})`);
+    return reply.send({ success: true, messageId: r.messageId });
   }
 
   const result = await sendWithFallback(to, message);

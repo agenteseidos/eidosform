@@ -88,7 +88,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const phone = normalizarTelefoneBR(phoneRaw)
   const email = temEmail ? normalizarEmail(emailRaw) : ''
-  if (phone.length < 8) {
+  if (!phone || phone.length < 8) {
     return NextResponse.json({ ok: false, reason: 'bad_request' }, { status: 400, headers: NO_STORE })
   }
 

@@ -191,6 +191,7 @@ export interface Database {
           asaas_subscription_id: string | null
           plan_cycle: string | null
           phone: string | null
+          phone_match_key_br: string | null
           cpf_cnpj: string | null
           address: string | null
           address_number: string | null
@@ -220,6 +221,7 @@ export interface Database {
           asaas_subscription_id?: string | null
           plan_cycle?: string | null
           phone?: string | null
+          phone_match_key_br?: never
           cpf_cnpj?: string | null
           address?: string | null
           address_number?: string | null
@@ -249,6 +251,7 @@ export interface Database {
           asaas_subscription_id?: string | null
           plan_cycle?: string | null
           phone?: string | null
+          phone_match_key_br?: never
           cpf_cnpj?: string | null
           address?: string | null
           address_number?: string | null
@@ -270,6 +273,7 @@ export interface Database {
           asaas_subscription_id: string | null
           asaas_payment_id: string | null
           planchange_attempt_id: string | null
+          billing_phone_match_key_br: string | null
           // Discriminador do fluxo (migration 20260422_payment_method_column): billingType do
           // webhook ou 'plan_switch_token'/'plan_switch_fallback' nas trocas de plano.
           payment_method: string | null
@@ -288,6 +292,7 @@ export interface Database {
           asaas_subscription_id?: string | null
           asaas_payment_id?: string | null
           planchange_attempt_id?: string | null
+          billing_phone_match_key_br?: string | null
           payment_method?: string | null
           plan: string
           cycle: string
@@ -304,6 +309,7 @@ export interface Database {
           asaas_subscription_id?: string | null
           asaas_payment_id?: string | null
           planchange_attempt_id?: string | null
+          billing_phone_match_key_br?: string | null
           payment_method?: string | null
           plan?: string
           cycle?: string

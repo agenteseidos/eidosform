@@ -13,9 +13,22 @@ describe('normalizarTelefoneBR', () => {
   it('limpa máscara/símbolos', () => {
     expect(normalizarTelefoneBR('+55 (83) 99937-8937')).toBe('558399378937')
   })
+  it('prefixa DDI 55 em telefone local com DDD', () => {
+    expect(normalizarTelefoneBR('(83) 99937-8937')).toBe('558399378937')
+    expect(normalizarTelefoneBR('(83) 3232-1234')).toBe('558332321234')
+  })
+  it('faz as variantes Meta com/sem nono dígito convergirem', () => {
+    expect(normalizarTelefoneBR('5583996966457')).toBe('558396966457')
+    expect(normalizarTelefoneBR('558396966457')).toBe('558396966457')
+  })
+  it('rejeita internacional, tamanho ambíguo e móvel inválido', () => {
+    expect(normalizarTelefoneBR('351912345678')).toBeNull()
+    expect(normalizarTelefoneBR('123456789')).toBeNull()
+    expect(normalizarTelefoneBR('5583596966457')).toBeNull()
+  })
   it('lida com nulo/vazio', () => {
-    expect(normalizarTelefoneBR(null)).toBe('')
-    expect(normalizarTelefoneBR(undefined)).toBe('')
+    expect(normalizarTelefoneBR(null)).toBeNull()
+    expect(normalizarTelefoneBR(undefined)).toBeNull()
   })
 })
 

@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { isValidCpfOrCnpj } from '@/lib/cpf-cnpj'
+import { isValidWhatsAppPhone } from '@/lib/phone'
 
 type FieldKey =
   | 'fullName'
@@ -117,8 +118,8 @@ export function BillingFieldsDialog({
     if (form.cpfCnpj && !isValidCpfOrCnpj(form.cpfCnpj)) return 'CPF ou CNPJ inválido — verifique os dígitos'
     const cep = form.postalCode.replace(/\D/g, '')
     if (form.postalCode && cep.length !== 8) return 'CEP deve ter 8 dígitos'
-    const phone = form.phone.replace(/\D/g, '')
-    if (form.phone && phone.length < 10) return 'Telefone deve ter pelo menos 10 dígitos'
+    if (!form.phone.trim()) return 'Informe seu telefone'
+    if (!isValidWhatsAppPhone(form.phone)) return 'Telefone deve ter entre 10 e 15 dígitos'
     return null
   }
 

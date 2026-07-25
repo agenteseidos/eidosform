@@ -20,11 +20,22 @@ function maiorTier(a: PlanId, b: PlanId): PlanId {
   return tierIndex(a) >= tierIndex(b) ? a : b
 }
 
-/** Só dígitos + chave canônica BR (remove o 9º dígito quando presente). Espelha `chaveNumero` do bot. */
-export function normalizarTelefoneBR(input: unknown): string {
-  const d = String(input ?? '').replace(/\D/g, '')
-  if (d.startsWith('55') && d.length === 13 && d[4] === '9') return d.slice(0, 4) + d.slice(5)
-  return d
+/**
+ * Chave canônica BR para MATCH (não para envio):
+ *   55 + DDD + número local de 8 dígitos, sem o 9º dígito móvel.
+ *
+ * Aceita entrada local com DDD (10/11 dígitos) ou DDI 55 explícito
+ * (12/13 dígitos). Internacional, formato ambíguo e móvel de 13 dígitos
+ * fora do padrão brasileiro retornam null — callers de segurança falham fechado.
+ */
+export function normalizarTelefoneBR(input: unknown): string | null {
+  const raw = String(input ?? '').replace(/\D/g, '')
+  if (!raw) return null
+  const d = raw.length === 10 || raw.length === 11 ? `55${raw}` : raw
+  if (!d.startsWith('55')) return null
+  if (d.length === 12) return d
+  if (d.length !== 13 || d[4] !== '9' || !/[6-9]/.test(d[5] || '')) return null
+  return d.slice(0, 4) + d.slice(5)
 }
 
 export function normalizarEmail(input: unknown): string {

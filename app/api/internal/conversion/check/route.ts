@@ -4,8 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import {
-  decidirConversao,
-  parseConversionTarget,
+  decidirEstadoConta,
   type ConversionProfile,
 } from '@/lib/conversion-check'
 import { normalizarTelefoneBR } from '@/lib/migracao/regua'
@@ -13,10 +12,9 @@ import { normalizarTelefoneBR } from '@/lib/migracao/regua'
 export const dynamic = 'force-dynamic'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-// Resposta MÍNIMA: só `decision`. Não devolvemos `matchedBy` — ele distinguia
-// "tem conta (free)" de "não tem conta" (ambos `not_converted`), vazando a
-// EXISTÊNCIA da conta a quem tivesse o segredo. O follow-up só usa `decision`.
-const UNKNOWN = { ok: false, decision: 'unknown' as const }
+// Trade-off aprovado pelo Sidney: o endpoint interno distingue free de none.
+// A resposta continua mínima e nunca devolve plano, status, identidade ou PII.
+const UNKNOWN = { ok: false, state: 'unknown' as const }
 const PROFILE_COLS = 'id, plan, plan_status, plan_cycle, plan_expires_at'
 
 function getServiceClient() {
@@ -98,7 +96,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(UNKNOWN, { status: 413, headers: NO_STORE })
   }
 
-  let body: { phone?: unknown; target?: unknown }
+  let body: { phone?: unknown }
   try {
     const raw = await req.text()
     if (Buffer.byteLength(raw, 'utf8') > 4096) {
@@ -112,8 +110,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(UNKNOWN, { status: 400, headers: NO_STORE })
   }
   const phoneKey = normalizarTelefoneBR(body.phone)
-  const target = parseConversionTarget(body.target)
-  if (!phoneKey || !target) {
+  if (!phoneKey) {
     return NextResponse.json(UNKNOWN, { status: 400, headers: NO_STORE })
   }
 
@@ -149,9 +146,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(UNKNOWN, { status: 500, headers: NO_STORE })
   }
 
-  const evaluated = decidirConversao(lookup.profiles, target)
-  // Se o número compartilhado exceder o teto defensivo da consulta, só uma
-  // conversão já encontrada é conclusiva. Qualquer outro resultado é unknown.
-  const decision = lookup.truncated && evaluated !== 'converted' ? 'unknown' : evaluated
-  return NextResponse.json({ ok: true, decision }, { status: 200, headers: NO_STORE })
+  const state = lookup.truncated ? 'unknown' : decidirEstadoConta(lookup.profiles)
+  return NextResponse.json({ ok: true, state }, { status: 200, headers: NO_STORE })
 }

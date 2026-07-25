@@ -63,18 +63,14 @@ function supabase({
   }
 }
 
-function request(target: Record<string, unknown> = {
-  type: 'plan_at_least',
-  plan: 'plus',
-  cycle: null,
-}) {
+function request() {
   return new NextRequest('http://localhost/api/internal/conversion/check', {
     method: 'POST',
     headers: {
       authorization: 'Bearer dedicated-secret',
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ phone: '(83) 99696-6457', target }),
+    body: JSON.stringify({ phone: '(83) 99696-6457' }),
   })
 }
 
@@ -87,19 +83,33 @@ beforeEach(() => {
 })
 
 describe('POST /api/internal/conversion/check', () => {
-  it('responde converted com corpo mínimo para tier suficiente', async () => {
+  it('responde paid com corpo mínimo para qualquer tier pago vigente', async () => {
     createServerClient.mockReturnValue(supabase({ profiles: [activePlus] }))
     const res = await POST(request())
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, decision: 'converted' })
+    expect(await res.json()).toEqual({ ok: true, state: 'paid' })
     expect(res.headers.get('cache-control')).toBe('no-store')
   })
 
-  it('responde not_converted quando não há match de telefone', async () => {
+  it('responde free para conta grátis ativa', async () => {
+    createServerClient.mockReturnValue(supabase({
+      profiles: [{
+        ...activePlus,
+        plan: 'free',
+        plan_cycle: null,
+        plan_expires_at: null,
+      }],
+    }))
+    const res = await POST(request())
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, state: 'free' })
+  })
+
+  it('responde none quando não há match de telefone', async () => {
     createServerClient.mockReturnValue(supabase({ profiles: [] }))
     const res = await POST(request())
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, decision: 'not_converted' })
+    expect(await res.json()).toEqual({ ok: true, state: 'none' })
   })
 
   it('responde unknown para cobrança problemática ou match ambíguo', async () => {
@@ -108,7 +118,7 @@ describe('POST /api/internal/conversion/check', () => {
     }))
     const res = await POST(request())
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, decision: 'unknown' })
+    expect(await res.json()).toEqual({ ok: true, state: 'unknown' })
   })
 
   it('falha fechado quando um telefone compartilhado excede o teto defensivo', async () => {
@@ -121,7 +131,7 @@ describe('POST /api/internal/conversion/check', () => {
     }))
     const res = await POST(request())
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, decision: 'unknown' })
+    expect(await res.json()).toEqual({ ok: true, state: 'unknown' })
   })
 
   it('falha fechado e não expõe detalhes no erro de banco', async () => {
@@ -131,7 +141,7 @@ describe('POST /api/internal/conversion/check', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const res = await POST(request())
     expect(res.status).toBe(500)
-    expect(await res.json()).toEqual({ ok: false, decision: 'unknown' })
+    expect(await res.json()).toEqual({ ok: false, state: 'unknown' })
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('5583')
     consoleError.mockRestore()
   })
@@ -142,6 +152,6 @@ describe('POST /api/internal/conversion/check', () => {
     req.headers.set('authorization', 'Bearer outro')
     const res = await POST(req)
     expect(res.status).toBe(401)
-    expect(await res.json()).toEqual({ ok: false, decision: 'unknown' })
+    expect(await res.json()).toEqual({ ok: false, state: 'unknown' })
   })
 })

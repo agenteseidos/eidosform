@@ -62,7 +62,7 @@ function normalizeValue(value: string): string {
 /**
  * Send message via WhatsApp VPS server
  */
-async function sendViaVps(phone: string, message: string, idempotencyKey?: string): Promise<{ messageId: string; duplicate?: boolean }> {
+async function sendViaVps(phone: string, message: string, idempotencyKey?: string): Promise<{ messageId: string | null; duplicate?: boolean; queued?: boolean }> {
   const cleanPhone = phone.replace(/\D/g, '')
 
   try {
@@ -95,6 +95,15 @@ async function sendViaVps(phone: string, message: string, idempotencyKey?: strin
     }
 
     const data = await response.json()
+
+    // 202 = a VPS NÃO entregou, mas colocou na fila de reenvio e vai entregar
+    // sozinha. Cuidado: 202 passa no `response.ok`, então sem este desvio o app
+    // inventaria um messageId e reportaria "enviado" para algo que ainda está
+    // na fila — e o cron marcaria o alerta como concluído no banco.
+    if (response.status === 202 || data.queued === true) {
+      return { messageId: null, queued: true }
+    }
+
     // `||` (não `??`): a VPS pode devolver messageId como string vazia quando o
     // wacli não expõe `data.id` — `??` deixaria passar o "" e a telemetria
     // chegava como `msgId: N/A`. Ver briefing-whatsapp-msgid-perdido.md.
@@ -257,6 +266,14 @@ async function handleFormAwareSend(
   // 5. Send via VPS
   try {
     const result = await sendViaVps(settings.owner_phone, message, data.idempotencyKey)
+    if (result.queued) {
+      return NextResponse.json({
+        success: false,
+        queued: true,
+        error: 'Queued for retry',
+        timestamp: new Date().toISOString(),
+      }, { status: 202 })
+    }
     return NextResponse.json({
       success: true,
       messageId: result.messageId,
@@ -338,6 +355,14 @@ async function handleDirectSend(data: DirectSendRequest & { formId?: string; ide
 
   try {
     const result = await sendViaVps(cleanPhone, data.message, data.idempotencyKey)
+    if (result.queued) {
+      return NextResponse.json({
+        success: false,
+        queued: true,
+        error: 'Queued for retry',
+        timestamp: new Date().toISOString(),
+      }, { status: 202 })
+    }
     return NextResponse.json({
       success: true,
       messageId: result.messageId,

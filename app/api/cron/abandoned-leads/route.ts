@@ -229,7 +229,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const lookbackIso = new Date(now - LOOKBACK_HOURS * 3_600_000).toISOString()
   const leaseCutoffIso = new Date(now - LEASE_MS).toISOString()
   const stats = {
-    examinados: 0, enviados: 0, semTelefone: 0, jaAvisados: 0,
+    examinados: 0, enviados: 0, enfileirados: 0, semTelefone: 0, jaAvisados: 0,
     falhas: 0, paginas: 0, retomados: 0, revalidadosFora: 0,
   }
   let cortadoPorTempo = false
@@ -447,6 +447,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     //     interna (que espera até 30s pela VPS) estourar o maxDuration daqui.
     const sendBudget = Math.max(1_000, budgetLeft() - 3_000)
     let sendOk = false
+    let queued = false
     let messageId: string | null = null
     try {
       const res = await fetch(`${appUrl}/api/whatsapp/send`, {
@@ -463,10 +464,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }),
         signal: AbortSignal.timeout(sendBudget),
       })
-      const result = await res.json().catch(() => ({})) as { success?: boolean; messageId?: string; error?: string }
-      sendOk = res.ok && result.success === true
+      const result = await res.json().catch(() => ({})) as { success?: boolean; messageId?: string; error?: string; queued?: boolean }
+      // `queued` = a VPS não entregou AGORA, mas assumiu a entrega na fila de
+      // reenvio. Não é sucesso (não pode virar messageId falso no banco) e não
+      // é falha para re-disparar: se o cron reclamasse este lead a cada 15 min,
+      // voltaria o martelo que gerou 35 tentativas em 27/07. A fila entrega ou
+      // alerta como carta morta.
+      queued = res.status === 202 || result.queued === true
+      sendOk = res.ok && result.success === true && !queued
       messageId = result.messageId ?? null
-      if (sendOk) stats.enviados += 1
+      if (queued) {
+        stats.enfileirados += 1
+        log('[abandoned-leads] enfileirado para reenvio', { responseId: row.id })
+      } else if (sendOk) stats.enviados += 1
       else {
         stats.falhas += 1
         log('[abandoned-leads] send falhou', { responseId: row.id, status: res.status, error: result.error ?? null })
@@ -477,7 +487,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     // 3e) PROMOVE o claim (pendente → enviado) ou libera pra retry.
-    if (sendOk) {
+    if (queued) {
+      // Fecha o claim SEM inventar messageId: a entrega saiu das mãos do cron e
+      // passou a ser responsabilidade da fila de reenvio da VPS. Registrar
+      // `sent-<timestamp>` aqui seria mentir no banco — o alerta ainda não saiu.
+      const { error: queueErr } = await supabase
+        .from('form_whatsapp_logs')
+        .update({ phone_number: leadPhone, error_message: 'na fila de reenvio da VPS' })
+        .eq('response_id', row.id)
+        .eq('status', 'abandoned_alert')
+      if (queueErr) logError('[abandoned-leads] claim não marcado como enfileirado', { responseId: row.id, queueErr })
+    } else if (sendOk) {
       const { error: promoteErr } = await supabase
         .from('form_whatsapp_logs')
         .update({ wacli_message_id: messageId ?? `sent-${Date.now()}`, phone_number: leadPhone, error_message: null })

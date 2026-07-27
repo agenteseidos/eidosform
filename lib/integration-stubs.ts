@@ -210,7 +210,16 @@ export async function sendWhatsAppOnFormResponse(params: BuildLeadDataParams): P
       return
     }
 
-    const result = await sendResponse.json() as { success?: boolean; messageId?: string; error?: string; duplicate?: boolean }
+    const result = await sendResponse.json() as { success?: boolean; messageId?: string; error?: string; duplicate?: boolean; queued?: boolean }
+
+    // 202 = na fila de reenvio da VPS. NÃO é 'skipped' (que significa "decidimos
+    // não mandar") nem 'sent'. A notificação vai chegar sozinha; registrar
+    // errado aqui esconderia um lead que ainda não foi avisado.
+    if (sendResponse.status === 202 || result.queued === true) {
+      log('[WhatsApp] Enfileirado para reenvio', { formId, responseId })
+      logWhatsAppSend(formId, responseId, 'queued', null, 'na fila de reenvio da VPS', String(leadData.phone ?? '')).catch(() => {})
+      return
+    }
 
     // HTTP 200 com success:false = NÃO enviado (ex.: settings.enabled=false).
     // Antes isso era registrado como 'sent' e o form_whatsapp_logs mentia
@@ -241,7 +250,8 @@ export async function sendWhatsAppOnFormResponse(params: BuildLeadDataParams): P
 export async function logWhatsAppSend(
   formId: string,
   responseId: string,
-  status: 'sent' | 'failed' | 'skipped' | 'abandoned_alert',
+  // 'queued' = aceito pela fila de reenvio da VPS, ainda NÃO entregue.
+  status: 'sent' | 'failed' | 'skipped' | 'abandoned_alert' | 'queued',
   messageId: string | null,
   errorMessage: string | null,
   phoneNumber?: string

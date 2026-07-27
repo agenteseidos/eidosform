@@ -20,7 +20,37 @@ const unavailableStatus = {
   },
   volume: { today: 0, average7Days: 0, coverageDays: 0, elevated: false },
   sendsByTransport: { wacli: 0, wuzapi: 0, fallback: 0, legacy: 0 },
+  daily: {},
+  transportAttributionSince: null,
 } as const
+
+/**
+ * Esta rota é uma LISTA BRANCA: reconstrói a resposta campo a campo em vez de
+ * repassar o que a VPS mandou. É proposital (nada cru da VPS chega ao
+ * navegador), mas tem um custo que já mordeu uma vez: campo novo na VPS que
+ * não for adicionado AQUI simplesmente some, sem erro nenhum — a tela mostra
+ * zero e parece dado real. Foi o que aconteceu com `daily` em 27/07: "envios
+ * hoje 39" e "envios por motor 0" na mesma tela.
+ * ⚠️ Ao acrescentar campo no /api/whatsapp/status da VPS, acrescente aqui também.
+ */
+function sanitizeDaily(value: unknown): Record<string, Record<string, number>> {
+  if (!value || typeof value !== 'object') return {}
+  const out: Record<string, Record<string, number>> = {}
+  for (const [dia, contadores] of Object.entries(value as Record<string, unknown>)) {
+    // Só chaves de data no formato esperado; o resto é descartado.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) continue
+    const c = (contadores && typeof contadores === 'object' ? contadores : {}) as Record<string, unknown>
+    out[dia] = {
+      total: Number(c.total) || 0,
+      wacli: Number(c.wacli) || 0,
+      wuzapi: Number(c.wuzapi) || 0,
+      fallback: Number(c.fallback) || 0,
+      legacy: Number(c.legacy) || 0,
+      failed: Number(c.failed) || 0,
+    }
+  }
+  return out
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request)
@@ -80,6 +110,10 @@ export async function GET(request: NextRequest) {
         fallback: Number(data.sendsByTransport?.fallback) || 0,
         legacy: Number(data.sendsByTransport?.legacy) || 0,
       },
+      daily: sanitizeDaily(data.daily),
+      transportAttributionSince: typeof data.transportAttributionSince === 'string'
+        ? data.transportAttributionSince
+        : null,
     })
   } catch (err: unknown) {
     logError('WhatsApp status check failed:', err)

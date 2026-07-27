@@ -7,7 +7,7 @@ const { spawn, execFile, execFileSync } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs/promises');
 const { Jimp } = require('jimp');
-const { ERROR_CLASS } = require('./transport');
+const { ERROR_CLASS, brazilianPhoneCandidates, formatBrazilianPhone } = require('./transport');
 
 const execFileAsync = promisify(execFile);
 
@@ -119,8 +119,8 @@ function createWacliTransport({
         sessionDb,
         'SELECT jid FROM whatsmeow_device LIMIT 1;',
       ], { timeout: 3000 }).toString().trim();
-      const match = result.match(/^55(\d+):/);
-      if (match) return `+55 ${match[1].replace(/(\d{2})(\d{4,5})(\d{4})/, '$1 $2-$3')}`;
+      const match = result.match(/^(\d+)[:@]/);
+      if (match) return formatBrazilianPhone(match[1]);
     } catch {
       log('[phone] wacli session phone unavailable');
     }
@@ -420,16 +420,8 @@ function createWacliTransport({
     name: 'wacli',
     // Mantém o primeiro formato usado historicamente em produção (8 dígitos),
     // mas permite que a segunda tentativa seja realmente a variante de 9.
-    phoneCandidates: (phone) => {
-      const cleaned = String(phone).replace(/\D/g, '');
-      if (cleaned.length === 13 && cleaned.startsWith('55')) {
-        return [`55${cleaned.substring(2, 4)}${cleaned.substring(5)}`, cleaned];
-      }
-      if (cleaned.length === 12 && cleaned.startsWith('55')) {
-        return [cleaned, `55${cleaned.substring(2, 4)}9${cleaned.substring(4)}`];
-      }
-      return [cleaned];
-    },
+    // A regra é COMPARTILHADA com os demais motores de propósito (transport.js).
+    phoneCandidates: brazilianPhoneCandidates,
     enviarTexto,
     obterStatus,
     obterQR,

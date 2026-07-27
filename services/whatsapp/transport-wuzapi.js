@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { ERROR_CLASS } = require('./transport');
+const { ERROR_CLASS, brazilianPhoneCandidates, formatBrazilianPhone } = require('./transport');
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const QR_TTL_MS = 45_000;
@@ -37,6 +37,19 @@ function classifyHttpFailure(status, payload) {
         : 'wuzapi_invalid_payload',
       errorClass: ERROR_CLASS.PERMANENTE,
       retryAlternateNumber: safeText.includes('phone') || safeText.includes('jid'),
+    };
+  }
+  // Medido em produção (2026-07-27): enviar para a variante de JID que não
+  // existe devolve 500 "server returned error 463". O erro veio de DENTRO do
+  // SendMessage do whatsmeow, ou seja, nada foi entregue — então tentar a outra
+  // variante do número é seguro e não duplica. Sem esta linha o envio morre
+  // como 5xx ambíguo, o fallback de número nunca roda, e a ordem correta em
+  // brazilianPhoneCandidates vira o ÚNICO anteparo contra formato errado.
+  if (status >= 500 && safeText.includes('server returned error 463')) {
+    return {
+      error: 'wuzapi_recipient_rejected',
+      errorClass: ERROR_CLASS.PERMANENTE,
+      retryAlternateNumber: true,
     };
   }
   if (status >= 500 && (
@@ -105,7 +118,7 @@ function createWuzapiTransport({
     return {
       authenticated: data.loggedIn === true || data.LoggedIn === true,
       connected: data.connected === true || data.Connected === true,
-      phone: phoneFromJid(data.jid),
+      phone: formatBrazilianPhone(phoneFromJid(data.jid)),
       available: true,
       error: null,
     };
@@ -214,6 +227,9 @@ function createWuzapiTransport({
 
   return {
     name: 'wuzapi',
+    // MESMA ordem do wacli, pela mesma razão: um ACK do servidor não prova
+    // entrega, então começar pela variante errada perde a mensagem em silêncio.
+    phoneCandidates: brazilianPhoneCandidates,
     enviarTexto,
     obterStatus,
     obterQR,

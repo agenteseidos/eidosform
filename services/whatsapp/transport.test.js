@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   ERROR_CLASS,
   alternateBrazilianPhone,
+  formatBrazilianPhone,
   sendWithTransportFallback,
 } from './transport.js'
 import {
@@ -10,7 +11,7 @@ import {
   createWuzapiTransport,
   safeMessageId,
 } from './transport-wuzapi.js'
-import { classifyWacliFailure } from './transport-wacli.js'
+import { classifyWacliFailure, createWacliTransport } from './transport-wacli.js'
 
 const deps = { log: vi.fn(), hashPhone: () => 'hash' }
 
@@ -120,6 +121,65 @@ describe('fallback brasileiro 8/9 dígitos', () => {
   })
 })
 
+describe('ordem do número é IGUAL em todo motor', () => {
+  // Regressão real (auditoria 2026-07-27): o wuzapi nasceu sem `phoneCandidates`
+  // e caía no default antigo, que tentava 13 dígitos PRIMEIRO. Como um JID
+  // inexistente recebe ACK do servidor em vez de erro, a virada de transporte
+  // teria perdido notificações em silêncio — sem log de falha, sem retry.
+  const motores = () => [
+    ['wacli', createWacliTransport({ log: () => {}, hashPhone: () => 'hash' })],
+    ['wuzapi', createWuzapiTransport({ token: 'secret', fetchFn: vi.fn() })],
+  ]
+
+  it.each(motores())('%s começa pela variante de 12 dígitos provada em produção', (_nome, transport) => {
+    expect(transport.phoneCandidates('5583996966457')).toEqual([
+      '558396966457',
+      '5583996966457',
+    ])
+  })
+
+  it('nenhum motor diverge do outro', () => {
+    const ordens = motores().map(([, t]) => JSON.stringify(t.phoneCandidates('5583996966457')))
+    expect(new Set(ordens).size).toBe(1)
+  })
+
+  it('o default de quem não declara nada já é a ordem certa', async () => {
+    const primary = fakeTransport('novo-motor', [
+      { success: false, error: 'invalid phone', errorClass: ERROR_CLASS.PERMANENTE, retryAlternateNumber: true },
+      { success: true, messageId: 'OK' },
+    ])
+    await sendWithTransportFallback({
+      primary, fallback: null, phone: '55 (83) 99696-6457', message: 'x', ...deps,
+    })
+    expect(primary.enviarTexto.mock.calls.map((call) => call[0])).toEqual([
+      '558396966457',
+      '5583996966457',
+    ])
+  })
+})
+
+describe('número exibido no painel', () => {
+  it('os dois motores exibem a MESMA linha no MESMO formato', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: { connected: true, loggedIn: true, jid: '558396966457:4@s.whatsapp.net' },
+      }),
+    })
+    const wuzapi = createWuzapiTransport({ token: 'secret', fetchFn })
+    expect((await wuzapi.obterStatus()).phone).toBe('+55 83 9696-6457')
+    // Mesmo formato que o wacli produz a partir do jid do banco de sessão.
+    expect(formatBrazilianPhone('558396966457')).toBe('+55 83 9696-6457')
+  })
+
+  it('não inventa formato para o que não é celular brasileiro', () => {
+    expect(formatBrazilianPhone('')).toBe(null)
+    expect(formatBrazilianPhone('12345')).toBe('12345')
+  })
+})
+
 describe('classificação de erro', () => {
   it('ECONNREFUSED é PRE_FLIGHT e timeout é IN_FLIGHT', () => {
     expect(classifyFetchError({ cause: { code: 'ECONNREFUSED' } }).errorClass).toBe(ERROR_CLASS.PRE_FLIGHT)
@@ -134,6 +194,22 @@ describe('classificação de erro', () => {
     }))
     expect(classifyHttpFailure(500, { error: 'internal' }).errorClass).toBe(ERROR_CLASS.IN_FLIGHT)
     expect(classifyHttpFailure(500, { error: 'no session' }).errorClass).toBe(ERROR_CLASS.PRE_FLIGHT)
+  })
+
+  it('erro 463 (destinatário rejeitado) libera a tentativa da outra variante', () => {
+    // Resposta real do wuzapi ao enviar para o JID de 13 dígitos, que não existe.
+    expect(classifyHttpFailure(500, {
+      error: 'error sending message: server returned error 463',
+    })).toEqual(expect.objectContaining({
+      errorClass: ERROR_CLASS.PERMANENTE,
+      retryAlternateNumber: true,
+    }))
+  })
+
+  it('5xx genérico continua ambíguo e NÃO tenta outra variante', () => {
+    const generico = classifyHttpFailure(500, { error: 'gateway blew up' })
+    expect(generico.errorClass).toBe(ERROR_CLASS.IN_FLIGHT)
+    expect(generico.retryAlternateNumber).toBeFalsy()
   })
 
   it('wacli também separa timeout, sessão e destinatário', () => {

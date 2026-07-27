@@ -210,7 +210,7 @@ export async function sendWhatsAppOnFormResponse(params: BuildLeadDataParams): P
       return
     }
 
-    const result = await sendResponse.json() as { success?: boolean; messageId?: string; error?: string; duplicate?: boolean; queued?: boolean }
+    const result = await sendResponse.json() as { success?: boolean; messageId?: string; error?: string; duplicate?: boolean; queued?: boolean; transport?: string | null }
 
     // 202 = na fila de reenvio da VPS. NÃO é 'skipped' (que significa "decidimos
     // não mandar") nem 'sent'. A notificação vai chegar sozinha; registrar
@@ -231,7 +231,7 @@ export async function sendWhatsAppOnFormResponse(params: BuildLeadDataParams): P
     }
 
     log('[WhatsApp] Sent', { formId, responseId, msgId: result.messageId ?? null, duplicate: result.duplicate ?? false })
-    logWhatsAppSend(formId, responseId, 'sent', result.messageId || null, null, String(leadData.phone ?? '')).catch(() => {})
+    logWhatsAppSend(formId, responseId, 'sent', result.messageId || null, null, String(leadData.phone ?? ''), result.transport ?? null).catch(() => {})
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
     logError(`[WhatsApp] Error for form ${formId}: ${errMsg}`)
@@ -254,19 +254,35 @@ export async function logWhatsAppSend(
   status: 'sent' | 'failed' | 'skipped' | 'abandoned_alert' | 'queued',
   messageId: string | null,
   errorMessage: string | null,
-  phoneNumber?: string
+  phoneNumber?: string,
+  // Motor que efetivamente entregou ('wuzapi' | 'wacli'). Alimenta a coluna
+  // "por onde saiu" em Últimos envios.
+  transport?: string | null
 ) {
+  const supabase = createPublicClient()
+  const table = (supabase as unknown as {
+    from: (t: string) => { insert: (d: Record<string, unknown>) => Promise<{ error?: { message?: string } | null }> }
+  }).from('form_whatsapp_logs')
+
+  const base: Record<string, unknown> = {
+    form_id: formId,
+    response_id: responseId,
+    phone_number: phoneNumber && phoneNumber.trim().length > 0 ? phoneNumber : null,
+    message_sent: '',
+    status,
+    wacli_message_id: messageId,
+    error_message: errorMessage,
+  }
+
   try {
-    const supabase = createPublicClient()
-    await (supabase as unknown as { from: (t: string) => { insert: (d: Record<string, unknown>) => Promise<unknown> } }).from('form_whatsapp_logs').insert({
-      form_id: formId,
-      response_id: responseId,
-      phone_number: phoneNumber && phoneNumber.trim().length > 0 ? phoneNumber : null,
-      message_sent: '',
-      status,
-      wacli_message_id: messageId,
-      error_message: errorMessage,
-    })
+    const result = await table.insert(transport ? { ...base, transport } : base)
+    // A migração da coluna `transport` é MANUAL (SQL Editor do Supabase). Se o
+    // deploy chegar antes dela, o insert inteiro falharia e o log do envio se
+    // perderia — justamente o registro que serve pra auditar entrega. Então:
+    // detecta coluna ausente e regrava sem ela. Some sozinho após a migração.
+    if (transport && result?.error?.message?.includes('transport')) {
+      await table.insert(base)
+    }
   } catch {
     // Silent — logging should never break the flow
   }

@@ -52,6 +52,19 @@ type WaStatus = {
     fallback: number
     legacy: number
   }
+  /** Contadores dia a dia (chave 'YYYY-MM-DD', fuso America/Recife). */
+  daily?: Record<string, DayCounters>
+  /** ISO de quando a atribuição por motor passou a ser gravada. */
+  transportAttributionSince?: string | null
+}
+
+type DayCounters = {
+  total: number
+  wacli: number
+  wuzapi: number
+  fallback: number
+  legacy: number
+  failed: number
 }
 
 type SendLog = {
@@ -59,8 +72,60 @@ type SendLog = {
   recipient: string
   form: string
   date: string
-  status: 'enviado' | 'erro'
+  status: 'enviado' | 'erro' | 'na fila'
+  transport?: TransportName | string | null
   errorMessage?: string | null
+}
+
+type PeriodoId = 'hoje' | 'ontem' | '7dias' | '30dias' | 'tudo' | 'custom'
+
+const PERIODOS: { id: PeriodoId; label: string }[] = [
+  { id: 'hoje', label: 'Hoje' },
+  { id: 'ontem', label: 'Ontem' },
+  { id: '7dias', label: 'Últimos 7 dias' },
+  { id: '30dias', label: 'Últimos 30 dias' },
+  { id: 'tudo', label: 'Todo o período' },
+  { id: 'custom', label: 'Customizado' },
+]
+
+/**
+ * Chave de dia no MESMO fuso usado pelas métricas do servidor (America/Recife).
+ * Usar a data local do navegador daria divergência de um dia para quem estiver
+ * em outro fuso, e "hoje" no painel não bateria com "hoje" no alarme.
+ */
+function chaveDia(date: Date): string {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Recife',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const v = Object.fromEntries(partes.map((p) => [p.type, p.value]))
+  return `${v.year}-${v.month}-${v.day}`
+}
+
+function deslocaDia(chave: string, dias: number): string {
+  const d = new Date(`${chave}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Soma os contadores dos dias dentro do intervalo [de, ate] (inclusivo). */
+function somaPeriodo(daily: Record<string, DayCounters>, de: string | null, ate: string | null) {
+  const total: DayCounters = { total: 0, wacli: 0, wuzapi: 0, fallback: 0, legacy: 0, failed: 0 }
+  let diasComDado = 0
+  for (const [dia, c] of Object.entries(daily)) {
+    if (de && dia < de) continue
+    if (ate && dia > ate) continue
+    diasComDado += 1
+    total.total += c.total
+    total.wacli += c.wacli
+    total.wuzapi += c.wuzapi
+    total.fallback += c.fallback
+    total.legacy += c.legacy
+    total.failed += c.failed
+  }
+  return { ...total, diasComDado }
 }
 
 const TRANSPORT_LABEL: Record<TransportName, string> = {
@@ -95,6 +160,9 @@ function transportState(status: TransportStatus) {
 }
 
 export function AdminWhatsAppPanel() {
+  const [periodo, setPeriodo] = useState<PeriodoId>('tudo')
+  const [customDe, setCustomDe] = useState('')
+  const [customAte, setCustomAte] = useState('')
   const [status, setStatus] = useState<WaStatus | null>(null)
   const [statusLoading, setStatusLoading] = useState(true)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -253,7 +321,33 @@ export function AdminWhatsAppPanel() {
   const activeLabel = TRANSPORT_LABEL[status.activeTransport]
   const primaryLabel = TRANSPORT_LABEL[status.primaryTransport]
   const fallbackEnabled = Boolean(status.fallbackTransport)
-  const connectionCards: TransportName[] = ['wacli', 'wuzapi']
+  // PRIMÁRIO PRIMEIRO. Hoje isso põe o WuzAPI na frente, que é o pedido; e se um
+  // dia houver rollback para o wacli a ordem se ajusta sozinha, sem depender de
+  // alguém lembrar de mexer aqui.
+  const connectionCards: TransportName[] = status.primaryTransport === 'wuzapi'
+    ? ['wuzapi', 'wacli']
+    : ['wacli', 'wuzapi']
+
+  const daily = status.daily ?? {}
+  const hojeChave = chaveDia(new Date())
+  const intervalo: { de: string | null; ate: string | null } =
+    periodo === 'hoje' ? { de: hojeChave, ate: hojeChave }
+    : periodo === 'ontem' ? { de: deslocaDia(hojeChave, -1), ate: deslocaDia(hojeChave, -1) }
+    : periodo === '7dias' ? { de: deslocaDia(hojeChave, -6), ate: hojeChave }
+    : periodo === '30dias' ? { de: deslocaDia(hojeChave, -29), ate: hojeChave }
+    : periodo === 'custom' ? { de: customDe || null, ate: customAte || null }
+    : { de: null, ate: null }
+  const totais = somaPeriodo(daily, intervalo.de, intervalo.ate)
+
+  // A separação por motor só começou a existir quando as métricas foram criadas.
+  // Dias anteriores vieram de uma importação e não sabem por onde saíram — dizer
+  // isso é melhor do que exibir um número que parece completo e não é.
+  const inicioAtribuicao = status.transportAttributionSince
+    ? chaveDia(new Date(status.transportAttributionSince))
+    : null
+  const periodoAlcancaAntesDaAtribuicao = Boolean(
+    inicioAtribuicao && (!intervalo.de || intervalo.de < inicioAtribuicao)
+  )
 
   return (
     <div className="space-y-6">
@@ -290,38 +384,6 @@ export function AdminWhatsAppPanel() {
           </div>
         )}
       </section>
-
-      <Card className={status.volume.elevated ? 'border-amber-300' : 'border-slate-200'}>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base text-slate-900">
-            <BarChart3 className="h-5 w-5 text-blue-600" />
-            Volume de notificações
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-6 sm:grid-cols-[1fr_1fr_1.5fr] sm:items-end">
-            <div>
-              <p className="text-sm text-slate-500">Envios hoje</p>
-              <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{status.volume.today}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Média dos 7 dias anteriores</p>
-              <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-                {status.volume.average7Days.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}
-              </p>
-            </div>
-            <div className={`rounded-lg px-4 py-3 text-sm ${
-              status.volume.elevated ? 'bg-amber-50 text-amber-800' : 'bg-slate-50 text-slate-600'
-            }`}>
-              {status.volume.elevated
-                ? 'Volume muito acima do padrão recente. Verifique campanhas e formulários ativos.'
-                : status.volume.coverageDays < 7
-                  ? `Média em formação: ${status.volume.coverageDays} de 7 dias com histórico disponível.`
-                  : 'Volume dentro do padrão recente.'}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       <section>
         <div className="mb-3">
@@ -412,6 +474,39 @@ export function AdminWhatsAppPanel() {
         </div>
       </section>
 
+      <Card className={status.volume.elevated ? 'border-amber-300' : 'border-slate-200'}>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+            <BarChart3 className="h-5 w-5 text-blue-600" />
+            Volume de notificações
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-6 sm:grid-cols-[1fr_1fr_1.5fr] sm:items-end">
+            <div>
+              <p className="text-sm text-slate-500">Envios hoje</p>
+              <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{status.volume.today}</p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Média dos 7 dias anteriores</p>
+              <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
+                {status.volume.average7Days.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}
+              </p>
+            </div>
+            <div className={`rounded-lg px-4 py-3 text-sm ${
+              status.volume.elevated ? 'bg-amber-50 text-amber-800' : 'bg-slate-50 text-slate-600'
+            }`}>
+              {status.volume.elevated
+                ? 'Volume muito acima do padrão recente. Verifique campanhas e formulários ativos.'
+                : status.volume.coverageDays < 7
+                  ? `Média em formação: ${status.volume.coverageDays} de 7 dias com histórico disponível.`
+                  : 'Volume dentro do padrão recente.'}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+
       {qrTransport && qrBase64 && (
         <Card className="border-green-300">
           <CardHeader className="pb-3">
@@ -475,24 +570,91 @@ export function AdminWhatsAppPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            {PERIODOS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setPeriodo(p.id)}
+                className={`min-h-9 rounded-lg border px-3 py-1.5 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                  periodo === p.id
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {periodo === 'custom' && (
+            <div className="mb-5 flex flex-wrap items-end gap-3">
+              <label className="text-sm text-slate-600">
+                De
+                <input
+                  type="date"
+                  value={customDe}
+                  max={customAte || undefined}
+                  onChange={(e) => setCustomDe(e.target.value)}
+                  className="mt-1 block min-h-9 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-900"
+                />
+              </label>
+              <label className="text-sm text-slate-600">
+                Até
+                <input
+                  type="date"
+                  value={customAte}
+                  min={customDe || undefined}
+                  onChange={(e) => setCustomAte(e.target.value)}
+                  className="mt-1 block min-h-9 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-900"
+                />
+              </label>
+              {!customDe && !customAte && (
+                <p className="pb-2 text-sm text-slate-500">Escolha ao menos uma data.</p>
+              )}
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-5">
             <div>
-              <p className="text-sm text-slate-500">wacli</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{status.sendsByTransport.wacli}</p>
+              <p className="text-sm text-slate-500">Total</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{totais.total}</p>
             </div>
             <div>
               <p className="text-sm text-slate-500">WuzAPI</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{status.sendsByTransport.wuzapi}</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{totais.wuzapi}</p>
             </div>
             <div>
-              <p className="text-sm text-slate-500">Via fallback</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{status.sendsByTransport.fallback}</p>
+              <p className="text-sm text-slate-500">wacli</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{totais.wacli}</p>
             </div>
             <div>
-              <p className="text-sm text-slate-500">Legado importado</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{status.sendsByTransport.legacy}</p>
+              <p className="text-sm text-slate-500">Via reserva</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{totais.fallback}</p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Falhas</p>
+              <p className={`mt-1 text-2xl font-bold ${totais.failed > 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                {totais.failed}
+              </p>
             </div>
           </div>
+
+          {/* Honestidade sobre a cobertura do dado: os envios anteriores a
+              27/07/2026 foram importados sem identificação de motor. Some
+              sozinho conforme os dias novos entram na janela. */}
+          {periodoAlcancaAntesDaAtribuicao && totais.legacy > 0 && (
+            <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <strong>{totais.legacy}</strong> destes envios são anteriores a 27/07/2026 e não têm motor
+              identificado — a separação por motor só passou a ser gravada nessa data. Eles entram no
+              total, mas não em WuzAPI nem wacli.
+            </p>
+          )}
+          {totais.diasComDado === 0 && (
+            <p className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Nenhum envio registrado neste período.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -516,10 +678,22 @@ export function AdminWhatsAppPanel() {
                 <div key={item.id} className="flex items-start justify-between gap-3 border-b py-3 last:border-0 sm:items-center">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className={`mt-2 h-2 w-2 flex-none rounded-full ${
-                      item.status === 'enviado' ? 'bg-green-500' : 'bg-red-500'
+                      item.status === 'enviado' ? 'bg-green-500' :
+                      item.status === 'na fila' ? 'bg-amber-500' : 'bg-red-500'
                     }`} />
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-slate-900">{item.recipient}</div>
+                      <div className="truncate font-medium text-slate-900">
+                        {item.recipient}
+                        {/* Envios anteriores a 27/07/2026 não gravavam o motor.
+                            Mostrar "—" é melhor que omitir: deixa claro que o
+                            dado não existe, em vez de parecer que não passou
+                            por motor nenhum. */}
+                        <span className="ml-1.5 font-normal text-slate-500">
+                          ({item.transport
+                            ? TRANSPORT_LABEL[item.transport as TransportName] ?? item.transport
+                            : '—'})
+                        </span>
+                      </div>
                       <div className="truncate text-sm text-slate-500">{item.form}</div>
                       {item.errorMessage && (
                         <div className="truncate text-xs text-red-600">{item.errorMessage}</div>

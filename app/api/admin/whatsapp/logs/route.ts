@@ -9,6 +9,9 @@ type WhatsAppLogRow = {
   status: string
   error_message: string | null
   timestamp: string
+  /** Motor que entregou. NULO em envios anteriores a 2026-07-27 e enquanto a
+   *  migração manual da coluna não tiver sido aplicada. */
+  transport?: string | null
 }
 
 export async function GET(request: NextRequest) {
@@ -26,10 +29,31 @@ export async function GET(request: NextRequest) {
     }
   }).from('form_whatsapp_logs')
 
-  const { data: logs, error: logsError } = await logsQuery
-    .select('id, form_id, phone_number, status, error_message, timestamp')
+  // A coluna `transport` vem de migração MANUAL. Enquanto ela não for aplicada,
+  // pedi-la faz o PostgREST recusar a query inteira e a tela ficaria sem NENHUM
+  // log. Então tenta com a coluna e cai pro select antigo se ela não existir.
+  const COLUNAS_BASE = 'id, form_id, phone_number, status, error_message, timestamp'
+  let { data: logs, error: logsError } = await logsQuery
+    .select(`${COLUNAS_BASE}, transport`)
     .order('timestamp', { ascending: false })
     .limit(20)
+
+  if (logsError) {
+    const semColuna = await (supabase as unknown as {
+      from: (table: 'form_whatsapp_logs') => {
+        select: (columns: string) => {
+          order: (column: string, options: { ascending: boolean }) => {
+            limit: (count: number) => Promise<{ data: WhatsAppLogRow[] | null; error: { message: string } | null }>
+          }
+        }
+      }
+    }).from('form_whatsapp_logs')
+      .select(COLUNAS_BASE)
+      .order('timestamp', { ascending: false })
+      .limit(20)
+    logs = semColuna.data
+    logsError = semColuna.error
+  }
 
   if (logsError) {
     return NextResponse.json({ error: 'Failed to load WhatsApp logs' }, { status: 500 })
@@ -63,7 +87,8 @@ export async function GET(request: NextRequest) {
       recipient: log.phone_number || '(sem telefone)',
       form: formsById.get(log.form_id) || 'Formulário removido',
       date: log.timestamp,
-      status: log.status === 'sent' ? 'enviado' : 'erro',
+      status: log.status === 'sent' ? 'enviado' : log.status === 'queued' ? 'na fila' : 'erro',
+      transport: log.transport ?? null,
       errorMessage: log.error_message,
     })),
   })

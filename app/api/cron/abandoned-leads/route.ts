@@ -449,6 +449,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     let sendOk = false
     let queued = false
     let messageId: string | null = null
+    let transportUsado: string | null = null
     try {
       const res = await fetch(`${appUrl}/api/whatsapp/send`, {
         method: 'POST',
@@ -464,7 +465,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }),
         signal: AbortSignal.timeout(sendBudget),
       })
-      const result = await res.json().catch(() => ({})) as { success?: boolean; messageId?: string; error?: string; queued?: boolean }
+      const result = await res.json().catch(() => ({})) as { success?: boolean; messageId?: string; error?: string; queued?: boolean; transport?: string | null }
       // `queued` = a VPS não entregou AGORA, mas assumiu a entrega na fila de
       // reenvio. Não é sucesso (não pode virar messageId falso no banco) e não
       // é falha para re-disparar: se o cron reclamasse este lead a cada 15 min,
@@ -473,6 +474,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       queued = res.status === 202 || result.queued === true
       sendOk = res.ok && result.success === true && !queued
       messageId = result.messageId ?? null
+      transportUsado = result.transport ?? null
       if (queued) {
         stats.enfileirados += 1
         log('[abandoned-leads] enfileirado para reenvio', { responseId: row.id })
@@ -500,7 +502,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     } else if (sendOk) {
       const { error: promoteErr } = await supabase
         .from('form_whatsapp_logs')
-        .update({ wacli_message_id: messageId ?? `sent-${Date.now()}`, phone_number: leadPhone, error_message: null })
+        .update({ wacli_message_id: messageId ?? `sent-${Date.now()}`, phone_number: leadPhone, error_message: null, ...(transportUsado ? { transport: transportUsado } : {}) })
         .eq('response_id', row.id)
         .eq('status', 'abandoned_alert')
       if (promoteErr) {

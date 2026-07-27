@@ -62,7 +62,7 @@ function normalizeValue(value: string): string {
 /**
  * Send message via WhatsApp VPS server
  */
-async function sendViaVps(phone: string, message: string, idempotencyKey?: string): Promise<{ messageId: string | null; duplicate?: boolean; queued?: boolean }> {
+async function sendViaVps(phone: string, message: string, idempotencyKey?: string): Promise<{ messageId: string | null; duplicate?: boolean; queued?: boolean; transport?: string | null }> {
   const cleanPhone = phone.replace(/\D/g, '')
 
   try {
@@ -107,7 +107,11 @@ async function sendViaVps(phone: string, message: string, idempotencyKey?: strin
     // `||` (não `??`): a VPS pode devolver messageId como string vazia quando o
     // wacli não expõe `data.id` — `??` deixaria passar o "" e a telemetria
     // chegava como `msgId: N/A`. Ver briefing-whatsapp-msgid-perdido.md.
-    return { messageId: data.messageId || `vps-${Date.now()}`, duplicate: data.duplicate === true }
+    return {
+      messageId: data.messageId || `vps-${Date.now()}`,
+      duplicate: data.duplicate === true,
+      transport: typeof data.transport === 'string' ? data.transport : null,
+    }
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error)
 
@@ -278,6 +282,7 @@ async function handleFormAwareSend(
       success: true,
       messageId: result.messageId,
       duplicate: result.duplicate === true,
+      transport: result.transport ?? null,
       timestamp: new Date().toISOString(),
     })
   } catch (err) {
@@ -367,6 +372,7 @@ async function handleDirectSend(data: DirectSendRequest & { formId?: string; ide
       success: true,
       messageId: result.messageId,
       duplicate: result.duplicate === true,
+      transport: result.transport ?? null,
       timestamp: new Date().toISOString(),
     })
   } catch (err) {

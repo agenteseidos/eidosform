@@ -226,6 +226,28 @@ function createTransportMetricsStore({
     return now() - Date.parse(incident.alertAttemptAt) >= retryMs;
   }
 
+  /**
+   * Histórico dia a dia, para o painel filtrar por período no cliente.
+   * Devolve cópia: o painel não pode mexer no estado vivo das métricas.
+   * ⚠️ `legacy` são os envios importados do controle de duplicatas — eles
+   * existem, mas NÃO têm motor identificado, porque a separação por motor só
+   * passou a ser gravada em 2026-07-27.
+   */
+  function dailyHistory() {
+    const out = {};
+    for (const [key, day] of Object.entries(state.days)) {
+      out[key] = {
+        total: day.total || 0,
+        wacli: day.wacli || 0,
+        wuzapi: day.wuzapi || 0,
+        fallback: day.fallback || 0,
+        legacy: day.legacy || 0,
+        failed: day.failed || 0,
+      };
+    }
+    return out;
+  }
+
   function snapshot() {
     const todayKey = dateKey(now(), timeZone);
     const today = state.days[todayKey] || emptyDay();
@@ -279,6 +301,7 @@ function createTransportMetricsStore({
     beginFallback,
     markFallbackAlert,
     shouldAttemptFallbackAlert,
+    dailyHistory,
     snapshot,
     _state: () => state,
   };

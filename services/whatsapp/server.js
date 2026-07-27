@@ -147,6 +147,12 @@ function buildStatusResponse() {
     failures: snapshot.failures,
     outbox: outbox.snapshot(),
     sendsByTransport: snapshot.sendsByTransport,
+    // Histórico dia a dia para o painel filtrar por período sem ida extra ao
+    // servidor. São ~120 dias de contadores pequenos.
+    daily: metrics.dailyHistory(),
+    // A partir de quando existe atribuição por motor. Antes disto os dias só
+    // têm `legacy`, e o painel precisa dizer isso em vez de fingir cobertura.
+    transportAttributionSince: snapshot.initializedAt,
     metricsInitializedAt: snapshot.initializedAt,
   };
 }
@@ -384,7 +390,7 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, r
     const result = await idemp.run(idempotencyKey, () => performSend(to, message, idempotencyKey));
     if (result.status === 'duplicate') {
       log(`[send] duplicate suppressed key=${idempotencyKey} (msgId: ${result.messageId})`);
-      return reply.send({ success: true, messageId: result.messageId, duplicate: true });
+      return reply.send({ success: true, messageId: result.messageId, duplicate: true, transport: result.transport || null });
     }
     if (result.status === 'contention') {
       log(`[send] contention key=${idempotencyKey}`);
@@ -404,7 +410,7 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, r
     await metrics.recordSend({ transport: result.transport || primaryName, fallback: result.fallback });
     await maybeAlertVolume();
     log(`[send] success key=${idempotencyKey}: ${hashPhone(to)} transport=${result.transport || primaryName} fallback=${result.fallback === true} (msgId: ${result.messageId})`);
-    return reply.send({ success: true, messageId: result.messageId });
+    return reply.send({ success: true, messageId: result.messageId, transport: result.transport || primaryName });
   }
 
   const result = await performSend(to, message, null);
@@ -419,7 +425,7 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, r
   await metrics.recordSend({ transport: result.transport, fallback: result.fallback });
   await maybeAlertVolume();
   log(`[send] success key=-: ${hashPhone(to)} transport=${result.transport} fallback=${result.fallback === true} (msgId: ${messageId})`);
-  return reply.send({ success: true, messageId });
+  return reply.send({ success: true, messageId, transport: result.transport || primaryName });
 });
 
 fastify.post('/api/whatsapp/disconnect', { onRequest: requireAuth }, async (request, reply) => {

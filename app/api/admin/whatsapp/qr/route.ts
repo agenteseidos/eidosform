@@ -16,6 +16,14 @@ export async function POST(request: NextRequest) {
   }
   log('[QR] Auth OK', { user: auth.user?.email || 'unknown' });
 
+  const body = await request.json().catch(() => ({})) as { transport?: unknown }
+  const transport = body.transport === 'wacli' || body.transport === 'wuzapi'
+    ? body.transport
+    : null
+  if (!transport) {
+    return NextResponse.json({ error: 'Invalid transport' }, { status: 400 })
+  }
+
   // Rate limit
   const rateLimitKey = `admin:whatsapp:qr:${auth.user?.id ?? 'unknown'}`
   const { allowed, resetIn } = await checkRateLimitAsync(rateLimitKey, {
@@ -37,7 +45,11 @@ export async function POST(request: NextRequest) {
     const fetchStart = Date.now();
     const response = await fetch(fetchUrl, {
       method: 'POST',
-      headers: getWhatsappAuthHeaders(),
+      headers: {
+        ...getWhatsappAuthHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ transport }),
       signal: AbortSignal.timeout(15_000),
     })
     const fetchTime = Date.now() - fetchStart;
@@ -53,7 +65,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json()
-    log('[QR] QR received', { qrLength: data.qr ? data.qr.length : 0 });
+    log('[QR] QR received', { transport, qrLength: data.qr ? data.qr.length : 0 });
 
     return NextResponse.json(data, {
       headers: {

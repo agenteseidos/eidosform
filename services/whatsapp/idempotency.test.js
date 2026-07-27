@@ -150,6 +150,29 @@ describe('persistência em disco', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
+  it('persiste motor/fallback só nos registros novos, sem exigir campos no legado', async () => {
+    const dir = tmpdir(); const file = path.join(dir, 'sent-keys.json')
+    fs.writeFileSync(file, JSON.stringify({ legado: { ts: Date.now(), messageId: 'OLD' } }))
+    const s = createIdempotencyStore({ file })
+    s.load()
+    await s.run('novo', async () => ({
+      success: true,
+      messageId: 'NEW',
+      transport: 'wuzapi',
+      fallback: true,
+    }))
+
+    const salvo = JSON.parse(fs.readFileSync(file, 'utf8'))
+    expect(salvo.legado).toEqual(expect.objectContaining({ messageId: 'OLD' }))
+    expect(salvo.legado.transport).toBeUndefined()
+    expect(salvo.novo).toEqual(expect.objectContaining({
+      messageId: 'NEW',
+      transport: 'wuzapi',
+      fallback: true,
+    }))
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
   it('NÃO persiste chave de envio que falhou (retry legítimo continua possível)', async () => {
     const dir = tmpdir(); const file = path.join(dir, 'sent-keys.json')
     const s1 = createIdempotencyStore({ file })

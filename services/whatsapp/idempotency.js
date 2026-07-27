@@ -83,7 +83,14 @@ function createIdempotencyStore(opts = {}) {
     if (!file) return;
     prune();
     const serializavel = {};
-    for (const [k, v] of map) if (v && v.messageId) serializavel[k] = { ts: v.ts, messageId: v.messageId };
+    for (const [k, v] of map) {
+      if (!v || !v.messageId) continue;
+      serializavel[k] = { ts: v.ts, messageId: v.messageId };
+      if (v.transport === 'wacli' || v.transport === 'wuzapi') {
+        serializavel[k].transport = v.transport;
+      }
+      if (v.fallback === true) serializavel[k].fallback = true;
+    }
     const tmp = file + '.tmp';
     try {
       await fsp.writeFile(tmp, JSON.stringify(serializavel), { mode: 0o600 });
@@ -125,6 +132,10 @@ function createIdempotencyStore(opts = {}) {
         .then(async (r) => {
           if (r && r.success) {
             fresh.messageId = r.messageId || `vps-${now()}`;
+            if (r.transport === 'wacli' || r.transport === 'wuzapi') {
+              fresh.transport = r.transport;
+            }
+            if (r.fallback === true) fresh.fallback = true;
             delete fresh.promise;
             await save();
           } else {
@@ -151,7 +162,10 @@ function createIdempotencyStore(opts = {}) {
     if (!result || !result.success) {
       return { status: 'failed', error: result && result.error ? String(result.error) : 'send_failed' };
     }
-    return { status: 'sent', messageId: entry.messageId };
+    const sent = { status: 'sent', messageId: entry.messageId };
+    if (entry.transport) sent.transport = entry.transport;
+    if (entry.fallback === true) sent.fallback = true;
+    return sent;
   }
 
   return { load, prune, get, save, run, size: () => map.size, _map: map };

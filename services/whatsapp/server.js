@@ -1,504 +1,185 @@
+'use strict';
+
 const path = require('path');
-// PM2's `env_file` config is silently ignored — load the .env manually so
-// WHATSAPP_API_KEY / PORT actually reach the process at boot time.
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const Fastify = require('fastify');
-const { spawn, execFile } = require('child_process');
-const { promisify } = require('util');
 const fs = require('fs/promises');
 const crypto = require('crypto');
-const { Jimp } = require('jimp');
 
-const execFileAsync = promisify(execFile);
+const { createIdempotencyStore } = require('./idempotency');
+const { createWacliTransport, safeExecError } = require('./transport-wacli');
+const { createWuzapiTransport } = require('./transport-wuzapi');
+const {
+  normalizeTransportName,
+  sendWithTransportFallback,
+} = require('./transport');
+const { createTransportMetricsStore } = require('./transport-metrics');
+const { sendFallbackAlert } = require('./fallback-alert');
 
-// Hash phone for logging — first 8 hex chars of SHA-256 (PII safe)
-const hashPhone = (p) => p ? crypto.createHash('sha256').update(String(p)).digest('hex').slice(0, 8) : 'null';
-
-// Caminhos da infra (P4-1): configuráveis via env, defaults = VPS atual.
-const WACLI = process.env.WACLI_PATH || '/home/linuxbrew/.linuxbrew/bin/wacli';
-const SQLITE3 = process.env.SQLITE3_PATH || '/home/linuxbrew/.linuxbrew/bin/sqlite3';
-const WACLI_SESSION_DB = process.env.WACLI_SESSION_DB || path.join(require('os').homedir(), '.wacli', 'session.db');
 const LOG_FILE = path.join(__dirname, 'server.log');
-const QR_FILE = path.join(__dirname, 'latest-qr.txt');
-const QR_PNG_FILE = path.join(__dirname, 'latest-qr.png');
 const STATUS_FILE = path.join(__dirname, 'status.json');
 const IDEMP_FILE = path.join(__dirname, 'sent-keys.json');
-const IDEMP_TTL_MS = 96 * 3600 * 1000; // > janela de abandono (72h) + margem — auditoria Codex
-/** Teto de tentativas de virar titular da chave de idempotência (P1-8). */
+const METRICS_FILE = path.join(__dirname, 'transport-metrics.json');
+const IDEMP_TTL_MS = 96 * 3600 * 1000;
 const MAX_IDEMP_ACQUIRE_ATTEMPTS = 5;
-// Corrida daemon×send (auditoria Codex 2026-07-23): o watchdog religava o
-// `sync --follow` NO MEIO de um send (store locked). Enquanto houver envio em
-// voo, ninguém religa o daemon.
-let sendInFlight = 0;
-const STATUS_REFRESH_S = 5;
+const STATUS_REFRESH_MS = 5_000;
 
-let wacliChild = null;
-let qrBase64 = null;
-let qrGeneratedAt = null;
-let status = { authenticated: false, connected: false, phoneNumber: null };
-let statusRefreshTimer = null;
+const hashValue = (value) => value
+  ? crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 8)
+  : 'null';
+const hashPhone = hashValue;
 
-const log = async (msg) => {
-  const ts = new Date().toISOString();
-  const line = `[${ts}] ${msg}\n`;
-  console.log(msg);
+const log = async (message) => {
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  console.log(message);
   await fs.appendFile(LOG_FILE, line).catch(() => {});
 };
 
-// Idempotência persistente por chave (formId:responseId etc.) — dedup de retry
-// do app e de resubmissão; sobrevive a restart do serviço.
-//
-// A lógica MORA em ./idempotency.js desde 2026-07-23: é código de CONCORRÊNCIA e
-// precisava de teste (o P1-8 — waiters virando titulares em massa — chegou a
-// produção justamente porque este arquivo não era coberto pela suíte). O módulo
-// é testado em idempotency.test.js; aqui só o instanciamos.
-//
-// ⚠️ FICA DEPOIS DE `log` DE PROPÓSITO: `log` é `const` (zona morta temporal) e
-// `idemp.load()` chama o logger quando o sent-keys.json está corrompido. Com o
-// bloco lá em cima, um arquivo corrompido derrubava o serviço no boot com
-// ReferenceError — em vez de degradar como foi projetado.
-const { createIdempotencyStore } = require('./idempotency');
 const idemp = createIdempotencyStore({
   file: IDEMP_FILE,
   ttlMs: IDEMP_TTL_MS,
   maxAcquireAttempts: MAX_IDEMP_ACQUIRE_ATTEMPTS,
-  log: (msg) => log(msg),
-  // P1-5: erro de processo nunca vira texto cru (carrega telefone e mensagem).
+  log: (message) => log(message),
   sanitizeError: (err) => safeExecError(err),
 });
 idemp.load();
 
-// Convert ASCII QR to PNG base64
-async function asciiToPngBase64(ascii) {
-  const lines = ascii.split('\n').filter(l => l.length > 0);
-  const cols = Math.max(...lines.map(l => [...l].length));
-  const rows = lines.length;
-  const cellW = 10;
-  const cellH = 20;
-  const imgWidth = cols * cellW;
-  const imgHeight = rows * cellH;
+const metrics = createTransportMetricsStore({
+  file: METRICS_FILE,
+  log: (message) => log(message),
+});
 
-  const image = new Jimp({ width: imgWidth, height: imgHeight, color: 0xffffffff });
+const transportMap = {
+  wacli: createWacliTransport({ log, hashPhone, baseDir: __dirname }),
+  wuzapi: createWuzapiTransport(),
+};
 
-  for (let row = 0; row < lines.length; row++) {
-    const line = lines[row];
-    const chars = [...line];
-    for (let col = 0; col < chars.length; col++) {
-      const ch = chars[col];
-      let topBlack = false;
-      let bottomBlack = false;
+const primaryName = normalizeTransportName(process.env.WHATSAPP_TRANSPORT, 'wacli');
+const fallbackCandidate = normalizeTransportName(process.env.WHATSAPP_TRANSPORT_FALLBACK, '');
+const fallbackName = fallbackCandidate && fallbackCandidate !== primaryName ? fallbackCandidate : null;
+const primaryTransport = transportMap[primaryName];
+const fallbackTransport = fallbackName ? transportMap[fallbackName] : null;
 
-      if (ch === '█') { topBlack = true; bottomBlack = true; }
-      else if (ch === '▀') { topBlack = true; bottomBlack = false; }
-      else if (ch === '▄') { topBlack = false; bottomBlack = true; }
-      else if (ch === ' ') { topBlack = false; bottomBlack = false; }
-      else { topBlack = true; bottomBlack = true; }
+let statusRefreshTimer = null;
+let statusCache = {
+  wacli: { authenticated: false, connected: false, phone: null, available: true, error: null },
+  wuzapi: { authenticated: false, connected: false, phone: null, available: false, error: null },
+};
 
-      const x = col * cellW;
-      const y = row * cellH;
-      const half = Math.floor(cellH / 2);
-
-      for (let py = 0; py < half; py++) {
-        for (let px = 0; px < cellW; px++) {
-          image.setPixelColor(topBlack ? 0x000000ff : 0xffffffff, x + px, y + py);
-        }
-      }
-      for (let py = half; py < cellH; py++) {
-        for (let px = 0; px < cellW; px++) {
-          image.setPixelColor(bottomBlack ? 0x000000ff : 0xffffffff, x + px, y + py);
-        }
-      }
-    }
-  }
-
-  const buffer = await image.getBuffer('image/png');
-  return buffer.toString('base64');
-}
-
-// Parse full QR from raw stderr output
-function parseQrAscii(raw) {
-  if (!raw || raw.length < 50) return null;
-  const lines = raw.split('\n');
-  const qrLines = [];
-  for (const line of lines) {
-    if (line.includes('█') || line.includes('▀') || line.includes('▄')) {
-      qrLines.push(line);
-    }
-  }
-  if (qrLines.length < 15) return null;
-  return qrLines.join('\n');
-}
-
-async function startWacli() {
-  if (wacliChild) {
-    log('wacli already running');
-    return;
-  }
-
-  // QR/auth flow needs exclusive lock — pause the daemon and don't auto-restart
-  // until auth completes (the close handler schedules a restart explicitly).
-  await stopDaemon();
-
-  log('[wacli] Starting persistent process...');
-  wacliChild = spawn(WACLI, ['auth', '--json']);
-  let qrDetected = false;
-  let stderrBuffer = '';
-  let stderrTimer = null;
-
-  const tryParseQr = async () => {
-    if (qrDetected) return;
-    const qr = parseQrAscii(stderrBuffer);
-    if (qr) {
-      qrDetected = true;
-      try {
-        const b64 = await asciiToPngBase64(qr);
-        qrBase64 = b64;
-        qrGeneratedAt = Date.now();
-        await fs.writeFile(QR_FILE, qr);
-        await fs.writeFile(QR_PNG_FILE, Buffer.from(b64, 'base64'));
-        log(`[wacli] QR converted to PNG and saved (${qr.split('\n').length} lines)`);
-      } catch (err) {
-        log(`[wacli] PNG conversion error: ${err.message}`);
-      }
-    }
-  };
-
-  wacliChild.stdout.on('data', (chunk) => {
-    const data = chunk.toString();
-    log(`[wacli] stdout: ${data.substring(0, 200)}`);
-    try {
-      const json = JSON.parse(data.trim());
-      if (json.authenticated || (json.data && json.data.authenticated)) {
-        log('[wacli] Authenticated - keeping process alive');
-        status.authenticated = true;
-        writeStatus();
-      }
-    } catch {}
-  });
-
-  wacliChild.stderr.on('data', async (chunk) => {
-    const data = chunk.toString();
-    log(`[wacli] stderr chunk: ${data.length} chars`);
-    stderrBuffer += data;
-
-    // Debounce: espera 800ms sem novos chunks antes de tentar parsear
-    if (stderrTimer) clearTimeout(stderrTimer);
-    stderrTimer = setTimeout(tryParseQr, 800);
-  });
-
-  wacliChild.on('close', (code) => {
-    log(`[wacli] Process closed: ${code}`);
-    wacliChild = null;
-    qrBase64 = null;
-    qrGeneratedAt = null;
-    // Do NOT auto-respawn: a long-running `wacli auth` holds an exclusive
-    // lock on the SQLite store, which blocks every `wacli send` we make
-    // from tryWacliSend. After auth completes the wacli process must die so
-    // sends can grab the lock.
-    //
-    // If the auth flow ended with a successful pairing, kick off the sync
-    // daemon so we keep the websocket alive going forward.
-    if (status.authenticated) {
-      log('[wacli] Auth completed — scheduling daemon start');
-      scheduleDaemonRestart(1500);
-    }
-  });
-
-  wacliChild.on('error', (err) => {
-    log(`[wacli] Error: ${err.message}`);
-    wacliChild = null;
-  });
-}
-
-function stopWacli() {
-  if (wacliChild) {
-    log('[wacli] Stopping...');
-    wacliChild.kill('SIGTERM');
-    wacliChild = null;
-  }
-  qrBase64 = null;
-  qrGeneratedAt = null;
-  status = { authenticated: false, connected: false, phoneNumber: null };
-}
-
-// ============================================================================
-// Daemon + send queue
-// ----------------------------------------------------------------------------
-// `wacli` is single-shot by design: each `wacli send` opens the SQLite store,
-// connects, sends, and closes. That's why the WhatsApp ratchet keys go out of
-// sync and the recipient ends up seeing "Aguardando mensagem" placeholders.
-//
-// To keep the websocket alive between sends, we run `wacli sync --follow` as a
-// background daemon. It holds an exclusive lock on the store, which conflicts
-// with `wacli send`, so before each send we:
-//   1. Stop the daemon (releases the lock)
-//   2. Run the send
-//   3. Schedule a 1s-delayed daemon restart
-//
-// Sends are serialized through `sendQueue` to avoid two concurrent sends both
-// trying to stop/restart the daemon.
-// ============================================================================
-
-let daemonChild = null;
-let daemonRestartTimer = null;
-let sendQueue = Promise.resolve();
-
-// ----------------------------------------------------------------------------
-// Recent-sends cache for retry-receipt redelivery
-// ----------------------------------------------------------------------------
-// `wacli send` is single-shot: after the message is sent, the process dies and
-// the message is no longer in memory. If the recipient's device fails to
-// decrypt (typical on the first message after a re-pair) it sends a "retry
-// receipt" asking the sender to resend. The retry arrives at the daemon (the
-// active websocket) which logs:
-//   "Failed to handle retry receipt for ... <msgId>: couldn't find message"
-//
-// We keep a small in-memory cache of recent sends keyed by msgId; when we see
-// that error in daemon stdout we redeliver the message from cache. The
-// redelivery rebuilds the e2e session, which usually unsticks "Aguardando
-// mensagem" on the recipient.
-// ----------------------------------------------------------------------------
-
-const RECENT_TTL_MS = 5 * 60 * 1000; // keep msgs 5 min — long enough for retry
-const MAX_REDELIVERIES = 1;          // cap to avoid loops
-const DEDUP_WINDOW_MS = 60 * 1000;   // suppress redelivery if same (phone, message) was redelivered within this window
-const recentSends = new Map();       // msgId -> { to, message, sentAt, redeliveries }
-const recentRedeliveries = new Map(); // dedupKey -> timestamp of last redelivery
-
-const dedupKey = (to, message) => `${to}|${crypto.createHash('sha256').update(String(message)).digest('hex').slice(0, 16)}`;
-
-function rememberSend(msgId, to, message, redeliveries = 0) {
-  if (!msgId) return;
-  recentSends.set(msgId, { to, message, sentAt: Date.now(), redeliveries });
-  // Lazy cleanup: drop entries older than TTL
-  const cutoff = Date.now() - RECENT_TTL_MS;
-  for (const [k, v] of recentSends) {
-    if (v.sentAt < cutoff) recentSends.delete(k);
-  }
-  // Cleanup dedup map too
-  const dedupCutoff = Date.now() - DEDUP_WINDOW_MS;
-  for (const [k, ts] of recentRedeliveries) {
-    if (ts < dedupCutoff) recentRedeliveries.delete(k);
-  }
-}
-
-async function handleRetryReceipt(msgId) {
-  const entry = recentSends.get(msgId);
-  if (!entry) {
-    log(`[retry] no cache entry for ${msgId} — cannot redeliver`);
-    return;
-  }
-  if (entry.redeliveries >= MAX_REDELIVERIES) {
-    log(`[retry] ${msgId} reached max redeliveries (${MAX_REDELIVERIES}), giving up`);
-    recentSends.delete(msgId);
-    return;
-  }
-  // Dedup: if the same (phone, message) was already redelivered within the window,
-  // assume the recipient got at least one copy and suppress further redeliveries.
-  const key = dedupKey(entry.to, entry.message);
-  const lastRedeliveredAt = recentRedeliveries.get(key);
-  if (lastRedeliveredAt && (Date.now() - lastRedeliveredAt) < DEDUP_WINDOW_MS) {
-    log(`[retry] ${msgId} suppressed by dedup window (same content sent ${Date.now() - lastRedeliveredAt}ms ago)`);
-    recentSends.delete(msgId);
-    return;
-  }
-  const nextCount = entry.redeliveries + 1;
-  log(`[retry] redelivering ${msgId} to ${hashPhone(entry.to)} (attempt ${nextCount}/${MAX_REDELIVERIES})`);
-  recentRedeliveries.set(key, Date.now());
-  // Mark the old msgId as exhausted *before* sending so a duplicate retry
-  // receipt for the same id (sent by the recipient device while we redeliver)
-  // does not trigger another redelivery.
-  recentSends.delete(msgId);
+async function seedMetricsFromLegacyStore() {
+  let entries = {};
   try {
-    const result = await tryWacliSend(entry.to, entry.message);
-    if (result.success && result.messageId) {
-      log(`[retry] redelivery success: ${msgId} → new msgId ${result.messageId}`);
-      // Carry the counter forward so the chain stops at MAX_REDELIVERIES
-      // overall, not per-msgId.
-      rememberSend(result.messageId, entry.to, entry.message, nextCount);
-    } else {
-      log(`[retry] redelivery failed: ${result.error || 'no msgId'}`);
-    }
-  } catch (err) {
-    log(`[retry] redelivery exception: ${err.message}`);
-  }
+    entries = JSON.parse(await fs.readFile(IDEMP_FILE, 'utf8'));
+  } catch {}
+  await metrics.seedLegacy(entries);
 }
 
-// Match: "Failed to handle retry receipt for <jid>/<msgId> from <jid>: couldn't find message"
-const RETRY_RECEIPT_RE = /Failed to handle retry receipt for [^/]+\/([A-F0-9]+)/i;
-
-function scanForRetryReceipts(text) {
-  if (!text) return;
-  const lines = text.split('\n');
-  for (const line of lines) {
-    const m = line.match(RETRY_RECEIPT_RE);
-    if (m) {
-      const msgId = m[1];
-      log(`[retry] detected retry receipt for ${msgId}`);
-      // Fire-and-forget; redelivery is queued via withDaemonPaused so it
-      // serializes with any in-flight sends.
-      handleRetryReceipt(msgId).catch((err) => log(`[retry] handler error: ${err.message}`));
-    }
-  }
-}
-
-function spawnDaemon() {
-  if (daemonChild) return;
-  if (sendInFlight > 0) { scheduleDaemonRestart(1000); return; }
-  if (!status.authenticated) {
-    log('[daemon] not authenticated, skipping daemon start');
-    return;
-  }
-  log('[daemon] starting wacli sync --follow');
-  try {
-    daemonChild = spawn(WACLI, ['sync', '--follow', '--json']);
-  } catch (err) {
-    log(`[daemon] spawn failed: ${err.message}`);
-    daemonChild = null;
-    return;
-  }
-  daemonChild.stdout.on('data', (chunk) => {
-    const data = chunk.toString().trim();
-    if (data) log(`[daemon] stdout: ${data.substring(0, 200)}`);
-    scanForRetryReceipts(data);
-  });
-  daemonChild.stderr.on('data', (chunk) => {
-    const data = chunk.toString().trim();
-    if (data) log(`[daemon] stderr: ${data.substring(0, 200)}`);
-    scanForRetryReceipts(data);
-  });
-  daemonChild.on('close', (code) => {
-    log(`[daemon] exited: ${code}`);
-    daemonChild = null;
-  });
-  daemonChild.on('error', (err) => {
-    log(`[daemon] error: ${err.message}`);
-    daemonChild = null;
-  });
-}
-
-async function stopDaemon() {
-  if (daemonRestartTimer) {
-    clearTimeout(daemonRestartTimer);
-    daemonRestartTimer = null;
-  }
-  if (!daemonChild) return;
-  const child = daemonChild;
-  daemonChild = null;
-  log('[daemon] stopping');
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      resolve();
-    };
+async function refreshStatuses() {
+  const names = Object.keys(transportMap);
+  const results = await Promise.all(names.map(async (name) => {
     try {
-      child.once('exit', finish);
-      child.kill('SIGTERM');
+      return [name, await transportMap[name].obterStatus()];
     } catch {
-      finish();
-      return;
+      return [name, {
+        authenticated: false,
+        connected: false,
+        phone: null,
+        available: false,
+        error: `${name}_status_failed`,
+      }];
     }
-    setTimeout(() => {
-      if (done) return;
-      try { child.kill('SIGKILL'); } catch {}
-    }, 2000);
-    setTimeout(finish, 3000);
-  });
+  }));
+  statusCache = Object.fromEntries(results);
+  await writeStatusFile();
+  return statusCache;
 }
 
-function scheduleDaemonRestart(delayMs = 1000) {
-  if (daemonRestartTimer) clearTimeout(daemonRestartTimer);
-  daemonRestartTimer = setTimeout(() => {
-    daemonRestartTimer = null;
-    spawnDaemon();
-  }, delayMs);
+function publicTransportStatus(name) {
+  const current = statusCache[name] || {};
+  return {
+    authenticated: current.authenticated === true,
+    connected: current.connected === true,
+    phoneNumber: current.phone || null,
+    available: current.available !== false,
+    error: current.error || null,
+  };
 }
 
-/**
- * Serializes work that needs the SQLite store unlocked: stops the daemon,
- * runs `fn`, then schedules the daemon to come back online.
- */
-async function withDaemonPaused(fn) {
-  const next = sendQueue.then(async () => {
-    sendInFlight += 1;
-    await stopDaemon();
-    try {
-      return await fn();
-    } finally {
-      sendInFlight -= 1;
-      scheduleDaemonRestart(1000);
-    }
-  });
-  // Don't propagate one send's failure to others queued behind it.
-  sendQueue = next.catch(() => {});
-  return next;
+function buildStatusResponse() {
+  const primary = publicTransportStatus(primaryName);
+  const snapshot = metrics.snapshot();
+  return {
+    // Contrato legado: continua representando o motor primário configurado.
+    authenticated: primary.authenticated,
+    connected: primary.connected,
+    phoneNumber: primary.phoneNumber,
+    primaryTransport: primaryName,
+    fallbackTransport: fallbackName,
+    activeTransport: snapshot.active.transport,
+    activeSince: snapshot.active.since,
+    fallbackActive: snapshot.active.fallback,
+    fallbackReason: snapshot.active.reason,
+    fallbackIncident: snapshot.fallbackIncident,
+    transports: {
+      wacli: publicTransportStatus('wacli'),
+      wuzapi: publicTransportStatus('wuzapi'),
+    },
+    volume: snapshot.volume,
+    sendsByTransport: snapshot.sendsByTransport,
+    metricsInitializedAt: snapshot.initializedAt,
+  };
 }
 
-async function writeStatus() {
+async function writeStatusFile() {
   try {
-    await fs.writeFile(STATUS_FILE, JSON.stringify(status));
-  } catch (err) {
-    log(`[status] Write error: ${err.message}`);
+    const primary = publicTransportStatus(primaryName);
+    await fs.writeFile(STATUS_FILE, JSON.stringify({
+      authenticated: primary.authenticated,
+      connected: primary.connected,
+      phoneNumber: primary.phoneNumber,
+      primaryTransport: primaryName,
+      fallbackTransport: fallbackName,
+    }), { mode: 0o600 });
+  } catch {
+    log('[status] write failed');
   }
 }
 
-function getPhoneFromDb() {
-  try {
-    const { execFileSync } = require('child_process');
-    const result = execFileSync(SQLITE3, [WACLI_SESSION_DB, 'SELECT jid FROM whatsmeow_device LIMIT 1;'], { timeout: 3000 }).toString().trim();
-    if (result) {
-      const match = result.match(/^55(\d+):/);
-      if (match) return '+55 ' + match[1].replace(/(\d{2})(\d{4,5})(\d{4})/, '$1 $2-$3');
-    }
-  } catch(e) { console.log("[phone] erro:", e.message); }
-  return null;
-}
-
-async function refreshStatus() {
-  try {
-    const { stdout } = await execFileAsync(WACLI, ['doctor', '--json'], {
-      timeout: 10000,
-      maxBuffer: 1024 * 1024
+async function notifyFallback({ primary, fallback, reason }) {
+  const started = await metrics.beginFallback({ transport: fallback, reason });
+  log(`[fallback] ${primary} unavailable before send; using ${fallback}; incident=${started.isNew ? 'new' : 'active'} reason=${reason}`);
+  if (!metrics.shouldAttemptFallbackAlert()) return;
+  void sendFallbackAlert({ primary, fallback, reason })
+    .then(async (accepted) => {
+      await metrics.markFallbackAlert(accepted);
+      log(`[fallback] alert ${accepted ? 'accepted' : 'failed'}`);
+    })
+    .catch(async () => {
+      await metrics.markFallbackAlert(false);
+      log('[fallback] alert failed');
     });
-    const data = JSON.parse(stdout);
-    const d = data.data || data;
-    status.authenticated = d.authenticated || false;
-    // `connected` reflects whether we have a live websocket. We can't trust
-    // `wacli doctor`'s `connected` field while the sync daemon holds the
-    // SQLite lock — doctor opens its own short-lived session and reports
-    // false even though the daemon's socket is fine. So treat the daemon
-    // process being alive as authoritative for "connected"; fall back to
-    // doctor's value when the daemon isn't running.
-    status.connected = (status.authenticated && daemonChild !== null) || d.connected || false;
-    status.phoneNumber = d.phoneNumber || getPhoneFromDb();
-    writeStatus();
-    log(`[status] Refreshed: authenticated=${status.authenticated} connected=${status.connected} phone=${hashPhone(status.phoneNumber)}`);
-    // Watchdog: if we're authenticated but the daemon isn't running and no
-    // restart is scheduled, kick one off. Covers the case where wacli was
-    // re-paired out-of-band or the daemon died silently.
-    if (status.authenticated && !daemonChild && !daemonRestartTimer && !wacliChild && sendInFlight === 0) {
-      log('[status] Authenticated without daemon — scheduling start');
-      scheduleDaemonRestart(1000);
-    }
-  } catch (err) {
-    log(`[status] Refresh error: ${err.message}`);
-  }
+}
+
+async function performSend(phone, message, idempotencyKey) {
+  return sendWithTransportFallback({
+    primary: primaryTransport,
+    fallback: fallbackTransport,
+    phone,
+    message,
+    context: { idempotencyKey },
+    log,
+    hashPhone,
+    onFallback: notifyFallback,
+  });
 }
 
 const API_KEY = process.env.INTERNAL_API_SECRET || process.env.WHATSAPP_API_KEY || '';
-
 const fastify = Fastify({ logger: false });
 
-// --- P1: Rate limiting (in-memory, no external deps) ---
-const rateLimitStore = new Map(); // ip -> { count, windowStart }
+const rateLimitStore = new Map();
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
-// B5 (auditoria 2026-06-10): teto GLOBAL além do per-IP — neutraliza bypass
-// via múltiplos IPs (botnet/proxies). O serviço atende um único app; 60 envios
-// por minuto no agregado é folga ampla para o tráfego legítimo.
 const RATE_LIMIT_GLOBAL_MAX = parseInt(process.env.RATE_LIMIT_GLOBAL_MAX || '60', 10);
 let globalWindow = { count: 0, windowStart: 0 };
 
@@ -507,285 +188,152 @@ function rateLimitByIp(ip) {
   if (now - globalWindow.windowStart >= RATE_LIMIT_WINDOW_MS) {
     globalWindow = { count: 0, windowStart: now };
   }
-  globalWindow.count++;
+  globalWindow.count += 1;
   if (globalWindow.count > RATE_LIMIT_GLOBAL_MAX) return false;
   let entry = rateLimitStore.get(ip);
   if (!entry || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
     entry = { count: 0, windowStart: now };
     rateLimitStore.set(ip, entry);
   }
-  entry.count++;
-  // Lazy cleanup: evict old entries when store grows
+  entry.count += 1;
   if (rateLimitStore.size > 1000) {
-    for (const [k, v] of rateLimitStore) {
-      if (now - v.windowStart >= RATE_LIMIT_WINDOW_MS) rateLimitStore.delete(k);
+    for (const [key, value] of rateLimitStore) {
+      if (now - value.windowStart >= RATE_LIMIT_WINDOW_MS) rateLimitStore.delete(key);
     }
   }
-  if (entry.count > RATE_LIMIT_MAX) return false;
-  return true;
+  return entry.count <= RATE_LIMIT_MAX;
 }
 
-fastify.get('/health', async () => ({ status: 'ok' }));
-
-async function requireAuth(req, reply) {
-  // Fail-closed: sem secret configurado, nenhuma requisição é aceita.
-  // (Antes, API_KEY vazio + "Bearer " com token vazio passava: '' === ''.)
-  if (!API_KEY) {
-    return reply.code(503).send({ error: 'Service not configured' });
-  }
-  const authHeader = req.headers['authorization'];
+async function requireAuth(request, reply) {
+  if (!API_KEY) return reply.code(503).send({ error: 'Service not configured' });
+  const authHeader = request.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
   }
   const token = authHeader.slice(7);
-  const a = Buffer.from(token);
-  const b = Buffer.from(API_KEY);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+  const received = Buffer.from(token);
+  const expected = Buffer.from(API_KEY);
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
     return reply.code(403).send({ error: 'Forbidden' });
   }
 }
 
-async function tryWacliSend(phone, message) {
-  return withDaemonPaused(() => doWacliSend(phone, message));
+function requestedTransport(request) {
+  return normalizeTransportName(request.body?.transport, primaryName);
 }
 
-async function doWacliSend(phone, message) {
+fastify.get('/health', async () => ({
+  status: 'ok',
+  primaryTransport: primaryName,
+  fallbackEnabled: Boolean(fallbackName),
+}));
+
+fastify.get('/api/whatsapp/status', { onRequest: requireAuth }, async (_request, reply) => {
+  await refreshStatuses();
+  return reply.send(buildStatusResponse());
+});
+
+fastify.post('/api/whatsapp/qr', { onRequest: requireAuth }, async (request, reply) => {
+  const name = requestedTransport(request);
+  const transport = transportMap[name];
+  if (!transport) return reply.code(400).send({ error: 'Invalid transport' });
   try {
-    // Quebras de linha PRESERVADAS: a notificação de lead manda pergunta e
-    // resposta em linhas separadas ({respostas}), e o achatamento antigo
-    // (\n -> espaço) colava tudo num parágrafo ilegível. A mensagem vai como
-    // argumento de execFile (sem shell), então \n não tem risco de injeção.
-    // Normaliza CRLF só para o WhatsApp não renderizar o \r.
-    const cleanMessage = message.replace(/\r\n?/g, '\n').trim();
-    // Converte 9 digitos para 8 se necessário (Brasil)
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 13 && cleaned.startsWith('55')) {
-      const ddd = cleaned.substring(2, 4);
-      const num8 = cleaned.substring(5);
-      phone = '55' + ddd + num8;
-    }
-    const { stdout, stderr } = await execFileAsync(
-      WACLI,
-      ['send', 'text', '--to', phone, '--message', cleanMessage, '--json'],
-      { timeout: 15000 }
-    );
-    const output = (stdout + stderr + '').trim();
-    // P2: Parse last valid JSON line instead of greedy regex
-    let result;
-    const lines = output.split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const trimmed = lines[i].trim();
-      if (trimmed.startsWith('{')) {
-        try { result = JSON.parse(trimmed); break; } catch {}
-      }
-    }
-    if (!result) {
-      return { success: false, error: 'No JSON in wacli output' };
-    }
-    // wacli may return success:true without actually delivering
-    // Check messages_stored when available to detect false positives
-    const stored = result.data?.messages_stored ?? result.messages_stored ?? 0;
-    const hasStoredField = ('messages_stored' in (result.data || {})) || ('messages_stored' in result);
-    const success = hasStoredField ? (stored > 0) : (result.success === true);
-    // P2: Chained fallbacks for messageId extraction
-    const messageId = result.data?.id ?? result.id ?? result.messageId ?? null;
-    if (success && messageId) {
-      // Cache so we can redeliver if the daemon receives a retry receipt
-      // (recipient device couldn't decrypt and asked for resend).
-      rememberSend(messageId, phone, cleanMessage);
-    }
-    return {
-      success,
-      messageId: messageId || null,
-      error: result.error
-    };
+    const qr = await transport.obterQR();
+    if (!qr) return reply.code(409).send({ error: 'Transport already authenticated' });
+    log(`[qr] generated for ${name}`);
+    return reply.send({ ...qr, transport: name });
   } catch (err) {
-    // P1-5 (auditoria Codex 2026-07-23): `err.message` do execFile inclui o
-    // COMANDO INTEIRO — ou seja, `--to <telefone>` e `--message <mensagem
-    // completa>`. Devolver/logar esse texto vazava PII (telefone, nome, título
-    // do form, conteúdo da notificação) no server.log e na resposta HTTP.
-    // Nunca propagar o bruto: só metadados do processo.
-    return { success: false, error: safeExecError(err) };
+    const code = err?.safeCode || `${name}_qr_failed`;
+    log(`[qr] ${name} failed: ${code}`);
+    return reply.code(code.includes('timeout') ? 504 : 503).send({ error: 'QR generation failed' });
   }
-}
-
-/**
- * P1-5: descreve uma falha de processo SEM vazar argumentos. Só código de saída,
- * sinal e timeout — nada que tenha vindo do payload.
- */
-function safeExecError(err) {
-  if (!err || typeof err !== 'object') return 'wacli_failed';
-  if (err.killed === true || err.signal) return 'wacli_timeout_or_killed';
-  if (typeof err.code === 'string') return `wacli_spawn_${err.code}`;
-  if (Number.isInteger(err.code)) return `wacli_exit_${err.code}`;
-  return 'wacli_failed';
-}
-
-async function sendWithFallback(phone, message) {
-  const cleaned = phone.replace(/\D/g, '');
-
-  const result1 = await tryWacliSend(cleaned, message);
-  if (result1.success) return result1;
-
-  if (cleaned.length === 13 && cleaned.startsWith('55')) {
-    const ddd = cleaned.substring(2, 4);
-    const num9 = cleaned.substring(4);
-    const num8 = num9.substring(1);
-    const phone8 = '55' + ddd + num8;
-    log(`[send] Trying 8-digit fallback: ${hashPhone(phone8)}`);
-    const result2 = await tryWacliSend(phone8, message);
-    if (result2.success) return result2;
-  }
-
-  if (cleaned.length === 12 && cleaned.startsWith('55')) {
-    const ddd = cleaned.substring(2, 4);
-    const num8 = cleaned.substring(4);
-    const phone9 = '55' + ddd + '9' + num8;
-    log(`[send] Trying 9-digit fallback: ${hashPhone(phone9)}`);
-    const result2 = await tryWacliSend(phone9, message);
-    if (result2.success) return result2;
-  }
-
-  return result1;
-}
-
-fastify.get('/api/whatsapp/status', { onRequest: requireAuth }, async (req, reply) => {
-  await refreshStatus();
-  return reply.send(status);
 });
 
-fastify.post('/api/whatsapp/qr', { onRequest: requireAuth }, async (req, reply) => {
-  const now = Date.now();
-
-  if (qrBase64 && qrGeneratedAt && (now - qrGeneratedAt) < 60000) {
-    log(`[QR] Serving cached PNG QR (age: ${now - qrGeneratedAt}ms)`);
-    return reply.send({ qr: qrBase64, format: 'png_base64', expiresAt: qrGeneratedAt + 60000 });
-  }
-
-  if (!wacliChild) {
-    await startWacli();
-  }
-
-  const waitStart = Date.now();
-  while ((!qrBase64 || (now - qrGeneratedAt) >= 60000) && (Date.now() - waitStart) < 8000) {
-    await new Promise(r => setTimeout(r, 500));
-  }
-
-  if (qrBase64 && qrGeneratedAt && (now - qrGeneratedAt) < 60000) {
-    log(`[QR] PNG QR ready after ${Date.now() - waitStart}ms`);
-    return reply.send({ qr: qrBase64, format: 'png_base64', expiresAt: qrGeneratedAt + 60000 });
-  }
-
-  log('[QR] Timeout waiting for QR');
-  return reply.code(504).send({ error: 'QR generation timeout' });
-});
-
-fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (req, reply) => {
-  // P1: Rate limit check by IP
-  const clientIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
+fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, reply) => {
+  const clientIp = request.ip || request.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
   if (!rateLimitByIp(clientIp)) {
-    log(`[send] Rate limited: ${clientIp}`);
+    log(`[send] rate limited ip=${hashValue(clientIp)}`);
     return reply.code(429).send({ error: 'Too many requests' });
   }
 
-  const { to, message, idempotencyKey } = req.body;
-  if (!to || !message) {
-    return reply.code(400).send({ error: 'Missing to or message' });
-  }
+  const { to, message, idempotencyKey } = request.body || {};
+  if (!to || !message) return reply.code(400).send({ error: 'Missing to or message' });
 
-  // Idempotência COALESCIDA (auditoria Codex P1-1): a reserva é SÍNCRONA —
-  // duas requests simultâneas com a mesma chave nunca chegam ambas ao wacli;
-  // a segunda espera a Promise da primeira e responde duplicate:true.
   if (idempotencyKey) {
-    // Toda a coalescência (incl. a aquisição em loop do P1-8) mora no módulo
-    // ./idempotency.js, que É TESTADO. Aqui só traduzimos o resultado em HTTP.
-    const r = await idemp.run(idempotencyKey, () => sendWithFallback(to, message));
-
-    if (r.status === 'duplicate') {
-      log(`[send] Duplicate suppressed key=${idempotencyKey} (msgId: ${r.messageId})`);
-      return reply.send({ success: true, messageId: r.messageId, duplicate: true });
+    const result = await idemp.run(idempotencyKey, () => performSend(to, message, idempotencyKey));
+    if (result.status === 'duplicate') {
+      log(`[send] duplicate suppressed key=${idempotencyKey} (msgId: ${result.messageId})`);
+      return reply.send({ success: true, messageId: result.messageId, duplicate: true });
     }
-    if (r.status === 'contention') {
-      // Nem virei titular nem observei sucesso dentro do teto de tentativas.
-      // Melhor 503 (o chamador re-tenta) do que enfileirar mais um envio.
-      log(`[send] Contention key=${idempotencyKey}: desisti após ${MAX_IDEMP_ACQUIRE_ATTEMPTS} tentativas`);
+    if (result.status === 'contention') {
+      log(`[send] contention key=${idempotencyKey}`);
       return reply.code(503).send({ error: 'Send contention, retry later' });
     }
-    if (r.status === 'failed') {
-      // P1-5: nada de `details` — o motivo já é um código seguro, mas a resposta
-      // HTTP não devolve texto de erro do processo pra não reabrir o vazamento.
-      log(`[send] Error key=${idempotencyKey}: ${r.error}`);
+    if (result.status === 'failed') {
+      log(`[send] error key=${idempotencyKey}: ${result.error}`);
       return reply.code(500).send({ error: 'Failed to send message' });
     }
-    log(`[send] Success key=${idempotencyKey}: ${hashPhone(to)} (msgId: ${r.messageId})`);
-    return reply.send({ success: true, messageId: r.messageId });
+    await metrics.recordSend({ transport: result.transport || primaryName, fallback: result.fallback });
+    log(`[send] success key=${idempotencyKey}: ${hashPhone(to)} transport=${result.transport || primaryName} fallback=${result.fallback === true} (msgId: ${result.messageId})`);
+    return reply.send({ success: true, messageId: result.messageId });
   }
 
-  const result = await sendWithFallback(to, message);
-
+  const result = await performSend(to, message, null);
   if (!result.success) {
-    log(`[send] Error key=-: ${result.error}`);
+    log(`[send] error key=- transport=${result.transport}: ${result.error}`);
     return reply.code(500).send({ error: 'Failed to send message' });
   }
-
   const messageId = result.messageId || `vps-${Date.now()}`;
-  log(`[send] Success key=-: ${hashPhone(to)} (msgId: ${messageId})`);
-  // P2: Ensure messageId is always present in response
+  await metrics.recordSend({ transport: result.transport, fallback: result.fallback });
+  log(`[send] success key=-: ${hashPhone(to)} transport=${result.transport} fallback=${result.fallback === true} (msgId: ${messageId})`);
   return reply.send({ success: true, messageId });
 });
 
-fastify.post('/api/whatsapp/disconnect', { onRequest: requireAuth }, async (req, reply) => {
-  log('[disconnect] Requested');
-  stopWacli();
-  // wacli has no "logout" command — delete session files instead
-  try {
-    const wacliDir = path.join(require('os').homedir(), '.wacli');
-    const files = ['session.db', 'wacli.db', 'LOCK'];
-    for (const f of files) {
-      try { await fs.unlink(path.join(wacliDir, f)); } catch {}
-      try { await fs.unlink(path.join(wacliDir, '.wacli', f)); } catch {}
-    }
-    log('[disconnect] Session files deleted');
-  } catch (err) {
-    log(`[disconnect] Cleanup error: ${err.message}`);
+fastify.post('/api/whatsapp/disconnect', { onRequest: requireAuth }, async (request, reply) => {
+  const name = requestedTransport(request);
+  const transport = transportMap[name];
+  if (!transport) return reply.code(400).send({ error: 'Invalid transport' });
+  log(`[disconnect] requested transport=${name}`);
+  const result = await transport.desconectar();
+  if (!result.ok) {
+    log(`[disconnect] ${name} failed: ${result.error || `${name}_disconnect_failed`}`);
+    return reply.code(503).send({ error: 'Failed to disconnect' });
   }
-  try { await fs.unlink(QR_FILE); } catch {}
-  try { await fs.unlink(QR_PNG_FILE); } catch {}
-  status = { authenticated: false, connected: false, phoneNumber: null };
-  writeStatus();
-  return reply.send({ success: true });
+  await refreshStatuses();
+  return reply.send({ success: true, transport: name });
 });
 
-const start = async () => {
+async function start() {
   try {
+    metrics.load(primaryName);
+    await metrics.configure(primaryName);
+    await seedMetricsFromLegacyStore();
+    await Promise.all(Object.values(transportMap).map((transport) => transport.start()));
+
     const port = parseInt(process.env.PORT || '3457', 10);
-    // B4 (auditoria 2026-06-10): bind em loopback por padrão — o nginx da VPS
-    // é quem expõe o serviço (wpp.eidosform.com.br). Para expor diretamente
-    // (não recomendado), defina BIND_HOST=0.0.0.0 no .env.
     const host = process.env.BIND_HOST || '127.0.0.1';
     await fastify.listen({ port, host });
-    log(`WhatsApp API server running on port ${port}`);
-    statusRefreshTimer = setInterval(refreshStatus, STATUS_REFRESH_S * 1000);
-    // On boot, check if wacli is already authenticated and start the sync daemon
-    // so ratchet keys stay fresh even after a PM2 restart.
-    await refreshStatus();
-    if (status.authenticated) {
-      log('[boot] Already authenticated — starting sync daemon');
-      spawnDaemon();
-    }
+    log(`WhatsApp API server running on ${host}:${port} primary=${primaryName} fallback=${fallbackName || 'disabled'}`);
+    await refreshStatuses();
+    statusRefreshTimer = setInterval(() => {
+      refreshStatuses().catch(() => log('[status] refresh cycle failed'));
+    }, STATUS_REFRESH_MS);
   } catch (err) {
-    if (err.code === 'EADDRINUSE') {
-      log(`FATAL: Port ${process.env.PORT || 3457} already in use. Another process is occupying it. Stopping to avoid restart loop.`);
-      // Stop PM2 from restarting by exiting with code 0
-      // PM2 will not restart on graceful exit
+    if (err?.code === 'EADDRINUSE') {
+      log(`FATAL: Port ${process.env.PORT || 3457} already in use`);
       process.exit(0);
     }
-    log(`Server error: ${err.message}`);
+    log(`Server startup failed: ${err?.code || 'unknown_error'}`);
     process.exit(1);
   }
-};
+}
+
+async function shutdown() {
+  if (statusRefreshTimer) clearInterval(statusRefreshTimer);
+  await Promise.all(Object.values(transportMap).map((transport) => transport.shutdown().catch(() => {})));
+}
+
+process.on('SIGINT', () => { shutdown().finally(() => process.exit(0)); });
+process.on('SIGTERM', () => { shutdown().finally(() => process.exit(0)); });
 
 start();
-
-process.on('SIGINT', () => { stopWacli(); if (statusRefreshTimer) clearInterval(statusRefreshTimer); process.exit(0); });
-process.on('SIGTERM', () => { stopWacli(); if (statusRefreshTimer) clearInterval(statusRefreshTimer); process.exit(0); });

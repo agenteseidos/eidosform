@@ -180,6 +180,63 @@ describe('número exibido no painel', () => {
   })
 })
 
+describe('conexão do WuzAPI — eventos assinados são ENTREGA, não enfeite', () => {
+  const resposta = (status, body) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  })
+  // `jid` presente = PAREADO. Sem jid = nunca pareado. É essa a distinção que
+  // o `loggedIn` sozinho não dá — ele cai junto com a conexão.
+  const sessao = (connected, loggedIn = true, jid = '558396966457:4@s.whatsapp.net') =>
+    resposta(200, { success: true, data: { connected, loggedIn, jid } })
+
+  it('REGRESSÃO: conecta assinando eventos, nunca com lista vazia', async () => {
+    // Com `Subscribe: []` o pedido de reenvio do aparelho cai no vazio e a
+    // mensagem fica presa como "Aguardando mensagem" no celular — entregue
+    // pelo servidor, ilegível para o humano. Aconteceu em produção 27/07.
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(sessao(false))                     // status: desconectado
+      .mockResolvedValueOnce(resposta(200, { success: true }))  // connect
+      .mockResolvedValueOnce(sessao(true))                      // status: reconectado
+      .mockResolvedValueOnce(resposta(200, {
+        success: true, data: { Details: 'Sent', Id: 'MSG', Timestamp: 1 },
+      }))
+    const transport = createWuzapiTransport({ token: 'secret', fetchFn })
+    const r = await transport.enviarTexto('5583996966457', 'oi')
+
+    expect(r.success).toBe(true)
+    const connect = fetchFn.mock.calls.find((c) => String(c[0]).endsWith('/session/connect'))
+    expect(connect).toBeDefined()
+    const enviado = JSON.parse(connect[1].body).Subscribe
+    expect(enviado.length).toBeGreaterThan(0)
+    expect(enviado).toContain('Message')
+  })
+
+  it('pareado mas desconectado deixou de ser beco sem saída — reconecta sozinho', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(sessao(false))
+      .mockResolvedValueOnce(resposta(200, { success: true }))
+      .mockResolvedValueOnce(sessao(true))
+      .mockResolvedValueOnce(resposta(200, {
+        success: true, data: { Details: 'Sent', Id: 'MSG', Timestamp: 1 },
+      }))
+    const transport = createWuzapiTransport({ token: 'secret', fetchFn })
+    expect((await transport.enviarTexto('5583996966457', 'oi')).success).toBe(true)
+  })
+
+  it('NÃO pareado (sem jid) não tenta reconectar — aí o caminho é QR, não retry', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(sessao(false, false, ''))
+    const transport = createWuzapiTransport({ token: 'secret', fetchFn })
+    const r = await transport.enviarTexto('5583996966457', 'oi')
+
+    expect(r).toEqual(expect.objectContaining({
+      success: false, errorClass: ERROR_CLASS.PRE_FLIGHT,
+    }))
+    expect(fetchFn.mock.calls.some((c) => String(c[0]).endsWith('/session/connect'))).toBe(false)
+  })
+})
+
 describe('classificação de erro', () => {
   it('ECONNREFUSED é PRE_FLIGHT e timeout é IN_FLIGHT', () => {
     expect(classifyFetchError({ cause: { code: 'ECONNREFUSED' } }).errorClass).toBe(ERROR_CLASS.PRE_FLIGHT)

@@ -6,6 +6,23 @@ const { ERROR_CLASS, brazilianPhoneCandidates, formatBrazilianPhone } = require(
 const DEFAULT_TIMEOUT_MS = 15_000;
 const QR_TTL_MS = 45_000;
 
+/**
+ * EVENTOS ASSINADOS — não é enfeite, é entrega.
+ *
+ * Conectávamos com `Subscribe: []`, sem assinar nada. Quando o aparelho do
+ * destinatário não consegue descriptografar uma mensagem (acontece, é normal no
+ * multi-dispositivo), ele devolve um PEDIDO DE REENVIO. Quem responde a esse
+ * pedido é o laço de eventos: sem eventos assinados, o pedido cai no vazio e a
+ * mensagem fica presa para sempre como "Aguardando mensagem" no celular —
+ * entregue pelo servidor, ilegível para o humano.
+ *
+ * Foi exatamente o que aconteceu em 27/07/2026: TODAS as notificações enviadas
+ * pelo wuzapi chegaram ilegíveis no celular do Sidney, enquanto o desktop lia
+ * normalmente. Nenhum teste pegou, porque todos mandavam mensagem para o
+ * PRÓPRIO número — que não passa pelo mesmo caminho de criptografia.
+ */
+const EVENTOS = ['Message', 'ReadReceipt', 'Presence', 'ChatPresence'];
+
 function safeMessageId(idempotencyKey) {
   if (!idempotencyKey) return undefined;
   return crypto.createHash('sha256').update(String(idempotencyKey)).digest('hex').slice(0, 32).toUpperCase();
@@ -101,6 +118,7 @@ function createWuzapiTransport({
       return {
         authenticated: false,
         connected: false,
+        paired: false,
         phone: null,
         available: false,
         error: 'wuzapi_token_missing',
@@ -108,27 +126,70 @@ function createWuzapiTransport({
     }
     const { response, payload, failure } = await request('/session/status', { method: 'GET' }, 8_000);
     if (failure) {
-      return { authenticated: false, connected: false, phone: null, available: false, error: failure.error };
+      return { authenticated: false, connected: false, paired: false, phone: null, available: false, error: failure.error };
     }
     if (!response.ok || payload?.success !== true) {
       const classified = classifyHttpFailure(response.status, payload);
-      return { authenticated: false, connected: false, phone: null, available: true, error: classified.error };
+      return { authenticated: false, connected: false, paired: false, phone: null, available: true, error: classified.error };
     }
     const data = payload.data || {};
+    const jid = data.jid || data.JID || '';
     return {
       authenticated: data.loggedIn === true || data.LoggedIn === true,
       connected: data.connected === true || data.Connected === true,
-      phone: formatBrazilianPhone(phoneFromJid(data.jid)),
+      // PAREADO ≠ AUTENTICADO. O `loggedIn` do wuzapi reflete a CONEXÃO VIVA:
+      // com a sessão caída ele vira false mesmo com o aparelho ainda vinculado.
+      // Quem prova o vínculo é o `jid`, que continua preenchido. Confundir os
+      // dois deixava "pareado mas desconectado" indistinguível de "nunca
+      // pareado" — e o reconecte automático nunca disparava.
+      paired: Boolean(jid),
+      phone: formatBrazilianPhone(phoneFromJid(jid)),
       available: true,
       error: null,
     };
   }
 
+  /**
+   * Conecta assinando os eventos. Usado no pareamento e na reconexão.
+   * O 500 é tolerado porque o wuzapi devolve 500 quando já está conectado.
+   */
+  async function conectar(timeoutMs = 12_000) {
+    return request('/session/connect', {
+      method: 'POST',
+      body: JSON.stringify({ Subscribe: EVENTOS, Immediate: true }),
+    }, timeoutMs);
+  }
+
+  /**
+   * Pareado mas desconectado era um beco sem saída: `enviarTexto` devolvia
+   * PRE_FLIGHT para sempre e NADA no sistema reconectava — só um humano
+   * percebendo e chamando a API na mão. Agora o próprio envio reconecta.
+   */
+  async function garantirConexao(status) {
+    // `paired` (jid presente), NÃO `authenticated` — ver comentário em obterStatus.
+    if (!status.paired || status.connected) return status;
+    const { failure } = await conectar(8_000);
+    if (failure) return status;
+
+    // O /session/connect volta na hora, mas o handshake leva alguns segundos:
+    // consultar o estado imediatamente devolve loggedIn=false e o envio morria
+    // com "session_not_ready" mesmo tendo acabado de reconectar. Espera curta,
+    // com teto — nunca segura um envio indefinidamente.
+    const limite = now() + 8_000;
+    let atual = await obterStatus();
+    while (now() < limite && (!atual.authenticated || !atual.connected)) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      atual = await obterStatus();
+    }
+    return atual;
+  }
+
   async function enviarTexto(phone, message, context = {}) {
-    const status = await obterStatus();
+    let status = await obterStatus();
     if (!status.available) {
       return { success: false, error: status.error || 'wuzapi_unavailable', errorClass: ERROR_CLASS.PRE_FLIGHT };
     }
+    status = await garantirConexao(status);
     if (!status.authenticated || !status.connected) {
       return { success: false, error: 'wuzapi_session_not_ready', errorClass: ERROR_CLASS.PRE_FLIGHT };
     }
@@ -178,10 +239,7 @@ function createWuzapiTransport({
     }
 
     if (!status.connected) {
-      const connect = await request('/session/connect', {
-        method: 'POST',
-        body: JSON.stringify({ Subscribe: [], Immediate: true }),
-      }, 12_000);
+      const connect = await conectar();
       if (connect.failure) {
         const error = new Error(connect.failure.error);
         error.safeCode = connect.failure.error;

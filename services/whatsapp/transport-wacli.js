@@ -3,7 +3,7 @@
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { spawn, execFile, execFileSync } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs/promises');
 const { Jimp } = require('jimp');
@@ -113,14 +113,28 @@ function createWacliTransport({
     return lines.length >= 15 ? lines.join('\n') : null;
   }
 
-  function getPhoneFromDb() {
+  /**
+   * ASSÍNCRONA de propósito. Antes usava `execFileSync`, que BLOQUEIA o event
+   * loop do Node por até 3s — e como `wacli doctor --json` não devolve
+   * `phoneNumber`, isso rodava a cada refresh de status (5s), travando o
+   * servidor inteiro, inclusive envios em voo. O número é só enfeite de painel;
+   * não vale um único milissegundo de bloqueio.
+   */
+  let phoneCache = { value: null, at: 0 };
+  const PHONE_CACHE_MS = 60_000;
+
+  async function getPhoneFromDb() {
+    if (phoneCache.value && Date.now() - phoneCache.at < PHONE_CACHE_MS) return phoneCache.value;
     try {
-      const result = execFileSync(sqlitePath, [
+      const { stdout } = await execFileAsync(sqlitePath, [
         sessionDb,
         'SELECT jid FROM whatsmeow_device LIMIT 1;',
-      ], { timeout: 3000 }).toString().trim();
-      const match = result.match(/^(\d+)[:@]/);
-      if (match) return formatBrazilianPhone(match[1]);
+      ], { timeout: 3000 });
+      const match = String(stdout).trim().match(/^(\d+)[:@]/);
+      if (match) {
+        phoneCache = { value: formatBrazilianPhone(match[1]), at: Date.now() };
+        return phoneCache.value;
+      }
     } catch {
       log('[phone] wacli session phone unavailable');
     }
@@ -138,7 +152,7 @@ function createWacliTransport({
       status = {
         authenticated: data.authenticated === true,
         connected: (data.authenticated === true && daemonChild !== null) || data.connected === true,
-        phone: data.phoneNumber || getPhoneFromDb(),
+        phone: data.phoneNumber || await getPhoneFromDb(),
         available: true,
         error: null,
       };

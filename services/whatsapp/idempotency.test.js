@@ -101,7 +101,7 @@ describe('P1-8 — falha do titular NÃO libera todos os waiters de uma vez', ()
     const a = s.run('k', fn)
     await flush()
     chamadas[0].resolve({ success: false, error: 'wacli_exit_1' })
-    expect(await a).toEqual({ status: 'failed', error: 'wacli_exit_1' })
+    expect(await a).toEqual(expect.objectContaining({ status: 'failed', error: 'wacli_exit_1' }))
 
     const b = s.run('k', fn)
     await flush()

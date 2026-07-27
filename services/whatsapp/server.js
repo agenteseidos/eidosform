@@ -15,15 +15,25 @@ const {
   sendWithTransportFallback,
 } = require('./transport');
 const { createTransportMetricsStore } = require('./transport-metrics');
-const { sendFallbackAlert } = require('./fallback-alert');
+const { createOutbox } = require('./outbox');
+const {
+  sendFallbackAlert,
+  sendSendFailureAlert,
+  sendDeadLetterAlert,
+  sendVolumeAlert,
+} = require('./ops-alert');
+const { ERROR_CLASS } = require('./transport');
 
 const LOG_FILE = path.join(__dirname, 'server.log');
 const STATUS_FILE = path.join(__dirname, 'status.json');
 const IDEMP_FILE = path.join(__dirname, 'sent-keys.json');
 const METRICS_FILE = path.join(__dirname, 'transport-metrics.json');
+const OUTBOX_FILE = path.join(__dirname, 'outbox.json');
 const IDEMP_TTL_MS = 96 * 3600 * 1000;
 const MAX_IDEMP_ACQUIRE_ATTEMPTS = 5;
 const STATUS_REFRESH_MS = 5_000;
+const OUTBOX_TICK_MS = 30_000;
+const FAILURE_ALERT_THRESHOLD = 3;
 
 const hashValue = (value) => value
   ? crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 8)
@@ -50,6 +60,12 @@ const metrics = createTransportMetricsStore({
   log: (message) => log(message),
 });
 
+const outbox = createOutbox({
+  file: OUTBOX_FILE,
+  log: (message) => log(message),
+});
+outbox.load();
+
 const transportMap = {
   wacli: createWacliTransport({ log, hashPhone, baseDir: __dirname }),
   wuzapi: createWuzapiTransport(),
@@ -62,6 +78,8 @@ const primaryTransport = transportMap[primaryName];
 const fallbackTransport = fallbackName ? transportMap[fallbackName] : null;
 
 let statusRefreshTimer = null;
+let outboxTimer = null;
+let outboxDraining = false;
 let statusCache = {
   wacli: { authenticated: false, connected: false, phone: null, available: true, error: null },
   wuzapi: { authenticated: false, connected: false, phone: null, available: false, error: null },
@@ -126,6 +144,8 @@ function buildStatusResponse() {
       wuzapi: publicTransportStatus('wuzapi'),
     },
     volume: snapshot.volume,
+    failures: snapshot.failures,
+    outbox: outbox.snapshot(),
     sendsByTransport: snapshot.sendsByTransport,
     metricsInitializedAt: snapshot.initializedAt,
   };
@@ -159,6 +179,99 @@ async function notifyFallback({ primary, fallback, reason }) {
       await metrics.markFallbackAlert(false);
       log('[fallback] alert failed');
     });
+}
+
+/**
+ * Alarme do que REALMENTE importa: o envio funcionando.
+ * O healthcheck vigia se a sessão está autenticada — e em 27/07/2026
+ * `authenticated=true` ficou verdadeiro por 9 horas enquanto todo envio
+ * falhava. Sessão viva não é envio funcionando.
+ */
+async function notifyFailure({ transport, error }) {
+  const consecutive = await metrics.recordFailure({ transport, error });
+  if (!metrics.shouldAttemptFailureAlert({ threshold: FAILURE_ALERT_THRESHOLD })) return;
+  const queued = outbox.snapshot().pending;
+  void sendSendFailureAlert({ consecutive, transport: transport || primaryName, error, queued })
+    .then(async (accepted) => {
+      await metrics.markFailureAlert(accepted);
+      log(`[falha] alerta ${accepted ? 'aceito' : 'nao enviado'} consecutivas=${consecutive}`);
+    })
+    .catch(async () => {
+      await metrics.markFailureAlert(false);
+      log('[falha] alerta nao enviado');
+    });
+}
+
+async function maybeAlertVolume() {
+  if (!metrics.shouldAlertVolume()) return;
+  const { volume } = metrics.snapshot();
+  // Marca ANTES de mandar: alerta de volume é aviso, e um aviso que se repete
+  // por corrida vira ruído. No máximo um por dia, mesmo se o e-mail falhar.
+  await metrics.markVolumeAlert();
+  void sendVolumeAlert({ today: volume.today, average7Days: volume.average7Days })
+    .then((ok) => log(`[volume] alerta ${ok ? 'aceito' : 'nao enviado'} hoje=${volume.today} media=${volume.average7Days}`))
+    .catch(() => log('[volume] alerta nao enviado'));
+}
+
+async function reportDeadLetters() {
+  const mortos = await outbox.takeUnalertedDead();
+  if (mortos.length === 0) return;
+  const oldest = mortos.map((item) => item.firstFailedAt).sort((a, b) => a - b)[0];
+  void sendDeadLetterAlert({
+    count: mortos.length,
+    oldest: oldest ? new Date(oldest).toISOString() : null,
+  })
+    .then((ok) => log(`[outbox] alerta de carta morta ${ok ? 'aceito' : 'nao enviado'} n=${mortos.length}`))
+    .catch(() => log('[outbox] alerta de carta morta nao enviado'));
+}
+
+/**
+ * Drena a fila de reenvio. Serial de propósito: são notificações para a MESMA
+ * pessoa e não há ganho em paralelizar, só risco de rajada num transporte que
+ * acabou de voltar do chão.
+ */
+async function drainOutbox() {
+  const itens = outbox.due();
+  if (itens.length === 0) return;
+  log(`[outbox] ${itens.length} pendente(s) para reenviar`);
+  for (const item of itens) {
+    const result = await performSend(item.to, item.message, item.key);
+    if (result.success) {
+      await outbox.settle(item.key, { success: true });
+      // Sem isto, o cron de abandonado repetiria a notificação 15 min depois.
+      await idemp.remember(item.key, result.messageId, {
+        transport: result.transport,
+        fallback: result.fallback,
+      });
+      await metrics.recordSend({ transport: result.transport || primaryName, fallback: result.fallback });
+      log(`[outbox] REENTREGUE key=${item.key} transport=${result.transport} tentativa=${item.attempts + 1}`);
+      continue;
+    }
+    if (result.errorClass === ERROR_CLASS.PERMANENTE) {
+      await outbox.killNow({ key: item.key, to: item.to, error: result.error });
+      log(`[outbox] descartado por erro permanente key=${item.key}: ${result.error}`);
+      continue;
+    }
+    const veredito = await outbox.settle(item.key, { success: false, error: result.error });
+    log(`[outbox] key=${item.key} -> ${veredito} tentativa=${item.attempts + 1} erro=${result.error}`);
+  }
+  await reportDeadLetters();
+}
+
+/**
+ * Decide o destino de um envio que falhou. Só PERMANENTE morre na hora:
+ * destinatário inválido não melhora esperando.
+ */
+async function handleFailedSend({ key, to, message, result }) {
+  await notifyFailure({ transport: result.transport, error: result.error });
+  if (!key) return { queued: false };
+  if (result.errorClass === ERROR_CLASS.PERMANENTE) {
+    await outbox.killNow({ key, to, error: result.error });
+    await reportDeadLetters();
+    return { queued: false };
+  }
+  const veredito = await outbox.enqueue({ key, to, message, error: result.error });
+  return { queued: veredito === 'enqueued' || veredito === 'already_queued', veredito };
 }
 
 async function performSend(phone, message, idempotencyKey) {
@@ -260,6 +373,14 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, r
   if (!to || !message) return reply.code(400).send({ error: 'Missing to or message' });
 
   if (idempotencyKey) {
+    // Já está na fila de reenvio? Então NÃO tenta de novo agora. É isto que
+    // impede o cron de lead abandonado de martelar um transporte quebrado a
+    // cada 15 min — em 27/07 foram 35 tentativas para o MESMO lead.
+    if (outbox.has(idempotencyKey)) {
+      log(`[send] ja esta na fila de reenvio key=${idempotencyKey}`);
+      return reply.code(202).send({ success: false, queued: true, error: 'Queued for retry' });
+    }
+
     const result = await idemp.run(idempotencyKey, () => performSend(to, message, idempotencyKey));
     if (result.status === 'duplicate') {
       log(`[send] duplicate suppressed key=${idempotencyKey} (msgId: ${result.messageId})`);
@@ -270,21 +391,33 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, r
       return reply.code(503).send({ error: 'Send contention, retry later' });
     }
     if (result.status === 'failed') {
-      log(`[send] error key=${idempotencyKey}: ${result.error}`);
+      const bruto = result.raw || { error: result.error };
+      const destino = await handleFailedSend({ key: idempotencyKey, to, message, result: bruto });
+      log(`[send] falhou key=${idempotencyKey}: ${result.error} fila=${destino.queued}`);
+      if (destino.queued) {
+        // 202: NÃO foi entregue, mas também NÃO foi perdida. É a diferença
+        // entre este incidente e o de 27/07, quando a notificação sumia aqui.
+        return reply.code(202).send({ success: false, queued: true, error: 'Queued for retry' });
+      }
       return reply.code(500).send({ error: 'Failed to send message' });
     }
     await metrics.recordSend({ transport: result.transport || primaryName, fallback: result.fallback });
+    await maybeAlertVolume();
     log(`[send] success key=${idempotencyKey}: ${hashPhone(to)} transport=${result.transport || primaryName} fallback=${result.fallback === true} (msgId: ${result.messageId})`);
     return reply.send({ success: true, messageId: result.messageId });
   }
 
   const result = await performSend(to, message, null);
   if (!result.success) {
-    log(`[send] error key=- transport=${result.transport}: ${result.error}`);
+    // Sem chave de idempotência não há como deduplicar um reenvio, então este
+    // caminho não entra na fila — mas o alarme de falha vale igual.
+    await notifyFailure({ transport: result.transport, error: result.error });
+    log(`[send] falhou key=- transport=${result.transport}: ${result.error}`);
     return reply.code(500).send({ error: 'Failed to send message' });
   }
   const messageId = result.messageId || `vps-${Date.now()}`;
   await metrics.recordSend({ transport: result.transport, fallback: result.fallback });
+  await maybeAlertVolume();
   log(`[send] success key=-: ${hashPhone(to)} transport=${result.transport} fallback=${result.fallback === true} (msgId: ${messageId})`);
   return reply.send({ success: true, messageId });
 });
@@ -318,6 +451,16 @@ async function start() {
     statusRefreshTimer = setInterval(() => {
       refreshStatuses().catch(() => log('[status] refresh cycle failed'));
     }, STATUS_REFRESH_MS);
+
+    const pendentes = outbox.snapshot().pending;
+    if (pendentes > 0) log(`[outbox] ${pendentes} notificacao(oes) esperando reenvio desde antes do restart`);
+    outboxTimer = setInterval(() => {
+      if (outboxDraining) return; // uma drenagem por vez: reenvio não pode empilhar
+      outboxDraining = true;
+      drainOutbox()
+        .catch(() => log('[outbox] ciclo de reenvio falhou'))
+        .finally(() => { outboxDraining = false; });
+    }, OUTBOX_TICK_MS);
   } catch (err) {
     if (err?.code === 'EADDRINUSE') {
       log(`FATAL: Port ${process.env.PORT || 3457} already in use`);
@@ -330,6 +473,7 @@ async function start() {
 
 async function shutdown() {
   if (statusRefreshTimer) clearInterval(statusRefreshTimer);
+  if (outboxTimer) clearInterval(outboxTimer);
   await Promise.all(Object.values(transportMap).map((transport) => transport.shutdown().catch(() => {})));
 }
 

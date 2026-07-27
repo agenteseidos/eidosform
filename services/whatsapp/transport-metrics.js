@@ -24,7 +24,7 @@ function shiftDateKey(key, days) {
 }
 
 function emptyDay() {
-  return { total: 0, wacli: 0, wuzapi: 0, fallback: 0, legacy: 0 };
+  return { total: 0, wacli: 0, wuzapi: 0, fallback: 0, legacy: 0, failed: 0 };
 }
 
 function initialState(now, primary) {
@@ -39,6 +39,11 @@ function initialState(now, primary) {
       reason: null,
     },
     fallbackIncident: null,
+    // Sucessos consecutivos não interessam; o que precisa de alarme é a
+    // SEQUÊNCIA de falhas. Em 27/07 foram 49 seguidas sem ninguém saber.
+    consecutiveFailures: 0,
+    failureIncident: null,
+    volumeAlertedOn: null,
     days: {},
   };
 }
@@ -130,7 +135,65 @@ function createTransportMetricsStore({
       reason: fallback ? state.fallbackIncident?.reason || 'primary_pre_flight_failure' : null,
     };
     if (!fallback) state.fallbackIncident = null;
+    // Um envio que deu certo encerra o incidente de falha: o transporte voltou.
+    state.consecutiveFailures = 0;
+    state.failureIncident = null;
     prune();
+    await save();
+  }
+
+  async function recordFailure({ transport, error } = {}) {
+    const key = dateKey(now(), timeZone);
+    const day = state.days[key] || emptyDay();
+    day.failed = (day.failed || 0) + 1;
+    state.days[key] = day;
+    state.consecutiveFailures = (state.consecutiveFailures || 0) + 1;
+    if (!state.failureIncident) {
+      state.failureIncident = {
+        since: new Date(now()).toISOString(),
+        transport: transport || 'desconhecido',
+        error: String(error || 'send_failed'),
+        alertAttemptAt: null,
+        alertSentAt: null,
+      };
+    } else {
+      state.failureIncident.error = String(error || state.failureIncident.error);
+    }
+    prune();
+    await save();
+    return state.consecutiveFailures;
+  }
+
+  /**
+   * Não alerta na 1ª falha: envio isolado falha por motivo bobo e um alarme
+   * por ruído é um alarme que se aprende a ignorar. 3 seguidas já é padrão.
+   * Re-alerta a cada `retryMs` enquanto o incidente seguir aberto.
+   */
+  function shouldAttemptFailureAlert({ threshold = 3, retryMs = 6 * 3600 * 1000 } = {}) {
+    const incident = state.failureIncident;
+    if (!incident) return false;
+    if ((state.consecutiveFailures || 0) < threshold) return false;
+    if (!incident.alertAttemptAt) return true;
+    const last = incident.alertSentAt || incident.alertAttemptAt;
+    return now() - Date.parse(last) >= retryMs;
+  }
+
+  async function markFailureAlert(sent) {
+    if (!state.failureIncident) return;
+    state.failureIncident.alertAttemptAt = new Date(now()).toISOString();
+    if (sent) state.failureIncident.alertSentAt = state.failureIncident.alertAttemptAt;
+    await save();
+  }
+
+  /** Volume elevado é aviso, não erro: no máximo 1 e-mail por dia. */
+  function shouldAlertVolume() {
+    const today = dateKey(now(), timeZone);
+    if (state.volumeAlertedOn === today) return false;
+    return snapshot().volume.elevated;
+  }
+
+  async function markVolumeAlert() {
+    state.volumeAlertedOn = dateKey(now(), timeZone);
     await save();
   }
 
@@ -175,12 +238,13 @@ function createTransportMetricsStore({
     }
     const average7Days = previousTotal / 7;
     const elevated = today.total >= 10 && (average7Days === 0 || today.total >= average7Days * 2);
-    const totals = { wacli: 0, wuzapi: 0, fallback: 0, legacy: 0 };
+    const totals = { wacli: 0, wuzapi: 0, fallback: 0, legacy: 0, failed: 0 };
     for (const day of Object.values(state.days)) {
       totals.wacli += day.wacli || 0;
       totals.wuzapi += day.wuzapi || 0;
       totals.fallback += day.fallback || 0;
       totals.legacy += day.legacy || 0;
+      totals.failed += day.failed || 0;
     }
     return {
       active: { ...state.active },
@@ -190,6 +254,11 @@ function createTransportMetricsStore({
         average7Days: Math.round(average7Days * 10) / 10,
         coverageDays,
         elevated,
+      },
+      failures: {
+        today: today.failed || 0,
+        consecutive: state.consecutiveFailures || 0,
+        incident: state.failureIncident ? { ...state.failureIncident } : null,
       },
       sendsByTransport: totals,
       initializedAt: state.initializedAt,
@@ -202,6 +271,11 @@ function createTransportMetricsStore({
     configure,
     seedLegacy,
     recordSend,
+    recordFailure,
+    shouldAttemptFailureAlert,
+    markFailureAlert,
+    shouldAlertVolume,
+    markVolumeAlert,
     beginFallback,
     markFallbackAlert,
     shouldAttemptFallbackAlert,

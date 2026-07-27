@@ -13,3 +13,5 @@ sent-keys.json
 sent-keys.json.*
 transport-metrics.json
 transport-metrics.json.*
+outbox.json
+outbox.json.*

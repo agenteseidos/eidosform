@@ -16,12 +16,12 @@ describe('métricas duráveis de transporte', () => {
 
     const snapshot = metrics.snapshot()
     expect(snapshot.volume.today).toBe(2)
-    expect(snapshot.sendsByTransport).toEqual({
+    expect(snapshot.sendsByTransport).toEqual(expect.objectContaining({
       wacli: 1,
       wuzapi: 1,
       fallback: 1,
       legacy: 2,
-    })
+    }))
     expect(snapshot.active).toEqual(expect.objectContaining({ transport: 'wuzapi', fallback: true }))
   })
 

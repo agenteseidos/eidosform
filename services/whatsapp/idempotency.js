@@ -160,7 +160,14 @@ function createIdempotencyStore(opts = {}) {
 
     const result = await entry.promise;
     if (!result || !result.success) {
-      return { status: 'failed', error: result && result.error ? String(result.error) : 'send_failed' };
+      return {
+        status: 'failed',
+        error: result && result.error ? String(result.error) : 'send_failed',
+        // O chamador precisa da CLASSE do erro para decidir entre fila de
+        // reenvio e carta morta. Sem isto, o `status` sozinho apagaria a
+        // diferença entre "transporte caiu" e "destinatário não existe".
+        raw: result || null,
+      };
     }
     const sent = { status: 'sent', messageId: entry.messageId };
     if (entry.transport) sent.transport = entry.transport;
@@ -168,7 +175,22 @@ function createIdempotencyStore(opts = {}) {
     return sent;
   }
 
-  return { load, prune, get, save, run, size: () => map.size, _map: map };
+  /**
+   * Registra um envio que já foi concluído FORA do `run` — hoje, a reentrega
+   * feita pela fila de reenvio. Sem isto, o cron de lead abandonado voltaria a
+   * pedir a mesma notificação 15 minutos depois (o `run` apagou a chave quando
+   * a tentativa original falhou) e o Sidney receberia em dobro.
+   */
+  async function remember(key, messageId, extra = {}) {
+    if (!key || !messageId) return;
+    const entry = { ts: now(), messageId };
+    if (extra.transport === 'wacli' || extra.transport === 'wuzapi') entry.transport = extra.transport;
+    if (extra.fallback === true) entry.fallback = true;
+    map.set(key, entry);
+    await save();
+  }
+
+  return { load, prune, get, save, run, remember, size: () => map.size, _map: map };
 }
 
 module.exports = { createIdempotencyStore, DEFAULT_TTL_MS };

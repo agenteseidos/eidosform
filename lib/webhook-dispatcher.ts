@@ -26,6 +26,13 @@ export interface WebhookPayload {
   fields?: WebhookFieldMeta[]
   /** Campos ocultos capturados da URL do form (hidden fields), já sanitizados */
   url_params?: Record<string, string>
+  /**
+   * UTMs capturadas na chegada do lead (janela last-touch de 30 dias) — só
+   * chaves com valor. Fecha o furo de atribuição "lead chega no CRM sem
+   * origem" (auditoria LP 2026-07-28): a UTM já saía no CSV/Sheets mas não
+   * no webhook. Campo ADITIVO — consumidores existentes não quebram.
+   */
+  utm?: Record<string, string>
 }
 
 /**
@@ -176,10 +183,12 @@ export async function dispatchWebhook(params: {
   lead?: ExtractedLead
   /** Campos ocultos capturados da URL (hidden fields), já sanitizados */
   urlParams?: Record<string, string> | null
+  /** UTMs gravadas com a resposta (utm_source/medium/campaign/term/content) */
+  utm?: Record<string, string | null> | null
   /** Owner email for DLQ notification after all retries fail */
   ownerEmail?: string
 }): Promise<{ success: boolean; statusCode?: number; error?: string }> {
-  const { webhookUrl, formId, responseId, responseData, fields, lead, urlParams, ownerEmail } = params
+  const { webhookUrl, formId, responseId, responseData, fields, lead, urlParams, utm, ownerEmail } = params
 
   // WEBHOOK_SECRET is mandatory — abort without it (P0-INT1)
   const webhookSecret = process.env.WEBHOOK_SECRET
@@ -204,6 +213,12 @@ export async function dispatchWebhook(params: {
     data: responseData,
     ...(fields && fields.length > 0 ? { fields } : {}),
     ...(urlParams && Object.keys(urlParams).length > 0 ? { url_params: urlParams } : {}),
+    ...(() => {
+      const entries = Object.entries(utm ?? {}).filter(
+        (e): e is [string, string] => typeof e[1] === 'string' && e[1].length > 0
+      )
+      return entries.length > 0 ? { utm: Object.fromEntries(entries) } : {}
+    })(),
   }
 
   // Canonical JSON: sort keys so HMAC is deterministic across retries (P1-INT2)

@@ -292,6 +292,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       responseData: (r.answers ?? {}) as Record<string, unknown>,
       meta_events: (r.meta_events ?? []) as string[],
       urlParams: (r.url_params ?? null) as Record<string, string> | null,
+      // {utm_*} no alerta de abandono: saber a campanha do lead que desistiu
+      // é exatamente o que o gestor de tráfego precisa pra agir.
+      utm: {
+        utm_source: (r.utm_source ?? null) as string | null,
+        utm_medium: (r.utm_medium ?? null) as string | null,
+        utm_campaign: (r.utm_campaign ?? null) as string | null,
+        utm_term: (r.utm_term ?? null) as string | null,
+        utm_content: (r.utm_content ?? null) as string | null,
+      },
       form: form as { id: string; title: string | null; user_id: string; questions?: Array<{ id: string; title?: string; type?: string }> },
       appUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br',
     })
@@ -310,7 +319,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       fetchPage: async (cursor, limit) => {
         const { data, error } = await supabase
           .from('responses')
-          .select('id, form_id, answers, url_params, meta_events, last_activity_at')
+          .select('id, form_id, answers, url_params, meta_events, last_activity_at, utm_source, utm_medium, utm_campaign, utm_term, utm_content')
           .eq('completed', false)
           .gte('last_activity_at', cursor)
           .lt('last_activity_at', cutoffIso)

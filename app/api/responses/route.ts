@@ -631,6 +631,7 @@ export async function POST(req: NextRequest) {
             responseData: answers as Record<string, unknown>,
             meta_events: responseMetaEvents,
             urlParams: effectiveUrlParams,
+            utm: utmData,
             form: {
               id: form.id,
               title: form.title,
@@ -724,6 +725,7 @@ export async function POST(req: NextRequest) {
           fields,
           lead,
           urlParams: effectiveUrlParams,
+          utm: utmData,
         }).catch((err) => logError('Failed to dispatch webhook', err))
       )
     }

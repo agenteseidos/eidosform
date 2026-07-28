@@ -87,6 +87,16 @@ const TEMPLATE_VARIABLE_GROUPS: TemplateVariableGroup[] = [
       { key: '{meta_events}',    description: 'Eventos do Meta Pixel disparados',          example: 'Lead, LeadQualificado' },
     ],
   },
+  {
+    label: 'Campanha (UTM)',
+    vars: [
+      { key: '{utm_source}',     description: 'Origem do lead (some se chegou sem UTM)',   example: 'facebook' },
+      { key: '{utm_medium}',     description: 'Mídia da campanha',                         example: 'cpc' },
+      { key: '{utm_campaign}',   description: 'Nome da campanha',                          example: 'lancamento-julho' },
+      { key: '{utm_term}',       description: 'Termo/palavra-chave',                       example: 'formulario-online' },
+      { key: '{utm_content}',    description: 'Variação do criativo',                      example: 'criativo-a' },
+    ],
+  },
 ]
 
 const DEFAULT_MESSAGE_TEMPLATE = DEFAULT_WHATSAPP_MESSAGE_TEMPLATE

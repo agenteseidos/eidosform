@@ -117,5 +117,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     completion_rate: completionRate,
     avg_completion_time_seconds: avgCompletionTimeSeconds,
     abandonment_by_question: abandonmentByQuestion,
+    // Sinal explícito pro front (auditoria LP 2026-07-28: o endpoint existia
+    // completo e gated, mas NENHUMA tela o consumia — e sem este campo a UI
+    // não sabia distinguir "sem dados" de "plano sem a feature").
+    plan_gated: !planConfig?.partialResponses,
   })
 }

@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card } from '@/components/ui/card'
+import { AnalyticsPanel } from '@/components/responses/analytics-panel'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
@@ -699,6 +700,9 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
           color="#F59E0B"
         />
       </div>
+
+      {/* ── Análises (abandono por pergunta + tempo médio) ── */}
+      <AnalyticsPanel formId={form.id} />
 
       {/* ── Empty state ── */}
       {responses.length === 0 ? (

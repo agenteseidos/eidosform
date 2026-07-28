@@ -46,6 +46,11 @@ export const SAMPLE_LEAD_DATA: Record<string, unknown> = {
   respostas: '*Qual seu nome?*\nJoão da Silva\n\n*Seu WhatsApp?*\n5511999990000',
   meta_events: 'Lead, LeadQualificado',
   abandono_minutos: '30',
+  utm_source: 'facebook',
+  utm_medium: 'cpc',
+  utm_campaign: 'lancamento-julho',
+  utm_term: 'formulario-online',
+  utm_content: 'criativo-a',
 }
 
 /**

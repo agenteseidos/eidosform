@@ -18,6 +18,10 @@ export interface BuildLeadDataParams {
   /** Campos ocultos de identidade vindos da URL (nome/email/telefone) — mesma
    *  fonte que alimenta as colunas de identidade do Google Sheets. */
   urlParams?: Record<string, string> | null
+  /** UTMs gravadas com a resposta — viram {utm_source}, {utm_campaign} etc.
+   *  no template (auditoria LP 2026-07-28: o alerta chegava sem dizer de
+   *  qual campanha o lead veio). */
+  utm?: Record<string, string | null> | null
   form: LeadFormInfo
   appUrl: string
 }
@@ -170,6 +174,13 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
     // (PageView, Lead, LeadQualificado...), separados por vírgula. A coluna
     // responses.meta_events já alimenta PDF e Sheets; aqui entra no WhatsApp.
     meta_events: (params.meta_events ?? []).join(', '),
+    // {utm_*}: origem/campanha do lead na notificação — vazio quando o lead
+    // chegou sem UTM (o sanitizador do template lida com string vazia).
+    utm_source: params.utm?.utm_source ?? '',
+    utm_medium: params.utm?.utm_medium ?? '',
+    utm_campaign: params.utm?.utm_campaign ?? '',
+    utm_term: params.utm?.utm_term ?? '',
+    utm_content: params.utm?.utm_content ?? '',
   }
 }
 

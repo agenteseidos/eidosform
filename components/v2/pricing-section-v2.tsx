@@ -6,6 +6,7 @@ import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { motion } from 'framer-motion'
+import { PLAN_MARKETING_LIST } from '@/lib/plan-marketing'
 
 // Pricing da /v2 — difere do pricing-section.tsx (v1) em:
 //  • limites REAIS de questões por formulário (25/50/100/200), no lugar de
@@ -13,90 +14,14 @@ import { motion } from 'framer-motion'
 //  • marca d'água não aparece como "recurso" no Free/Starter; o Plus anuncia a remoção
 //  • destaques de venda no topo de cada card (respostas/mês em evidência)
 
-const plans = [
-  {
-    id: 'free',
-    name: 'Free',
-    emoji: '🌱',
-    price: { monthly: 0, annual: 0 },
-    desc: 'Para testar sem compromisso',
-    highlight: false,
-    responses: '100 respostas/mês',
-    features: [
-      '3 formulários',
-      'Até 25 questões por formulário',
-      'Busca automática de CEP',
-      'Lógica condicional',
-      'Tela de agradecimento personalizada',
-      'Suporte por email',
-    ],
-    cta: 'Começar grátis',
-  },
-  {
-    id: 'starter',
-    name: 'Starter',
-    emoji: '⚡',
-    price: { monthly: 49, annual: 29 },
-    desc: 'Para freelancers e autônomos',
-    highlight: false,
-    responses: '1.000 respostas/mês',
-    features: [
-      'Tudo do Free +',
-      '100 formulários',
-      'Até 50 questões por formulário',
-      'Validação de CPF/CNPJ',
-      'Agendamento com Calendly',
-      'Redirecionamento após envio',
-      'Exportação CSV',
-    ],
-    cta: 'Assinar Starter',
-  },
-  {
-    id: 'plus',
-    name: 'Plus',
-    emoji: '🚀',
-    price: { monthly: 127, annual: 97 },
-    desc: 'Para quem vive de conversão',
-    highlight: true,
-    responses: '5.000 respostas/mês',
-    features: [
-      'Tudo do Starter +',
-      'Formulários ilimitados',
-      'Até 100 questões por formulário',
-      "Sem marca d'água EidosForm",
-      'Respostas parciais (capture o lead mesmo sem envio)',
-      'Taxa de abandono por pergunta',
-      'Meta Pixel (Facebook)',
-      'Google Ads (Conversões)',
-      'Google Tag Manager (GTM)',
-      'TikTok Pixel',
-      'Webhooks para automações',
-      'Notificação por email e WhatsApp',
-      'Alerta de limite (80%)',
-      'Bloco HTML / Embeds',
-      'Suporte prioritário',
-    ],
-    cta: 'Assinar Plus',
-  },
-  {
-    id: 'professional',
-    name: 'Professional',
-    emoji: '👑',
-    price: { monthly: 257, annual: 197 },
-    desc: 'Para empresas e agências',
-    highlight: false,
-    responses: '15.000 respostas/mês',
-    features: [
-      'Tudo do Plus +',
-      'Até 200 questões por formulário',
-      'Domínio personalizado',
-      'Acesso à API v1 + chave dedicada',
-      'Exportação CSV avançada',
-      'Suporte prioritário com SLA',
-    ],
-    cta: 'Assinar Professional',
-  },
-]
+const EMOJIS: Record<string, string> = { free: '🌱', starter: '⚡', plus: '🚀', professional: '👑' }
+
+const plans = PLAN_MARKETING_LIST.map((p) => ({
+  ...p,
+  emoji: EMOJIS[p.id] ?? '',
+  highlight: p.id === 'plus',
+  responses: p.responsesLabel,
+}))
 
 export function PricingSectionV2() {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('annual')

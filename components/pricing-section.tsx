@@ -6,92 +6,19 @@ import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { motion } from 'framer-motion'
+import { PLAN_MARKETING_LIST } from '@/lib/plan-marketing'
 
-const plans = [
-  {
-    id: 'free',
-    name: 'Free',
-    emoji: '🌱',
-    price: { monthly: 0, annual: 0 },
-    desc: 'Para começar',
-    highlight: false,
-    features: [
-      '100 respostas/mês',
-      '3 formulários',
-      'Até 25 questões por formulário',
-      'Busca automática de CEP',
-      'Lógica condicional',
-      'Tela de agradecimento personalizada',
-      'Suporte por email',
-      "Marca d'água EidosForm",
-    ],
-    cta: 'Começar grátis',
-  },
-  {
-    id: 'starter',
-    name: 'Starter',
-    emoji: '⚡',
-    price: { monthly: 49, annual: 29 },
-    desc: 'Para freelancers',
-    highlight: false,
-    features: [
-      'Tudo do Free +',
-      '1.000 respostas/mês',
-      '100 formulários',
-      'Validação de CPF/CNPJ',
-      'Agendamento com Calendly',
-      'Redirecionamento após envio',
-      'Exportação CSV',
-      "Marca d'água EidosForm",
-    ],
-    cta: 'Assinar Starter',
-  },
-  {
-    id: 'plus',
-    name: 'Plus',
-    emoji: '🚀',
-    price: { monthly: 127, annual: 97 },
-    desc: 'Para escalar resultados',
-    highlight: true,
-    features: [
-      'Tudo do Starter +',
-      '5.000 respostas/mês',
-      'Formulários ilimitados',
-      "Sem marca d'água",
-      'Respostas parciais (salvamento automático)',
-      'Taxa de abandono por pergunta',
-      'Bloco HTML / Embeds',
-      'Notificação por email (nova resposta)',
-      'Notificação por WhatsApp',
-      'Alerta de limite (80%)',
-      'Meta Pixel (Facebook)',
-      'Google Ads (Conversões)',
-      'Google Tag Manager (GTM)',
-      'TikTok Pixel',
-      'Webhooks para automações',
-      'Suporte prioritário',
-    ],
-    cta: 'Assinar Plus',
-  },
-  {
-    id: 'professional',
-    name: 'Professional',
-    emoji: '👑',
-    price: { monthly: 257, annual: 197 },
-    desc: 'Para empresas',
-    highlight: false,
-    features: [
-      'Tudo do Plus +',
-      '15.000 respostas/mês',
-      'Domínio personalizado',
-      'Acesso à API v1',
-      'Chave de API dedicada',
-      'Exportação CSV avançada',
-      'Suporte prioritário com SLA',
-    ],
-    cta: 'Assinar Professional',
-  },
-]
+// ConteÃºdo da FONTE ÃNICA lib/plan-marketing.ts (Fase 2, auditoria LP
+// 2026-07-28). Este layout nÃ£o tem linha de cota separada â a cota entra
+// como primeiro bullet da lista.
+const EMOJIS: Record<string, string> = { free: '🌱', starter: '⚡', plus: '🚀', professional: '👑' }
+
+const plans = PLAN_MARKETING_LIST.map((p) => ({
+  ...p,
+  emoji: EMOJIS[p.id] ?? '',
+  highlight: p.id === 'plus',
+  features: [p.responsesLabel, ...p.features],
+}))
 
 export function PricingSection() {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('annual')

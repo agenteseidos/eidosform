@@ -6,105 +6,24 @@ import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { motion, useReducedMotion } from 'framer-motion'
+import { PLAN_MARKETING_LIST } from '@/lib/plan-marketing'
 
-// Pricing da /v3 — evolução do v2 com SELO DUPLO (decisão Sidney 2026-06-12):
+// Pricing da /v3 — SELO DUPLO (decisão Sidney 2026-06-12):
 //   • Plus mantém "Mais Popular" (comprador solo)
 //   • Professional ganha "Para agências" com borda própria — a seção de
 //     agências da página aponta direto pra ele
-// Mantém os limites honestos de questões (25/50/100/200).
+// Conteúdo vem da FONTE ÚNICA lib/plan-marketing.ts (Fase 2, auditoria LP
+// 2026-07-28) — aqui só vive a apresentação (accent/tema).
 
 type Accent = 'popular' | 'agency' | null
 
-const plans: Array<{
-  id: string
-  name: string
-  price: { monthly: number; annual: number }
-  desc: string
-  accent: Accent
-  responses: string
-  features: string[]
-  cta: string
-}> = [
-  {
-    id: 'free',
-    name: 'Free',
-    price: { monthly: 0, annual: 0 },
-    desc: 'Para testar sem compromisso',
-    accent: null,
-    responses: '100 respostas/mês',
-    features: [
-      '3 formulários',
-      'Até 25 questões por formulário',
-      'Busca automática de CEP',
-      'Lógica condicional',
-      'Tela de agradecimento personalizada',
-      'Suporte por email',
-    ],
-    cta: 'Começar grátis',
-  },
-  {
-    id: 'starter',
-    name: 'Starter',
-    price: { monthly: 49, annual: 29 },
-    desc: 'Para freelancers e autônomos',
-    accent: null,
-    responses: '1.000 respostas/mês',
-    features: [
-      'Tudo do Free +',
-      '100 formulários',
-      'Até 50 questões por formulário',
-      'Validação de CPF/CNPJ',
-      'Agendamento com Calendly',
-      'Redirecionamento após envio',
-      'Exportação CSV',
-    ],
-    cta: 'Assinar Starter',
-  },
-  {
-    id: 'plus',
-    name: 'Plus',
-    price: { monthly: 127, annual: 97 },
-    desc: 'Para quem vive de conversão',
-    accent: 'popular',
-    responses: '5.000 respostas/mês',
-    features: [
-      'Tudo do Starter +',
-      'Formulários ilimitados',
-      'Até 100 questões por formulário',
-      "Sem marca d'água EidosForm",
-      'Respostas parciais (capture o lead mesmo sem envio)',
-      'Taxa de abandono por pergunta',
-      'Meta Pixel (Facebook)',
-      'Google Ads (Conversões)',
-      'Google Tag Manager (GTM)',
-      'TikTok Pixel',
-      'Conversões personalizadas por resposta',
-      'Webhooks para automações',
-      'Notificação por email e WhatsApp',
-      'Alerta de limite (80%)',
-      'Bloco HTML / Embeds',
-      'Suporte prioritário',
-    ],
-    cta: 'Assinar Plus',
-  },
-  {
-    id: 'professional',
-    name: 'Professional',
-    price: { monthly: 257, annual: 197 },
-    desc: 'Para agências e empresas',
-    accent: 'agency',
-    responses: '15.000 respostas/mês',
-    features: [
-      'Tudo do Plus +',
-      'Até 200 questões por formulário',
-      'Domínio personalizado (a marca do seu cliente)',
-      'Acesso à API v1 + chave dedicada',
-      'Exportação CSV avançada',
-      'Prioridade máxima no suporte',
-    ],
-    cta: 'Assinar Professional',
-  },
-]
+const ACCENTS: Partial<Record<string, Accent>> = { plus: 'popular', professional: 'agency' }
+
+const plans = PLAN_MARKETING_LIST.map((p) => ({
+  ...p,
+  accent: ACCENTS[p.id] ?? null,
+  responses: p.responsesLabel,
+}))
 
 export function PricingSectionV3() {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('annual')

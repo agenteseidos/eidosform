@@ -1,6 +1,11 @@
 /**
  * lib/plan-definitions.ts — client-safe plan definitions
  * Static plan config only. No server-only imports here.
+ *
+ * ATENÇÃO: aqui vivem só FLAGS e LIMITES (a verdade do runtime). Os bullets
+ * de marketing da vitrine moram em lib/plan-marketing.ts (fonte única desde
+ * a Fase 2 da auditoria LP 2026-07-28) e são validados contra estes flags
+ * pelo lib/plan-marketing.test.ts.
  */
 
 import { PlanId } from '@/lib/plans'
@@ -30,7 +35,6 @@ export interface PlanConfig {
   emailNotifications: boolean
   whatsappNotifications: boolean
   prioritySupport: boolean
-  features: string[]
 }
 
 export const PLANS: Record<PlanName, PlanConfig> = {
@@ -55,16 +59,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     emailNotifications: false,
     whatsappNotifications: false,
     prioritySupport: false,
-    features: [
-      '100 respostas/mês',
-      '3 formulários',
-      'Até 25 questões por formulário',
-      'Busca automática de CEP',
-      'Lógica condicional',
-      'Tela de agradecimento',
-      'Suporte por WhatsApp',
-      "Marca d'água EidosForm",
-    ],
   },
   starter: {
     name: 'Starter',
@@ -87,17 +81,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     emailNotifications: false,
     whatsappNotifications: false,
     prioritySupport: false,
-    features: [
-      'Tudo do Free +',
-      '1.000 respostas/mês',
-      '100 formulários',
-      'Validação de CPF/CNPJ',
-      'Agendamento com Calendly',
-      'Redirecionamento após envio',
-      'Exportação CSV',
-      'Integração com Google Sheets',
-      "Marca d'água EidosForm",
-    ],
   },
   plus: {
     name: 'Plus',
@@ -121,24 +104,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     emailNotifications: true,
     whatsappNotifications: true,
     prioritySupport: true,
-    features: [
-      'Tudo do Starter +',
-      '5.000 respostas/mês',
-      'Formulários ilimitados',
-      "Sem marca d'água",
-      'Respostas parciais',
-      'Taxa de abandono por pergunta',
-      'Bloco HTML / Embeds',
-      'Notificação por email',
-      'Notificação por WhatsApp',
-      'Alerta de limite (80%)',
-      'Meta Pixel (Facebook)',
-      'Google Ads (Conversões)',
-      'Google Tag Manager (GTM)',
-      'TikTok Pixel',
-      'Webhooks para automações',
-      'Suporte prioritário',
-    ],
   },
   professional: {
     name: 'Professional',
@@ -161,16 +126,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     emailNotifications: true,
     whatsappNotifications: true,
     prioritySupport: true,
-    features: [
-      'Tudo do Plus +',
-      '15.000 respostas/mês',
-      'Domínio personalizado',
-      'Acesso à API v1',
-      'Chave de API dedicada',
-      'Exportação CSV avançada',
-      'Suporte prioritário com SLA',
-      'Notificação por WhatsApp',
-    ],
   },
 }
 

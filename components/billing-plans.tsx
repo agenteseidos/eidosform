@@ -5,96 +5,21 @@ import { Check, Crown, Rocket, Sprout, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { PLAN_ORDER, normalizePlan } from '@/lib/plans'
+import { PLAN_MARKETING_LIST } from '@/lib/plan-marketing'
 
-const plans = [
-  {
-    id: 'free',
-    name: 'Free',
-    icon: Sprout,
-    price: { monthly: 0, annual: 0 },
-    desc: 'Para começar',
-    highlight: false,
-    features: [
-      '100 respostas/mês',
-      '3 formulários',
-      'Até 25 questões por formulário',
-      'Busca automática de CEP',
-      'Lógica condicional',
-      'Tela de agradecimento personalizada',
-      'Suporte por email',
-      "Marca d'água EidosForm",
-    ],
-    // CTA não exibido: free é sempre plano atual ou "Já incluso"
-    cta: null,
-    checkoutUrl: null,
-  },
-  {
-    id: 'starter',
-    name: 'Starter',
-    icon: Zap,
-    price: { monthly: 49, annual: 29 },
-    desc: 'Para freelancers',
-    highlight: false,
-    features: [
-      'Tudo do Free +',
-      '1.000 respostas/mês',
-      '100 formulários',
-      'Validação de CPF/CNPJ',
-      'Agendamento com Calendly',
-      'Redirecionamento após envio',
-      'Exportação CSV',
-      "Marca d'água EidosForm",
-    ],
-    cta: 'Assinar Starter',
-    checkoutUrl: '/checkout/starter',
-  },
-  {
-    id: 'plus',
-    name: 'Plus',
-    icon: Rocket,
-    price: { monthly: 127, annual: 97 },
-    desc: 'Para escalar resultados',
-    highlight: true,
-    features: [
-      'Tudo do Starter +',
-      '5.000 respostas/mês',
-      'Formulários ilimitados',
-      "Sem marca d'água",
-      'Respostas parciais (salvamento automático)',
-      'Taxa de abandono por pergunta',
-      'Bloco HTML / Embeds',
-      'Notificação por email (nova resposta)',
-      'Alerta de limite (80%)',
-      'Meta Pixel (Facebook)',
-      'Google Ads (Conversões)',
-      'Google Tag Manager (GTM)',
-      'TikTok Pixel',
-      'Webhooks para automações',
-      'Suporte prioritário',
-    ],
-    cta: 'Assinar Plus',
-    checkoutUrl: '/checkout/plus',
-  },
-  {
-    id: 'professional',
-    name: 'Professional',
-    icon: Crown,
-    price: { monthly: 257, annual: 197 },
-    desc: 'Para empresas',
-    highlight: false,
-    features: [
-      'Tudo do Plus +',
-      '15.000 respostas/mês',
-      'Domínio personalizado',
-      'Acesso à API v1',
-      'Chave de API dedicada',
-      'Exportação CSV avançada',
-      'Suporte prioritário com SLA',
-    ],
-    cta: 'Assinar Professional',
-    checkoutUrl: '/checkout/professional',
-  },
-] as const
+// Conteúdo da FONTE ÚNICA lib/plan-marketing.ts (Fase 2, auditoria LP
+// 2026-07-28) — aqui só vivem ícone, destaque e URL de checkout.
+const ICONS: Record<string, typeof Sprout> = { free: Sprout, starter: Zap, plus: Rocket, professional: Crown }
+
+const plans = PLAN_MARKETING_LIST.map((p) => ({
+  ...p,
+  icon: ICONS[p.id] ?? Sprout,
+  highlight: p.id === 'plus',
+  features: [p.responsesLabel, ...p.features],
+  // CTA nao exibido no free: e sempre plano atual ou "Ja incluso"
+  cta: p.id === 'free' ? null : p.cta,
+  checkoutUrl: p.id === 'free' ? null : `/checkout/${p.id}`,
+}))
 
 interface BillingPlansProps {
   currentPlan: string

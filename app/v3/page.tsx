@@ -8,10 +8,10 @@ import {
   Building2,
   Check,
   ChevronDown,
+  ClipboardCheck,
   Crosshair,
   Globe,
   LineChart,
-  Mail,
   Target,
   UserRound,
   X,
@@ -45,7 +45,7 @@ export const metadata: Metadata = {
 
 // Funil oficial de migração (2026-07-02, executa o TODO original): form /f/migracao →
 // tela de obrigado → botão wa.me pra Elen, que recomenda o plano automaticamente.
-const MIGRATION_EMAIL = '/f/migracao'
+const MIGRATION_FORM = '/f/migracao'
 
 const DIFFERENTIALS = [
   { icon: Target, text: 'Meta Pixel, Google Ads, GTM e TikTok nativos no Plus' },
@@ -206,6 +206,10 @@ const FAQS = [
     a: 'Cartão de crédito, com cobrança em reais — sem IOF e sem variação de câmbio. Você escolhe entre assinatura mensal ou anual (com até 41% de desconto).',
   },
   {
+    q: 'E se eu assinar e me arrepender?',
+    a: 'Você tem 7 dias de garantia em qualquer plano pago: é só pedir e devolvemos 100% do valor, sem perguntas. Depois desse prazo, você ainda pode cancelar quando quiser e mantém o acesso até o fim do período já pago.',
+  },
+  {
     q: 'Posso cancelar minha assinatura quando quiser?',
     a: 'Sim, sem burocracia. Você cancela pelo painel de configurações e o acesso ao plano pago continua até o fim do período já pago. Não há multas ou taxas de cancelamento.',
   },
@@ -294,7 +298,7 @@ export default function LandingV3Page() {
             <div className="flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-4">
               <Link href="/register">
                 <Button size="lg" className="w-full sm:w-auto bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-base px-8 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
-                  Criar conta grátis
+                  Criar meu primeiro formulário grátis
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
@@ -346,9 +350,9 @@ export default function LandingV3Page() {
               3 dias úteis. Você só revisa e publica.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-              <a href={MIGRATION_EMAIL}>
+              <a href={MIGRATION_FORM}>
                 <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold px-8 py-6 shadow-xl shadow-[#F5B731]/25">
-                  <Mail className="w-4 h-4 mr-2" />
+                  <ClipboardCheck className="w-4 h-4 mr-2" />
                   Pedir análise gratuita
                 </Button>
               </a>
@@ -580,7 +584,7 @@ export default function LandingV3Page() {
           </p>
           <Link href="/register">
             <Button size="lg" className="bg-[#F5B731] hover:bg-[#E8923A] text-black font-bold text-lg px-10 py-6 shadow-xl shadow-[#F5B731]/25 transition-all hover:shadow-[#E8923A]/35 hover:-translate-y-0.5">
-              Criar conta grátis
+              Criar meu primeiro formulário grátis
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </Link>
@@ -615,7 +619,7 @@ export default function LandingV3Page() {
               <ul className="space-y-1 text-sm text-slate-500">
                 <li><a href="#faq" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">FAQ</a></li>
                 <li><a href="https://wa.me/5583999378937" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
-                <li><a href={MIGRATION_EMAIL} className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Migração gratuita</a></li>
+                <li><a href={MIGRATION_FORM} className="hover:text-white transition-colors inline-flex items-center min-h-[44px] py-2">Migração gratuita</a></li>
               </ul>
             </div>
             <div>

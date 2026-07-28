@@ -12,9 +12,12 @@ import {
   Code2,
   CornerDownRight,
   Crosshair,
+  EyeOff,
   Globe,
   LineChart,
   Link2,
+  MessageCircle,
+  ShieldCheck,
   Target,
   UserRound,
   X,
@@ -32,14 +35,17 @@ import { MockupAgency, MockupSegmentation } from '@/components/v3/section-mockup
 import { ThemeCarousel } from '@/components/ui/theme-carousel'
 
 // Página em homologação (modelada na yayforms.com/br/typeform-alternative):
-// noindex até ser aprovada e promovida à raiz. Todos os claims foram
-// verificados no código em 2026-06-12 (UTMs: lib/utm-tracker.ts; conversões
-// por resposta: evaluatePixelEvents no form-player; sem QR/campos ocultos/
-// server-side — não anunciar).
+// noindex até ser aprovada e promovida à raiz. Claims re-verificados no código
+// em 2026-07-28 (auditoria LP, Fases 1-3): CAPI server-side (lib/meta-capi.ts,
+// disparado em /api/responses), campos ocultos por URL (lib/url-params.ts),
+// eventos por conjunto de respostas (evaluateAnswerSetEvents), UTM no webhook
+// e no WhatsApp, alerta de lead abandonado (cron agendado no vercel.json) e
+// tela de abandono por pergunta (analytics-panel) — tudo EXISTE e está ligado.
+// A nota antiga "sem campos ocultos/server-side — não anunciar" caducou.
 export const metadata: Metadata = {
   title: 'EidosForm | Formulários que as pessoas respondem até o fim',
   description:
-    'A alternativa brasileira ao Typeform para tráfego pago: Meta Pixel, Google Ads, GTM e TikTok nativos, conversões por resposta e UTMs em cada lead. Pague em real.',
+    'A alternativa brasileira ao Typeform para tráfego pago: Meta Pixel, Google Ads, GTM e TikTok nativos, conversão server-side, UTMs em cada lead e alerta de lead no seu WhatsApp. Pague em real.',
   robots: { index: false, follow: false },
 }
 
@@ -71,19 +77,31 @@ const TRAFFIC_FEATURES = [
     icon: Crosshair,
     color: BRAND_TILE,
     title: 'Conversão por resposta',
-    desc: 'Dispare um evento diferente conforme o que a pessoa respondeu. Seu pixel aprende quem é lead qualificado, e a campanha otimiza para quem compra, não para quem clica.',
+    desc: 'Dispare um evento diferente conforme a resposta — ou combine várias: "LeadQualificado" só quando orçamento E prazo baterem. A campanha otimiza para quem compra, não para quem clica.',
+  },
+  {
+    icon: ShieldCheck,
+    color: BRAND_TILE,
+    title: 'Conversão server-side (Meta CAPI)',
+    desc: 'O evento também sai do nosso servidor direto para a Meta, com Advanced Matching (email e telefone com hash). Bloqueador de anúncio e iOS não engolem sua conversão.',
   },
   {
     icon: LineChart,
     color: BRAND_TILE,
     title: 'UTMs em cada lead',
-    desc: 'Origem, campanha e termo gravados com cada resposta (até as parciais), com janela de atribuição de 30 dias. Exporta tudo no CSV e fecha o ROI por campanha.',
+    desc: 'Origem, campanha e termo gravados com cada resposta (até as parciais), com janela de 30 dias. Sai no CSV, cai no Google Sheets e segue no webhook até o seu CRM.',
+  },
+  {
+    icon: EyeOff,
+    color: BRAND_TILE,
+    title: 'Campos ocultos por URL',
+    desc: 'Adicione ?vendedor=ana ou qualquer parâmetro à URL do anúncio: o valor é capturado e gravado junto do lead, sem nunca aparecer no formulário.',
   },
   {
     icon: BarChart3,
     color: BRAND_TILE,
     title: 'Abandono por pergunta',
-    desc: 'Veja a pergunta exata onde o lead desiste. E com respostas parciais, o que ele digitou antes de sair já está salvo. O clique que você pagou não vira lead perdido.',
+    desc: 'Veja no painel a pergunta exata onde o lead desiste. E com respostas parciais, o que ele digitou antes de sair já está salvo. O clique que você pagou não vira lead perdido.',
   },
 ]
 
@@ -95,7 +113,8 @@ const EMPHASIS_SECTIONS = [
     bullets: [
       'Caminhos diferentes conforme a resposta',
       'Quiz de qualificação para high-ticket',
-      'Tela de agradecimento personalizada por perfil',
+      'Mapa da Lógica: enxergue todos os caminhos e becos sem saída do seu funil',
+      '20 tipos de pergunta e 11 templates prontos para começar',
     ],
     mockup: 'segmentation' as const,
   },
@@ -134,7 +153,8 @@ const SECTION_MOCKUPS = {
 const AGENCY_BULLETS = [
   'Cada formulário com um dos 7 temas + a logo do cliente na abertura',
   'Domínio personalizado por formulário, no endereço de cada cliente',
-  'Webhooks levando cada lead direto ao CRM do cliente',
+  'Webhooks levando cada lead direto ao CRM do cliente (com as UTMs juntas)',
+  'Templates prontos de captura e briefing feitos para agência',
   'API e webhooks para plugar no stack que a agência já usa',
   '15.000 respostas/mês e prioridade máxima no suporte',
 ]
@@ -197,7 +217,15 @@ const FAQS = [
   },
   {
     q: 'As UTMs das minhas campanhas são salvas?',
-    a: 'Sim. Origem, mídia, campanha, termo e conteúdo (utm_source, utm_medium, utm_campaign, utm_term, utm_content) são capturados na chegada e gravados junto de cada resposta (inclusive as parciais), com janela de atribuição de 30 dias. Tudo sai na exportação CSV.',
+    a: 'Sim. Origem, mídia, campanha, termo e conteúdo (utm_source, utm_medium, utm_campaign, utm_term, utm_content) são capturados na chegada e gravados junto de cada resposta (inclusive as parciais), com janela de atribuição de 30 dias. Tudo sai na exportação CSV e Excel, cai na planilha do Google Sheets e segue no webhook até o seu CRM.',
+  },
+  {
+    q: 'Recebo os leads no meu WhatsApp?',
+    a: 'Sim, no plano Plus. Cada novo lead chega no seu número com as respostas completas, a campanha de origem (UTM) e um link wa.me pronto para respondê-lo em um toque. E se o lead parar no meio do formulário, você recebe um alerta de lead incompleto com o que ele já preencheu — a tempo de recuperá-lo.',
+  },
+  {
+    q: 'Quantos tipos de pergunta e modelos prontos existem?',
+    a: 'São 20 tipos de pergunta — de texto e múltipla escolha a CPF/CNPJ, endereço com CEP automático, agendamento com Calendly, upload de arquivo e NPS — e 11 templates prontos, incluindo captura para agência de tráfego e briefing de agência. Além de 7 temas visuais e do Mapa da Lógica, que mostra visualmente todos os caminhos do seu formulário.',
   },
   {
     q: 'O que acontece quando atinjo o limite de respostas do mês?',
@@ -399,6 +427,57 @@ export default function LandingV3Page() {
               </Reveal>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* WhatsApp — notificação de lead + alerta de abandono (Plus). Bloco novo
+          da auditoria LP 2026-07-28: a página dedicava UMA linha ao recurso
+          mais forte pra tráfego pago. Mockup em CSS puro, sem imagem. */}
+      <section id="whatsapp" className="py-12 sm:py-20 px-4 sm:px-6">
+        <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center">
+          <Reveal>
+            <Badge className="mb-4 bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/20">
+              <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
+              No plano Plus
+            </Badge>
+            <h2 className="text-2xl sm:text-4xl font-black mb-4 leading-tight">
+              O lead cai no seu <span className="text-[#25D366]">WhatsApp</span>, com tudo
+            </h2>
+            <p className="text-slate-400 leading-relaxed mb-6">
+              Cada novo lead chega no seu número com as respostas completas e um link
+              pronto para respondê-lo em um toque. E se ele parar no meio, você recebe
+              o alerta de lead incompleto — com o que ele já preencheu e a campanha de origem.
+            </p>
+            <ul className="space-y-2.5">
+              {[
+                'Respostas completas do lead, direto no seu número',
+                'Alerta de lead abandonado: quem parou, onde parou e o que já preencheu',
+                'Link wa.me pronto — responda o lead em um toque',
+                'Campanha de origem (UTM) junto na mensagem',
+              ].map((b) => (
+                <li key={b} className="flex items-start gap-3 text-sm sm:text-base text-slate-300 leading-relaxed">
+                  <Check className="w-4 h-4 text-[#4BB678] mt-1 flex-shrink-0" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          <Reveal index={1} className="min-w-0">
+            <div className="p-5 rounded-2xl bg-slate-900 border border-[#25D366]/20 ring-1 ring-[#25D366]/10 space-y-3">
+              <div className="rounded-xl rounded-tl-sm bg-[#1F2C24] border border-[#25D366]/20 p-4 text-sm text-slate-200 leading-relaxed">
+                <p className="font-bold text-[#25D366] mb-1.5">🔥 Novo lead em Captação — Mentoria</p>
+                <p><span className="font-semibold">Nome:</span> Ana Souza</p>
+                <p><span className="font-semibold">WhatsApp:</span> (11) 99999-0000</p>
+                <p><span className="font-semibold">Investimento:</span> R$3.000 a R$5.000/mês</p>
+                <p className="text-slate-400 text-xs mt-2">utm_campaign: lancamento-julho · Evento: LeadQualificado</p>
+                <p className="text-[#25D366] text-xs font-semibold mt-2">💬 Responder: wa.me/5511999990000</p>
+              </div>
+              <div className="rounded-xl rounded-tl-sm bg-slate-800/80 border border-amber-400/20 p-4 text-sm text-slate-300 leading-relaxed">
+                <p className="font-bold text-amber-400 mb-1">⚠️ Lead incompleto em Captação — Mentoria</p>
+                <p className="text-slate-400 text-xs">Sem atividade há 30 min — parou na pergunta 4. Nome e WhatsApp já salvos.</p>
+              </div>
+            </div>
+          </Reveal>
         </div>
       </section>
 

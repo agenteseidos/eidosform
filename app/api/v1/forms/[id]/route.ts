@@ -2,7 +2,7 @@ import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/dat
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { authenticateApiKey } from '@/lib/api-key-auth'
-import { checkAndIncrementResponseCount, PLANS, PlanName } from '@/lib/plan-limits'
+import { checkAndIncrementResponseCount, sendNearLimitAlert, PLANS, PlanName } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { checkSubmissionRateLimit, isResponseComplete, MAX_ANSWER_KEYS, MAX_PAYLOAD_BYTES, sanitizeValue } from '@/lib/form-response-security'
@@ -306,6 +306,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit },
         { status: 429, headers: getCorsHeaders(req.headers.get("origin")) }
       )
+    }
+    // Alerta de 80% (Plus+): dedupe é da RPC (limit_alert_sent); fire-and-forget.
+    if (limitCheck.nearLimit) {
+      sendNearLimitAlert(form.user_id, limitCheck.usage, limitCheck.limit, limitCheck.plan)
+        .catch((err) => logError('Failed to send limit alert', err))
     }
   }
 

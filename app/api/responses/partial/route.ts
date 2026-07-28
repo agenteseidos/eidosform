@@ -7,7 +7,8 @@ import { pruneOrphanAnswers, pruneOffPathAnswers, validateAllAnswers } from '@/l
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import { isValidSessionKey, hashSessionKey, hashLogPrefix, parseRevision } from '@/lib/partial-session'
 import type { QuestionConfig, ResponseInsert } from '@/lib/database.types'
-import { getEffectivePlan } from '@/lib/plans'
+import { getEffectivePlan, type PlanId } from '@/lib/plans'
+import { PLANS } from '@/lib/plan-definitions'
 import { filterQuestionsByPlan } from '@/lib/questions'
 import { sanitizeUrlParams } from '@/lib/url-params'
 
@@ -141,7 +142,8 @@ export async function POST(req: NextRequest) {
     .select('plan, plan_expires_at')
     .eq('id', form.user_id)
     .single() as { data: { plan: string | null; plan_expires_at: string | null } | null; error: unknown }
-  const effectiveQuestions = filterQuestionsByPlan(formQuestions, getEffectivePlan(ownerProfile))
+  const ownerPlan = getEffectivePlan(ownerProfile)
+  const effectiveQuestions = filterQuestionsByPlan(formQuestions, ownerPlan)
   const { pruned: knownAnswers } = pruneOrphanAnswers(effectiveQuestions, answers)
   // Poda por lógica condicional/saltos (hardening 2026-07-01) — não persiste
   // resposta de ramo escondido nem de pergunta pulada por salto.
@@ -205,7 +207,7 @@ export async function POST(req: NextRequest) {
   // Em update o parâmetro é ignorado (restrição server-side, auditoria Codex).
   const deferSheets = body.defer_sheets === true
 
-  const updateCtx = { supabase, form, valid, utmData, urlParams, lastQuestionOk, formQuestions: effectiveQuestions, revision }
+  const updateCtx = { supabase, form, ownerPlan, valid, utmData, urlParams, lastQuestionOk, formQuestions: effectiveQuestions, revision }
 
   // 1) Caminho id+token (prova de posse clássica)
   if (existingResponseId && verifyPartialToken(partialToken, existingResponseId)) {
@@ -249,7 +251,7 @@ export async function POST(req: NextRequest) {
 
   // 3) Criação (com hash quando houver; corrida de INSERT resolve por 23505)
   return await createPartialResponse({
-    supabase, form, answers: valid, utmData, urlParams,
+    supabase, form, ownerPlan, answers: valid, utmData, urlParams,
     lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions,
     sessionHash, revision, deferSheets, updateCtx,
   })
@@ -272,6 +274,7 @@ interface PartialTarget {
 async function updatePartialResponse(opts: {
   supabase: ReturnType<typeof createAdminClient>
   form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
+  ownerPlan: PlanId
   target: PartialTarget
   valid: Record<string, unknown>
   utmData: Record<string, string | null>
@@ -280,7 +283,7 @@ async function updatePartialResponse(opts: {
   formQuestions: QuestionConfig[]
   revision: number | null
 }): Promise<NextResponse> {
-  const { supabase, form, target, valid, utmData, urlParams, lastQuestionOk, formQuestions, revision } = opts
+  const { supabase, form, ownerPlan, target, valid, utmData, urlParams, lastQuestionOk, formQuestions, revision } = opts
 
   // url_params: novo valor válido atualiza; ausente PRESERVA o da parcial.
   const effectiveUrlParams = urlParams ?? sanitizeUrlParams(target.url_params) ?? null
@@ -321,6 +324,7 @@ async function updatePartialResponse(opts: {
   await syncToSheetsIfEnabled({
     supabase,
     form,
+    ownerPlan,
     answers: valid,
     utmData,
     urlParams: effectiveUrlParams,
@@ -338,6 +342,7 @@ async function updatePartialResponse(opts: {
 async function createPartialResponse(opts: {
   supabase: ReturnType<typeof createAdminClient>
   form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
+  ownerPlan: PlanId
   answers: Record<string, unknown>
   utmData: Record<string, string | null>
   urlParams: Record<string, string> | null
@@ -349,6 +354,7 @@ async function createPartialResponse(opts: {
   updateCtx: {
     supabase: ReturnType<typeof createAdminClient>
     form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
+    ownerPlan: PlanId
     valid: Record<string, unknown>
     utmData: Record<string, string | null>
     urlParams: Record<string, string> | null
@@ -357,7 +363,7 @@ async function createPartialResponse(opts: {
     revision: number | null
   }
 }): Promise<NextResponse> {
-  const { supabase, form, answers, utmData, urlParams, lastQuestionAnswered, formQuestions, sessionHash, revision, deferSheets, updateCtx } = opts
+  const { supabase, form, ownerPlan, answers, utmData, urlParams, lastQuestionAnswered, formQuestions, sessionHash, revision, deferSheets, updateCtx } = opts
   const insertPayload: ResponseInsert = {
     form_id: form.id,
     answers: answers as Record<string, import('@/lib/database.types').Json>,
@@ -408,6 +414,7 @@ async function createPartialResponse(opts: {
     await syncToSheetsIfEnabled({
       supabase,
       form,
+      ownerPlan,
       answers,
       utmData,
       urlParams,
@@ -426,6 +433,7 @@ async function createPartialResponse(opts: {
 async function syncToSheetsIfEnabled(opts: {
   supabase: ReturnType<typeof createAdminClient>
   form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
+  ownerPlan: PlanId
   answers: Record<string, unknown>
   utmData: Record<string, string | null>
   urlParams: Record<string, string> | null
@@ -433,11 +441,15 @@ async function syncToSheetsIfEnabled(opts: {
   formQuestions: QuestionConfig[]
   currentRowIndex: number | null
 }): Promise<void> {
-  const { supabase, form, answers, utmData, urlParams, responseId, formQuestions, currentRowIndex } = opts
+  const { supabase, form, ownerPlan, answers, utmData, urlParams, responseId, formQuestions, currentRowIndex } = opts
   if (!form.google_sheets_enabled || !form.google_sheets_id) return
 
-  // Plano: o gating é feito no builder (toggle só fica disponível pra Plus+).
-  // Se o form tem a integração habilitada, confiamos no flag e enviamos.
+  // Revalida o plano do dono NO ENVIO, igual ao fluxo final (/api/responses:
+  // ownerPlanConfig?.googleSheets). Sem isto, downgrade abaixo de Starter
+  // continuava escrevendo autosaves na planilha até a resposta finalizar
+  // (auditoria LP 2026-07-28). Sheets é Starter+, não Plus+ como dizia o
+  // comentário antigo.
+  if (!PLANS[ownerPlan]?.googleSheets) return
 
   const fieldLabels = formQuestions.map((q) => q.title || 'Sem título')
   const questionIdToLabel: Record<string, string> = {}

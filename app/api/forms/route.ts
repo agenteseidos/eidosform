@@ -161,7 +161,9 @@ export async function POST(req: NextRequest) {
     thank_you_message: thank_you_message || 'Obrigado pela sua resposta!',
     pixels: sanitizedPixels,
     plan: userPlan,
-    redirect_url: redirect_url ? ensureHttps(redirect_url) : null,
+    // Feature gate: redirect pós-envio é Starter+ — strip silencioso na criação,
+    // igual ao webhook_url logo acima (auditoria LP 2026-07-28).
+    redirect_url: (redirect_url && planConfig?.redirect) ? ensureHttps(redirect_url) : null,
     webhook_url: sanitizedWebhookUrl,
   }
 

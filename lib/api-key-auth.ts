@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getEffectivePlan } from '@/lib/plans'
+import { PLANS } from '@/lib/plan-definitions'
 
 export type ApiAuthSuccess = { ok: true; userId: string; plan: string; apiKey: string }
 export type ApiAuthFailure = { ok: false; status: 401 | 429; error: string; retryAfter?: number }
@@ -66,7 +67,9 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
     .single()
   const effectivePlan = getEffectivePlan(planRow ?? { plan: resolvedProfile.plan })
 
-  if (effectivePlan !== 'professional') {
+  // Lê o flag oficial (PLANS[].apiAccess) em vez de comparar com 'professional':
+  // um plano novo com apiAccess:true entra sem tocar aqui (D8, auditoria 2026-07-28).
+  if (!PLANS[effectivePlan]?.apiAccess) {
     return { ok: false, status: 401, error: 'Unauthorized. Professional plan required for API access.' }
   }
 

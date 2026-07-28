@@ -8,7 +8,7 @@ import { createPublicClient } from '@/lib/supabase/public'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { sendLimitAlert } from '@/lib/resend'
 import { logError } from '@/lib/logger'
-import { getEffectivePlan } from '@/lib/plans'
+import { getEffectivePlan, planAtLeast } from '@/lib/plans'
 import {
   getPlanLimits,
   PLAN_LIMITS,
@@ -21,62 +21,42 @@ import {
 export { getPlanLimits, PLAN_LIMITS, PLANS }
 export type { PlanConfig, PlanLimits, PlanName }
 
-export async function checkResponseLimit(userId: string): Promise<{
-  allowed: boolean
-  usage: number
-  limit: number
+/**
+ * Alerta de 80% do limite de respostas — vendido como feature Plus+ na LP.
+ *
+ * Substituiu a antiga checkResponseLimit, que era código MORTO (nunca chamada;
+ * auditoria LP 2026-07-28): o caminho real de submissão é a RPC atômica
+ * check_and_increment_response, que já calcula near_limit com dedupe via
+ * limit_alert_sent (marca a flag na própria RPC — aqui não há corrida).
+ * Este helper só decide o gate de plano e envia o email. Fire-and-forget:
+ * falha de email nunca bloqueia a submissão.
+ */
+export async function sendNearLimitAlert(
+  userId: string,
+  usage: number,
+  limit: number,
   plan: PlanName
-  nearLimit: boolean
-}> {
-  const supabase = createPublicClient()
+): Promise<void> {
+  // Gate: alerta de 80% é benefício Plus+ (decisão 0.2b, 2026-07-28). Para
+  // free/starter a RPC consome a flag mas nenhum email é enviado.
+  if (!planAtLeast(plan, 'plus')) return
 
-  const { data: profile, error } = await supabase
+  const supabase = createPublicClient()
+  const { data: userData } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at, responses_used, responses_limit, limit_alert_sent')
+    .select('email, full_name')
     .eq('id', userId)
     .single()
 
-  if (error || !profile) {
-    logError('checkAndIncrementResponseCount: failed to fetch profile', error, { userId })
-    // fail-open: allow submission on profile fetch error to avoid blocking all submissions on transient failures
-    return { allowed: true, usage: 0, limit: 0, plan: 'free', nearLimit: false }
+  if (userData?.email) {
+    await sendLimitAlert({
+      to: userData.email,
+      name: userData.full_name ?? 'usuário',
+      usage,
+      limit,
+      plan,
+    }).catch((err) => logError('Failed to send limit alert', err))
   }
-
-  const plan = getEffectivePlan(profile) as PlanName
-  const usage = profile.responses_used ?? 0
-  const limit = plan === 'free' ? PLANS.free.maxResponses : (profile.responses_limit ?? PLANS[plan]?.maxResponses ?? 100)
-
-  if (limit === -1) {
-    return { allowed: true, usage, limit, plan, nearLimit: false }
-  }
-
-  const allowed = usage < limit
-  const nearLimit = !profile.limit_alert_sent && usage >= Math.floor(limit * 0.8)
-
-  if (nearLimit) {
-    await supabase
-      .from('profiles')
-      .update({ limit_alert_sent: true })
-      .eq('id', userId)
-
-    const { data: userData } = await supabase
-      .from('profiles')
-      .select('email, full_name')
-      .eq('id', userId)
-      .single()
-
-    if (userData?.email) {
-      await sendLimitAlert({
-        to: userData.email,
-        name: userData.full_name ?? 'usuário',
-        usage,
-        limit,
-        plan,
-      }).catch((err) => logError('Failed to send limit alert', err))
-    }
-  }
-
-  return { allowed, usage, limit, plan, nearLimit }
 }
 
 export async function incrementResponseCount(userId: string): Promise<void> {

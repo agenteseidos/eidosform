@@ -148,6 +148,14 @@ export default async function FormPage({ params }: FormPageProps) {
     form.pixels = null
   }
 
+  // Gate: redirecionamento pós-envio é Starter+ (espelha o gate de escrita em
+  // /api/forms). Forms legados de dono Free não quebram — apenas param de
+  // redirecionar e mostram a tela de agradecimento padrão.
+  const ownerCanRedirect = ownerPlan !== 'free'
+  if (!ownerCanRedirect && form.redirect_url) {
+    form.redirect_url = null
+  }
+
   // Gate perguntas premium (Calendly=Starter+, HTML=Plus+): forms legados ou
   // pós-downgrade não entregam esses tipos ao visitante em plano insuficiente.
   if (Array.isArray(form.questions)) {

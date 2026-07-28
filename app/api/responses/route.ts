@@ -3,7 +3,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { createPublicClient } from '@/lib/supabase/public'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { checkAndIncrementResponseCount, PLANS } from '@/lib/plan-limits'
+import { checkAndIncrementResponseCount, sendNearLimitAlert, PLANS } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { extractLead } from '@/lib/lead-extraction'
@@ -398,6 +398,12 @@ export async function POST(req: NextRequest) {
         { error: 'Limite de respostas atingido para o plano atual', plan: newResponseLimitCheck.plan, limit: newResponseLimitCheck.limit },
         { status: 429, headers: CORS_HEADERS }
       )
+    }
+    // Alerta de 80% (Plus+): a RPC já marcou limit_alert_sent (dedupe); aqui só
+    // dispara o email. Fire-and-forget — não atrasa nem bloqueia a resposta.
+    if (newResponseLimitCheck.nearLimit) {
+      sendNearLimitAlert(form.user_id, newResponseLimitCheck.usage, newResponseLimitCheck.limit, newResponseLimitCheck.plan)
+        .catch((err) => logError('Failed to send limit alert', err))
     }
   }
 

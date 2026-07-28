@@ -31,7 +31,10 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 function RegisterForm() {
   const sp = useSearchParams()
   const nextParam = sp.get('next') || ''
-  const cycleParam = sp.get('cycle') || 'annual'
+  // A API de checkout só aceita monthly|yearly ('annual'.toUpperCase() não passa
+  // no VALID_CYCLES e dava 400 em link sem ?cycle=). Normaliza legado 'annual'.
+  const rawCycle = sp.get('cycle') || 'yearly'
+  const cycleParam = rawCycle === 'annual' ? 'yearly' : rawCycle
   const callbackNext = nextParam ? `${nextParam}?cycle=${cycleParam}` : ''
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')

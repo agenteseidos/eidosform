@@ -249,6 +249,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
   // Gating por plano (espelha a blindagem de runtime do player: canShowPixels / getEffectivePlan).
   const canUsePixels = userPlan === 'plus' || userPlan === 'professional'
   const canUseSheets = userPlan !== 'free' // Starter+
+  const canUseRedirect = userPlan !== 'free' // Starter+ (mesmo gate do runtime em /api/forms)
   const router = useRouter()
 
   const [form, setForm] = useState(initialForm)
@@ -1321,22 +1322,33 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                   />
                 </div>
 
-                <div>
-                  <Label htmlFor="redirect_url" className="text-sm font-medium text-slate-700">
-                    URL de Redirecionamento
-                  </Label>
-                  <p className="text-xs text-slate-500 mt-0.5">Após envio, redirecionar para esta URL</p>
-                  <Input
-                    id="redirect_url"
-                    value={form.redirect_url || ''}
-                    onChange={(e) => {
-                      setForm(prev => ({ ...prev, redirect_url: e.target.value || null }))
-                      markDirty()
-                    }}
-                    className="mt-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="https://exemplo.com/obrigado"
-                  />
-                </div>
+                {canUseRedirect ? (
+                  <div>
+                    <Label htmlFor="redirect_url" className="text-sm font-medium text-slate-700">
+                      URL de Redirecionamento
+                    </Label>
+                    <p className="text-xs text-slate-500 mt-0.5">Após envio, redirecionar para esta URL</p>
+                    <Input
+                      id="redirect_url"
+                      value={form.redirect_url || ''}
+                      onChange={(e) => {
+                        setForm(prev => ({ ...prev, redirect_url: e.target.value || null }))
+                        markDirty()
+                      }}
+                      className="mt-2 text-slate-900 placeholder:text-slate-400"
+                      placeholder="https://exemplo.com/obrigado"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 opacity-70">
+                    <div>
+                      <p className="text-sm font-medium text-slate-500">URL de Redirecionamento</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Após envio, redirecionar o lead para a página do seu funil.</p>
+                      <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Upgrade para Starter+ →</a>
+                    </div>
+                    <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">Starter+</span>
+                  </div>
+                )}
 
                 <div className="pt-2">
                   <div className="flex items-center gap-2 mb-4">

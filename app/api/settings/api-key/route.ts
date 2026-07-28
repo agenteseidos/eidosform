@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getEffectivePlan } from '@/lib/plans'
+import { PLANS } from '@/lib/plan-definitions'
 
 // POST /api/settings/api-key — gerar/regenerar API key
 export async function POST() {
@@ -22,7 +23,8 @@ export async function POST() {
     .single() as { data: { plan: string; plan_expires_at: string | null } | null }
 
   const effectivePlan = getEffectivePlan(profile)
-  if (effectivePlan !== 'professional') {
+  // Flag oficial em vez de comparação exata (D8, auditoria 2026-07-28).
+  if (!PLANS[effectivePlan]?.apiAccess) {
     return NextResponse.json(
       { error: 'Acesso à API key requer plano Professional' },
       { status: 403 }
@@ -142,7 +144,8 @@ export async function DELETE() {
     .single() as { data: { plan: string; plan_expires_at: string | null } | null }
 
   const effectivePlan = getEffectivePlan(profile)
-  if (effectivePlan !== 'professional') {
+  // Flag oficial em vez de comparação exata (D8, auditoria 2026-07-28).
+  if (!PLANS[effectivePlan]?.apiAccess) {
     return NextResponse.json(
       { error: 'Acesso à API key requer plano Professional' },
       { status: 403 }

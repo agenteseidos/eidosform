@@ -9,6 +9,9 @@ import { signPartialToken } from '@/lib/partial-token'
 type Result = { data?: unknown; error?: unknown }
 const state: {
   form: Result
+  // Perfil do DONO do form — o sync com Sheets revalida o plano no envio
+  // (gate googleSheets = Starter+; auditoria LP 2026-07-28).
+  ownerProfile: Result
   existingResponse: Result
   insertResult: Result
   updateResult: Result
@@ -18,6 +21,7 @@ const state: {
   calls: Array<{ table: string; op: string; payload?: unknown }>
 } = {
   form: { data: null, error: null },
+  ownerProfile: { data: { plan: 'starter', plan_expires_at: null }, error: null },
   existingResponse: { data: null, error: null },
   insertResult: { data: null, error: null },
   updateResult: { data: [{ id: 'updated' }], error: null },
@@ -41,6 +45,7 @@ function makeBuilder(table: string) {
     state.calls.push({ table, op: b._op, payload: b._payload })
     let res: Result = { data: null, error: null }
     if (table === 'forms' && b._op === 'select') res = state.form
+    if (table === 'profiles' && b._op === 'select') res = state.ownerProfile
     if (table === 'responses' && b._op === 'select') {
       res = state.selectQueue.length > 0 ? state.selectQueue.shift()! : state.existingResponse
     }
@@ -90,6 +95,7 @@ function makeReq(body: Record<string, unknown>, headers: Record<string, string> 
 beforeEach(() => {
   process.env.PARTIAL_TOKEN_SECRET = 'test-secret'
   state.form = { data: formRow, error: null }
+  state.ownerProfile = { data: { plan: 'starter', plan_expires_at: null }, error: null }
   state.existingResponse = { data: null, error: null }
   state.insertResult = { data: { id: NEW_ID }, error: null }
   state.updateResult = { data: [{ id: 'updated' }], error: null }
@@ -215,6 +221,8 @@ describe('POST /api/responses/partial', () => {
   })
 
   it('pergunta premium bloqueada pelo plano é podada em POST direto', async () => {
+    // cpf é Starter+ — o dono precisa ser FREE para a poda acontecer.
+    state.ownerProfile = { data: { plan: 'free', plan_expires_at: null }, error: null }
     state.form = {
       data: {
         ...formRow,
@@ -353,5 +361,16 @@ describe('POST /api/responses/partial', () => {
     )
     expect(res2.status).toBe(200)
     expect(vi.mocked(upsertSubmission)).toHaveBeenCalledTimes(1)
+  })
+
+  it('dono FREE (pós-downgrade) com sheets habilitado NÃO sincroniza autosave', async () => {
+    // Gate da auditoria 2026-07-28: o flag google_sheets_enabled sobrevive ao
+    // downgrade, mas o envio revalida o plano — abaixo de Starter, Sheets parado.
+    state.ownerProfile = { data: { plan: 'free', plan_expires_at: null }, error: null }
+    state.form = { data: { ...formRow, google_sheets_enabled: true, google_sheets_id: 'sheet-1' }, error: null }
+
+    const res = await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'lead' }, partial_revision: 1 }))
+    expect(res.status).toBe(201) // resposta parcial grava normalmente
+    expect(vi.mocked(upsertSubmission)).not.toHaveBeenCalled() // planilha intocada
   })
 })

@@ -193,6 +193,16 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     )
   }
 
+  // Feature gate: redirecionamento pós-envio (Starter+) — mesma blindagem dos
+  // webhooks acima; sem isto o flag PLANS[].redirect era só decorativo e o
+  // plano Free usava a feature vendida no Starter (auditoria LP 2026-07-28).
+  if (redirect_url && !planConfig?.redirect) {
+    return NextResponse.json(
+      { error: 'Redirecionamento após envio disponível a partir do plano Starter' },
+      { status: 403 }
+    )
+  }
+
   // Feature gate: email notifications
   if (notify_email_enabled === true && !planConfig?.emailNotifications) {
     return NextResponse.json(

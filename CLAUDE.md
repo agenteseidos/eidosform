@@ -79,7 +79,7 @@ Add new types by:
 
 ### Theme System
 
-6 presets in `lib/themes.ts`: midnight, ocean, sunset, forest, lavender, minimal
+7 presets in `lib/themes.ts`: midnight, ocean, sunset, forest, lavender, minimal, terracota
 
 Each theme defines: `primaryColor`, `backgroundColor`, `textColor`, `accentColor`, `fontFamily`
 
@@ -192,6 +192,22 @@ plan 'free' + status 'active').
 >     no avulso é incerto). Se NÃO devolver, o desenho muda — descobrir isto PRIMEIRO.
 > Esforço: ~1 sessão + smoke. Risco no dinheiro: baixo (fail-closed; não pago = nada muda).
 > Sequência acordada: terminar o teste atual → smoke do ponto 2 → implementar.
+
+## ✅ AUDITORIA LP × CÓDIGO — Fases 1–4 EXECUTADAS (2026-07-28)
+
+> Registro completo: `docs/auditoria-lp-2026-07-28.md`. Resumo: vazamentos de
+> gating estancados (redirect Starter+, Sheets parcial, alerta 80% religado
+> Plus+, crons agendados), vitrine de planos virou FONTE ÚNICA
+> (`lib/plan-marketing.ts` + teste que quebra em promessa sem lastro), tela de
+> abandono por pergunta criada (analytics-panel), UTM agora chega em webhook e
+> WhatsApp, e a copy das /v3 e /v4 foi alinhada ao produto real (CAPI
+> server-side, campos ocultos, seção própria de WhatsApp, 20 tipos/11
+> templates). REGRA NOVA: nunca redigitar lista de plano em componente —
+> importar de `lib/plan-marketing.ts`.
+>
+> Pendente: promover v3 OU v4 à raiz (aguarda A/B — decisão 0.1); confirmar
+> Vercel Pro (crons sub-diários) e ausência de timer duplicado de
+> abandoned-leads na VPS; depoimentos seguem placeholder (decisão 0.4).
 
 ### Pendências menores correlatas (não bloqueantes)
 - ✅ POLISH FEITO (2026-06-10, sessão 3) — modal de sucesso da troca de plano: operação

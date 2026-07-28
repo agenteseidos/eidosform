@@ -245,9 +245,12 @@ export default function LandingV4Page() {
     <div className="landing-display min-h-screen bg-white text-slate-900 overflow-x-hidden">
       {/* Rede de segurança: sem JS o motion não hidrata e todo o conteúdo com
           reveal ficaria preso em opacity:0. O noscript devolve tudo visível. */}
-      <noscript>
-        <style>{`.landing-display [style*="opacity:0"]{opacity:1!important;transform:none!important}`}</style>
-      </noscript>
+      <noscript
+        dangerouslySetInnerHTML={{
+          __html:
+            '<style>.landing-display [style*="opacity:0"]{opacity:1!important;transform:none!important}</style>',
+        }}
+      />
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -280,7 +283,7 @@ export default function LandingV4Page() {
       {/* Hero */}
       <section className="pt-24 sm:pt-32 pb-12 sm:pb-16 px-4 sm:px-6 relative">
         <div className="absolute top-20 left-1/4 w-[300px] sm:w-[500px] h-[400px] bg-[#F5B731]/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-10 items-center relative">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-8 lg:gap-10 items-center relative">
           <div className="text-center lg:text-left">
             <Badge className="mb-6 bg-[#F5B731]/10 text-amber-700 border border-[#F5B731]/30 px-3 py-1.5 text-sm font-medium max-w-fit mx-auto lg:mx-0">
               🇧🇷 A alternativa brasileira ao Typeform
@@ -338,7 +341,7 @@ export default function LandingV4Page() {
       </section>
 
       {/* Migração */}
-      <section className="py-20 px-4 sm:px-6">
+      <section className="py-12 sm:py-20 px-4 sm:px-6">
         <Reveal className="max-w-4xl mx-auto">
           <div className="rounded-3xl border border-[#F5B731]/40 bg-gradient-to-br from-[#F5B731]/[0.12] to-transparent p-8 sm:p-12 text-center">
             <span className="inline-flex w-12 h-12 rounded-2xl bg-[#F5B731]/20 items-center justify-center mb-5">
@@ -370,9 +373,9 @@ export default function LandingV4Page() {
       </section>
 
       {/* Tráfego pago */}
-      <section id="trafego-pago" className="py-24 px-4 sm:px-6 bg-slate-50">
+      <section id="trafego-pago" className="py-14 sm:py-24 px-4 sm:px-6 bg-slate-50">
         <div className="max-w-6xl mx-auto">
-          <Reveal className="text-center mb-16">
+          <Reveal className="text-center mb-10 sm:mb-16">
             <h2 className="text-3xl sm:text-5xl font-black mb-4 text-slate-900">
               Pixel pronto. <span className="text-[#E8923A]">CPL sob controle.</span>
             </h2>
@@ -400,7 +403,7 @@ export default function LandingV4Page() {
       {EMPHASIS_SECTIONS.map(({ id, title, desc, bullets, mockup }, idx) => {
         const Mockup = SECTION_MOCKUPS[mockup]
         return (
-          <section key={id} id={id} className={`py-20 px-4 sm:px-6 ${idx % 2 ? 'bg-slate-50' : ''}`}>
+          <section key={id} id={id} className={`py-12 sm:py-20 px-4 sm:px-6 ${idx % 2 ? 'bg-slate-50' : ''}`}>
             <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center">
               <Reveal className={idx % 2 ? 'md:order-2' : ''}>
                 <h2 className="text-2xl sm:text-4xl font-black mb-4 leading-tight text-slate-900">{title}</h2>
@@ -414,7 +417,7 @@ export default function LandingV4Page() {
                   ))}
                 </ul>
               </Reveal>
-              <Reveal index={1} className={idx % 2 ? 'md:order-1' : ''}>
+              <Reveal index={1} className={idx % 2 ? 'min-w-0 md:order-1' : 'min-w-0'}>
                 <Mockup />
               </Reveal>
             </div>
@@ -423,9 +426,9 @@ export default function LandingV4Page() {
       })}
 
       {/* Compartilhe */}
-      <section id="compartilhe" className="py-20 px-4 sm:px-6">
+      <section id="compartilhe" className="py-12 sm:py-20 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto">
-          <Reveal className="text-center mb-12">
+          <Reveal className="text-center mb-8 sm:mb-12">
             <h2 className="text-2xl sm:text-4xl font-black leading-tight text-slate-900">Publique onde o seu público está</h2>
           </Reveal>
           <div className="grid sm:grid-cols-3 gap-8 sm:gap-6">
@@ -443,7 +446,7 @@ export default function LandingV4Page() {
       </section>
 
       {/* Integrações */}
-      <section className="py-24 px-4 sm:px-6">
+      <section className="py-14 sm:py-24 px-4 sm:px-6">
         <Reveal className="max-w-5xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-black mb-4 text-slate-900">
             Conecte com o que você <span className="text-[#E8923A]">já usa</span>
@@ -458,7 +461,7 @@ export default function LandingV4Page() {
       </section>
 
       {/* Agências → Professional */}
-      <section id="agencias" className="py-24 px-4 sm:px-6 bg-slate-50">
+      <section id="agencias" className="py-14 sm:py-24 px-4 sm:px-6 bg-slate-50">
         <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center">
           <Reveal>
             <Badge className="mb-4 bg-violet-100 text-violet-700 border border-violet-200">
@@ -503,9 +506,9 @@ export default function LandingV4Page() {
       <TestimonialsSection />
 
       {/* Comparativo vs Typeform */}
-      <section id="comparativo" className="py-24 px-4 sm:px-6">
+      <section id="comparativo" className="py-14 sm:py-24 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto">
-          <Reveal className="text-center mb-14">
+          <Reveal className="text-center mb-10 sm:mb-14">
             <Badge className="mb-4 bg-slate-100 text-slate-600 border border-slate-200">EidosForm vs Typeform</Badge>
             <h2 className="text-3xl sm:text-5xl font-black mb-4 text-slate-900">
               Mais respostas. <span className="text-[#E8923A]">Menos dólar.</span>
@@ -572,9 +575,9 @@ export default function LandingV4Page() {
       <PricingSectionV4 />
 
       {/* FAQ */}
-      <section id="faq" className="py-24 px-4 sm:px-6">
+      <section id="faq" className="py-14 sm:py-24 px-4 sm:px-6">
         <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-16">
+          <div className="text-center mb-10 sm:mb-16">
             <h2 className="text-3xl sm:text-5xl font-black mb-4 text-slate-900">Dúvidas frequentes</h2>
           </div>
 
@@ -593,7 +596,7 @@ export default function LandingV4Page() {
       </section>
 
       {/* CTA final */}
-      <section className="py-24 px-4 sm:px-6 relative">
+      <section className="py-14 sm:py-24 px-4 sm:px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#F5B731]/10 to-transparent pointer-events-none" />
         <Reveal className="max-w-2xl mx-auto text-center relative">
           <h2 className="text-3xl sm:text-5xl font-black mb-4 text-slate-900">
@@ -625,33 +628,37 @@ export default function LandingV4Page() {
                 Feito no Brasil, em real.
               </p>
             </div>
-            <div>
+            <div className="hidden sm:block">
               <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Produto</h4>
               <ul className="space-y-1 text-sm text-slate-500">
-                <li><a href="#trafego-pago" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Tráfego pago</a></li>
-                <li><a href="#comparativo" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">vs Typeform</a></li>
-                <li><a href="#precos" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Preços</a></li>
-                <li><Link href="/login" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Painel</Link></li>
+                <li><a href="#trafego-pago" className="hover:text-slate-900 transition-colors inline-block py-1">Tráfego pago</a></li>
+                <li><a href="#comparativo" className="hover:text-slate-900 transition-colors inline-block py-1">vs Typeform</a></li>
+                <li><a href="#precos" className="hover:text-slate-900 transition-colors inline-block py-1">Preços</a></li>
+                <li><Link href="/login" className="hover:text-slate-900 transition-colors inline-block py-1">Painel</Link></li>
               </ul>
             </div>
-            <div>
+            <div className="hidden sm:block">
               <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Suporte</h4>
               <ul className="space-y-1 text-sm text-slate-500">
-                <li><a href="#faq" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">FAQ</a></li>
-                <li><a href="https://wa.me/5583999378937" target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Contato</a></li>
-                <li><a href={MIGRATION_FORM} className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Migração gratuita</a></li>
+                <li><a href="#faq" className="hover:text-slate-900 transition-colors inline-block py-1">FAQ</a></li>
+                <li><a href="https://wa.me/5583999378937" target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors inline-block py-1">Contato</a></li>
+                <li><a href={MIGRATION_FORM} className="hover:text-slate-900 transition-colors inline-block py-1">Migração gratuita</a></li>
               </ul>
             </div>
-            <div>
+            <div className="hidden sm:block">
               <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Legal</h4>
               <ul className="space-y-1 text-sm text-slate-500">
-                <li><Link href="/privacidade" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Privacidade</Link></li>
-                <li><Link href="/termos" className="hover:text-slate-900 transition-colors inline-flex items-center min-h-[44px] py-2">Termos de uso</Link></li>
+                <li><Link href="/privacidade" className="hover:text-slate-900 transition-colors inline-block py-1">Privacidade</Link></li>
+                <li><Link href="/termos" className="hover:text-slate-900 transition-colors inline-block py-1">Termos de uso</Link></li>
               </ul>
             </div>
           </div>
           <div className="border-t border-slate-200 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <p className="text-xs text-slate-400">© 2026 EidosForm. Todos os direitos reservados.</p>
+            <div className="flex items-center gap-4 text-xs text-slate-400 sm:hidden">
+              <Link href="/privacidade" className="hover:text-slate-900 transition-colors">Privacidade</Link>
+              <Link href="/termos" className="hover:text-slate-900 transition-colors">Termos de uso</Link>
+            </div>
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <span>Feito com</span>
               <span className="text-[#E8923A]">♥</span>

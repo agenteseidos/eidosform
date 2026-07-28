@@ -41,7 +41,7 @@ export function Reveal({
           ? { y: -3, transition: { duration: 0.18, ease: 'easeOut' } }
           : undefined
       }
-      viewport={{ once: true, amount: 0.15, margin: '0px 0px -8% 0px' }}
+      viewport={{ once: true, amount: 'some' }}
       transition={{
         duration: 0.42,
         delay: Math.min(index, 5) * 0.07,

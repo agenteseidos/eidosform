@@ -8,14 +8,19 @@ import { Button } from '@/components/ui/button'
 
 export function MobileMenu() {
   const [open, setOpen] = useState(false)
-  const canRenderPortal = typeof document !== 'undefined'
+  // Portal só depois do mount: renderizar por `typeof document` fazia o
+  // primeiro render do cliente divergir do SSR e derrubava a hidratação
+  // da página inteira (React #418) — no mobile, os reveals ficavam presos.
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    if (!canRenderPortal) return
+    setMounted(true)
+  }, [])
 
+  useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
-  }, [canRenderPortal, open])
+  }, [open])
 
   const overlay = (
     <div
@@ -65,7 +70,7 @@ export function MobileMenu() {
       >
         {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </button>
-      {canRenderPortal && createPortal(overlay, document.body)}
+      {mounted && createPortal(overlay, document.body)}
     </div>
   )
 }

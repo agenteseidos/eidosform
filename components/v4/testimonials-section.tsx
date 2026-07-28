@@ -111,7 +111,7 @@ function TestimonialCard({ t, index }: { t: Testimonial; index: number }) {
 
 export function TestimonialsSection() {
   return (
-    <section id="depoimentos" className="py-24 px-4 sm:px-6 bg-slate-50">
+    <section id="depoimentos" className="py-14 sm:py-24 px-4 sm:px-6 bg-slate-50">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-14">
           <Badge className="mb-4 bg-slate-100 text-slate-600 border border-slate-200">

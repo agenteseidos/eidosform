@@ -111,7 +111,7 @@ export function PricingSectionV3() {
   const reduce = useReducedMotion()
 
   return (
-    <section id="precos" className="py-24 px-4 sm:px-6 bg-white/[0.02]">
+    <section id="precos" className="py-14 sm:py-24 px-4 sm:px-6 bg-white/[0.02]">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-10">
           <h2 className="text-3xl sm:text-5xl font-black mb-4">

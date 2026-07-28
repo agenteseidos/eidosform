@@ -134,6 +134,15 @@
   }
 }
 
+/* Tipografia de display das landings (/v3 e /v4).
+   Outfit já é carregada pelo next/font no layout, então não há custo extra
+   de rede: só os títulos trocam de família, o corpo segue igual. */
+.landing-display h1,
+.landing-display h2,
+.landing-display h3 {
+  font-family: var(--font-outfit), var(--font-sans), sans-serif;
+}
+
 /* Scrollbar utilities */
 .scrollbar-none {
   scrollbar-width: none;

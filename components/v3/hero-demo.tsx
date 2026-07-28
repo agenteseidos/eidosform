@@ -205,7 +205,7 @@ export function HeroDemo() {
                   </button>
                 </div>
                 <p className="mt-4 text-xs text-slate-600">
-                  Nenhum dado é enviado — isto é só uma demonstração.
+                  Nenhum dado é enviado. Isto é só uma demonstração.
                 </p>
               </motion.div>
             )}

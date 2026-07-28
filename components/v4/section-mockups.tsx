@@ -179,7 +179,7 @@ export function MockupAgency() {
       </div>
 
       <p className="mt-4 text-center text-[11px] text-slate-500">
-        Vários clientes, vários domínios — <span className="text-violet-600 font-semibold">uma conta só</span>
+        Vários clientes, vários domínios, <span className="text-violet-600 font-semibold">uma conta só</span>
       </p>
     </div>
   )

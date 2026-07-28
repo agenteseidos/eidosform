@@ -9,9 +9,12 @@ import {
   Check,
   ChevronDown,
   ClipboardCheck,
+  Code2,
+  CornerDownRight,
   Crosshair,
   Globe,
   LineChart,
+  Link2,
   Target,
   UserRound,
   X,
@@ -20,16 +23,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MobileMenu } from '@/components/mobile-menu'
 import { EidosLogo } from '@/components/ui/eidos-logo'
+import { Reveal } from '@/components/ui/reveal'
 import { HeroDemo } from '@/components/v3/hero-demo'
 import { TestimonialsSection } from '@/components/v3/testimonials-section'
 import { PricingSectionV3 } from '@/components/v3/pricing-section-v3'
 import { IntegrationsGrid } from '@/components/v3/integrations-grid'
-import {
-  MockupAgency,
-  MockupBrand,
-  MockupSegmentation,
-  MockupShare,
-} from '@/components/v3/section-mockups'
+import { MockupAgency, MockupSegmentation } from '@/components/v3/section-mockups'
+import { ThemeCarousel } from '@/components/ui/theme-carousel'
 
 // Página em homologação (modelada na yayforms.com/br/typeform-alternative):
 // noindex até ser aprovada e promovida à raiz. Todos os claims foram
@@ -37,7 +37,7 @@ import {
 // por resposta: evaluatePixelEvents no form-player; sem QR/campos ocultos/
 // server-side — não anunciar).
 export const metadata: Metadata = {
-  title: 'EidosForm — Formulários que as pessoas respondem até o fim',
+  title: 'EidosForm | Formulários que as pessoas respondem até o fim',
   description:
     'A alternativa brasileira ao Typeform para tráfego pago: Meta Pixel, Google Ads, GTM e TikTok nativos, conversões por resposta e UTMs em cada lead. Pague em real.',
   robots: { index: false, follow: false },
@@ -52,41 +52,44 @@ const DIFFERENTIALS = [
   { icon: Crosshair, text: 'Conversões personalizadas disparadas pela resposta' },
   { icon: LineChart, text: 'UTMs gravadas em cada lead, com janela de 30 dias' },
   { icon: BadgeCheck, text: 'CPF, CNPJ e CEP validados nativamente' },
-  { icon: Globe, text: 'Pague em real — sem dólar, sem IOF' },
+  { icon: Globe, text: 'Pague em real, sem dólar e sem IOF' },
   { icon: UserRound, text: 'Suporte em português' },
 ]
+
+// Um acento só na página inteira (o amarelo da marca). O violeta aparece
+// apenas na seção de agências, que é um segmento à parte.
+const BRAND_TILE = 'from-[#F5B731] to-[#E8923A]'
 
 const TRAFFIC_FEATURES = [
   {
     icon: Target,
-    color: 'from-[#F5B731] to-[#E8923A]',
+    color: BRAND_TILE,
     title: 'Pixels nativos, sem gambiarra',
     desc: 'Meta Pixel, Google Ads, GTM e TikTok configurados em cliques. Evento no início e na conclusão do formulário, direto no seu gerenciador de anúncios.',
   },
   {
     icon: Crosshair,
-    color: 'from-pink-500 to-rose-500',
+    color: BRAND_TILE,
     title: 'Conversão por resposta',
-    desc: 'Dispare um evento diferente conforme o que a pessoa respondeu. Seu pixel aprende quem é lead qualificado — e a campanha otimiza para quem compra, não para quem clica.',
+    desc: 'Dispare um evento diferente conforme o que a pessoa respondeu. Seu pixel aprende quem é lead qualificado, e a campanha otimiza para quem compra, não para quem clica.',
   },
   {
     icon: LineChart,
-    color: 'from-blue-500 to-cyan-500',
+    color: BRAND_TILE,
     title: 'UTMs em cada lead',
-    desc: 'Origem, campanha e termo gravados com cada resposta — até as parciais — com janela de atribuição de 30 dias. Exporta tudo no CSV e fecha o ROI por campanha.',
+    desc: 'Origem, campanha e termo gravados com cada resposta (até as parciais), com janela de atribuição de 30 dias. Exporta tudo no CSV e fecha o ROI por campanha.',
   },
   {
     icon: BarChart3,
-    color: 'from-emerald-400 to-teal-500',
+    color: BRAND_TILE,
     title: 'Abandono por pergunta',
-    desc: 'Veja a pergunta exata onde o lead desiste. E com respostas parciais, o que ele digitou antes de sair já está salvo — o clique que você pagou não vira lead perdido.',
+    desc: 'Veja a pergunta exata onde o lead desiste. E com respostas parciais, o que ele digitou antes de sair já está salvo. O clique que você pagou não vira lead perdido.',
   },
 ]
 
 const EMPHASIS_SECTIONS = [
   {
     id: 'segmentacao',
-    badge: 'Segmentação',
     title: 'Segmente sua audiência com lógica condicional',
     desc: 'Se a resposta for X, pergunte Y. Monte quizzes que separam o curioso do comprador, personalize o caminho de cada pessoa e qualifique o lead antes mesmo de falar com ele.',
     bullets: [
@@ -98,9 +101,8 @@ const EMPHASIS_SECTIONS = [
   },
   {
     id: 'marca',
-    badge: 'Sua marca',
     title: 'Formulário com a cara da sua marca',
-    desc: 'Escolha um dos 7 temas profissionais, coloque a sua logo na tela de boas-vindas e publique no seu próprio domínio. O formulário chega com a sua cara — não com a nossa.',
+    desc: 'Escolha um dos 7 temas profissionais, coloque a sua logo na tela de boas-vindas e publique no seu próprio domínio. O formulário chega com a sua cara, não com a nossa.',
     bullets: [
       '7 temas profissionais prontos',
       'Sua logo na tela de boas-vindas',
@@ -109,29 +111,29 @@ const EMPHASIS_SECTIONS = [
     ],
     mockup: 'brand' as const,
   },
-  {
-    id: 'compartilhe',
-    badge: 'Compartilhe',
-    title: 'Publique onde o seu público está',
-    desc: 'Link direto pronto para anúncio, bio ou WhatsApp — ou incorpore o formulário dentro do seu site. Ao final, redirecione para a página de obrigado que o seu funil precisa.',
-    bullets: [
-      'Link direto, pronto para campanha',
-      'Embed no seu site ou landing page',
-      'Redirecionamento pós-envio configurável',
-    ],
-    mockup: 'share' as const,
-  },
 ]
+
+// Compartilhe virou faixa própria: quebra a sequência de seções split
+// (regra da design-taste-frontend: no máximo 2 splits consecutivos).
+const SHARE_ITEMS = [
+  { icon: Link2, title: 'Link direto', desc: 'Pronto para anúncio, bio ou WhatsApp: publicou, compartilhou.' },
+  { icon: Code2, title: 'Embed no seu site', desc: 'Incorpore o formulário na sua página ou landing com um snippet.' },
+  { icon: CornerDownRight, title: 'Redirecionamento pós-envio', desc: 'Ao final, o lead segue direto para a página de obrigado do seu funil.' },
+]
+
+// O mockup estático da marca deu lugar ao carrossel com os 7 temas reais.
+function BrandThemesCarousel() {
+  return <ThemeCarousel variant="dark" />
+}
 
 const SECTION_MOCKUPS = {
   segmentation: MockupSegmentation,
-  brand: MockupBrand,
-  share: MockupShare,
+  brand: BrandThemesCarousel,
 } as const
 
 const AGENCY_BULLETS = [
   'Cada formulário com um dos 7 temas + a logo do cliente na abertura',
-  'Domínio personalizado por formulário — no endereço de cada cliente',
+  'Domínio personalizado por formulário, no endereço de cada cliente',
   'Webhooks levando cada lead direto ao CRM do cliente',
   'API e webhooks para plugar no stack que a agência já usa',
   '15.000 respostas/mês e prioridade máxima no suporte',
@@ -179,11 +181,11 @@ const FEATURE_COMPARISON: Array<{ label: string; eidos: string | boolean; typefo
 const FAQS = [
   {
     q: 'Estou em outra ferramenta. Como migro para o EidosForm?',
-    a: 'A gente migra para você — do Typeform, Google Forms ou qualquer outra plataforma. Chame a gente no WhatsApp com os links dos seus formulários: fazemos uma análise gratuita e te dizemos qual plano comporta o que você usa hoje. Assinando qualquer plano pago, recriamos tudo (até 10 formulários) em no máximo 3 dias úteis. Você só revisa e publica.',
+    a: 'A gente migra para você, seja do Typeform, do Google Forms ou de qualquer outra plataforma. Chame a gente no WhatsApp com os links dos seus formulários: fazemos uma análise gratuita e te dizemos qual plano comporta o que você usa hoje. Assinando qualquer plano pago, recriamos tudo (até 10 formulários) em no máximo 3 dias úteis. Você só revisa e publica.',
   },
   {
     q: 'O que o Typeform tem que vocês não têm?',
-    a: 'Integração nativa com Salesforce, campos de pagamento embutidos (Stripe) e certificações SOC 2/HIPAA. Se a sua operação exige isso, o Typeform é a escolha certa. Para captar e qualificar leads no Brasil com tráfego pago, o EidosForm entrega mais — por bem menos.',
+    a: 'Integração nativa com Salesforce, campos de pagamento embutidos (Stripe) e certificações SOC 2/HIPAA. Se a sua operação exige isso, o Typeform é a escolha certa. Para captar e qualificar leads no Brasil com tráfego pago, o EidosForm entrega mais, por bem menos.',
   },
   {
     q: 'O EidosForm é realmente gratuito?',
@@ -195,15 +197,15 @@ const FAQS = [
   },
   {
     q: 'As UTMs das minhas campanhas são salvas?',
-    a: 'Sim. Origem, mídia, campanha, termo e conteúdo (utm_source, utm_medium, utm_campaign, utm_term, utm_content) são capturados na chegada e gravados junto de cada resposta — inclusive as parciais — com janela de atribuição de 30 dias. Tudo sai na exportação CSV.',
+    a: 'Sim. Origem, mídia, campanha, termo e conteúdo (utm_source, utm_medium, utm_campaign, utm_term, utm_content) são capturados na chegada e gravados junto de cada resposta (inclusive as parciais), com janela de atribuição de 30 dias. Tudo sai na exportação CSV.',
   },
   {
     q: 'O que acontece quando atinjo o limite de respostas do mês?',
-    a: 'Seu formulário para de receber novas respostas até a virada do ciclo mensal — nunca cobramos nada a mais automaticamente. Você pode fazer upgrade a qualquer momento e a cota nova vale na hora. Nos planos Plus e Professional, avisamos por email quando você usa 80% do limite.',
+    a: 'Seu formulário para de receber novas respostas até a virada do ciclo mensal. Nunca cobramos nada a mais automaticamente. Você pode fazer upgrade a qualquer momento e a cota nova vale na hora. Nos planos Plus e Professional, avisamos por email quando você usa 80% do limite.',
   },
   {
     q: 'Quais formas de pagamento vocês aceitam?',
-    a: 'Cartão de crédito, com cobrança em reais — sem IOF e sem variação de câmbio. Você escolhe entre assinatura mensal ou anual (com até 41% de desconto).',
+    a: 'Cartão de crédito, com cobrança em reais, sem IOF e sem variação de câmbio. Você escolhe entre assinatura mensal ou anual (com até 41% de desconto).',
   },
   {
     q: 'E se eu assinar e me arrepender?',
@@ -215,7 +217,7 @@ const FAQS = [
   },
   {
     q: 'Posso usar meu próprio domínio?',
-    a: 'Sim, com o plano Professional você pode configurar um domínio personalizado. Basta adicionar um registro CNAME no seu provedor de DNS e seus formulários ficam acessíveis no seu próprio endereço — ou no do seu cliente.',
+    a: 'Sim, com o plano Professional você pode configurar um domínio personalizado. Basta adicionar um registro CNAME no seu provedor de DNS e seus formulários ficam acessíveis no seu próprio endereço, ou no do seu cliente.',
   },
   {
     q: 'Os dados das respostas ficam seguros?',
@@ -243,7 +245,12 @@ function ComparisonCell({ value }: { value: string | boolean }) {
 
 export default function LandingV3Page() {
   return (
-    <div className="min-h-screen bg-[#0A0A0F] text-white overflow-x-hidden">
+    <div className="landing-display min-h-screen bg-[#0A0A0F] text-white overflow-x-hidden">
+      {/* Rede de segurança: sem JS o motion não hidrata e todo o conteúdo com
+          reveal ficaria preso em opacity:0. O noscript devolve tudo visível. */}
+      <noscript>
+        <style>{`.landing-display [style*="opacity:0"]{opacity:1!important;transform:none!important}`}</style>
+      </noscript>
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#0A0A0F]/80 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -322,20 +329,20 @@ export default function LandingV3Page() {
       {/* Faixa de diferenciais */}
       <section className="py-10 px-4 sm:px-6 border-y border-white/5 bg-white/[0.02]">
         <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-3 gap-3">
-          {DIFFERENTIALS.map(({ icon: Icon, text }) => (
-            <div key={text} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5">
+          {DIFFERENTIALS.map(({ icon: Icon, text }, i) => (
+            <Reveal key={text} index={i} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5">
               <span className="w-8 h-8 min-w-8 rounded-lg bg-[#F5B731]/10 flex items-center justify-center">
                 <Icon className="w-4 h-4 text-[#F5B731]" />
               </span>
               <p className="text-xs sm:text-sm text-slate-300 leading-snug">{text}</p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </section>
 
       {/* Migração */}
       <section className="py-20 px-4 sm:px-6">
-        <div className="max-w-4xl mx-auto">
+        <Reveal className="max-w-4xl mx-auto">
           <div className="rounded-3xl border border-[#F5B731]/20 bg-gradient-to-br from-[#F5B731]/[0.08] to-transparent p-8 sm:p-12 text-center">
             <span className="inline-flex w-12 h-12 rounded-2xl bg-[#F5B731]/15 items-center justify-center mb-5">
               <ArrowRightLeft className="w-6 h-6 text-[#F5B731]" />
@@ -345,7 +352,7 @@ export default function LandingV3Page() {
             </h2>
             <p className="text-slate-400 text-lg mb-7 max-w-2xl mx-auto">
               Typeform, Google Forms ou qualquer outra: envie os links dos seus formulários e
-              fazemos uma <strong className="text-white">análise gratuita</strong> — te dizemos
+              fazemos uma <strong className="text-white">análise gratuita</strong>. Dizemos
               qual plano comporta o que você usa hoje. Assinou, recriamos tudo em até
               3 dias úteis. Você só revisa e publica.
             </p>
@@ -362,14 +369,13 @@ export default function LandingV3Page() {
               </div>
             </div>
           </div>
-        </div>
+        </Reveal>
       </section>
 
       {/* Tráfego pago */}
       <section id="trafego-pago" className="py-24 px-4 sm:px-6 bg-white/[0.02]">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">Tráfego pago</Badge>
+          <Reveal className="text-center mb-16">
             <h2 className="text-3xl sm:text-5xl font-black mb-4">
               Pixel pronto. <span className="text-[#F5B731]">CPL sob controle.</span>
             </h2>
@@ -377,30 +383,29 @@ export default function LandingV3Page() {
               Cada real investido em anúncio precisa virar lead rastreável.
               O EidosForm foi desenhado para isso.
             </p>
-          </div>
+          </Reveal>
 
           <div className="grid sm:grid-cols-2 gap-5">
-            {TRAFFIC_FEATURES.map(({ icon: Icon, color, title, desc }) => (
-              <div key={title} className="group p-7 rounded-2xl bg-white/[0.04] border border-white/5 hover:bg-white/[0.07] hover:border-white/10 transition-all duration-300 hover:-translate-y-0.5">
+            {TRAFFIC_FEATURES.map(({ icon: Icon, color, title, desc }, i) => (
+              <Reveal key={title} index={i} hoverLift className="group p-7 rounded-2xl bg-white/[0.04] border border-white/5 hover:bg-white/[0.07] hover:border-white/10 transition-colors duration-300">
                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
                   <Icon className="w-5 h-5 text-white" />
                 </div>
                 <h3 className="font-bold text-white text-lg mb-2">{title}</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">{desc}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
         </div>
       </section>
 
       {/* Seções de ênfase: segmentação, marca, compartilhamento */}
-      {EMPHASIS_SECTIONS.map(({ id, badge, title, desc, bullets, mockup }, idx) => {
+      {EMPHASIS_SECTIONS.map(({ id, title, desc, bullets, mockup }, idx) => {
         const Mockup = SECTION_MOCKUPS[mockup]
         return (
           <section key={id} id={id} className={`py-20 px-4 sm:px-6 ${idx % 2 ? 'bg-white/[0.02]' : ''}`}>
             <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center">
-              <div className={idx % 2 ? 'md:order-2' : ''}>
-                <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">{badge}</Badge>
+              <Reveal className={idx % 2 ? 'md:order-2' : ''}>
                 <h2 className="text-2xl sm:text-4xl font-black mb-4 leading-tight">{title}</h2>
                 <p className="text-slate-400 leading-relaxed mb-6">{desc}</p>
                 <ul className="space-y-2.5">
@@ -411,35 +416,54 @@ export default function LandingV3Page() {
                     </li>
                   ))}
                 </ul>
-              </div>
-              <div className={idx % 2 ? 'md:order-1' : ''}>
+              </Reveal>
+              <Reveal index={1} className={idx % 2 ? 'md:order-1' : ''}>
                 <Mockup />
-              </div>
+              </Reveal>
             </div>
           </section>
         )
       })}
 
+      {/* Compartilhe */}
+      <section id="compartilhe" className="py-20 px-4 sm:px-6">
+        <div className="max-w-5xl mx-auto">
+          <Reveal className="text-center mb-12">
+            <h2 className="text-2xl sm:text-4xl font-black leading-tight">Publique onde o seu público está</h2>
+          </Reveal>
+          <div className="grid sm:grid-cols-3 gap-8 sm:gap-6">
+            {SHARE_ITEMS.map(({ icon: Icon, title, desc }, i) => (
+              <Reveal key={title} index={i} className="text-center">
+                <span className="inline-flex w-11 h-11 rounded-xl bg-[#F5B731]/10 items-center justify-center mb-4">
+                  <Icon className="w-5 h-5 text-[#F5B731]" />
+                </span>
+                <h3 className="font-bold text-white mb-2">{title}</h3>
+                <p className="text-sm text-slate-400 leading-relaxed">{desc}</p>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Integrações */}
       <section className="py-24 px-4 sm:px-6">
-        <div className="max-w-5xl mx-auto text-center">
-          <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">Integrações</Badge>
+        <Reveal className="max-w-5xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-black mb-4">
             Conecte com o que você <span className="text-[#F5B731]">já usa</span>
           </h2>
           <p className="text-slate-400 text-lg mb-10 max-w-2xl mx-auto">
-            Cada resposta vai para a sua planilha, seu CRM ou sua automação —
+            Cada resposta vai para a sua planilha, seu CRM ou sua automação,
             por integração nativa ou webhook em tempo real.
           </p>
 
           <IntegrationsGrid />
-        </div>
+        </Reveal>
       </section>
 
       {/* Agências → Professional */}
       <section id="agencias" className="py-24 px-4 sm:px-6 bg-white/[0.02]">
         <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center">
-          <div>
+          <Reveal>
             <Badge className="mb-4 bg-violet-500/10 text-violet-300 border border-violet-400/20">
               <Building2 className="w-3.5 h-3.5 mr-1.5" />
               Para agências
@@ -459,8 +483,8 @@ export default function LandingV3Page() {
               </Button>
             </Link>
             <p className="mt-3 text-sm text-slate-500">R$197/mês no plano anual · 15.000 respostas/mês</p>
-          </div>
-          <div>
+          </Reveal>
+          <Reveal index={1}>
             <div className="p-5 rounded-2xl bg-slate-900 border border-violet-400/20 ring-1 ring-violet-400/10 mb-5">
               <MockupAgency />
             </div>
@@ -474,7 +498,7 @@ export default function LandingV3Page() {
                 </li>
               ))}
             </ul>
-          </div>
+          </Reveal>
         </div>
       </section>
 
@@ -484,21 +508,21 @@ export default function LandingV3Page() {
       {/* Comparativo vs Typeform */}
       <section id="comparativo" className="py-24 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
+          <Reveal className="text-center mb-14">
             <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">EidosForm vs Typeform</Badge>
             <h2 className="text-3xl sm:text-5xl font-black mb-4">
               Mais respostas. <span className="text-[#F5B731]">Menos dólar.</span>
             </h2>
             <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-              Compare plano a plano: no EidosForm, o mesmo orçamento compra muito mais resposta —
+              Compare plano a plano: no EidosForm, o mesmo orçamento compra muito mais resposta,
               e em real, sem IOF.
             </p>
-          </div>
+          </Reveal>
 
           {/* Financeiro plano a plano */}
           <div className="grid sm:grid-cols-3 gap-5 mb-16">
-            {FINANCIAL_COMPARISON.map(({ tier, eidos, typeform, ratio }) => (
-              <div key={tier} className="p-6 rounded-2xl bg-white/[0.04] border border-white/5 flex flex-col">
+            {FINANCIAL_COMPARISON.map(({ tier, eidos, typeform, ratio }, i) => (
+              <Reveal key={tier} index={i} className="p-6 rounded-2xl bg-white/[0.04] border border-white/5 flex flex-col">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">{tier}</p>
 
                 <div className="mb-4 pb-4 border-b border-white/5">
@@ -516,15 +540,15 @@ export default function LandingV3Page() {
                 <span className="mt-auto inline-flex self-start px-3 py-1.5 rounded-full bg-[#4BB678]/15 text-[#4BB678] text-xs font-bold">
                   {ratio}
                 </span>
-              </div>
+              </Reveal>
             ))}
           </div>
 
           {/* Tabela de recursos */}
-          <div className="rounded-2xl border border-white/10 overflow-hidden">
+          <Reveal className="rounded-2xl border border-white/10 overflow-hidden">
             <div className="grid grid-cols-[1.4fr_1fr_1fr] bg-slate-900 border-b border-white/10 text-xs sm:text-sm font-bold">
               <div className="px-4 sm:px-6 py-4 text-slate-400 uppercase tracking-wider text-xs">Recurso</div>
-              <div className="px-2 sm:px-4 py-4 text-[#F5B731] text-center">EidosForm</div>
+              <div className="px-2 sm:px-4 py-4 text-[#F5B731] text-center bg-[#F5B731]/[0.07]">EidosForm</div>
               <div className="px-2 sm:px-4 py-4 text-slate-500 text-center">Typeform</div>
             </div>
             {FEATURE_COMPARISON.map((row, i) => (
@@ -535,14 +559,14 @@ export default function LandingV3Page() {
                 } ${i < FEATURE_COMPARISON.length - 1 ? 'border-b border-white/5' : ''}`}
               >
                 <div className="px-4 sm:px-6 py-4 text-slate-300 leading-snug">{row.label}</div>
-                <div className="px-2 sm:px-4 py-4"><ComparisonCell value={row.eidos} /></div>
+                <div className="px-2 sm:px-4 py-4 bg-[#F5B731]/[0.07]"><ComparisonCell value={row.eidos} /></div>
                 <div className="px-2 sm:px-4 py-4"><ComparisonCell value={row.typeform} /></div>
               </div>
             ))}
-          </div>
+          </Reveal>
           <p className="mt-4 text-xs text-slate-600 text-center">
             Preços do Typeform conforme typeform.com/pricing em junho/2026 (cobrança anual),
-            convertidos a R$5,00/US$ — com câmbio do dia e IOF, a diferença é ainda maior.
+            convertidos a R$5,00/US$. Com câmbio do dia e IOF, a diferença é ainda maior.
           </p>
         </div>
       </section>
@@ -554,7 +578,6 @@ export default function LandingV3Page() {
       <section id="faq" className="py-24 px-4 sm:px-6">
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-16">
-            <Badge className="mb-4 bg-white/5 text-slate-400 border border-white/10">FAQ</Badge>
             <h2 className="text-3xl sm:text-5xl font-black mb-4">Dúvidas frequentes</h2>
           </div>
 
@@ -575,7 +598,7 @@ export default function LandingV3Page() {
       {/* CTA final */}
       <section className="py-24 px-4 sm:px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#F5B731]/3 to-transparent pointer-events-none" />
-        <div className="max-w-2xl mx-auto text-center">
+        <Reveal className="max-w-2xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-black mb-4">
             Seu próximo lead está a um formulário de distância
           </h2>
@@ -589,7 +612,7 @@ export default function LandingV3Page() {
             </Button>
           </Link>
           <p className="mt-4 text-sm text-slate-500">Grátis até 100 respostas/mês · Sem cartão de crédito</p>
-        </div>
+        </Reveal>
       </section>
 
       {/* Footer */}

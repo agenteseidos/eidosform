@@ -5,11 +5,11 @@ import Link from 'next/link'
 import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 
 // Pricing da /v4 (fundo branco) — mesmo conteúdo e selo duplo da v3:
-//   • Plus mantém "✨ Mais Popular" (comprador solo)
-//   • Professional ganha "🏢 Para agências" — a seção de agências aponta pra ele
+//   • Plus mantém "Mais Popular" (comprador solo)
+//   • Professional ganha "Para agências" — a seção de agências aponta pra ele
 // Limites honestos de questões (25/50/100/200).
 
 type Accent = 'popular' | 'agency' | null
@@ -17,7 +17,6 @@ type Accent = 'popular' | 'agency' | null
 const plans: Array<{
   id: string
   name: string
-  emoji: string
   price: { monthly: number; annual: number }
   desc: string
   accent: Accent
@@ -28,7 +27,6 @@ const plans: Array<{
   {
     id: 'free',
     name: 'Free',
-    emoji: '🌱',
     price: { monthly: 0, annual: 0 },
     desc: 'Para testar sem compromisso',
     accent: null,
@@ -46,7 +44,6 @@ const plans: Array<{
   {
     id: 'starter',
     name: 'Starter',
-    emoji: '⚡',
     price: { monthly: 49, annual: 29 },
     desc: 'Para freelancers e autônomos',
     accent: null,
@@ -65,7 +62,6 @@ const plans: Array<{
   {
     id: 'plus',
     name: 'Plus',
-    emoji: '🚀',
     price: { monthly: 127, annual: 97 },
     desc: 'Para quem vive de conversão',
     accent: 'popular',
@@ -93,7 +89,6 @@ const plans: Array<{
   {
     id: 'professional',
     name: 'Professional',
-    emoji: '👑',
     price: { monthly: 257, annual: 197 },
     desc: 'Para agências e empresas',
     accent: 'agency',
@@ -112,12 +107,12 @@ const plans: Array<{
 
 export function PricingSectionV4() {
   const [billing, setBilling] = useState<'annual' | 'monthly'>('annual')
+  const reduce = useReducedMotion()
 
   return (
     <section id="precos" className="py-24 px-4 sm:px-6 bg-slate-50">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-10">
-          <Badge className="mb-4 bg-slate-100 text-slate-600 border border-slate-200">Planos</Badge>
           <h2 className="text-3xl sm:text-5xl font-black mb-4 text-slate-900">
             Preço em real,
             <span className="block text-slate-400">sem surpresa no câmbio</span>
@@ -172,10 +167,12 @@ export function PricingSectionV4() {
             return (
               <motion.div
                 key={plan.id}
-                initial={false}
-                whileHover={{ y: -4 }}
-                transition={{ duration: 0.2 }}
-                className={`relative flex flex-col p-6 rounded-2xl border transition-all duration-300 ${
+                initial={reduce ? false : { opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.15 }}
+                whileHover={{ y: -4, transition: { duration: 0.18, ease: 'easeOut' } }}
+                transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+                className={`relative flex flex-col p-6 rounded-2xl border transition-[box-shadow,border-color] duration-300 ${
                   plan.accent === 'popular'
                     ? 'bg-[#FFFBF2] border-[#F5B731] shadow-xl shadow-[#F5B731]/15 ring-1 ring-[#F5B731]/30 mt-4 sm:mt-0'
                     : plan.accent === 'agency'
@@ -186,19 +183,17 @@ export function PricingSectionV4() {
                 {plan.accent === 'popular' && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap z-10">
                     <Badge className="bg-[#F5B731] text-black font-bold border-0 px-3 shadow-lg shadow-[#F5B731]/30">
-                      ✨ Mais Popular
+                      Mais Popular
                     </Badge>
                   </div>
                 )}
                 {plan.accent === 'agency' && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap z-10">
                     <Badge className="bg-violet-600 text-white font-bold border-0 px-3 shadow-lg shadow-violet-500/30">
-                      🏢 Para agências
+                      Para agências
                     </Badge>
                   </div>
                 )}
-
-                <div className="text-2xl mb-2">{plan.emoji}</div>
                 <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
                 <p className="text-sm text-slate-500 mb-4">{plan.desc}</p>
 
@@ -269,7 +264,7 @@ export function PricingSectionV4() {
 
         <p className="text-center text-sm text-slate-500 mt-8">
           Pagamento por cartão de crédito, em reais. Garantia de 7 dias: devolvemos 100%, sem perguntas.
-          Cancele quando quiser — sem multa.
+          Cancele quando quiser, sem multa.
         </p>
       </div>
     </section>

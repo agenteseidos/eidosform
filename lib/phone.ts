@@ -76,3 +76,29 @@ export function toWhatsAppDigits(raw: unknown): string {
   if (d.length === 10 || d.length === 11) return `55${d}`
   return d
 }
+
+/**
+ * Máscara de DIGITAÇÃO para campo de telefone em formulário nosso (cadastro).
+ *
+ * Só formata; não valida (quem valida é `isValidWhatsAppPhone`) e não decide
+ * DDI (quem decide é `toWhatsAppDigits`). O produto é pt-BR, então o formato
+ * padrão é o local — (DDD) 9XXXX-XXXX ou (DDD) XXXX-XXXX.
+ *
+ * ESCAPE HATCH INTERNACIONAL: se o valor começa com "+", o usuário está
+ * declarando o DDI e a máscara BR sairia errada (ex.: +351 912 345 678 viraria
+ * "(35) 1912-3456"). Nesse caso devolvemos apenas "+" seguido dos dígitos, sem
+ * máscara, respeitando o teto de E.164 (15 dígitos).
+ */
+export function formatPhoneBRInput(raw: unknown): string {
+  const value = String(raw ?? '')
+  if (value.trimStart().startsWith('+')) {
+    const intl = whatsAppDigits(value).slice(0, WHATSAPP_MAX_DIGITS)
+    return `+${intl}`
+  }
+  const d = whatsAppDigits(value).slice(0, 11)
+  if (d.length === 0) return ''
+  if (d.length <= 2) return `(${d}`
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}

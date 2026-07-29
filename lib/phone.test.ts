@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  isValidWhatsAppPhone, toWhatsAppDigits, whatsAppDigits,
+  isValidWhatsAppPhone, toWhatsAppDigits, whatsAppDigits, formatPhoneBRInput,
   WHATSAPP_MIN_DIGITS, WHATSAPP_MAX_DIGITS,
 } from './phone'
 
@@ -47,5 +47,42 @@ describe('toWhatsAppDigits — DDI explícito (P2-3)', () => {
 
   it('normaliza máscara antes de decidir', () => {
     expect(toWhatsAppDigits('(83) 99937-6704')).toBe('5583999376704')
+  })
+})
+
+describe('formatPhoneBRInput — máscara de digitação do cadastro', () => {
+  it('monta a máscara BR progressivamente', () => {
+    expect(formatPhoneBRInput('')).toBe('')
+    expect(formatPhoneBRInput('8')).toBe('(8')
+    expect(formatPhoneBRInput('83')).toBe('(83')
+    expect(formatPhoneBRInput('8399')).toBe('(83) 99')
+    expect(formatPhoneBRInput('8332221100')).toBe('(83) 3222-1100')      // fixo, 10
+    expect(formatPhoneBRInput('83999376704')).toBe('(83) 99937-6704')    // móvel, 11
+  })
+
+  it('é idempotente sobre o próprio resultado (o campo se reformata a cada tecla)', () => {
+    expect(formatPhoneBRInput('(83) 99937-6704')).toBe('(83) 99937-6704')
+    expect(formatPhoneBRInput(formatPhoneBRInput('83999376704'))).toBe('(83) 99937-6704')
+  })
+
+  it('descarta o excedente de 11 dígitos no formato local', () => {
+    expect(formatPhoneBRInput('839993767041234')).toBe('(83) 99937-6704')
+  })
+
+  it('não aplica máscara BR quando o usuário declara DDI com "+"', () => {
+    // (35) 1912-3456 seria um número BR que não existe: a máscara mentiria.
+    expect(formatPhoneBRInput('+351912345678')).toBe('+351912345678')
+    expect(formatPhoneBRInput('+55 (83) 99937-6704')).toBe('+5583999376704')
+    expect(formatPhoneBRInput('+')).toBe('+')
+  })
+
+  it('respeita o teto de 15 dígitos do E.164 no modo internacional', () => {
+    expect(formatPhoneBRInput('+1234567890123456789')).toBe('+123456789012345')
+  })
+
+  it('o resultado continua aceito pelo validador da stack', () => {
+    expect(isValidWhatsAppPhone(formatPhoneBRInput('83999376704'))).toBe(true)
+    expect(toWhatsAppDigits(formatPhoneBRInput('83999376704'))).toBe('5583999376704')
+    expect(toWhatsAppDigits(formatPhoneBRInput('+351912345678'))).toBe('351912345678')
   })
 })

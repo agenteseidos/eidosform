@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { Eye, EyeOff, Check, X } from 'lucide-react'
+import { formatPhoneBRInput, isValidWhatsAppPhone } from '@/lib/phone'
 
 function getPasswordStrength(password: string): { score: number; label: string; color: string } {
   let score = 0
@@ -37,6 +38,7 @@ function RegisterForm() {
   const cycleParam = rawCycle === 'annual' ? 'yearly' : rawCycle
   const callbackNext = nextParam ? `${nextParam}?cycle=${cycleParam}` : ''
   const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -70,6 +72,8 @@ function RegisterForm() {
 
     const newErrors: Record<string, string> = {}
     if (!fullName.trim()) newErrors.fullName = 'Nome completo é obrigatório'
+    if (!phone.trim()) newErrors.phone = 'Telefone é obrigatório'
+    else if (!isValidWhatsAppPhone(phone)) newErrors.phone = 'Telefone inválido. Inclua o DDD.'
     if (!email.trim()) newErrors.email = 'E-mail é obrigatório'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'E-mail inválido'
     if (!password) newErrors.password = 'Senha é obrigatória'
@@ -79,7 +83,7 @@ function RegisterForm() {
     if (!acceptTerms) newErrors.terms = 'Você precisa aceitar os termos de uso'
 
     setErrors(newErrors)
-    setTouched({ fullName: true, email: true, password: true, confirmPassword: true, terms: true })
+    setTouched({ fullName: true, phone: true, email: true, password: true, confirmPassword: true, terms: true })
 
     if (Object.keys(newErrors).length > 0) return
 
@@ -87,7 +91,7 @@ function RegisterForm() {
     const res = await fetch('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, fullName }),
+      body: JSON.stringify({ email, password, fullName, phone }),
     })
 
     const json = await res.json().catch(() => ({}))
@@ -138,6 +142,26 @@ function RegisterForm() {
                 className={`h-12 text-base bg-[#1a1a1a] text-white placeholder:text-slate-400 focus:ring-[#F5B731]/20 ${touched.fullName && errors.fullName ? 'border-red-500 focus:border-red-500' : 'border-slate-500 focus:border-[#F5B731]'}`}
               />
               {touched.fullName && errors.fullName && <p className="text-xs text-red-400 mt-1">{errors.fullName}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="phone" className="text-slate-300">Telefone (WhatsApp)</Label>
+              <Input
+                id="phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="(11) 99999-9999"
+                required
+                value={phone}
+                onChange={(e) => setPhone(formatPhoneBRInput(e.target.value))}
+                onBlur={() => setTouched(p => ({ ...p, phone: true }))}
+                disabled={isLoading}
+                className={`h-12 text-base bg-[#1a1a1a] text-white placeholder:text-slate-400 focus:ring-[#F5B731]/20 ${touched.phone && errors.phone ? 'border-red-500 focus:border-red-500' : 'border-slate-500 focus:border-[#F5B731]'}`}
+              />
+              {touched.phone && errors.phone
+                ? <p className="text-xs text-red-400 mt-1">{errors.phone}</p>
+                : <p className="text-xs text-slate-500 mt-1">Usamos para falar com você sobre a sua conta.</p>}
             </div>
 
             <div className="space-y-2">

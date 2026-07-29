@@ -1,15 +1,24 @@
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { isValidWhatsAppPhone, toWhatsAppDigits } from '@/lib/phone'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, fullName } = await req.json()
+    const { email, password, fullName, phone } = await req.json()
 
     // Validate input
-    if (!email || !password || !fullName) {
+    if (!email || !password || !fullName || !phone) {
       return NextResponse.json(
-        { error: 'Email, password, and full name are required' },
+        { error: 'Email, password, full name, and phone are required' },
+        { status: 400 }
+      )
+    }
+
+    // Telefone: MESMA regra do resto da stack (lib/phone.ts, 10..15 dígitos).
+    if (!isValidWhatsAppPhone(phone)) {
+      return NextResponse.json(
+        { error: 'Telefone inválido. Inclua o DDD.' },
         { status: 400 }
       )
     }
@@ -40,6 +49,12 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedEmail = email.toLowerCase().trim()
+    // Guardamos SEMPRE em dígitos com DDI (ex.: "5583999376704"). O 55 é
+    // explícito para 10/11 dígitos porque nesse comprimento o número é
+    // brasileiro sem DDI — a mesma regra do envio/wa.me (lib/phone.ts, P2-3).
+    // A partir daqui `profiles.phone_match_key_br` (coluna GERADA) é derivada
+    // automaticamente e liga a conta à identidade de follow-up.
+    const normalizedPhone = toWhatsAppDigits(phone)
     // F2-E5-01: Avoid email enumeration. Always return the same generic body
     // regardless of whether the email is new, already registered, or pending
     // confirmation. Real errors (e.g. invalid format, weak password) are still
@@ -49,7 +64,7 @@ export async function POST(req: NextRequest) {
       email: normalizedEmail,
       password,
       options: {
-        data: { full_name: fullName },
+        data: { full_name: fullName, phone: normalizedPhone },
         emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
       },
     })

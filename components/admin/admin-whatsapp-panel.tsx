@@ -72,7 +72,8 @@ type SendLog = {
   recipient: string
   form: string
   date: string
-  status: 'enviado' | 'erro' | 'na fila'
+  status: 'enviado' | 'erro' | 'na fila' | 'ignorado'
+  kind?: 'lead' | 'abandono'
   transport?: TransportName | string | null
   errorMessage?: string | null
 }
@@ -679,7 +680,8 @@ export function AdminWhatsAppPanel() {
                   <div className="flex min-w-0 items-start gap-3">
                     <span className={`mt-2 h-2 w-2 flex-none rounded-full ${
                       item.status === 'enviado' ? 'bg-green-500' :
-                      item.status === 'na fila' ? 'bg-amber-500' : 'bg-red-500'
+                      item.status === 'na fila' ? 'bg-amber-500' :
+                      item.status === 'ignorado' ? 'bg-slate-300' : 'bg-red-500'
                     }`} />
                     <div className="min-w-0">
                       <div className="truncate font-medium text-slate-900">
@@ -694,7 +696,14 @@ export function AdminWhatsAppPanel() {
                             : '—'})
                         </span>
                       </div>
-                      <div className="truncate text-sm text-slate-500">{item.form}</div>
+                      <div className="truncate text-sm text-slate-500">
+                        {item.form}
+                        {item.kind === 'abandono' && (
+                          <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                            alerta de abandono
+                          </span>
+                        )}
+                      </div>
                       {item.errorMessage && (
                         <div className="truncate text-xs text-red-600">{item.errorMessage}</div>
                       )}

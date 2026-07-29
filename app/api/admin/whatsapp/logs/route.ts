@@ -7,11 +7,38 @@ type WhatsAppLogRow = {
   form_id: string
   phone_number: string
   status: string
+  wacli_message_id: string | null
   error_message: string | null
   timestamp: string
   /** Motor que entregou. NULO em envios anteriores a 2026-07-27 e enquanto a
    *  migração manual da coluna não tiver sido aplicada. */
   transport?: string | null
+}
+
+/**
+ * Traduz o status BRUTO da tabela para o que a tela mostra.
+ *
+ * Exportada e testada porque o mapeamento antigo era binário ("sent" = verde,
+ * resto = vermelho) e MENTIA: `abandoned_alert` é o registro do alerta de lead
+ * abandonado, e quando tem `wacli_message_id` preenchido ele foi ENTREGUE com
+ * sucesso — mas aparecia com bolinha vermelha, contradizendo o quadro de
+ * falhas (que dizia 0, corretamente). Achado pelo Sidney em 28/07 olhando a
+ * tela. `skipped` ("decidimos NÃO mandar") também virava vermelho.
+ */
+export function traduzirStatusLog(row: Pick<WhatsAppLogRow, 'status' | 'wacli_message_id' | 'error_message'>): {
+  status: 'enviado' | 'na fila' | 'ignorado' | 'erro'
+  kind: 'lead' | 'abandono'
+} {
+  if (row.status === 'sent') return { status: 'enviado', kind: 'lead' }
+  if (row.status === 'queued') return { status: 'na fila', kind: 'lead' }
+  if (row.status === 'skipped') return { status: 'ignorado', kind: 'lead' }
+  if (row.status === 'abandoned_alert') {
+    // Ciclo de vida do claim (ver cron abandoned-leads): id preenchido =
+    // promovido = alerta entregue; sem id = pendente/na fila de reenvio.
+    if (row.wacli_message_id) return { status: 'enviado', kind: 'abandono' }
+    return { status: 'na fila', kind: 'abandono' }
+  }
+  return { status: 'erro', kind: 'lead' }
 }
 
 export async function GET(request: NextRequest) {
@@ -32,7 +59,7 @@ export async function GET(request: NextRequest) {
   // A coluna `transport` vem de migração MANUAL. Enquanto ela não for aplicada,
   // pedi-la faz o PostgREST recusar a query inteira e a tela ficaria sem NENHUM
   // log. Então tenta com a coluna e cai pro select antigo se ela não existir.
-  const COLUNAS_BASE = 'id, form_id, phone_number, status, error_message, timestamp'
+  const COLUNAS_BASE = 'id, form_id, phone_number, status, wacli_message_id, error_message, timestamp'
   let { data: logs, error: logsError } = await logsQuery
     .select(`${COLUNAS_BASE}, transport`)
     .order('timestamp', { ascending: false })
@@ -87,7 +114,7 @@ export async function GET(request: NextRequest) {
       recipient: log.phone_number || '(sem telefone)',
       form: formsById.get(log.form_id) || 'Formulário removido',
       date: log.timestamp,
-      status: log.status === 'sent' ? 'enviado' : log.status === 'queued' ? 'na fila' : 'erro',
+      ...traduzirStatusLog(log),
       transport: log.transport ?? null,
       errorMessage: log.error_message,
     })),

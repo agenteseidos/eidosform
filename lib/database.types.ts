@@ -197,6 +197,7 @@ export interface Database {
           responses_limit: number
           response_period_start_at: string
           response_period_end_at: string
+          lifetime_access: boolean
           limit_alert_sent: boolean
           plan_status: string | null
           plan_expires_at: string | null
@@ -234,6 +235,7 @@ export interface Database {
           responses_limit?: number
           response_period_start_at?: string
           response_period_end_at?: string
+          lifetime_access?: boolean
           limit_alert_sent?: boolean
           plan_status?: string | null
           plan_expires_at?: string | null
@@ -267,6 +269,7 @@ export interface Database {
           responses_limit?: number
           response_period_start_at?: string
           response_period_end_at?: string
+          lifetime_access?: boolean
           limit_alert_sent?: boolean
           plan_status?: string | null
           plan_expires_at?: string | null

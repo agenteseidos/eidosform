@@ -74,6 +74,14 @@ Somente depois dos testes da etapa 2, aplicar:
 1. `supabase/migrations/20260729_02_close_legacy_anon_rls.sql`
 2. `supabase/migrations/20260729_05_drop_legacy_quota_rpc.sql`
 3. `supabase/migrations/20260729_06_harden_direct_write_privileges.sql`
+4. `supabase/migrations/20260729_07_protect_lifetime_access.sql`
+5. `supabase/migrations/20260729_08_grandfather_deploy_window_responses.sql`
+
+A migration 07 deve retornar somente `medeiros.sco@gmail.com`, marcada como
+Professional vitalícia, sem expiração nem identificadores do Asaas. A migration
+08 deve retornar a resposta `4a317151-9656-4213-9fec-1147701aa397` (e qualquer
+outra criada pelo código legado durante a janela), sem alterar
+`profiles.responses_used`.
 
 Validação de grants e policies:
 
@@ -99,6 +107,15 @@ ORDER BY tablename, policyname;
 SELECT
   to_regprocedure('public.check_and_increment_response(uuid)') AS legacy_quota_rpc,
   to_regprocedure('public.check_and_increment_response(uuid,uuid)') AS current_quota_rpc;
+
+SELECT email, lifetime_access, plan, plan_status, plan_expires_at,
+       responses_limit, asaas_customer_id, asaas_subscription_id
+FROM public.profiles
+WHERE lifetime_access = true;
+
+SELECT id, completed, quota_counted_at
+FROM public.responses
+WHERE id = '4a317151-9656-4213-9fec-1147701aa397';
 ```
 
 Esperado: os quatro privilégios diretos `anon_*` são `false`; a view segura e

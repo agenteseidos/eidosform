@@ -17,7 +17,6 @@ import {
   LineChart,
   Link2,
   MessageCircle,
-  ShieldCheck,
   Target,
   UserRound,
   X,
@@ -36,16 +35,23 @@ import { ThemeCarousel } from '@/components/ui/theme-carousel'
 
 // Página em homologação (modelada na yayforms.com/br/typeform-alternative):
 // noindex até ser aprovada e promovida à raiz. Claims re-verificados no código
-// em 2026-07-28 (auditoria LP, Fases 1-3): CAPI server-side (lib/meta-capi.ts,
-// disparado em /api/responses), campos ocultos por URL (lib/url-params.ts),
-// eventos por conjunto de respostas (evaluateAnswerSetEvents), UTM no webhook
-// e no WhatsApp, alerta de lead abandonado (cron agendado no vercel.json) e
-// tela de abandono por pergunta (analytics-panel) — tudo EXISTE e está ligado.
-// A nota antiga "sem campos ocultos/server-side — não anunciar" caducou.
+// em 2026-07-28 (auditoria LP + revisão Codex): campos ocultos por URL
+// (lib/url-params.ts), eventos por conjunto de respostas (evaluateAnswerSetEvents),
+// UTM no webhook, alerta de lead abandonado (timer na VPS) e tela de abandono por
+// pergunta (analytics-panel) — tudo EXISTE e está ligado.
+//
+// ⚠️ NÃO ANUNCIAR (revisão Codex 2026-07-28, promessa sem lastro):
+//   - CAPI server-side: existe UM pixel/token GLOBAL, mas os pixels dos clientes
+//     são POR FORMULÁRIO; todo evento sai como 'Lead' e o event_id é o nome do
+//     evento (sem dedup real com o browser). Só anunciar após config por cliente.
+//   - "UTM aparece na mensagem do WhatsApp por padrão": as variáveis {utm_*}
+//     existem, mas os templates PADRÃO não as usam.
+//   - "tempo médio de preenchimento": a tabela responses não tem timestamp de
+//     início (só submitted_at/last_activity_at) — a métrica não é calculável hoje.
 export const metadata: Metadata = {
   title: 'EidosForm | Formulários que as pessoas respondem até o fim',
   description:
-    'A alternativa brasileira ao Typeform para tráfego pago: Meta Pixel, Google Ads, GTM e TikTok nativos, conversão server-side, UTMs em cada lead e alerta de lead no seu WhatsApp. Pague em real.',
+    'A alternativa brasileira ao Typeform para tráfego pago: Meta Pixel, Google Ads, GTM e TikTok nativos, UTMs em cada lead e alerta de lead no seu WhatsApp. Pague em real.',
   robots: { index: false, follow: false },
 }
 
@@ -80,12 +86,6 @@ const TRAFFIC_FEATURES = [
     desc: 'Dispare um evento diferente conforme a resposta — ou combine várias: "LeadQualificado" só quando orçamento E prazo baterem. A campanha otimiza para quem compra, não para quem clica.',
   },
   {
-    icon: ShieldCheck,
-    color: BRAND_TILE,
-    title: 'Conversão server-side (Meta CAPI)',
-    desc: 'O evento também sai do nosso servidor direto para a Meta, com Advanced Matching (email e telefone com hash). Bloqueador de anúncio e iOS não engolem sua conversão.',
-  },
-  {
     icon: LineChart,
     color: BRAND_TILE,
     title: 'UTMs em cada lead',
@@ -101,7 +101,7 @@ const TRAFFIC_FEATURES = [
     icon: BarChart3,
     color: BRAND_TILE,
     title: 'Abandono por pergunta',
-    desc: 'Veja no painel a pergunta exata onde o lead desiste. E com respostas parciais, o que ele digitou antes de sair já está salvo. O clique que você pagou não vira lead perdido.',
+    desc: 'Veja no painel após qual pergunta o lead parou. E com respostas parciais, o que ele digitou antes de sair já está salvo. O clique que você pagou não vira lead perdido.',
   },
 ]
 

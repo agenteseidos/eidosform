@@ -56,27 +56,19 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const completed = completedResponses ?? 0
   const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
 
-  // Tempo médio de conclusão (limitado a 10k para evitar DoS em forms populares)
-  const { data: completedTimestamps } = await supabase
-    .from('responses')
-    .select('created_at, updated_at')
-    .eq('form_id', id)
-    .eq('completed', true)
-    .limit(10000)
-
-  let avgCompletionTimeSeconds: number | null = null
-  if (planConfig?.partialResponses && completedTimestamps && completedTimestamps.length > 0) {
-    const durations = completedTimestamps
-      .map((r: { created_at: string; updated_at: string | null }) => {
-        const start = new Date(r.created_at).getTime()
-        const end = new Date(r.updated_at ?? r.created_at).getTime()
-        return (end - start) / 1000
-      })
-      .filter((d: number) => d > 0)
-    if (durations.length > 0) {
-      avgCompletionTimeSeconds = Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length)
-    }
-  }
+  // TEMPO MÉDIO DE CONCLUSÃO — desativado (revisão Codex 2026-07-28).
+  //
+  // O código anterior consultava `created_at, updated_at` na tabela `responses`.
+  // Essas colunas NÃO EXISTEM em produção: a tabela tem `submitted_at` e
+  // `last_activity_at`. A query falhava a cada requisição e a métrica vinha
+  // sempre nula — feature morta anunciada como viva. E não dá para calcular com
+  // o schema atual: não há timestamp de INÍCIO do preenchimento.
+  //
+  // Para reativar: adicionar coluna de início em `responses` (SEM DEFAULT, para
+  // não carimbar as linhas antigas — vide incidente de 2026-07-23), preencher no
+  // insert, e só então recalcular aqui. Mantido no payload como `null` explícito
+  // para não quebrar contrato de quem já consome o endpoint.
+  const avgCompletionTimeSeconds: number | null = null
 
   // Abandono por pergunta (feature Plus+)
   const abandonmentByQuestion = planConfig?.partialResponses

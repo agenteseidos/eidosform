@@ -419,9 +419,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // 3b) REVALIDA (P1-3): o lead pode ter retomado ou completado desde o SELECT.
     const { data: current, error: recheckErr } = await supabase
       .from('responses')
-      .select('id, completed, last_activity_at, answers, url_params, meta_events')
+      // As colunas utm_* precisam vir AQUI também (revisão Codex 2026-07-28): a
+      // mensagem é montada com `current`, o resultado desta revalidação. Sem elas,
+      // um template que use {utm_source} etc. recebia vazio mesmo com a campanha
+      // gravada na resposta — o SELECT largo lá de cima (linha ~322) não ajuda.
+      .select('id, completed, last_activity_at, answers, url_params, meta_events, utm_source, utm_medium, utm_campaign, utm_term, utm_content')
       .eq('id', row.id)
-      .maybeSingle() as { data: { id: string; completed: boolean; last_activity_at: string; answers: unknown; url_params: unknown; meta_events: unknown } | null; error: unknown }
+      .maybeSingle() as { data: { id: string; completed: boolean; last_activity_at: string; answers: unknown; url_params: unknown; meta_events: unknown; utm_source: string | null; utm_medium: string | null; utm_campaign: string | null; utm_term: string | null; utm_content: string | null } | null; error: unknown }
 
     // Comparação por EPOCH, nunca por string: o banco devolve
     // `...228729+00:00` e o JS gera `...311Z` — formatos diferentes.

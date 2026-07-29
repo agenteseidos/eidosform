@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { BarChart3, Clock3, Lock, TrendingDown } from 'lucide-react'
+import { BarChart3, Lock, TrendingDown } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,15 +32,6 @@ interface AnalyticsData {
   avg_completion_time_seconds: number | null
   abandonment_by_question: AbandonmentRow[]
   plan_gated: boolean
-}
-
-function formatSeconds(s: number): string {
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  const rest = s % 60
-  if (m < 60) return rest > 0 ? `${m}min ${rest}s` : `${m}min`
-  const h = Math.floor(m / 60)
-  return `${h}h ${m % 60}min`
 }
 
 export function AnalyticsPanel({ formId }: { formId: string }) {
@@ -90,8 +81,8 @@ export function AnalyticsPanel({ formId }: { formId: string }) {
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Plus+</Badge>
               </p>
               <p className="text-sm text-slate-500 mt-0.5 max-w-md">
-                Veja a pergunta exata onde os leads desistem e o tempo médio de
-                preenchimento — e ajuste o formulário antes de queimar mais tráfego.
+                Veja após qual pergunta os leads param de responder — e ajuste o
+                formulário antes de queimar mais tráfego.
               </p>
             </div>
           </div>
@@ -116,21 +107,18 @@ export function AnalyticsPanel({ formId }: { formId: string }) {
           <BarChart3 className="w-5 h-5 text-violet-600" />
           <h2 className="font-semibold text-slate-900">Abandono por pergunta</h2>
         </div>
-        {data.avg_completion_time_seconds != null && (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Clock3 className="w-4 h-4" />
-            Tempo médio de preenchimento:
-            <span className="font-semibold text-slate-700">
-              {formatSeconds(data.avg_completion_time_seconds)}
-            </span>
-          </div>
-        )}
+        {/* Tempo médio de preenchimento REMOVIDO (revisão Codex 2026-07-28): a
+            tabela `responses` não tem timestamp de INÍCIO — só `submitted_at` e
+            `last_activity_at`. O endpoint consultava `created_at`/`updated_at`,
+            colunas que não existem em produção, e a métrica vinha sempre nula.
+            Para trazer de volta: adicionar coluna de início (SEM default, para
+            não carimbar linhas antigas — vide incidente 2026-07-23). */}
       </div>
 
       {totalAbandoned === 0 ? (
         <p className="text-sm text-slate-500 py-2">
           Nenhum abandono registrado ainda. Quando um lead parar no meio, você
-          verá aqui exatamente em qual pergunta ele desistiu.
+          verá aqui após qual pergunta ele parou.
         </p>
       ) : (
         <div className="space-y-3">

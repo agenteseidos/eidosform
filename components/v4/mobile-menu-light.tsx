@@ -1,10 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+
+// Detector de mount hidratação-seguro (mesmo padrão do mobile-menu.tsx):
+// snapshot false no servidor, true no cliente — sem setState em effect.
+const emptySubscribe = () => () => {}
+const useMounted = () => useSyncExternalStore(emptySubscribe, () => true, () => false)
 
 // Versão clara do menu mobile para a /v4 (fundo branco), com as âncoras
 // corretas da v3/v4 (tráfego pago, agências, vs Typeform, preços, FAQ).
@@ -13,11 +18,7 @@ export function MobileMenuLight() {
   // Portal só depois do mount: renderizar por `typeof document` fazia o
   // primeiro render do cliente divergir do SSR e derrubava a hidratação
   // da página inteira (React #418) — no mobile, os reveals ficavam presos.
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  const mounted = useMounted()
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''

@@ -14,6 +14,7 @@ import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { Eye, EyeOff, Check, X } from 'lucide-react'
 import { formatPhoneBRInput, isValidWhatsAppPhone } from '@/lib/phone'
+import { safeLocalRedirect, withCheckoutCycle } from '@/lib/safe-redirect'
 
 function getPasswordStrength(password: string): { score: number; label: string; color: string } {
   let score = 0
@@ -31,12 +32,13 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 
 function RegisterForm() {
   const sp = useSearchParams()
-  const nextParam = sp.get('next') || ''
+  const nextParam = safeLocalRedirect(sp.get('next'), '')
   // A API de checkout só aceita monthly|yearly ('annual'.toUpperCase() não passa
   // no VALID_CYCLES e dava 400 em link sem ?cycle=). Normaliza legado 'annual'.
   const rawCycle = sp.get('cycle') || 'yearly'
-  const cycleParam = rawCycle === 'annual' ? 'yearly' : rawCycle
-  const callbackNext = nextParam ? `${nextParam}?cycle=${cycleParam}` : ''
+  const cycleParam: 'monthly' | 'yearly' =
+    rawCycle === 'monthly' ? 'monthly' : 'yearly'
+  const callbackNext = nextParam ? withCheckoutCycle(nextParam, cycleParam) : ''
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -334,7 +336,7 @@ function RegisterForm() {
 
         <p className="mt-6 pb-12 text-center text-sm text-slate-500">
           Já tem conta?{' '}
-          <Link href="/login" className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors py-2 inline-block">
+          <Link href={`/login?redirect=${encodeURIComponent(callbackNext || '/forms')}`} className="text-[#F5B731] hover:text-[#E8923A] font-medium transition-colors py-2 inline-block">
             Entrar
           </Link>
         </p>

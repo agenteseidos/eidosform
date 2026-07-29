@@ -22,7 +22,10 @@ const mockRateLimit = vi.mocked(checkRateLimitAsync)
 const signUp = vi.fn()
 
 function makeReq(body: Record<string, unknown>) {
-  return { json: async () => body } as unknown as Parameters<typeof POST>[0]
+  return {
+    json: async () => body,
+    headers: { get: () => '203.0.113.10' },
+  } as unknown as Parameters<typeof POST>[0]
 }
 
 const VALID = {
@@ -77,6 +80,8 @@ describe('POST /api/auth/signup — normalização e propagação', () => {
       full_name: 'Fulano de Tal',
       phone: '5583999376704',
     })
+    expect(mockRateLimit).toHaveBeenCalledTimes(3)
+    expect(mockRateLimit.mock.calls[0][0]).toMatch(/^signup:email:[a-f0-9]{24}$/)
   })
 
   it('número já com DDI passa intacto (não ganha um 55 a mais)', async () => {

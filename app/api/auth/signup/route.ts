@@ -2,13 +2,20 @@ import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { isValidWhatsAppPhone, toWhatsAppDigits } from '@/lib/phone'
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash } from 'crypto'
 
 export async function POST(req: NextRequest) {
   try {
     const { email, password, fullName, phone } = await req.json()
 
     // Validate input
-    if (!email || !password || !fullName || !phone) {
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      typeof fullName !== 'string' ||
+      typeof phone !== 'string' ||
+      !email || !password || !fullName || !phone
+    ) {
       return NextResponse.json(
         { error: 'Email, password, full name, and phone are required' },
         { status: 400 }
@@ -31,24 +38,28 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Rate limit by email (5 signup attempts per 15 minutes)
-    const rateLimitKey = `signup:${email.toLowerCase()}`
-    const { allowed, resetIn } = await checkRateLimitAsync(rateLimitKey, {
-      maxAttempts: 5,
-      windowMs: 15 * 60 * 1000, // 15 minutes
-    })
+    const normalizedEmail = email.toLowerCase().trim()
+    const emailHash = createHash('sha256').update(normalizedEmail).digest('hex').slice(0, 24)
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+    // Três tetos: e-mail normalizado, IP e global. Espaços no e-mail e spray de
+    // endereços diferentes não criam mais orçamento ilimitado.
+    const [byEmail, byIp, global] = await Promise.all([
+      checkRateLimitAsync(`signup:email:${emailHash}`, { maxAttempts: 5, windowMs: 15 * 60 * 1000 }),
+      checkRateLimitAsync(`signup:ip:${ip}`, { maxAttempts: 20, windowMs: 15 * 60 * 1000 }),
+      checkRateLimitAsync('signup:global', { maxAttempts: 300, windowMs: 15 * 60 * 1000 }),
+    ])
+    const denied = [byEmail, byIp, global].find((result) => !result.allowed)
 
-    if (!allowed) {
+    if (denied) {
       return NextResponse.json(
         {
           error: 'Too many signup attempts. Please try again later.',
-          retryAfter: Math.ceil(resetIn / 1000),
+          retryAfter: Math.ceil(denied.resetIn / 1000),
         },
-        { status: 429, headers: { 'Retry-After': Math.ceil(resetIn / 1000).toString() } }
+        { status: 429, headers: { 'Retry-After': Math.ceil(denied.resetIn / 1000).toString() } }
       )
     }
 
-    const normalizedEmail = email.toLowerCase().trim()
     // Guardamos SEMPRE em dígitos com DDI (ex.: "5583999376704"). O 55 é
     // explícito para 10/11 dígitos porque nesse comprimento o número é
     // brasileiro sem DDI — a mesma regra do envio/wa.me (lib/phone.ts, P2-3).

@@ -15,6 +15,12 @@ const MIME_TO_EXT: Record<string, string> = {
   'application/pdf': 'pdf',
 }
 
+function mimeMatchesAllowedType(mime: string, allowedType: string): boolean {
+  if (allowedType === mime) return true
+  if (!allowedType.endsWith('/*')) return false
+  return mime.startsWith(allowedType.slice(0, -1))
+}
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -44,9 +50,9 @@ export async function POST(request: NextRequest) {
     const { form_id, mime, size, question_id } = body
 
     // Validate required fields
-    if (!form_id || !mime || size === undefined) {
+    if (!form_id || !mime || size === undefined || typeof question_id !== 'string' || !question_id) {
       return NextResponse.json(
-        { error: 'Campos obrigatórios: form_id, mime, size' },
+        { error: 'Campos obrigatórios: form_id, question_id, mime, size' },
         { status: 400, headers: CORS_HEADERS }
       )
     }
@@ -83,22 +89,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // B6 (auditoria 2026-06-10): aplica o maxFileSize configurado na pergunta
-    // ANTES de assinar — sem isto o arquivo subia ao Storage até 10MB e só era
-    // rejeitado no submit final (storage já consumido). Cap em 25MB espelha
-    // validateFileUpload (field-validators.ts).
-    if (typeof question_id === 'string' && question_id) {
-      const questions = (form.questions ?? []) as Array<{ id: string; maxFileSize?: number }>
-      const question = questions.find((q) => q.id === question_id)
-      if (question?.maxFileSize) {
-        const limitBytes = Math.min(question.maxFileSize, 25) * 1024 * 1024
-        if (size > limitBytes) {
-          return NextResponse.json(
-            { error: `Arquivo excede o limite desta pergunta (${Math.min(question.maxFileSize, 25)}MB)` },
-            { status: 400, headers: CORS_HEADERS }
-          )
-        }
-      }
+    const questions = (form.questions ?? []) as Array<{
+      id: string
+      type?: string
+      maxFileSize?: number
+      allowedFileTypes?: string[]
+    }>
+    const question = questions.find((q) => q.id === question_id)
+    if (!question || question.type !== 'file_upload') {
+      return NextResponse.json(
+        { error: 'Pergunta de upload inválida para este formulário' },
+        { status: 400, headers: CORS_HEADERS }
+      )
+    }
+
+    if (
+      Array.isArray(question.allowedFileTypes) &&
+      question.allowedFileTypes.length > 0 &&
+      !question.allowedFileTypes.some((allowedType) => mimeMatchesAllowedType(mime, allowedType))
+    ) {
+      return NextResponse.json(
+        { error: 'Tipo de arquivo não permitido nesta pergunta' },
+        { status: 400, headers: CORS_HEADERS }
+      )
+    }
+
+    // O bucket impõe 10MB sobre o arquivo efetivamente recebido. Aqui aplicamos
+    // também o limite mais restritivo configurado na pergunta antes de assinar.
+    const questionLimitMb = Math.min(question.maxFileSize ?? 10, MAX_SIZE / 1024 / 1024)
+    const limitBytes = questionLimitMb * 1024 * 1024
+    if (size > limitBytes) {
+      return NextResponse.json(
+        { error: `Arquivo excede o limite desta pergunta (${questionLimitMb}MB)` },
+        { status: 400, headers: CORS_HEADERS }
+      )
     }
 
     // Generate storage path

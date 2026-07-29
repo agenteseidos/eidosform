@@ -44,6 +44,7 @@ type Opts = {
 }
 
 const selectedColumns: string[] = []
+const responseFilters: Array<Array<[string, unknown]>> = []
 
 function makeSupabase({ plan = 'plus', incomplete = [], totalCount = 10, completedCount = 6 }: Opts = {}) {
   const from = vi.fn((table: string) => {
@@ -57,6 +58,8 @@ function makeSupabase({ plan = 'plus', incomplete = [], totalCount = 10, complet
     // como o PostgREST faria.
     return {
       select: (cols: string, opts?: { count?: string; head?: boolean }) => {
+        const filters: Array<[string, unknown]> = []
+        responseFilters.push(filters)
         for (const c of cols.split(',').map((s) => s.trim())) {
           selectedColumns.push(c)
           if (!RESPONSES_COLUMNS.has(c)) {
@@ -78,13 +81,21 @@ function makeSupabase({ plan = 'plus', incomplete = [], totalCount = 10, complet
         // O count é resolvido pela cadeia .eq(...).eq(...) — devolve o número
         // conforme a chamada (total vs completed) na ordem em que o route faz.
         let eqCalls = 0
-        chain.eq = () => {
+        chain.eq = (column: string, value: unknown) => {
+          filters.push([column, value])
           eqCalls += 1
           return {
             ...thenable,
             then: (res: (v: unknown) => void) =>
               res(isCount ? { count: eqCalls >= 2 ? completedCount : totalCount } : { data: incomplete }),
-            eq: () => ({ ...thenable, then: (res: (v: unknown) => void) => res({ count: completedCount }) }),
+            eq: (nextColumn: string, nextValue: unknown) => {
+              filters.push([nextColumn, nextValue])
+              return {
+                ...thenable,
+                then: (res: (v: unknown) => void) => res(isCount ? { count: completedCount } : { data: incomplete }),
+                not: () => ({ ...thenable, then: (res: (v: unknown) => void) => res({ data: incomplete }) }),
+              }
+            },
             not: () => ({ ...thenable, then: (res: (v: unknown) => void) => res({ data: incomplete }) }),
           }
         }
@@ -102,6 +113,7 @@ const params = { params: Promise.resolve({ id: 'f1' }) }
 beforeEach(() => {
   vi.clearAllMocks()
   selectedColumns.length = 0
+  responseFilters.length = 0
 })
 
 describe('GET /api/forms/[id]/analytics — schema', () => {
@@ -124,6 +136,15 @@ describe('GET /api/forms/[id]/analytics — schema', () => {
     // Métrica desativada: sem timestamp de início não dá para calcular. Nulo
     // explícito, nunca um número inventado.
     expect(body.avg_completion_time_seconds).toBeNull()
+  })
+
+  it('isola TODAS as queries de responses pelo form_id do dono', async () => {
+    mockCreateClient.mockResolvedValue(makeSupabase({ plan: 'plus' }) as never)
+    expect((await GET(req, params)).status).toBe(200)
+    expect(responseFilters).toHaveLength(3)
+    for (const filters of responseFilters) {
+      expect(filters).toContainEqual(['form_id', 'f1'])
+    }
   })
 })
 

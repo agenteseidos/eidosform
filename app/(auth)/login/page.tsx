@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
+import { safeLocalRedirect } from '@/lib/safe-redirect'
 
 function LoginForm() {
   const [email, setEmail] = useState('')
@@ -25,13 +26,14 @@ function LoginForm() {
 
   const successMessage = searchParams.get('message')
   const errorParam = searchParams.get('error')
+  const redirectTo = safeLocalRedirect(searchParams.get('redirect'))
 
   const handleGoogleLogin = async () => {
     setIsLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
       },
     })
     if (error) {
@@ -52,7 +54,7 @@ function LoginForm() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, redirectTo }),
       })
       const data = await res.json()
 
@@ -76,7 +78,7 @@ function LoginForm() {
 
       // Session is set by the API via cookies — refresh supabase client
       await supabase.auth.getSession()
-      router.push(data.redirectTo || '/forms')
+      router.push(safeLocalRedirect(data.redirectTo))
     } catch {
       toast.error('Falha ao entrar. Tente novamente.')
       setIsLoading(false)

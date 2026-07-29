@@ -6,6 +6,7 @@ import {
   getInactivityTimeoutValue,
   getLastActivityCookieName,
 } from '@/lib/auth'
+import { safeLocalRedirect } from '@/lib/safe-redirect'
 
 export async function updateSession(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -69,6 +70,7 @@ export async function updateSession(request: NextRequest) {
       const url = request.nextUrl.clone()
       url.pathname = '/login'
       url.searchParams.set('message', 'Your session has expired due to inactivity. Please log in again.')
+      url.searchParams.set('redirect', `${request.nextUrl.pathname}${request.nextUrl.search}`)
       return NextResponse.redirect(url, 307)
     }
 
@@ -85,17 +87,18 @@ export async function updateSession(request: NextRequest) {
   if (isProtectedRoute && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    url.searchParams.set('redirect', request.nextUrl.pathname)
+    url.searchParams.set('redirect', `${request.nextUrl.pathname}${request.nextUrl.search}`)
     return NextResponse.redirect(url, 307)
   }
 
   // Redirect to dashboard if already logged in and accessing login page
   if (request.nextUrl.pathname === '/login' && user) {
     const url = request.nextUrl.clone()
-    url.pathname = '/forms'
+    const destination = new URL(safeLocalRedirect(request.nextUrl.searchParams.get('redirect')), request.url)
+    url.pathname = destination.pathname
+    url.search = destination.search
     return NextResponse.redirect(url)
   }
 
   return supabaseResponse
 }
-

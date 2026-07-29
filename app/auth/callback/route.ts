@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { signRecoveryToken, RECOVERY_COOKIE_NAME } from '@/lib/recovery-token'
+import { safeLocalRedirect } from '@/lib/safe-redirect'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const rawNext = searchParams.get('next') ?? '/forms'
-  // Prevent open redirect: only allow relative paths starting with /
-  const next = (rawNext.startsWith('/') && !rawNext.startsWith('//')) ? rawNext : '/forms'
+  const next = safeLocalRedirect(searchParams.get('next'))
   const type = searchParams.get('type')
 
   if (code) {

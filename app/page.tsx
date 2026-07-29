@@ -108,7 +108,7 @@ export default function LandingPage() {
                 color: 'from-blue-500 to-cyan-500',
                 glow: 'shadow-blue-500/20',
                 title: 'Analytics em tempo real',
-                desc: 'Acompanhe taxa de conclusão, tempo médio de resposta e abandono por pergunta com dashboards detalhados.'
+                desc: 'Acompanhe taxa de conclusão e abandono por pergunta com dashboards detalhados.'
               },
               {
                 icon: Palette,

@@ -1,10 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
+import { safeLocalRedirect } from '@/lib/safe-redirect'
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json()
+    const { email, password, redirectTo } = await req.json()
 
     // Validate input
     if (!email || !password) {
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        redirectTo: '/forms',
+        redirectTo: safeLocalRedirect(redirectTo),
       },
       { status: 200 }
     )

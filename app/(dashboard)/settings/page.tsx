@@ -11,6 +11,8 @@ import { DomainSettings } from '@/components/settings/domain-settings'
 import { ApiKeySettings } from '@/components/settings/api-key-settings'
 import { PasswordSettings } from '@/components/settings/password-settings'
 import { AccountActions } from '@/components/settings/account-actions'
+import { PLAN_MARKETING } from '@/lib/plan-marketing'
+import { normalizePlan } from '@/lib/plans'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +25,7 @@ export default async function SettingsPage() {
   // Fetch real plan from profiles table
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_status, plan_expires_at, full_name, phone, cpf_cnpj, address, address_number, complement, postal_code, province, city, state')
+    .select('plan, plan_cycle, plan_status, plan_expires_at, full_name, phone, cpf_cnpj, address, address_number, complement, postal_code, province, city, state')
     .eq('id', user.id)
     .single()
 
@@ -37,8 +39,14 @@ export default async function SettingsPage() {
   const initials = user.email?.slice(0, 2).toUpperCase() || 'U'
   const avatarUrl = user.user_metadata?.avatar_url
   const fullName = profile?.full_name || user.user_metadata?.full_name || ''
-  const planKey = (profile?.plan ?? 'free') as string
-  const currentPlan = planKey.charAt(0).toUpperCase() + planKey.slice(1)
+  const planKey = normalizePlan(profile?.plan)
+  const planMarketing = PLAN_MARKETING[planKey]
+  const currentPlan = planMarketing.name
+  const planPriceLabel = planKey === 'free'
+    ? 'Gratuito para sempre'
+    : String(profile?.plan_cycle ?? '').toUpperCase() === 'YEARLY'
+      ? `R$ ${planMarketing.price.annual}/mês no plano anual`
+      : `R$ ${planMarketing.price.monthly}/mês`
   const isProfessional = planKey === 'professional'
   const defaultDomainFormId = forms?.[0]?.id ?? null
 
@@ -96,7 +104,7 @@ export default async function SettingsPage() {
         <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl mb-4">
           <div>
             <p className="font-semibold text-slate-900">Plano {currentPlan}</p>
-            <p className="text-sm text-slate-500">{planKey === 'free' ? 'Gratuito para sempre' : `R$ ${planKey === 'starter' ? '49' : planKey === 'plus' ? '127' : '257'}/mês`}</p>
+            <p className="text-sm text-slate-500">{planPriceLabel}</p>
           </div>
           <Badge className="bg-slate-100 text-slate-700">🌱 {currentPlan}</Badge>
         </div>

@@ -205,11 +205,21 @@ export async function POST(req: NextRequest) {
   }
 
   const formQuestions = (form.questions ?? []) as QuestionConfig[]
-  const { data: ownerProfile } = await supabase
+  const { data: ownerProfile, error: ownerProfileError } = await supabase
     .from('profiles')
     .select('plan, email, plan_expires_at')
     .eq('id', form.user_id)
     .single() as { data: { plan: string | null; email: string | null; plan_expires_at: string | null } | null; error: unknown }
+  if (ownerProfileError || !ownerProfile) {
+    logError('[responses] falha ao ler plano do dono — submit preservado, sem poda fail-open/fail-free', ownerProfileError, {
+      formId: form_id,
+      ownerId: form.user_id,
+    })
+    return NextResponse.json(
+      { error: 'Não foi possível validar o plano do formulário. Tente novamente.' },
+      { status: 503, headers: CORS_HEADERS }
+    )
+  }
   const ownerPlan = getEffectivePlan(ownerProfile)
   const ownerPlanConfig = PLANS[ownerPlan]
   const effectiveQuestions = filterQuestionsByPlan(formQuestions, ownerPlan)
@@ -288,12 +298,6 @@ export async function POST(req: NextRequest) {
     ? hashSessionKey(rawSessionKey)
     : null
   let existingResponse: { id: string; respondent_id: string | null; completed: boolean; sheets_row_index: number | null } | null = null
-  // true quando o alvo do UPDATE é uma parcial ANÔNIMA adotada por posse
-  // (token ou session key) — nesses caminhos o UPDATE é condicionado a
-  // completed=false: dois submits concorrentes da mesma tentativa não podem
-  // ambos executar side effects (achado Codex 2026-07-08).
-  let anonymousAdoption = false
-
   if (existingResponseId) {
     // P0-2: Verify ownership — respondent_id from cookie must match the response's respondent_id
     // Fetch the existing response to check ownership
@@ -334,7 +338,6 @@ export async function POST(req: NextRequest) {
     }
     if (isAnonymousPartialUpgrade || isAuthenticatedOwner) {
       existingResponse = fetched
-      anonymousAdoption = isAnonymousPartialUpgrade
     } else if (
       fetched.respondent_id === null &&
       fetched.completed === true &&
@@ -384,29 +387,14 @@ export async function POST(req: NextRequest) {
         })
         existingResponseId = bySession.id
         existingResponse = bySession
-        anonymousAdoption = true
       }
     }
   }
 
-  // Bug #1: ALWAYS check response limit before accepting (not just completed)
-  let newResponseLimitCheck: Awaited<ReturnType<typeof checkAndIncrementResponseCount>> | null = null
-  if (!existingResponseId) {
-    newResponseLimitCheck = await checkAndIncrementResponseCount(form.user_id)
-    if (!newResponseLimitCheck.allowed) {
-      return NextResponse.json(
-        { error: 'Limite de respostas atingido para o plano atual', plan: newResponseLimitCheck.plan, limit: newResponseLimitCheck.limit },
-        { status: 429, headers: CORS_HEADERS }
-      )
-    }
-    // Alerta de 80% (Plus+): a RPC já marcou limit_alert_sent (dedupe); aqui só
-    // dispara o email. Fire-and-forget — não atrasa nem bloqueia a resposta.
-    if (newResponseLimitCheck.nearLimit) {
-      sendNearLimitAlert(form.user_id, newResponseLimitCheck.usage, newResponseLimitCheck.limit, newResponseLimitCheck.plan)
-        .catch((err) => logError('Failed to send limit alert', err))
-    }
-  }
-
+  // Primeiro converge a tentativa para uma response_id. A cota é cobrada
+  // DEPOIS, por response_id, e antes de promover completed=false -> true.
+  // Assim parcial, token, session key, double-click e corrida 23505 compartilham
+  // a mesma chave idempotente no banco.
   let responseId: string
   let responseMetaEvents: string[] = []
   let existingSheetsRowIndex: number | null = null
@@ -416,63 +404,18 @@ export async function POST(req: NextRequest) {
   let createdFresh = false
 
   if (existingResponseId && existingResponse) {
-    let updateQuery = supabase
-      .from('responses')
-      // url_params: só sobrescreve com valor novo VÁLIDO — upgrade parcial→final
-      // sem params no body PRESERVA a identidade capturada na parcial.
-      .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
-      .eq('id', existingResponseId)
-      .eq('form_id', form_id as string)
-    // UPDATE condicional (compare-and-set) — se outro submit da mesma tentativa
-    // completou no meio, este não casa nenhuma linha e vira already_completed
-    // (idempotente de verdade: side effects rodam UMA vez).
-    //
-    // P1-6 (2ª auditoria Codex 2026-07-23): o CAS só era aplicado à adoção
-    // ANÔNIMA. No caminho AUTENTICADO, duas requests simultâneas liam ambas
-    // `completed=false` (o guard de replay é sequencial e não pega corrida) e
-    // as DUAS atualizavam e disparavam e-mail, Sheets, CAPI e webhook — só o
-    // WhatsApp era deduplicado, lá na VPS. Agora vale pros dois caminhos:
-    // nenhuma resposta já finalizada é sobrescrita.
-    updateQuery = updateQuery.eq('completed', false)
-    const { data: updated, error: updateError } = await updateQuery
-      .select('id, meta_events, sheets_row_index, url_params')
-      .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
-
-    if (updateError || !updated) {
-      // P1-6: o recheck de corrida vale pros DOIS caminhos (antes só o anônimo).
-      // Zero linhas casadas + row já completa = outra request ganhou; responder
-      // already_completed em vez de erro, sem repetir side effects.
-      {
-        const { data: check } = await supabase
-          .from('responses')
-          .select('id, completed')
-          .eq('id', existingResponseId)
-          .maybeSingle() as { data: { id: string; completed: boolean } | null; error: unknown }
-        if (check?.completed) {
-          console.warn('[responses] corrida de dupla submissão — resposta idempotente', { formId: form_id, responseId: check.id })
-          return NextResponse.json(
-            { response_id: check.id, completed: true, already_completed: true },
-            { status: 200, headers: CORS_HEADERS }
-          )
-        }
-      }
-      return NextResponse.json({ error: 'Resposta não encontrada' }, { status: 404, headers: CORS_HEADERS })
-    }
-
-    responseId = updated.id
-    responseMetaEvents = Array.isArray((updated as { meta_events?: unknown }).meta_events) ? ((updated as { meta_events: string[] }).meta_events) : []
-    existingSheetsRowIndex = updated.sheets_row_index ?? existingResponse.sheets_row_index ?? null
-    // Identidade efetiva pro Sheets/webhook: a do body, ou a preservada da parcial.
-    effectiveUrlParams = urlParams ?? sanitizeUrlParams(updated.url_params) ?? null
-    await supabase.from('answer_items').delete().eq('response_id', responseId)
+    responseId = existingResponseId
+    existingSheetsRowIndex = existingResponse.sheets_row_index ?? null
   } else {
     const { data: newResponse, error: insertError } = await supabase
       .from('responses')
       // partial_session_hash no INSERT: se um handshake/beacon da mesma sessão
       // correr em paralelo, o índice único faz um dos dois perder (23505) e
       // adotar a row do outro — o banco garante a convergência.
-      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData, url_params: urlParams, ...(sessionHash ? { partial_session_hash: sessionHash } : {}) } as ResponseInsert)
-      .select('id, meta_events')
+      // Mesmo um submit completo nasce como parcial. A promoção para completed
+      // só acontece depois da reserva idempotente de cota.
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed: false, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData, url_params: urlParams, ...(sessionHash ? { partial_session_hash: sessionHash } : {}) } as ResponseInsert)
+      .select('id, meta_events, sheets_row_index, url_params')
       .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string; code?: string } | null }
 
     if (insertError || !newResponse) {
@@ -496,39 +439,11 @@ export async function POST(req: NextRequest) {
           console.log('[responses] corrida de INSERT no submit resolvida por adoção (23505)', {
             formId: form_id, hashPrefix: hashLogPrefix(sessionHash), responseId: raced.id,
           })
-          const { data: adopted, error: adoptError } = await supabase
-            .from('responses')
-            .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
-            .eq('id', raced.id)
-            .eq('form_id', form_id as string)
-            // condicional: se outro submit completou a row entre o select e o
-            // update, não sobrescreve — cai no re-check idempotente abaixo.
-            .eq('completed', false)
-            .select('id, meta_events, sheets_row_index, url_params')
-            .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
-          if (adoptError || !adopted) {
-            const { data: recheck } = await supabase
-              .from('responses')
-              .select('id, completed')
-              .eq('id', raced.id)
-              .maybeSingle() as { data: { id: string; completed: boolean } | null; error: unknown }
-            if (recheck?.completed) {
-              return NextResponse.json(
-                { response_id: recheck.id, completed: true, already_completed: true },
-                { status: 200, headers: CORS_HEADERS }
-              )
-            }
-          }
-          if (!adoptError && adopted) {
-            responseId = adopted.id
-            responseMetaEvents = Array.isArray(adopted.meta_events) ? adopted.meta_events : []
-            existingSheetsRowIndex = adopted.sheets_row_index ?? raced.sheets_row_index ?? null
-            effectiveUrlParams = urlParams ?? sanitizeUrlParams(adopted.url_params) ?? null
-            await supabase.from('answer_items').delete().eq('response_id', responseId)
-          } else {
-            logError('Failed to adopt raced partial on submit:', adoptError, { form_id })
-            return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
-          }
+          existingResponseId = raced.id
+          existingResponse = raced
+          responseId = raced.id
+          existingSheetsRowIndex = raced.sheets_row_index ?? null
+          effectiveUrlParams = urlParams ?? sanitizeUrlParams(raced.url_params) ?? null
         } else {
           logError('Insert 23505 sem parcial adotável:', insertError, { form_id })
           return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
@@ -543,6 +458,76 @@ export async function POST(req: NextRequest) {
       responseMetaEvents = Array.isArray(newResponse.meta_events) ? newResponse.meta_events : []
       createdFresh = true
     }
+  }
+
+  if (completed) {
+    const limitCheck = await checkAndIncrementResponseCount(form.user_id, responseId)
+    if (limitCheck.unavailable) {
+      return NextResponse.json(
+        {
+          error: 'Não foi possível validar a cota agora. Tente novamente.',
+          response_id: responseId,
+          retryable: true,
+          ...(!existingResponseId && typeof respondent_id !== 'string'
+            ? { partial_token: signPartialToken(responseId) }
+            : {}),
+        },
+        { status: 503, headers: CORS_HEADERS }
+      )
+    }
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Limite de respostas atingido para o plano atual',
+          plan: limitCheck.plan,
+          limit: limitCheck.limit,
+          response_id: responseId,
+        },
+        { status: 429, headers: CORS_HEADERS }
+      )
+    }
+    if (limitCheck.nearLimit) {
+      sendNearLimitAlert(form.user_id, limitCheck.usage, limitCheck.limit, limitCheck.plan)
+        .catch((err) => logError('Failed to send limit alert', err))
+    }
+  }
+
+  // Atualiza tanto parciais adotadas quanto a row recém-criada. O CAS garante
+  // que só um submit promove a resposta e executa os side effects.
+  if (existingResponseId || completed) {
+    const { data: updated, error: updateError } = await supabase
+      .from('responses')
+      .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
+      .eq('id', responseId)
+      .eq('form_id', form_id as string)
+      .eq('completed', false)
+      .select('id, meta_events, sheets_row_index, url_params')
+      .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
+
+    if (updateError || !updated) {
+      const { data: check } = await supabase
+        .from('responses')
+        .select('id, completed')
+        .eq('id', responseId)
+        .maybeSingle() as { data: { id: string; completed: boolean } | null; error: unknown }
+      if (check?.completed) {
+        console.warn('[responses] corrida de dupla submissão — resposta e cota idempotentes', { formId: form_id, responseId: check.id })
+        return NextResponse.json(
+          { response_id: check.id, completed: true, already_completed: true },
+          { status: 200, headers: CORS_HEADERS }
+        )
+      }
+      logError('Failed to update response after quota claim:', updateError, { form_id, responseId })
+      return NextResponse.json({ error: 'Erro ao salvar resposta. Tente novamente.' }, { status: 500, headers: CORS_HEADERS })
+    }
+
+    responseMetaEvents = Array.isArray(updated.meta_events) ? updated.meta_events : []
+    existingSheetsRowIndex = updated.sheets_row_index ?? existingSheetsRowIndex
+    effectiveUrlParams = urlParams ?? sanitizeUrlParams(updated.url_params) ?? effectiveUrlParams
+  }
+
+  if (existingResponseId) {
+    await supabase.from('answer_items').delete().eq('response_id', responseId)
   }
 
   // Inserir answer_items normalizados para analytics

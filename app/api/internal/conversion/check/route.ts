@@ -15,7 +15,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // Trade-off aprovado pelo Sidney: o endpoint interno distingue free de none.
 // A resposta continua mínima e nunca devolve plano, status, identidade ou PII.
 const UNKNOWN = { ok: false, state: 'unknown' as const }
-const PROFILE_COLS = 'id, plan, plan_status, plan_cycle, plan_expires_at'
+const PROFILE_COLS = 'id, plan, plan_status, plan_cycle, plan_expires_at, email_confirmed_at'
 
 function getServiceClient() {
   return createServerClient(
@@ -56,6 +56,7 @@ async function buscarProfiles(phoneKey: string): Promise<{
     sb.from('profiles')
       .select(PROFILE_COLS)
       .eq('phone_match_key_br', phoneKey)
+      .not('email_confirmed_at', 'is', null)
       .limit(21),
     sb.from('billing_checkouts')
       .select('profile_id')
@@ -78,7 +79,11 @@ async function buscarProfiles(phoneKey: string): Promise<{
   )]
 
   if (faltantes.length) {
-    const porSnapshot = await sb.from('profiles').select(PROFILE_COLS).in('id', faltantes).limit(20)
+    const porSnapshot = await sb.from('profiles')
+      .select(PROFILE_COLS)
+      .in('id', faltantes)
+      .not('email_confirmed_at', 'is', null)
+      .limit(20)
     if (porSnapshot.error) return { profiles: null, errorCode: porSnapshot.error.code || 'db_error' }
     for (const row of (porSnapshot.data ?? []) as unknown as ConversionProfile[]) encontrados.set(row.id, row)
   }

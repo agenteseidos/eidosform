@@ -18,6 +18,7 @@ type Row = {
   plan_status: string | null
   plan_cycle: string | null
   plan_expires_at: string | null
+  email_confirmed_at: string | null
 }
 
 const activePlus: Row = {
@@ -26,6 +27,7 @@ const activePlus: Row = {
   plan_status: 'active',
   plan_cycle: 'MONTHLY',
   plan_expires_at: '2099-01-01T00:00:00.000Z',
+  email_confirmed_at: '2026-07-29T00:00:00.000Z',
 }
 
 function supabase({
@@ -43,6 +45,7 @@ function supabase({
       const query = {
         select() { return query },
         eq() { return query },
+        not() { return query },
         in(_column: string, values: string[]) { ids = values; return query },
         limit() {
           if (table === 'profiles') {

@@ -25,6 +25,7 @@ import { PLANS } from '@/lib/plan-definitions'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 import { sendBillingOpsAlert } from '@/lib/resend'
+import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
 
 export interface PlanSwitchParams {
   /** Client service-role (escritas de billing não passam pela RLS do usuário). */
@@ -137,10 +138,15 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
   // CAS pré-voo: o profile ainda está no estado em que a decisão foi tomada?
   const { data: casRow } = await db
     .from('profiles')
-    .select('asaas_subscription_id')
+    .select('asaas_subscription_id, plan, plan_cycle')
     .eq('id', profileId)
     .single()
-  const currentSub = (casRow as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id ?? null
+  const currentProfile = casRow as {
+    asaas_subscription_id?: string | null
+    plan?: string | null
+    plan_cycle?: string | null
+  } | null
+  const currentSub = currentProfile?.asaas_subscription_id ?? null
   if (currentSub !== expectedOldSubscriptionId) {
     log(`${tag}: CAS pré-voo divergiu — outro fluxo mexeu na assinatura; abortando sem tocar no Asaas`, {
       profileId, expected: expectedOldSubscriptionId, got: currentSub,
@@ -177,6 +183,11 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
   const basisDays = params.prorationBasisDays !== undefined
     ? params.prorationBasisDays
     : (cycle === 'YEARLY' ? 365 : 30)
+  // Reativar o mesmo plano/ciclo dentro do período pago não concede cota nova.
+  const preserveQuotaPeriod =
+    reason === 'reactivate' &&
+    currentProfile?.plan === plan &&
+    currentProfile?.plan_cycle === cycle
   let q = db
     .from('profiles')
     .update({
@@ -187,8 +198,9 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
       proration_basis_days: basisDays,
       asaas_subscription_id: newSub.id,
       responses_limit: planConfig?.maxResponses ?? 100,
-      responses_used: 0,
-      limit_alert_sent: false,
+      ...(!preserveQuotaPeriod
+        ? { ...buildResponseQuotaPeriodReset(), limit_alert_sent: false }
+        : {}),
       // mensal encerra a assinatura anual vigente (janela do benefício de migração)
       ...(cycle === 'MONTHLY' ? { annual_started_at: null } : {}),
     })

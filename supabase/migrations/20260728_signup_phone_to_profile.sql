@@ -1,4 +1,6 @@
 -- Telefone (WhatsApp) coletado no cadastro → profiles.phone
+-- SUPERSEDED: 20260729_04_reconcile_profile_defaults_and_test_limits.sql é a
+-- definição canônica posterior (telefone + Free 100 + período mensal).
 --
 -- O /register passou a pedir Nome → Telefone → E-mail. O telefone viaja em
 -- `raw_user_meta_data->>'phone'` (já normalizado em dígitos com DDI pelo

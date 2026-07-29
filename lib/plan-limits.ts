@@ -64,18 +64,20 @@ export async function incrementResponseCount(userId: string): Promise<void> {
   await supabase.rpc('increment_responses_used', { p_user_id: userId })
 }
 
-export async function checkAndIncrementResponseCount(userId: string): Promise<{
+export async function checkAndIncrementResponseCount(userId: string, responseId: string): Promise<{
   allowed: boolean
   usage: number
   limit: number
   plan: PlanName
   nearLimit: boolean
+  alreadyCounted: boolean
+  unavailable: boolean
 }> {
   const supabase = createPublicClient()
 
   try {
     const { data, error } = await supabase
-      .rpc('check_and_increment_response', { p_user_id: userId })
+      .rpc('check_and_increment_response', { p_user_id: userId, p_response_id: responseId })
       .single() as {
         data: {
           allowed: boolean
@@ -83,13 +85,14 @@ export async function checkAndIncrementResponseCount(userId: string): Promise<{
           limit_val: number
           plan: PlanName
           near_limit: boolean
+          already_counted: boolean
         } | null
         error: unknown
       }
 
     if (error || !data) {
-      logError('checkAndIncrementResponseCount: RPC failed, fail-open', error, { userId })
-      return { allowed: true, usage: 0, limit: 0, plan: 'free', nearLimit: false }
+      logError('checkAndIncrementResponseCount: RPC failed, fail-closed', error, { userId, responseId })
+      return { allowed: false, usage: 0, limit: 0, plan: 'free', nearLimit: false, alreadyCounted: false, unavailable: true }
     }
 
     return {
@@ -98,10 +101,12 @@ export async function checkAndIncrementResponseCount(userId: string): Promise<{
       limit: data.limit_val,
       plan: data.plan ?? 'free',
       nearLimit: data.near_limit,
+      alreadyCounted: data.already_counted,
+      unavailable: false,
     }
   } catch (err) {
-    logError('checkAndIncrementResponseCount: threw, fail-open', err, { userId })
-    return { allowed: true, usage: 0, limit: 0, plan: 'free', nearLimit: false }
+    logError('checkAndIncrementResponseCount: threw, fail-closed', err, { userId, responseId })
+    return { allowed: false, usage: 0, limit: 0, plan: 'free', nearLimit: false, alreadyCounted: false, unavailable: true }
   }
 }
 

@@ -1,4 +1,6 @@
 -- Cota do plano Free: padroniza em 100 (decisão Sidney, 2026-07-28)
+-- SUPERSEDED: 20260729_04_reconcile_profile_defaults_and_test_limits.sql é a
+-- definição canônica posterior (telefone + Free 100 + período mensal).
 --
 -- PROBLEMA (auditoria LP + revisão Codex):
 --   - a vitrine (lib/plan-marketing.ts, derivada de PLANS.free.maxResponses) promete 100;

@@ -16,6 +16,7 @@ import {
 } from '@/lib/asaas'
 import { log, logError, logWarn } from '@/lib/logger'
 import { computeProrationBasisDays } from '@/lib/proration'
+import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
 
 export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
@@ -69,7 +70,7 @@ export function buildActivePlanUpdate(params: {
     billing_period_end_on: null,
     limit_alert_sent: false,
     responses_limit: planConfig?.maxResponses ?? 100,
-    responses_used: 0,
+    ...buildResponseQuotaPeriodReset(),
     ...(customerId ? { asaas_customer_id: customerId } : {}),
     ...(subscriptionId !== undefined ? { asaas_subscription_id: subscriptionId } : {}),
     // Ativação MENSAL encerra qualquer "assinatura anual vigente" (janela do benefício
@@ -307,7 +308,7 @@ export function buildFreePlanUpdate(newStatus: 'overdue' | 'cancelled' | 'charge
     asaas_subscription_id: null,
     limit_alert_sent: false,
     responses_limit: PLANS.free.maxResponses,
-    responses_used: 0,
+    ...buildResponseQuotaPeriodReset(),
     annual_started_at: null, // sem plano pago = sem assinatura anual vigente
     // Mudança para free LIMPA a régua de valoração (caso 5): sem plano pago não há dias a
     // valorar. Money-neutral (free → preço 0 → crédito 0), mas mantém o profile coerente.

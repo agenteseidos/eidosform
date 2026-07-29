@@ -5,6 +5,7 @@ import { PLANS, handleDowngrade } from '@/lib/plan-limits'
 import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
 import { computeProrationBasisDays } from '@/lib/proration'
 import { log, logError, logWarn } from '@/lib/logger'
+import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
 
 /**
  * GET /api/cron/expire-plans — CRON diário (Vercel).
@@ -113,7 +114,7 @@ export async function GET(req: NextRequest) {
             billing_period_end_on: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
-            responses_used: 0,
+            ...buildResponseQuotaPeriodReset(),
           })
           .eq('id', p.id)
         if (revErr) {

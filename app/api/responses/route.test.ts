@@ -10,11 +10,13 @@ import { signPartialToken } from '@/lib/partial-token'
 type Result = { data?: unknown; error?: unknown }
 const state: {
   form: Result
+  profile: Result
   existingResponse: Result
   insertResult: Result
   calls: Array<{ table: string; op: string; payload?: unknown }>
 } = {
   form: { data: null, error: null },
+  profile: { data: null, error: null },
   existingResponse: { data: null, error: null },
   insertResult: { data: null, error: null },
   calls: [],
@@ -37,12 +39,15 @@ function makeBuilder(table: string) {
     state.calls.push({ table, op: b._op, payload: b._payload })
     let res: Result = { data: null, error: null }
     if (table === 'forms' && b._op === 'select') res = state.form
+    if (table === 'profiles' && b._op === 'select') res = state.profile
     if (table === 'responses' && b._op === 'select') res = state.existingResponse
     if (table === 'responses' && b._op === 'insert') res = state.insertResult
     if (table === 'responses' && b._op === 'update') {
       // .update().eq().eq().select('id, ...').single() → devolve a própria row
       const existing = state.existingResponse.data as { id: string } | null
-      res = { data: existing ? { id: existing.id, meta_events: [], sheets_row_index: null } : null, error: null }
+      const inserted = state.insertResult.data as { id: string } | null
+      const target = existing ?? inserted
+      res = { data: target ? { id: target.id, meta_events: [], sheets_row_index: null } : null, error: null }
     }
     return Promise.resolve(res).then(resolve)
   }
@@ -54,7 +59,15 @@ vi.mock('@/lib/supabase/public', () => ({ createPublicClient: () => fakeClient }
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fakeClient }))
 vi.mock('@/lib/supabase/request-auth', () => ({ getRequestUser: vi.fn(async () => null) }))
 vi.mock('@/lib/plan-limits', () => ({
-  checkAndIncrementResponseCount: vi.fn(async () => ({ allowed: true, plan: 'free', limit: 100 })),
+  checkAndIncrementResponseCount: vi.fn(async () => ({
+    allowed: true,
+    usage: 1,
+    plan: 'professional',
+    limit: 15000,
+    nearLimit: false,
+    alreadyCounted: false,
+    unavailable: false,
+  })),
   PLANS: {},
 }))
 vi.mock('@/lib/response-rate-limit', () => ({
@@ -111,6 +124,7 @@ function makeReq(body: Record<string, unknown>, headers: Record<string, string> 
 beforeEach(() => {
   process.env.PARTIAL_TOKEN_SECRET = 'test-secret'
   state.form = { data: formRow, error: null }
+  state.profile = { data: { plan: 'professional', email: null, plan_expires_at: null }, error: null }
   state.existingResponse = { data: null, error: null }
   state.insertResult = { data: { id: NEW_ID, meta_events: [] }, error: null }
   state.calls = []
@@ -200,6 +214,29 @@ describe('POST /api/responses — upgrade parcial→final (A1)', () => {
     expect(body.completed).toBe(false)
     expect(body.partial_token).toBe(signPartialToken(NEW_ID))
   })
+
+  it('finalização de parcial cobra exatamente pela response_id adotada', async () => {
+    const { checkAndIncrementResponseCount } = await import('@/lib/plan-limits')
+    state.existingResponse = { data: anonRow, error: null }
+    const res = await POST(
+      makeReq(
+        { form_id: FORM_ID, answers: { q1: 'Sidney', 'q-req': 'ok' } },
+        { 'x-response-id': RESP_ID, 'x-partial-token': signPartialToken(RESP_ID) }
+      )
+    )
+    expect(res.status).toBe(200)
+    expect(checkAndIncrementResponseCount).toHaveBeenCalledWith('owner-1', RESP_ID)
+  })
+
+  it('submit fresco completo cria a row antes e cobra pela nova response_id', async () => {
+    const { checkAndIncrementResponseCount } = await import('@/lib/plan-limits')
+    const res = await POST(makeReq({
+      form_id: FORM_ID,
+      answers: { q1: 'Sidney', 'q-req': 'ok' },
+    }))
+    expect(res.status).toBe(201)
+    expect(checkAndIncrementResponseCount).toHaveBeenCalledWith('owner-1', NEW_ID)
+  })
 })
 
 describe('POST /api/responses — defesas básicas', () => {
@@ -216,7 +253,7 @@ describe('POST /api/responses — defesas básicas', () => {
 
   it('form fechado → 403 com mensagem de fechado', async () => {
     state.form = { data: { ...formRow, is_closed: true }, error: null }
-    const res = await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'x' } }))
+    const res = await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'x', 'q-req': 'completa' } }))
     expect(res.status).toBe(403)
   })
 
@@ -240,13 +277,14 @@ describe('POST /api/responses — defesas básicas', () => {
   it('todas as chaves podadas (campo bloqueado pelo plano) → 422 sem insert nem consumir cota', async () => {
     const { checkAndIncrementResponseCount } = await import('@/lib/plan-limits')
     vi.mocked(checkAndIncrementResponseCount).mockClear()
-    // Dono free (profiles mockado → null → free); form só com campo CPF/CNPJ,
+    // Dono free; form só com campo CPF/CNPJ,
     // que é Starter+ e portanto filtrado para [] nos endpoints. POST direto não
     // pode queimar cota nem criar resposta vazia.
     state.form = {
       data: { ...formRow, questions: [{ id: 'doc', type: 'cpf', title: 'CPF/CNPJ' }] },
       error: null,
     }
+    state.profile = { data: { plan: 'free', email: null, plan_expires_at: null }, error: null }
     const res = await POST(makeReq({ form_id: FORM_ID, answers: { doc: '11.222.333/0001-81' } }))
     expect(res.status).toBe(422)
     expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
@@ -258,7 +296,36 @@ describe('POST /api/responses — defesas básicas', () => {
     vi.mocked(checkAndIncrementResponseCount).mockResolvedValueOnce({
       allowed: false, plan: 'free', limit: 100,
     } as Awaited<ReturnType<typeof checkAndIncrementResponseCount>>)
-    const res = await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'x' } }))
+    const res = await POST(makeReq({
+      form_id: FORM_ID,
+      answers: { q1: 'x', 'q-req': 'resposta completa' },
+    }))
     expect(res.status).toBe(429)
+  })
+
+  it('falha da RPC de cota fecha em 503 e não promove a response', async () => {
+    const { checkAndIncrementResponseCount } = await import('@/lib/plan-limits')
+    vi.mocked(checkAndIncrementResponseCount).mockResolvedValueOnce({
+      allowed: false,
+      usage: 0,
+      plan: 'free',
+      limit: 0,
+      nearLimit: false,
+      alreadyCounted: false,
+      unavailable: true,
+    })
+    const res = await POST(makeReq({
+      form_id: FORM_ID,
+      answers: { q1: 'x', 'q-req': 'resposta completa' },
+    }))
+    expect(res.status).toBe(503)
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'update')).toBe(false)
+  })
+
+  it('erro ao ler perfil retorna 503 antes de podar ou persistir respostas', async () => {
+    state.profile = { data: null, error: { message: 'db unavailable' } }
+    const res = await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'x' } }))
+    expect(res.status).toBe(503)
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
   })
 })

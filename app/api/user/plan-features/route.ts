@@ -6,6 +6,7 @@ import { getSubscription } from '@/lib/asaas'
 import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
 import { computeProrationBasisDays } from '@/lib/proration'
 import { log, logError, logWarn } from '@/lib/logger'
+import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
 
 /**
  * GET /api/user/plan-features
@@ -102,7 +103,7 @@ export async function GET() {
           const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
           log('[plan-features] Downgrade on expiry processed', { userId: user.id, pausedForms: downgrade.pausedCount })
 
-          await serviceClient
+          const { error: revertError } = await serviceClient
             .from('profiles')
             .update({
               plan: 'free',
@@ -115,9 +116,13 @@ export async function GET() {
               billing_period_start_on: null,
               billing_period_end_on: null,
               responses_limit: PLANS.free.maxResponses,
+              ...buildResponseQuotaPeriodReset(),
               asaas_subscription_id: null,
             })
             .eq('id', user.id)
+          if (revertError) {
+            throw new Error(`falha ao persistir reversão para Free: ${revertError.message}`)
+          }
 
           planName = 'free'
         } catch (err) {

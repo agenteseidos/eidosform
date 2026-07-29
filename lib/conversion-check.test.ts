@@ -12,10 +12,15 @@ const profile = (over: Partial<ConversionProfile> = {}): ConversionProfile => ({
   plan_status: 'active',
   plan_cycle: null,
   plan_expires_at: null,
+  email_confirmed_at: '2026-07-29T00:00:00.000Z',
   ...over,
 })
 
 describe('decidirEstadoConta', () => {
+  it('perfil sem e-mail confirmado nunca planta estado free/paid', () => {
+    expect(decidirEstadoConta([profile({ email_confirmed_at: null })])).toBe('unknown')
+  })
+
   it('distingue ausência, free ativa e qualquer tier pago vigente', () => {
     expect(decidirEstadoConta([])).toBe('none')
     expect(decidirEstadoConta([profile()])).toBe('free')

@@ -137,11 +137,21 @@ export async function POST(req: NextRequest) {
 
   // Sanitiza respostas órfãs ou bloqueadas pelo plano (mesma lógica do /api/responses)
   const formQuestions = (form.questions ?? []) as QuestionConfig[]
-  const { data: ownerProfile } = await supabase
+  const { data: ownerProfile, error: ownerProfileError } = await supabase
     .from('profiles')
     .select('plan, plan_expires_at')
     .eq('id', form.user_id)
     .single() as { data: { plan: string | null; plan_expires_at: string | null } | null; error: unknown }
+  if (ownerProfileError || !ownerProfile) {
+    logError('[partial] falha ao ler plano do dono — autosave não será podado como Free', ownerProfileError, {
+      formId: form_id,
+      ownerId: form.user_id,
+    })
+    return NextResponse.json(
+      { error: 'Não foi possível validar o plano do formulário. Tente novamente.' },
+      { status: 503, headers: CORS_HEADERS }
+    )
+  }
   const ownerPlan = getEffectivePlan(ownerProfile)
   const effectiveQuestions = filterQuestionsByPlan(formQuestions, ownerPlan)
   const { pruned: knownAnswers } = pruneOrphanAnswers(effectiveQuestions, answers)

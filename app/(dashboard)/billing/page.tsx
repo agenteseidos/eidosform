@@ -30,11 +30,15 @@ export default async function BillingPage() {
     .eq('id', user.id)
     .single()
 
+  const { data: quotaRows } = await supabase
+    .rpc('refresh_response_quota_period', { p_user_id: user.id })
+  const currentQuota = quotaRows?.[0]
+
   const currentPlan = (profile?.plan as string) || 'free'
   const currentCycle = (profile?.plan_cycle as string) || null
   const planStatus = ((profile as { plan_status?: string | null } | null)?.plan_status) || null
-  const usedResponses = profile?.responses_used ?? 0
-  const planLimit = profile?.responses_limit ?? 100
+  const usedResponses = currentQuota?.usage ?? profile?.responses_used ?? 0
+  const planLimit = currentQuota?.limit_val ?? profile?.responses_limit ?? 100
   const planExpiresAt = profile?.plan_expires_at ? new Date(profile.plan_expires_at) : null
   // Exibição em BRT: a expiração é gravada como fim-de-dia BRT (02:59Z do dia seguinte) —
   // formatar em UTC mostraria um dia a mais.

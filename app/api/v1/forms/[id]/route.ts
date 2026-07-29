@@ -247,11 +247,21 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   // Remove chaves de perguntas órfãs ou bloqueadas pelo plano do dono.
   const formQuestions = (form.questions ?? []) as import('@/lib/database.types').QuestionConfig[]
-  const { data: ownerProfileForGate } = await supabase
+  const { data: ownerProfileForGate, error: ownerProfileError } = await supabase
     .from('profiles')
     .select('plan, plan_expires_at')
     .eq('id', form.user_id)
     .single()
+  if (ownerProfileError || !ownerProfileForGate) {
+    logError('[v1/forms] falha ao ler plano do dono — resposta não será podada como Free', ownerProfileError, {
+      formId: id,
+      ownerId: form.user_id,
+    })
+    return NextResponse.json(
+      { error: 'Plan validation temporarily unavailable' },
+      { status: 503, headers: getCorsHeaders(req.headers.get("origin")) }
+    )
+  }
   const ownerPlan = getEffectivePlan(ownerProfileForGate) as PlanName
   const effectiveQuestions = filterQuestionsByPlan(formQuestions, ownerPlan)
   const { pruned: prunedAnswers, removedKeys } = pruneOrphanAnswers(effectiveQuestions, answers)
@@ -296,34 +306,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   const completed = isResponseComplete(answersForPersist, effectiveQuestions)
 
-  // Checagem de limite atômica (RPC check_and_increment_response) — mesma
-  // do endpoint público /api/responses. Evita corrida TOCTOU entre ler e
-  // incrementar o contador (P1-2).
-  if (!existingResponseId) {
-    const limitCheck = await checkAndIncrementResponseCount(form.user_id)
-    if (!limitCheck.allowed) {
-      return NextResponse.json(
-        { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit },
-        { status: 429, headers: getCorsHeaders(req.headers.get("origin")) }
-      )
-    }
-    // Alerta de 80% (Plus+): dedupe é da RPC (limit_alert_sent); fire-and-forget.
-    if (limitCheck.nearLimit) {
-      sendNearLimitAlert(form.user_id, limitCheck.usage, limitCheck.limit, limitCheck.plan)
-        .catch((err) => logError('Failed to send limit alert', err))
-    }
-  }
-
   let responseId: string
+  const responseWasExisting = Boolean(existingResponseId)
 
   if (existingResponseId) {
     // Verify ownership: respondent_id must match
     const { data: existingResponse } = await supabase
       .from('responses')
-      .select('id, respondent_id')
+      .select('id, respondent_id, completed')
       .eq('id', existingResponseId)
       .eq('form_id', id)
-      .single() as { data: { id: string; respondent_id: string | null } | null }
+      .single() as { data: { id: string; respondent_id: string | null; completed: boolean } | null }
 
     if (!existingResponse) {
       return NextResponse.json(
@@ -343,36 +336,20 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       )
     }
 
-    const { data: updated, error } = await supabase
-      .from('responses')
-      .update({
-        answers: answersForPersist as Record<string, import('@/lib/database.types').Json>,
-        completed,
-        last_question_answered: lastQuestionOk,
-        ...(bodyRespondentId ? { respondent_id: bodyRespondentId } : {}),
-        ...utmData,
-      } as ResponseUpdate)
-      .eq('id', existingResponseId)
-      .eq('form_id', id)
-      .select('id')
-      .single() as { data: { id: string } | null; error: unknown }
-
-    if (error || !updated) {
+    if (existingResponse.completed) {
       return NextResponse.json(
-        { error: 'Response not found' },
-        { status: 404, headers: getCorsHeaders(req.headers.get("origin")) }
+        { response_id: existingResponse.id, completed: true, already_completed: true },
+        { status: 200, headers: getCorsHeaders(req.headers.get("origin")) }
       )
     }
-
-    responseId = updated.id
-    await supabase.from('answer_items').delete().eq('response_id', responseId)
+    responseId = existingResponse.id
   } else {
     const { data: response, error } = await supabase
       .from('responses')
       .insert({
         form_id: id,
         answers: answersForPersist as Record<string, import('@/lib/database.types').Json>,
-        completed,
+        completed: false,
         last_question_answered: lastQuestionOk,
         respondent_id: typeof body.respondent_id === 'string' ? body.respondent_id : null,
         ...utmData,
@@ -388,7 +365,64 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     responseId = response.id
-    // Contador já foi incrementado atomicamente em checkAndIncrementResponseCount acima.
+  }
+
+  if (completed) {
+    const limitCheck = await checkAndIncrementResponseCount(form.user_id, responseId)
+    if (limitCheck.unavailable) {
+      return NextResponse.json(
+        { error: 'Não foi possível validar a cota agora. Tente novamente.', response_id: responseId, retryable: true },
+        { status: 503, headers: getCorsHeaders(req.headers.get("origin")) }
+      )
+    }
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Limite de respostas atingido para o plano atual', plan: limitCheck.plan, limit: limitCheck.limit, response_id: responseId },
+        { status: 429, headers: getCorsHeaders(req.headers.get("origin")) }
+      )
+    }
+    if (limitCheck.nearLimit) {
+      sendNearLimitAlert(form.user_id, limitCheck.usage, limitCheck.limit, limitCheck.plan)
+        .catch((err) => logError('Failed to send limit alert', err))
+    }
+  }
+
+  const bodyRespondentId = typeof body.respondent_id === 'string' ? body.respondent_id : null
+  const { data: updated, error: updateError } = await supabase
+    .from('responses')
+    .update({
+      answers: answersForPersist as Record<string, import('@/lib/database.types').Json>,
+      completed,
+      last_question_answered: lastQuestionOk,
+      ...(bodyRespondentId ? { respondent_id: bodyRespondentId } : {}),
+      ...utmData,
+    } as ResponseUpdate)
+    .eq('id', responseId)
+    .eq('form_id', id)
+    .eq('completed', false)
+    .select('id')
+    .single() as { data: { id: string } | null; error: unknown }
+
+  if (updateError || !updated) {
+    const { data: raced } = await supabase
+      .from('responses')
+      .select('id, completed')
+      .eq('id', responseId)
+      .maybeSingle() as { data: { id: string; completed: boolean } | null; error: unknown }
+    if (raced?.completed) {
+      return NextResponse.json(
+        { response_id: raced.id, completed: true, already_completed: true },
+        { status: 200, headers: getCorsHeaders(req.headers.get("origin")) }
+      )
+    }
+    return NextResponse.json(
+      { error: 'Response not found' },
+      { status: 404, headers: getCorsHeaders(req.headers.get("origin")) }
+    )
+  }
+
+  if (responseWasExisting) {
+    await supabase.from('answer_items').delete().eq('response_id', responseId)
   }
 
   const answerItems = Object.entries(answersForPersist).map(([questionId, value]) => ({

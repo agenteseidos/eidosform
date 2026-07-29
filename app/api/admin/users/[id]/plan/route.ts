@@ -4,6 +4,7 @@ import { getAdminSupabase, requireAdmin } from '@/lib/admin-auth'
 import { PLANS, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { cancelSubscription } from '@/lib/asaas'
 import { log, logError, logWarn } from '@/lib/logger'
+import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
 
 function isValidPlan(value: unknown): value is PlanId {
   return typeof value === 'string' && (PLAN_ORDER as readonly string[]).includes(value)
@@ -130,7 +131,7 @@ export async function PATCH(
       .update({
         plan: newPlan,
         responses_limit: planConfig?.maxResponses ?? 100,
-        responses_used: 0,
+        ...buildResponseQuotaPeriodReset(),
         limit_alert_sent: false,
         ...(newPlan === 'free'
           ? { plan_status: 'cancelled', plan_cycle: null, asaas_subscription_id: null, annual_started_at: null }
@@ -148,7 +149,7 @@ export async function PATCH(
     if (serviceKey) {
       try {
         if (isDowngrade) {
-          const result = await handleDowngrade(id, serviceKey)
+          const result = await handleDowngrade(id, serviceKey, newPlan)
           log('[admin/plan] Downgrade processed', { userId: id, pausedForms: result.pausedCount })
         } else if (newPlan !== 'free') {
           const result = await handleUpgrade(id, serviceKey)

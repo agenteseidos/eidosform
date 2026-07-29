@@ -140,10 +140,13 @@ describe('executePlanSwitch', () => {
   })
 
   it('reativação (canceling): expectedOldSubscriptionId null funciona com .is(null) e NÃO cancela nada', async () => {
-    state.profileRow = { asaas_subscription_id: null }
+    state.profileRow = { asaas_subscription_id: null, plan: 'plus', plan_cycle: 'MONTHLY' }
     const r = await executePlanSwitch({ db: makeDb(), ...baseParams, expectedOldSubscriptionId: null, reason: 'reactivate' })
     expect(r.ok).toBe(true)
     expect(asaasMocks.cancelSubscription).not.toHaveBeenCalled()
+    const update = state.calls.find(c => c.table === 'profiles' && c.op === 'update')?.payload as Record<string, unknown>
+    expect(update).not.toHaveProperty('responses_used')
+    expect(update).not.toHaveProperty('response_period_start_at')
   })
 
   it('cancel da sub antiga falha 2x → troca CONCLUI, mas DLQ CANCEL_OLDSUB + alerta (anti cobrança dupla)', async () => {

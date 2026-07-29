@@ -107,6 +107,13 @@ beforeEach(() => {
 const SESSION_KEY = '550e8400-e29b-41d4-a716-446655440000'
 
 describe('POST /api/responses/partial', () => {
+  it('falha ao ler plano retorna 503 sem podar/persistir como Free', async () => {
+    state.ownerProfile = { data: null, error: { message: 'db unavailable' } }
+    const res = await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'Sidney' } }))
+    expect(res.status).toBe(503)
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
+  })
+
   it('cria parcial e devolve response_id + partial_token válido', async () => {
     const res = await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'Sidney' } }))
     expect(res.status).toBe(201)

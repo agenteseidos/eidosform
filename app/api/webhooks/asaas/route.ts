@@ -13,6 +13,7 @@ import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switc
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
+import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
 
 function getSupabase() {
   return createClient(
@@ -780,7 +781,7 @@ export async function POST(req: NextRequest) {
               billing_period_end_on: null,
               limit_alert_sent: false,
               responses_limit: planConfig?.maxResponses ?? 100,
-              responses_used: 0,
+              ...buildResponseQuotaPeriodReset(),
               asaas_customer_id: customerId,
               ...(payment.subscription ? { asaas_subscription_id: payment.subscription } : {}),
               // mensal encerra a assinatura anual vigente (janela do benefício de migração)
@@ -934,7 +935,7 @@ export async function POST(req: NextRequest) {
             billing_period_end_on: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
-            responses_used: 0,
+            ...buildResponseQuotaPeriodReset(),
           })
           .eq('id', user.id)
           .select('id')
@@ -1038,7 +1039,7 @@ export async function POST(req: NextRequest) {
             billing_period_end_on: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
-            responses_used: 0,
+            ...buildResponseQuotaPeriodReset(),
           })
           .eq('id', user.id)
           .select('id')
@@ -1152,7 +1153,7 @@ export async function POST(req: NextRequest) {
             billing_period_end_on: null,
             limit_alert_sent: false,
             responses_limit: PLANS.free.maxResponses,
-            responses_used: 0,
+            ...buildResponseQuotaPeriodReset(),
           })
           .eq('id', user.id)
           .select('id')

@@ -8,9 +8,11 @@ export type ConversionProfile = {
   plan_status: string | null
   plan_cycle: string | null
   plan_expires_at: string | null
+  email_confirmed_at: string | null
 }
 
 function avaliarProfile(profile: ConversionProfile): Exclude<AccountState, 'none'> {
+  if (!profile.email_confirmed_at) return 'unknown'
   const status = String(profile.plan_status ?? '').trim().toLowerCase()
   // Inadimplência, chargeback, cancelamento consumado e estado legado/desconhecido
   // são deliberadamente inconclusivos para um envio comercial proativo.

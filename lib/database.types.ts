@@ -149,14 +149,28 @@ export interface Database {
         Returns: Array<{ allowed: boolean; current_count: number; reset_in_ms: number }>
       }
       check_and_increment_response: {
-        Args: { p_user_id: string }
+        Args: { p_user_id: string; p_response_id: string }
         Returns: {
           allowed: boolean
           usage: number
           limit_val: number
           plan: PlanId
           near_limit: boolean
+          already_counted: boolean
         }
+      }
+      resolve_public_custom_domain: {
+        Args: { p_hostname: string }
+        Returns: Array<{ slug: string }>
+      }
+      refresh_response_quota_period: {
+        Args: { p_user_id: string }
+        Returns: Array<{
+          usage: number
+          limit_val: number
+          period_start_at: string
+          period_end_at: string
+        }>
       }
       get_response_counts_by_forms: {
         Args: { p_form_ids: string[] }
@@ -173,6 +187,7 @@ export interface Database {
           id: string
           email: string
           full_name: string | null
+          email_confirmed_at: string | null
           avatar_url: string | null
           plan: PlanId
           api_key: string | null
@@ -180,6 +195,8 @@ export interface Database {
           response_count: number
           responses_used: number
           responses_limit: number
+          response_period_start_at: string
+          response_period_end_at: string
           limit_alert_sent: boolean
           plan_status: string | null
           plan_expires_at: string | null
@@ -207,6 +224,7 @@ export interface Database {
           id: string
           email: string
           full_name?: string | null
+          email_confirmed_at?: string | null
           avatar_url?: string | null
           plan?: PlanId
           api_key?: string | null
@@ -214,6 +232,8 @@ export interface Database {
           response_count?: number
           responses_used?: number
           responses_limit?: number
+          response_period_start_at?: string
+          response_period_end_at?: string
           limit_alert_sent?: boolean
           plan_status?: string | null
           plan_expires_at?: string | null
@@ -237,6 +257,7 @@ export interface Database {
           id?: string
           email?: string
           full_name?: string | null
+          email_confirmed_at?: string | null
           avatar_url?: string | null
           plan?: PlanId
           api_key?: string | null
@@ -244,6 +265,8 @@ export interface Database {
           response_count?: number
           responses_used?: number
           responses_limit?: number
+          response_period_start_at?: string
+          response_period_end_at?: string
           limit_alert_sent?: boolean
           plan_status?: string | null
           plan_expires_at?: string | null
@@ -559,6 +582,7 @@ export interface Database {
           sheets_row_index: number | null
           partial_session_hash: string | null
           partial_revision: number | null
+          quota_counted_at: string | null
           submitted_at: string
           // ⚠️ created_at/updated_at NÃO EXISTEM na tabela real (auditoria
           // Codex 2026-07-23, erro 42703 ao consultar) — este arquivo de tipos
@@ -589,6 +613,7 @@ export interface Database {
           sheets_row_index?: number | null
           partial_session_hash?: string | null
           partial_revision?: number | null
+          quota_counted_at?: string | null
           submitted_at?: string
           created_at?: string
           updated_at?: string
@@ -609,6 +634,7 @@ export interface Database {
           sheets_row_index?: number | null
           partial_session_hash?: string | null
           partial_revision?: number | null
+          quota_counted_at?: string | null
           updated_at?: string
           last_activity_at?: string
         }

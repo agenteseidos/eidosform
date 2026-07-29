@@ -11,10 +11,6 @@
     }
   },
   "crons": [
-    { "path": "/api/cron/expire-plans", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/reconcile-checkouts", "schedule": "*/10 * * * *" },
-    { "path": "/api/cron/reconcile-subscriptions", "schedule": "5,35 * * * *" },
-    { "path": "/api/cron/sweep-received", "schedule": "12,42 * * * *" },
-    { "path": "/api/cron/abandoned-leads", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/expire-plans", "schedule": "0 3 * * *" }
   ]
 }

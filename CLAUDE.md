@@ -205,9 +205,37 @@ plan 'free' + status 'active').
 > templates). REGRA NOVA: nunca redigitar lista de plano em componente —
 > importar de `lib/plan-marketing.ts`.
 >
-> Pendente: promover v3 OU v4 à raiz (aguarda A/B — decisão 0.1); confirmar
-> Vercel Pro (crons sub-diários) e ausência de timer duplicado de
-> abandoned-leads na VPS; depoimentos seguem placeholder (decisão 0.4).
+> Pendente: promover v3 OU v4 à raiz (aguarda A/B — decisão 0.1); depoimentos
+> seguem placeholder (decisão 0.4).
+>
+> ✅ **CRONS RESOLVIDO (2026-07-28, revisão Codex).** NÃO é preciso Vercel Pro. A
+> conta é Hobby (máx. 2 crons, só diários) e os 5 jobs JÁ tinham agendador: o
+> `vercel.json` volta a ter SÓ `expire-plans` (diário); `reconcile-checkouts`,
+> `sweep-received` e `reconcile-subscriptions` rodam de hora em hora no crontab
+> da VPS; `abandoned-leads` roda no timer systemd `eidosform-abandoned.timer` a
+> cada 15 min. **O timer duplicado EXISTIA** (o handoff dizia que não) — os 4
+> crons sub-diários foram revertidos. Tabela em `DEPLOY.md`.
+>
+> ⚠️ **NÃO ANUNCIAR (promessas sem lastro, revisão Codex 2026-07-28)** — removidas
+> das /v3 e /v4:
+> - **CAPI server-side**: há UM `META_PIXEL_ID`/token GLOBAL, mas os pixels dos
+>   clientes são POR FORMULÁRIO; todo evento sai como `Lead` e o `event_id` é o
+>   NOME do evento (sem dedup real com o browser). Só anunciar após config por
+>   cliente/formulário.
+> - **"UTM na mensagem do WhatsApp por padrão"**: as variáveis `{utm_*}` existem,
+>   mas os templates PADRÃO não as usam. (O bug de perda de UTM na revalidação do
+>   abandono FOI corrigido.)
+> - **"pergunta exata onde desistiu"** → o dado é a última pergunta RESPONDIDA;
+>   copy corrigida para "após qual pergunta parou".
+> - **"tempo médio de preenchimento"**: `responses` não tem timestamp de início
+>   (só `submitted_at`/`last_activity_at`); o endpoint consultava
+>   `created_at`/`updated_at`, que NÃO EXISTEM. Métrica removida da UI e do
+>   endpoint até existir coluna de início (SEM default — vide 2026-07-23).
+>
+> ✅ **COTA DO FREE = 100** (decisão Sidney 2026-07-28). O trigger gravava 50 e a
+> RPC `check_and_increment_response` RESPEITA `profiles.responses_limit` — conta
+> nova era bloqueada em 50 com a LP vendendo 100. Migração
+> `20260728_free_quota_100.sql` corrige o trigger e regulariza os perfis free.
 
 ### Pendências menores correlatas (não bloqueantes)
 - ✅ POLISH FEITO (2026-06-10, sessão 3) — modal de sucesso da troca de plano: operação

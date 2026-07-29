@@ -19,11 +19,47 @@ Configure estas variáveis no painel da Vercel (Settings → Environment Variabl
 
 ## Passos para Deploy
 
-1. Instalar Vercel CLI: `npm i -g vercel`
-2. Na raiz do projeto: `vercel login`
-3. Linkar projeto: `vercel link`
-4. Deploy preview: `vercel`
-5. Deploy produção: `vercel --prod`
+> ⚠️ **NÃO use `vercel --prod`.** Esse comando sobe o **diretório local**, não o que
+> está na `main` do GitHub — inclusive trabalho não commitado e commits atrasados.
+> Em 2026-07-28 ele quase publicou uma árvore 5 commits atrás da `main`.
+
+**O projeto NÃO tem auto-deploy por push.** O link com o GitHub é `sourceless: true`
+(existe o alias `-git-main-`, mas a Vercel não recebe webhook de push). Publicar tem
+dois passos:
+
+1. **Mandar o código para a `main`** (`git push origin main`). Isso sozinho **não**
+   coloca nada no ar.
+2. **Disparar o deploy hook**, que builda a partir do GitHub, ref `main`:
+
+```bash
+curl -s -X POST "https://api.vercel.com/v1/integrations/deploy/prj_jJm0RRHflPOUmM5feB8vfUYjJq20/hsbpPojR5P"
+```
+
+**Conferir o que ficou no ar** (a CLI não está logada nesta VPS; usar `--token` do cofre):
+
+```bash
+VTOKEN="$(tr -d '\r\n' < /home/sidney/.eidos-credentials/produtos/vercel.token)"
+vercel ls --token "$VTOKEN" --yes | head -4
+```
+
+⚠️ **Nunca conclua "tal commit não está em produção" sem `git ls-remote`** — a ref local
+`origin/main` fica velha e já causou pânico falso mais de uma vez.
+
+**Recomendado:** conectar o Git de verdade (Vercel → Settings → Git → `agenteseidos/eidosform`,
+branch `main`). Aí o passo 2 desaparece.
+
+### Crons
+
+A conta é **Hobby** (máx. 2 crons, só diários). Por isso o `vercel.json` agenda **apenas**
+`expire-plans` (diário). Os demais rodam na VPS e **não devem ser duplicados aqui**:
+
+| Job | Onde roda |
+|---|---|
+| `expire-plans` | Vercel, `0 3 * * *` |
+| `reconcile-checkouts` | crontab da VPS (`7 * * * *`) |
+| `sweep-received` | crontab da VPS (`22 * * * *`) |
+| `reconcile-subscriptions` | crontab da VPS (`37 * * * *`) |
+| `abandoned-leads` | timer systemd `eidosform-abandoned.timer` (15 min) |
 
 ## Configurar Google OAuth no Supabase (Pendente — Sidney)
 

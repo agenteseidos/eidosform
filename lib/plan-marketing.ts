@@ -14,8 +14,11 @@
  *    nega (e vice-versa nos casos mapeados).
  *  - "Exportação CSV avançada" REMOVIDA do Professional (decisão 0.3 — era o
  *    mesmo CSV do Starter, mesmo flag csvExport).
- *  - Alerta de 80% é vendido só no Plus+ (decisão 0.2b — gate real em
- *    sendNearLimitAlert).
+ *  - Alerta de 80% NÃO é anunciado (decisão Sidney 2026-07-28): o envio existe e
+ *    é gated Plus+ (sendNearLimitAlert), mas é fire-and-forget — se o email
+ *    falhar, o alerta se perde e a flag de dedupe já foi queimada pela RPC.
+ *    Não se vende o que não se garante. O guard em plan-marketing.test.ts
+ *    continua no lugar para impedir que a promessa reapareça num plano menor.
  *  - Excel (.xlsx) e PDF entram na vitrine: entregues e não vendidos
  *    (Excel = gate csvExport/Starter+; PDF = pdfExport/Plus+).
  *  - Free/Starter voltam a declarar a marca d'água (watermark: true) e o
@@ -102,7 +105,6 @@ export const PLAN_MARKETING: Record<PlanId, PlanMarketing> = {
       'Conversões personalizadas por resposta',
       'Webhooks para automações',
       'Notificação por email e WhatsApp',
-      'Alerta de limite (80%)',
       'Bloco HTML / Embeds',
       'Exportação PDF',
       'Suporte prioritário',

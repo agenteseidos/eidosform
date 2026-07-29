@@ -5,6 +5,7 @@ import { createPublicClient } from '@/lib/supabase/public'
 import { FormPlayer } from '@/components/form-player/form-player'
 import { Form } from '@/lib/database.types'
 import { getEffectivePlan } from '@/lib/plans'
+import { PLANS, type PlanName } from '@/lib/plan-definitions'
 import { filterQuestionsByPlan } from '@/lib/questions'
 
 export const dynamic = 'force-dynamic'
@@ -151,7 +152,12 @@ export default async function FormPage({ params }: FormPageProps) {
   // Gate: redirecionamento pós-envio é Starter+ (espelha o gate de escrita em
   // /api/forms). Forms legados de dono Free não quebram — apenas param de
   // redirecionar e mostram a tela de agradecimento padrão.
-  const ownerCanRedirect = ownerPlan !== 'free'
+  //
+  // Lê o FLAG da tabela de planos, não `plano !== free` (revisão Codex
+  // 2026-07-28): a API e o builder já decidiam por PLANS[].redirect, e escrever
+  // a regra de outro jeito aqui faria o player ficar mais PERMISSIVO que a API
+  // no dia em que existir um plano sem redirect que não seja o Free.
+  const ownerCanRedirect = PLANS[ownerPlan as PlanName]?.redirect ?? false
   if (!ownerCanRedirect && form.redirect_url) {
     form.redirect_url = null
   }

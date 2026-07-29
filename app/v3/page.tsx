@@ -229,7 +229,7 @@ const FAQS = [
   },
   {
     q: 'O que acontece quando atinjo o limite de respostas do mês?',
-    a: 'Seu formulário para de receber novas respostas até a virada do ciclo mensal. Nunca cobramos nada a mais automaticamente. Você pode fazer upgrade a qualquer momento e a cota nova vale na hora. Nos planos Plus e Professional, avisamos por email quando você usa 80% do limite.',
+    a: 'Seu formulário para de receber novas respostas até a virada do ciclo mensal. Nunca cobramos nada a mais automaticamente. Você pode fazer upgrade a qualquer momento e a cota nova vale na hora.',
   },
   {
     q: 'Quais formas de pagamento vocês aceitam?',

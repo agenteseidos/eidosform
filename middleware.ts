@@ -67,7 +67,7 @@ function formPlayerResponse(request: NextRequest, rewriteUrl?: URL): NextRespons
  * Resolve a custom domain to a form slug.
  * Uses in-memory cache with TTL to avoid hitting DB on every request.
  */
-async function resolveCustomDomain(hostname: string): Promise<string | null> {
+export async function resolveCustomDomain(hostname: string): Promise<string | null> {
   const cached = customDomainCache.get(hostname)
   if (cached && cached.expiresAt > Date.now()) {
     return cached.slug
@@ -78,30 +78,19 @@ async function resolveCustomDomain(hostname: string): Promise<string | null> {
   if (!supabaseUrl || !supabaseAnonKey) return null
 
   try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/custom_domains?domain=eq.${encodeURIComponent(hostname)}&verified=eq.true&select=form_id`, {
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/resolve_public_custom_domain`, {
+      method: 'POST',
       headers: {
         apikey: supabaseAnonKey,
         Authorization: `Bearer ${supabaseAnonKey}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ p_hostname: hostname }),
     })
     if (!res.ok) return null
     const rows = await res.json()
-    if (!rows || rows.length === 0 || !rows[0].form_id) return null
-
-    // Fetch the form's slug
-    const formRes = await fetch(`${supabaseUrl}/rest/v1/forms?id=eq.${rows[0].form_id}&select=slug,status`, {
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-      },
-    })
-    if (!formRes.ok) return null
-    const forms = await formRes.json()
-    if (!forms || forms.length === 0) return null
-
-    // Only route to published forms
-    const form = forms[0]
-    if (form.status !== 'published') return null
+    if (!Array.isArray(rows) || typeof rows[0]?.slug !== 'string' || !rows[0].slug) return null
+    const slug = rows[0].slug
 
     // Evict oldest entry if cache is full
     if (customDomainCache.size >= CACHE_MAX_SIZE) {
@@ -109,10 +98,10 @@ async function resolveCustomDomain(hostname: string): Promise<string | null> {
       if (firstKey) customDomainCache.delete(firstKey)
     }
     customDomainCache.set(hostname, {
-      slug: form.slug,
+      slug,
       expiresAt: Date.now() + CACHE_TTL_MS,
     })
-    return form.slug
+    return slug
   } catch {
     return null
   }
@@ -204,4 +193,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
-

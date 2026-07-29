@@ -57,7 +57,7 @@ export async function POST() {
   const { createHash } = await import('crypto')
   const keyHash = createHash('sha256').update(newKey).digest('hex')
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await createAdminClient()
     .from('profiles')
     .update({ api_key_hash: keyHash, api_key_created_at: new Date().toISOString(), api_key: null } as ProfileUpdate)
     .eq('id', user.id)
@@ -152,7 +152,7 @@ export async function DELETE() {
     )
   }
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await createAdminClient()
     .from('profiles')
     .update({ api_key: null, api_key_hash: null, api_key_created_at: null } as ProfileUpdate)
     .eq('id', user.id)

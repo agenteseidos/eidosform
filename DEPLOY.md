@@ -23,30 +23,32 @@ Configure estas variáveis no painel da Vercel (Settings → Environment Variabl
 > está na `main` do GitHub — inclusive trabalho não commitado e commits atrasados.
 > Em 2026-07-28 ele quase publicou uma árvore 5 commits atrás da `main`.
 
-**O projeto NÃO tem auto-deploy por push.** O link com o GitHub é `sourceless: true`
-(existe o alias `-git-main-`, mas a Vercel não recebe webhook de push). Publicar tem
-dois passos:
+**Deploy = `git push origin main`.** A Vercel builda produção sozinha e começa em ~2
+segundos (confirmado em 5 pushes de 2026-07-28, todos `source: git`).
 
-1. **Mandar o código para a `main`** (`git push origin main`). Isso sozinho **não**
-   coloca nada no ar.
-2. **Disparar o deploy hook**, que builda a partir do GitHub, ref `main`:
+### ⚠️ Confirme sempre — o push pode não virar deploy
+
+Em 2026-07-28, dois pushes na `main` (`202eb8d` 20:53 e `f45050b` 21:01) **não geraram
+deployment nenhum**, enquanto todos os outros do mesmo dia geraram em 2 segundos. Causa
+não determinada (a Vercel integra pelo GitHub App; o repo não tem webhook próprio para
+inspecionar). O trabalho ficou ~1h30 parado, "publicado" só na cabeça de quem empurrou.
+
+```bash
+VTOKEN="$(tr -d '\r\n' < /home/sidney/.eidos-credentials/produtos/vercel.token)"
+vercel ls --token "$VTOKEN" --yes | head -4   # o commit novo TEM que aparecer
+```
+
+Se não apareceu em ~1 min, dispare o **deploy hook** (builda a partir do GitHub, ref `main`):
 
 ```bash
 curl -s -X POST "https://api.vercel.com/v1/integrations/deploy/prj_jJm0RRHflPOUmM5feB8vfUYjJq20/hsbpPojR5P"
 ```
 
-**Conferir o que ficou no ar** (a CLI não está logada nesta VPS; usar `--token` do cofre):
-
-```bash
-VTOKEN="$(tr -d '\r\n' < /home/sidney/.eidos-credentials/produtos/vercel.token)"
-vercel ls --token "$VTOKEN" --yes | head -4
-```
+E confirme **no ar**, não na lista: `curl -s https://eidosform.com.br/<rota>` procurando uma
+string que só existe na versão nova.
 
 ⚠️ **Nunca conclua "tal commit não está em produção" sem `git ls-remote`** — a ref local
 `origin/main` fica velha e já causou pânico falso mais de uma vez.
-
-**Recomendado:** conectar o Git de verdade (Vercel → Settings → Git → `agenteseidos/eidosform`,
-branch `main`). Aí o passo 2 desaparece.
 
 ### Crons
 

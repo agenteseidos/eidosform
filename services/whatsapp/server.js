@@ -280,7 +280,45 @@ async function handleFailedSend({ key, to, message, result }) {
   return { queued: veredito === 'enqueued' || veredito === 'already_queued', veredito };
 }
 
+/**
+ * NUNCA ENVIAR — bloqueio operacional por destinatário (30/07/2026).
+ *
+ * Descoberta medida em produção, 4 de 4: TODO envio para o número da Karin
+ * partindo de aparelho VINCULADO derruba o aparelho remetente no MESMO segundo
+ * (wuzapi 2× via 463+401; wacli 2× deslogado ~1s após o envio, sem nem dar
+ * erro). Do celular (aparelho principal) chega normal. Causa raiz desconhecida
+ * — provável incompatibilidade dos clientes whatsmeow com algo do contato dela.
+ *
+ * Enquanto a causa não é resolvida, enviar para esse número = derrubar TODAS as
+ * notificações até alguém reparear QR. O bloqueio devolve PERMANENTE ⇒ o lead
+ * vira carta morta ⇒ o e-mail de carta morta avisa o Sidney para repassar
+ * MANUALMENTE (do celular sempre funciona).
+ */
+const NUNCA_ENVIAR = new Set(
+  (process.env.WHATSAPP_NUNCA_ENVIAR || '')
+    .split(',')
+    .map((n) => n.replace(/\D/g, ''))
+    .filter(Boolean)
+    .flatMap((n) => require('./transport').brazilianPhoneCandidates(n)),
+);
+
+function destinoBloqueado(phone) {
+  const cleaned = String(phone || '').replace(/\D/g, '');
+  return require('./transport')
+    .brazilianPhoneCandidates(cleaned)
+    .some((v) => NUNCA_ENVIAR.has(v));
+}
+
 async function performSend(phone, message, idempotencyKey) {
+  if (destinoBloqueado(phone)) {
+    log(`[send] BLOQUEADO por WHATSAPP_NUNCA_ENVIAR: ${hashPhone(phone)} — repassar manualmente`);
+    return {
+      success: false,
+      error: 'destino_bloqueado_operacionalmente',
+      errorClass: ERROR_CLASS.PERMANENTE,
+      transport: 'nenhum',
+    };
+  }
   return sendWithTransportFallback({
     primary: primaryTransport,
     fallback: fallbackTransport,

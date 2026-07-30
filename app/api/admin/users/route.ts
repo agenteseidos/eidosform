@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
   let profilesQuery = supabase
     .from('profiles')
-    .select('id, email, plan, plan_expires_at, plan_status, created_at', { count: 'exact' })
+    .select('id, email, plan, plan_cycle, plan_expires_at, plan_status, created_at, lifetime_access, asaas_subscription_id, responses_used, responses_limit', { count: 'exact' })
     .order('created_at', { ascending: false })
 
   if (search) {
@@ -52,15 +52,29 @@ export async function GET(request: NextRequest) {
     formsCountByUser.set(form.user_id, (formsCountByUser.get(form.user_id) ?? 0) + 1)
   }
 
-  const users = (profiles ?? []).map((profile) => ({
-      id: profile.id,
-      email: profile.email,
-      plan: normalizePlan(profile.plan),
-      planExpiresAt: profile.plan_expires_at ?? null,
-      planStatus: profile.plan_status ?? null,
-      createdAt: profile.created_at,
-      formsCount: formsCountByUser.get(profile.id) ?? 0,
-    }))
+  const users = (profiles ?? []).map((profile) => {
+    const p = profile as typeof profile & {
+      plan_cycle: string | null
+      lifetime_access: boolean | null
+      asaas_subscription_id: string | null
+      responses_used: number | null
+      responses_limit: number | null
+    }
+    return {
+      id: p.id,
+      email: p.email,
+      plan: normalizePlan(p.plan),
+      planCycle: p.plan_cycle ?? null,
+      planExpiresAt: p.plan_expires_at ?? null,
+      planStatus: p.plan_status ?? null,
+      lifetimeAccess: Boolean(p.lifetime_access),
+      hasSubscription: Boolean(p.asaas_subscription_id),
+      responsesUsed: p.responses_used ?? 0,
+      responsesLimit: p.responses_limit ?? 0,
+      createdAt: p.created_at,
+      formsCount: formsCountByUser.get(p.id) ?? 0,
+    }
+  })
 
   return NextResponse.json({
     users,

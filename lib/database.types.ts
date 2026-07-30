@@ -182,6 +182,54 @@ export interface Database {
       theme_preset: 'midnight' | 'ocean' | 'sunset' | 'forest' | 'lavender' | 'minimal'
     }
     Tables: {
+      admin_actions: {
+        Row: {
+          id: string
+          idempotency_key: string | null
+          actor_id: string
+          actor_email: string
+          target_user_id: string
+          target_email: string | null
+          action: string
+          reason: string
+          state: string
+          before: Json | null
+          after: Json | null
+          subscription_id: string | null
+          payment_id: string | null
+          attempts: number
+          error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          idempotency_key?: string | null
+          actor_id: string
+          actor_email: string
+          target_user_id: string
+          target_email?: string | null
+          action: string
+          reason: string
+          state?: string
+          before?: Json | null
+          after?: Json | null
+          subscription_id?: string | null
+          payment_id?: string | null
+          attempts?: number
+          error?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          state?: string
+          after?: Json | null
+          attempts?: number
+          error?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           id: string

@@ -26,6 +26,7 @@ import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
+import { notifyPlanoAlterado, planLabel } from '@/lib/whatsapp-confirmations'
 
 export interface PlanSwitchParams {
   /** Client service-role (escritas de billing não passam pela RLS do usuário). */
@@ -220,6 +221,15 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
   }
 
   await stampAnnualStart(db, profileId, cycle)
+
+  // Confirmação ao cliente (upgrade/downgrade/reativação) — fire-and-forget,
+  // espelha o padrão dos e-mails do webhook. Reativação de mesmo plano+ciclo
+  // não é "mudança" na cabeça do cliente → não notifica.
+  if (!(currentProfile?.plan === plan && currentProfile?.plan_cycle === cycle)) {
+    void notifyPlanoAlterado(profileId, {
+      fromLabel: planLabel(currentProfile?.plan, currentProfile?.plan_cycle),
+    })
+  }
 
   // 3) Limites de forms (downgrade pausa excedentes — crítico, com DLQ).
   await applyFormLimits(db, profileId, plan, isPlanDowngrade, newSub.id, tag)

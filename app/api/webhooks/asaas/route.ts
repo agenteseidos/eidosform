@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
+import { notifyPlanoAtivado, notifyAssinaturaCancelada, planLabel } from '@/lib/whatsapp-confirmations'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
 import { finalizeActivation, claimActivationEffects, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
@@ -823,6 +824,8 @@ export async function POST(req: NextRequest) {
         // despause, e o e-mail (já enviado) não é reenviado.
         if (await claimActivationEffects(supabase, payment.subscription, plan, cycle)) {
           await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
+          // WhatsApp espelha o e-mail: mesmo ponto, mesma idempotência (claim acima).
+          void notifyPlanoAtivado(user.id)
           const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
           log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
         } else {
@@ -1018,6 +1021,7 @@ export async function POST(req: NextRequest) {
           await updateCheckoutLink({ customerId, subscriptionId: subscription?.id ?? null, externalReference: subscription?.externalReference ?? null, event, status: 'cancelled' })
           log('[asaas-webhook] SUBSCRIPTION_DELETED — cancelamento do usuário; acesso mantido até o fim do período', { userId: user.id, expiresAt: deletedProfile.plan_expires_at })
           await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: user.plan ?? 'starter' }).catch((err) => logError('Failed to send plan cancellation email', err))
+          void notifyAssinaturaCancelada(user.id, { planLabel: planLabel(user.plan ?? 'starter') })
           break
         }
 
@@ -1060,6 +1064,7 @@ export async function POST(req: NextRequest) {
         log('[asaas-webhook] Downgrade processed', { userId: user.id, pausedForms: downgrade.pausedCount })
 
         await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan }).catch((err) => logError('Failed to send plan cancellation email', err))
+        void notifyAssinaturaCancelada(user.id, { planLabel: planLabel(oldPlan) })
         break
       }
 
@@ -1174,6 +1179,7 @@ export async function POST(req: NextRequest) {
         log('[asaas-webhook] Downgrade processed (chargeback/inactivated)', { userId: user.id, pausedForms: downgrade.pausedCount, event })
 
         await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan })
+        void notifyAssinaturaCancelada(user.id, { planLabel: planLabel(oldPlan) })
           .catch((err) => logError('Failed to send chargeback/inactivation notification email', err))
         break
       }

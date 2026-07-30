@@ -27,6 +27,7 @@ import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart, type BillingCycle } from '@/lib/billing-activation'
 import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
+import { notifyPlanoAtivado, notifyAssinaturaCancelada, planLabel } from '@/lib/whatsapp-confirmations'
 import { log, logError } from '@/lib/logger'
 
 const MAX_ATTEMPTS = 5
@@ -318,6 +319,7 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     if (profile.plan === 'free' || profile.plan !== plan) {
       await sendPlanActivated({ to: profile.email, name: profile.full_name ?? 'usuário', plan })
         .catch((e) => logError('[asaas-reprocess] email ativação falhou', e))
+      void notifyPlanoAtivado(profile.id)
     }
 
     // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente —
@@ -386,6 +388,7 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
 
   await handleDowngrade(profile.id, serviceKey)
   await sendPlanCancelled({ to: profile.email, name: profile.full_name ?? 'usuário', plan: profile.plan ?? 'starter' })
+  void notifyAssinaturaCancelada(profile.id, { planLabel: planLabel(profile.plan ?? 'starter') })
     .catch((e) => logError('[asaas-reprocess] email cancelamento falhou', e))
   log('[asaas-reprocess] plano revertido p/ free via reprocesso', { profileId: profile.id })
   return 'reverted_to_free'

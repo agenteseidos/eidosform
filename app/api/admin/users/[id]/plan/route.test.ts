@@ -25,6 +25,13 @@ vi.mock('@/lib/plan-limits', () => ({
   handleUpgrade: vi.fn(async () => ({ unpausedCount: 0 })),
 }))
 vi.mock('@/lib/admin-journal', () => ({ recordAdminAction: vi.fn(async () => undefined) }))
+vi.mock('@/lib/whatsapp-confirmations', () => ({
+  notifyPlanoAlterado: vi.fn(async () => ({ sent: true })),
+  notifyAssinaturaCancelada: vi.fn(async () => ({ sent: true })),
+  notifyAcessoAtualizado: vi.fn(async () => ({ sent: true })),
+  planLabel: (p: string) => p,
+  brDate: () => '30/09/2026',
+}))
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }))
 
 import { PATCH } from './route'
@@ -254,5 +261,47 @@ describe('troca de plano', () => {
     expect(entry.action).toBe('expiry_adjust')
     expect(entry.reason).toBe('cortesia por atraso')
     expect(entry.actorEmail).toBe('admin@eidos.com')
+  })
+})
+
+describe('confirmação ao cliente (checkbox Avisar)', () => {
+  it('ajuste de data notifica acesso_atualizado por padrão e registra no journal', async () => {
+    const { notifyAcessoAtualizado } = await import('@/lib/whatsapp-confirmations')
+    const { client } = makeSupabase(profileFixture())
+    mockGetAdminSupabase.mockReturnValue(client as never)
+    await PATCH(makeReq({ plan: 'starter', expiresOn: FUTURE, reason: 'cortesia +15 dias' }), params)
+    expect(vi.mocked(notifyAcessoAtualizado)).toHaveBeenCalledTimes(1)
+    const entry = mockRecordAdminAction.mock.calls[0][0]
+    expect((entry.after as Record<string, unknown>).customer_notified).toBe(true)
+  })
+
+  it('notifyCustomer=false silencia e registra o silêncio', async () => {
+    const { notifyAcessoAtualizado } = await import('@/lib/whatsapp-confirmations')
+    const { client } = makeSupabase(profileFixture())
+    mockGetAdminSupabase.mockReturnValue(client as never)
+    await PATCH(makeReq({ plan: 'starter', expiresOn: FUTURE, reason: 'teste interno', notifyCustomer: false }), params)
+    expect(vi.mocked(notifyAcessoAtualizado)).not.toHaveBeenCalled()
+    const entry = mockRecordAdminAction.mock.calls[0][0]
+    expect((entry.after as Record<string, unknown>).customer_notified).toBe(false)
+  })
+
+  it('grant pago novo notifica plano_alterado com cortesia (sem cobrança)', async () => {
+    const { notifyPlanoAlterado } = await import('@/lib/whatsapp-confirmations')
+    const { client } = makeSupabase(profileFixture({ plan: 'free', plan_expires_at: null }))
+    mockGetAdminSupabase.mockReturnValue(client as never)
+    await PATCH(makeReq({ plan: 'plus', expiresOn: FUTURE, reason: 'cortesia de lançamento' }), params)
+    expect(vi.mocked(notifyPlanoAlterado)).toHaveBeenCalledTimes(1)
+    const opts = vi.mocked(notifyPlanoAlterado).mock.calls[0][1]
+    expect(opts.chargeInfo).toMatch(/cortesia/i)
+  })
+
+  it('mover para free notifica assinatura_cancelada com acesso até hoje', async () => {
+    const { notifyAssinaturaCancelada } = await import('@/lib/whatsapp-confirmations')
+    const { client } = makeSupabase(profileFixture({ plan: 'plus', asaas_subscription_id: 'sub_123' }))
+    mockGetAdminSupabase.mockReturnValue(client as never)
+    mockCancelSubscription.mockResolvedValue({ deleted: true, id: 'sub_123' })
+    await PATCH(makeReq({ plan: 'free', reason: 'encerramento a pedido' }), params)
+    expect(vi.mocked(notifyAssinaturaCancelada)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(notifyAssinaturaCancelada).mock.calls[0][1].accessUntil).toBe('hoje')
   })
 })

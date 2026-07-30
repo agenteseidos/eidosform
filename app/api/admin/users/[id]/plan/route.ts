@@ -7,6 +7,7 @@ import { expiryFromNextDueDate } from '@/lib/billing-activation'
 import { recordAdminAction } from '@/lib/admin-journal'
 import { log, logError, logWarn } from '@/lib/logger'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
+import { notifyPlanoAlterado, notifyAssinaturaCancelada, notifyAcessoAtualizado, planLabel, brDate } from '@/lib/whatsapp-confirmations'
 
 /**
  * PATCH /api/admin/users/[id]/plan — plano e expiração pelo painel admin.
@@ -102,7 +103,7 @@ export async function PATCH(
 
   const { id } = await params
 
-  let body: { plan?: unknown; expiresAt?: unknown; expiresOn?: unknown; reason?: unknown }
+  let body: { plan?: unknown; expiresAt?: unknown; expiresOn?: unknown; reason?: unknown; notifyCustomer?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -121,6 +122,9 @@ export async function PATCH(
       { status: 400 }
     )
   }
+
+  // Checkbox "Avisar o cliente" — LIGADA por padrão; só silencia com false explícito.
+  const notifyCustomer = body.notifyCustomer !== false
 
   const expiryParsed = parseExpiry(body)
   if (!expiryParsed.ok) {
@@ -202,6 +206,12 @@ export async function PATCH(
       const { data: after } = await supabase
         .from('profiles').select(PROFILE_COLS).eq('id', id).single<ProfileRow>()
 
+      // Confirmação ao cliente (decisão Sidney 30/07): ligada por padrão.
+      let notified: { sent: boolean; skipped?: string } = { sent: false, skipped: 'not_requested' }
+      if (notifyCustomer) {
+        notified = await notifyAcessoAtualizado(id, { validUntil: brDate(expiryParsed.value) ?? undefined })
+      }
+
       await recordAdminAction({
         actorId: auth.user.id,
         actorEmail: auth.user.email ?? '',
@@ -210,7 +220,11 @@ export async function PATCH(
         action: 'expiry_adjust',
         reason,
         before,
-        after: { plan_expires_at: after?.plan_expires_at ?? expiryParsed.value },
+        after: {
+          plan_expires_at: after?.plan_expires_at ?? expiryParsed.value,
+          customer_notified: notified.sent,
+          ...(notified.skipped ? { notify_skipped: notified.skipped } : {}),
+        },
       })
 
       return NextResponse.json({ success: true, user: after ? toApiUser(after) : null, warnings })
@@ -325,6 +339,28 @@ export async function PATCH(
     const { data: after } = await supabase
       .from('profiles').select(PROFILE_COLS).eq('id', id).single<ProfileRow>()
 
+    // Confirmação ao cliente por mapeamento (decisão Sidney 30/07):
+    //  → free           = assinatura_cancelada (acesso encerra hoje)
+    //  → grant pago     = plano_alterado, com "Próxima cobrança" preenchida
+    //                     como cortesia (grants não têm cobrança; quem tem sub
+    //                     nem chega aqui — 409 acima).
+    let notified: { sent: boolean; skipped?: string } = { sent: false, skipped: 'not_requested' }
+    if (notifyCustomer) {
+      const fromLabel = planLabel(currentPlan, currentProfile.plan_cycle)
+      if (newPlan === 'free') {
+        notified = await notifyAssinaturaCancelada(id, {
+          planLabel: fromLabel,
+          accessUntil: 'hoje',
+        })
+      } else {
+        const validade = brDate(expiryParsed.value as string) ?? 'a data combinada'
+        notified = await notifyPlanoAlterado(id, {
+          fromLabel,
+          chargeInfo: `nenhuma — cortesia válida até ${validade}`,
+        })
+      }
+    }
+
     await recordAdminAction({
       actorId: auth.user.id,
       actorEmail: auth.user.email ?? '',
@@ -334,7 +370,11 @@ export async function PATCH(
       reason,
       before,
       after: after
-        ? { plan: after.plan, plan_status: after.plan_status, plan_expires_at: after.plan_expires_at }
+        ? {
+            plan: after.plan, plan_status: after.plan_status, plan_expires_at: after.plan_expires_at,
+            customer_notified: notified.sent,
+            ...(notified.skipped ? { notify_skipped: notified.skipped } : {}),
+          }
         : null,
       subscriptionId: currentSub,
       error: warnings.length ? warnings.join(' | ') : null,

@@ -86,6 +86,7 @@ export function AdminUsersTable() {
   const [nextPlan, setNextPlan] = useState<PlanId>('free')
   const [nextExpiresOn, setNextExpiresOn] = useState<string>('') // YYYY-MM-DD
   const [reason, setReason] = useState('')
+  const [notifyCustomer, setNotifyCustomer] = useState(true)
   const [dialogWarnings, setDialogWarnings] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
 
@@ -148,6 +149,7 @@ export function AdminUsersTable() {
     setNextPlan(user.plan)
     setNextExpiresOn(isoToDateInput(user.planExpiresAt))
     setReason('')
+    setNotifyCustomer(true)
     setDialogWarnings([])
   }
 
@@ -168,6 +170,7 @@ export function AdminUsersTable() {
           // fuso do navegador do admin). Free não envia data.
           ...(nextPlan !== 'free' && nextExpiresOn ? { expiresOn: nextExpiresOn } : {}),
           reason: reason.trim(),
+          notifyCustomer,
         }),
       })
 
@@ -431,6 +434,21 @@ export function AdminUsersTable() {
             />
             <p className="text-xs text-slate-500">Fica registrado no histórico de ações do admin.</p>
           </div>
+
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={notifyCustomer}
+              onChange={(event) => setNotifyCustomer(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-emerald-600"
+            />
+            <span>
+              Avisar o cliente por WhatsApp
+              <span className="block text-xs text-slate-500">
+                Desmarque apenas para testes ou ajustes internos. A escolha fica no histórico.
+              </span>
+            </span>
+          </label>
 
           {dialogWarnings.length > 0 && (
             <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">

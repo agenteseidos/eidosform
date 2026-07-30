@@ -50,6 +50,24 @@ systemctl start eidosform-wuzapi.service
 # próximo envio renegocia a sessão sozinho. Pareamento e demais aparelhos ficam intactos.
 ```
 
+## Destinos proibidos — `WHATSAPP_NUNCA_ENVIAR`
+
+Env do serviço (lista separada por vírgula). Números para os quais **enviar de aparelho vinculado
+derruba os vínculos da linha** (medido 2× em 30/07 com o nº da Karin). O guard corta em `performSend`,
+ANTES de qualquer motor; o lead vira carta morta e o e-mail de carta morta avisa o operador para
+**repassar manualmente do celular** (aparelho principal sempre entrega).
+Causa raiz do caso original: **whatsmeow desatualizado no binário do wuzapi** (maio/26 — o upstream
+pina isso até hoje; conferir com `strings /usr/local/bin/wuzapi | grep -oE 'whatsmeow@v[^\s]+'`).
+Rebuild: clonar `asternic/wuzapi` + `go get go.mau.fi/whatsmeow@latest` + `go build`.
+⚠️ Só remover número da lista com decisão explícita do dono — teste custa revogação se a causa persistir.
+
+## Escalada de punição do WhatsApp (vivida em 29–30/07)
+
+Revogação de 1 vinculado → revogação de TODOS os vinculados → **restrição da conta (6h)** → (próximo
+degrau: ban). Protocolo de restrição: parar `eidosform-wuzapi` · NENHUM QR nem envio na janela · PM2
+fica de pé só enfileirando (fila cobre ~20h) · religar com folga após expirar · parear UM motor só ·
+perfil baixo 48h. Detalhe: ficha `notificacao-lead-whatsapp-eidosform.md`.
+
 ## Regras operacionais
 
 - **NÃO reiniciar o wuzapi à toa.** Cada restart zera o cache de reenvio = janela de envenenamento.

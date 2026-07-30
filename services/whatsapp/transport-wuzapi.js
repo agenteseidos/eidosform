@@ -56,16 +56,27 @@ function classifyHttpFailure(status, payload) {
       retryAlternateNumber: safeText.includes('phone') || safeText.includes('jid'),
     };
   }
-  // Medido em produção (2026-07-27): enviar para a variante de JID que não
-  // existe devolve 500 "server returned error 463". O erro veio de DENTRO do
-  // SendMessage do whatsmeow, ou seja, nada foi entregue — então tentar a outra
-  // variante do número é seguro e não duplica. Sem esta linha o envio morre
-  // como 5xx ambíguo, o fallback de número nunca roda, e a ordem correta em
-  // brazilianPhoneCandidates vira o ÚNICO anteparo contra formato errado.
+  // ERRO 463 — NÃO é sentença de destinatário inválido. Corrigido em 29/07.
+  //
+  // Em 27/07 observei 463 ao enviar para um JID inexistente e generalizei de UM
+  // experimento: "463 = destinatário não existe = PERMANENTE, descarta". Errado.
+  // Em 29/07 o mesmo 463 apareceu para números que EXISTEM (confirmado no
+  // /user/check), sempre com a sessão em estado ruim — um deles no segundo
+  // exato do logout, outro durante o repareamento. Custou 3 notificações
+  // DESCARTADAS sem nenhuma tentativa de reenvio; um minuto depois a sessão já
+  // entregava normalmente.
+  //
+  // Classificação correta: PRE_FLIGHT. O 463 é resposta de ERRO do servidor,
+  // então sabemos que NADA foi entregue (por isso `retryAlternateNumber` e por
+  // isso reenviar não duplica), mas NÃO sabemos se a causa é permanente. Como
+  // PRE_FLIGHT, o envio percorre a escada inteira: outra variante do número →
+  // motor reserva → fila de reenvio com backoff → só então carta morta.
   if (status >= 500 && safeText.includes('server returned error 463')) {
     return {
-      error: 'wuzapi_recipient_rejected',
-      errorClass: ERROR_CLASS.PERMANENTE,
+      // Nome honesto: descreve o que o servidor respondeu, não uma causa que
+      // não temos como saber.
+      error: 'wuzapi_rejeitado_463',
+      errorClass: ERROR_CLASS.PRE_FLIGHT,
       retryAlternateNumber: true,
     };
   }

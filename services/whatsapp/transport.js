@@ -71,9 +71,16 @@ async function sendWithNumberFallback(transport, phone, message, context, { log,
   const first = await transport.enviarTexto(firstPhone, message, context);
   if (first.success) return first;
 
-  // A troca 8↔9 só é segura quando o transporte provou que rejeitou o
-  // destinatário antes do envio. Timeout/5xx nunca tenta uma segunda variante.
-  if (first.errorClass !== ERROR_CLASS.PERMANENTE || first.retryAlternateNumber !== true) {
+  // A troca 8↔9 só é segura quando o transporte provou que NADA foi entregue.
+  // Quem carrega essa prova é a flag `retryAlternateNumber` — ela só é marcada
+  // em rejeições explícitas do servidor, nunca em timeout/5xx ambíguo.
+  //
+  // ⚠️ Antes esta linha exigia TAMBÉM `errorClass === PERMANENTE`, e isso
+  // acoplou duas decisões que não têm nada a ver uma com a outra: "posso tentar
+  // o outro formato do número?" e "vale a pena tentar de novo mais tarde?".
+  // O resultado foi 3 notificações descartadas em 29/07 (erro 463) — ver
+  // classifyHttpFailure em transport-wuzapi.js.
+  if (first.retryAlternateNumber !== true) {
     return first;
   }
 

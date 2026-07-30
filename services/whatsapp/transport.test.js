@@ -253,14 +253,34 @@ describe('classificação de erro', () => {
     expect(classifyHttpFailure(500, { error: 'no session' }).errorClass).toBe(ERROR_CLASS.PRE_FLIGHT)
   })
 
-  it('erro 463 (destinatário rejeitado) libera a tentativa da outra variante', () => {
-    // Resposta real do wuzapi ao enviar para o JID de 13 dígitos, que não existe.
-    expect(classifyHttpFailure(500, {
+  it('REGRESSÃO 29/07: erro 463 é RETENTÁVEL, não sentença de destinatário inválido', () => {
+    // A classificação anterior (PERMANENTE) veio de generalizar UM experimento
+    // e custou 3 notificações DESCARTADAS na hora, para números que existiam.
+    // Tem que continuar liberando a outra variante do número (nada foi
+    // entregue) SEM condenar a mensagem à carta morta.
+    const r = classifyHttpFailure(500, {
       error: 'error sending message: server returned error 463',
-    })).toEqual(expect.objectContaining({
-      errorClass: ERROR_CLASS.PERMANENTE,
-      retryAlternateNumber: true,
-    }))
+    })
+    expect(r.retryAlternateNumber).toBe(true)
+    expect(r.errorClass).toBe(ERROR_CLASS.PRE_FLIGHT)
+    expect(r.errorClass).not.toBe(ERROR_CLASS.PERMANENTE) // nunca mais
+  })
+
+  it('463 percorre a escada: outra variante -> motor reserva (em vez de morrer)', async () => {
+    const primary = fakeTransport('wuzapi', [
+      { success: false, error: 'wuzapi_rejeitado_463', errorClass: ERROR_CLASS.PRE_FLIGHT, retryAlternateNumber: true },
+      { success: false, error: 'wuzapi_rejeitado_463', errorClass: ERROR_CLASS.PRE_FLIGHT, retryAlternateNumber: true },
+    ])
+    primary.phoneCandidates = () => ['558396966457', '5583996966457']
+    const fallback = fakeTransport('wacli', [{ success: true, messageId: 'SALVO' }])
+
+    const r = await sendWithTransportFallback({
+      primary, fallback, phone: '5583996966457', message: 'x', ...deps,
+    })
+    // as DUAS variantes foram tentadas...
+    expect(primary.enviarTexto).toHaveBeenCalledTimes(2)
+    // ...e o reserva salvou a notificação em vez de ela virar carta morta
+    expect(r).toEqual(expect.objectContaining({ success: true, transport: 'wacli', fallback: true }))
   })
 
   it('5xx genérico continua ambíguo e NÃO tenta outra variante', () => {

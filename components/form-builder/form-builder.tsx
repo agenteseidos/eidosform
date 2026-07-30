@@ -135,6 +135,13 @@ interface FormBuilderProps {
   form: Form
   userPlan?: string
   userInfo?: UserInfo
+  /**
+   * Capacidade de notificação por WhatsApp, resolvida NO SERVIDOR pelo DONO do
+   * formulário (2026-07-30). Não dá para calcular aqui: a lista de autorizados
+   * é env de servidor e não pode vazar para o browser.
+   * Default `false` = fail-closed.
+   */
+  canUseWhatsApp?: boolean
 }
 
 function QuestionReorderItem({
@@ -245,7 +252,7 @@ function QuestionReorderItem({
   )
 }
 
-export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: FormBuilderProps) {
+export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, canUseWhatsApp = false }: FormBuilderProps) {
   // Gating por plano (espelha a blindagem de runtime do player: canShowPixels / getEffectivePlan).
   const canUsePixels = userPlan === 'plus' || userPlan === 'professional'
   const canUseSheets = userPlan !== 'free' // Starter+
@@ -1886,7 +1893,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                     ) : null}
                   </div>
 
-                  {/* WhatsApp Panel — Moved to dedicated collapsible section */}
+                  {/* WhatsApp Panel — só para quem tem a capacidade (2026-07-30).
+                      Não-autorizado NÃO vê upsell: a feature saiu da vitrine, então
+                      oferecer upgrade prometeria algo que nenhum plano entrega. */}
+                  {canUseWhatsApp ? (
                   <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden">
                     <WhatsAppPanel
                       formId={form.id}
@@ -1899,6 +1909,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo }: 
                       isLoading={false}
                     />
                   </div>
+                  ) : null}
                 </section>
 
               </div>

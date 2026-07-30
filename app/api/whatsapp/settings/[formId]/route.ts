@@ -2,13 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { createServerClient } from '@supabase/ssr'
 import { getWhatsAppSettings, updateWhatsAppSettings, deleteWhatsAppSettings } from '@/lib/whatsapp'
-import { getEffectivePlan, PLAN_ORDER } from '@/lib/plans'
+import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
 import type { UpdateFormWhatsAppSettingsInput } from '@/lib/types/whatsapp'
-
-function isPlusPlan(plan: string | null | undefined): boolean {
-  const normalized = (plan?.trim().toLowerCase() ?? 'free') as typeof PLAN_ORDER[number]
-  return PLAN_ORDER.indexOf(normalized as typeof PLAN_ORDER[number]) >= PLAN_ORDER.indexOf('plus')
-}
 
 function getServiceClient() {
   return createServerClient(
@@ -73,16 +68,10 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Unauthorized or form not found' }, { status: 401 })
     }
 
-    // Plan check
-    const supabase = getServiceClient()
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('plan, plan_expires_at')
-      .eq('id', userId)
-      .single()
-
-    if (!profile || !isPlusPlan(getEffectivePlan(profile))) {
-      return NextResponse.json({ error: 'This feature requires Plus+ plan' }, { status: 403 })
+    // Capacidade do DONO do formulário (2026-07-30) — substitui o gate por
+    // plano: a feature saiu da vitrine e vale só p/ a lista de UUIDs.
+    if (!canUseLeadWhatsApp(userId)) {
+      return NextResponse.json({ error: LEAD_WHATSAPP_UNAVAILABLE }, { status: 403 })
     }
 
     // Check settings exist

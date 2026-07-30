@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { PLANS } from '@/lib/plan-limits'
-import { getEffectivePlan, type PlanId } from '@/lib/plans'
+import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
 import { isValidWhatsAppPhone, whatsAppDigits } from '@/lib/phone'
 
 interface RouteParams {
@@ -47,14 +46,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // P1 FIX: Plan check — WhatsApp requires Plus or Professional plan
-    const { data: userProfile } = await supabase
-      .from('profiles')
-      .select('plan, plan_expires_at')
-      .eq('id', user.id)
-      .single()
-    const plan = getEffectivePlan(userProfile) as PlanId
-    if (!PLANS[plan]?.whatsappNotifications) {
-      return NextResponse.json({ error: 'WhatsApp requires Plus or Professional plan' }, { status: 403 })
+    // Capacidade do DONO do formulário (2026-07-30) — substitui o gate por
+    // plano: a feature saiu da vitrine e vale só p/ a lista de UUIDs.
+    if (!canUseLeadWhatsApp(user.id)) {
+      return NextResponse.json({ error: LEAD_WHATSAPP_UNAVAILABLE }, { status: 403 })
     }
 
     const { data: settings, error: settingsError } = await supabase
@@ -110,15 +105,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Plan check — WhatsApp requires Plus or Professional
-    const { data: userProfile } = await supabase
-      .from('profiles')
-      .select('plan, plan_expires_at')
-      .eq('id', user.id)
-      .single()
 
-    const plan = getEffectivePlan(userProfile) as PlanId
-    if (!PLANS[plan]?.whatsappNotifications) {
-      return NextResponse.json({ error: 'WhatsApp requires Plus or Professional plan' }, { status: 403 })
+    // Capacidade do DONO do formulário (2026-07-30) — substitui o gate por
+    // plano: a feature saiu da vitrine e vale só p/ a lista de UUIDs.
+    if (!canUseLeadWhatsApp(user.id)) {
+      return NextResponse.json({ error: LEAD_WHATSAPP_UNAVAILABLE }, { status: 403 })
     }
 
     // Parse body

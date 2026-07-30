@@ -12,6 +12,7 @@ import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
 import { isResponseComplete } from '@/lib/form-response-security'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
+import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 import { upsertSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
@@ -603,11 +604,12 @@ export async function POST(req: NextRequest) {
     }
 
     // WhatsApp notification — delegated to sendWhatsAppOnFormResponse which checks form_whatsapp_settings
-    // Plan gating: only Plus+ users have WhatsApp integration enabled
+    // Autorização por CAPACIDADE do dono do formulário, NÃO por plano
+    // (2026-07-30): a feature saiu da vitrine e vale só para a lista de UUIDs em
+    // `lib/whatsapp-capability`. Barrar aqui evita chamada inútil ao endpoint
+    // interno em toda submissão da base; o SINK barra de novo (defesa dupla).
     {
-      const PLAN_ORDER = ['free', 'starter', 'plus', 'professional'] as const
-      const planLevel = PLAN_ORDER.indexOf(ownerPlan as typeof PLAN_ORDER[number])
-      if (planLevel >= 2) {
+      if (canUseLeadWhatsApp(form.user_id)) {
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
         postSubmitTasks.push(
           sendWhatsAppOnFormResponse({

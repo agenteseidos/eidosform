@@ -8,7 +8,6 @@ import {
   siMeta,
   siN8n,
   siTiktok,
-  siWhatsapp,
   siZapier,
 } from 'simple-icons'
 
@@ -35,7 +34,6 @@ const BRAND_ICONS = [
   display(siTiktok), // preto (#000000) — visível no fundo branco
   display(siGooglesheets),
   display(siCalendly),
-  display(siWhatsapp),
   { name: 'Make*', path: siMake.path, color: `#${siMake.hex}` },
   { name: 'Zapier*', path: siZapier.path, color: `#${siZapier.hex}` },
   { name: 'n8n*', path: siN8n.path, color: `#${siN8n.hex}` },

@@ -5,6 +5,7 @@ import { isAdminEmail } from '@/lib/admin-auth'
 import { FormBuilder } from '@/components/form-builder/form-builder'
 import { Form } from '@/lib/database.types'
 import { getEffectivePlan } from '@/lib/plans'
+import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +57,11 @@ export default async function EditFormPage({ params }: EditFormPageProps) {
     avatarUrl: user.user_metadata?.avatar_url || user.user_metadata?.picture || '',
   }
 
-  return <FormBuilder form={form} userPlan={userPlan} userInfo={userInfo} />
+  // Capacidade de notificação por WhatsApp — sempre pelo DONO do formulário,
+  // nunca por quem está editando (admin abrindo form de cliente NÃO habilita a
+  // feature para aquele cliente). Mesma lógica do `profileUserId` acima.
+  const canUseWhatsApp = canUseLeadWhatsApp(form.user_id)
+
+  return <FormBuilder form={form} userPlan={userPlan} userInfo={userInfo} canUseWhatsApp={canUseWhatsApp} />
 }
 

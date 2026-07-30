@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { buildMessage, SAMPLE_LEAD_DATA } from '@/lib/whatsapp-template'
 import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { PLANS } from '@/lib/plan-limits'
-import { getEffectivePlan, type PlanId } from '@/lib/plans'
+import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 interface RouteParams {
@@ -74,18 +73,11 @@ export async function POST(
     }
 
     // 3. Check if user has Plus+ plan (from profiles, not forms)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('plan, plan_expires_at')
-      .eq('id', user.id)
-      .single()
 
-    const plan = getEffectivePlan(profile) as PlanId
-    if (!PLANS[plan]?.whatsappNotifications) {
-      return NextResponse.json(
-        { error: 'This feature is only available for Plus+ plans' },
-        { status: 403 }
-      )
+    // Capacidade do DONO do formulário (2026-07-30) — substitui o gate por
+    // plano: a feature saiu da vitrine e vale só p/ a lista de UUIDs.
+    if (!canUseLeadWhatsApp(user.id)) {
+      return NextResponse.json({ error: LEAD_WHATSAPP_UNAVAILABLE }, { status: 403 })
     }
 
     // 4. Rate limit: 5 test sends per user per 15 minutes
@@ -141,6 +133,10 @@ export async function POST(
       body: JSON.stringify({
         to: owner_phone,
         message: renderedMessage,
+        // `formId` é OBRIGATÓRIO desde 2026-07-30: sem ele o sink não tem dono
+        // para autorizar e recusa (direct-send sem formId era o bypass mais
+        // largo do sistema — bastava o segredo interno).
+        formId: id,
       }),
     })
 

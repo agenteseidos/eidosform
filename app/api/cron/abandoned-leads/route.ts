@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { PLANS } from '@/lib/plan-limits'
-import { getEffectivePlan, type PlanId } from '@/lib/plans'
 import { buildLeadData } from '@/lib/integration-stubs'
+import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 import { buildMessage, ABANDONED_LEAD_TEMPLATE } from '@/lib/whatsapp-template'
 import { toWhatsAppDigits } from '@/lib/phone'
 import { log, logError } from '@/lib/logger'
@@ -258,17 +257,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .in('id', [...phoneByForm.keys()])
   if (formsErr) return fail('forms', formsErr)
 
-  const ownerIds = [...new Set((forms ?? []).map(f => f.user_id))]
-  const { data: owners, error: ownersErr } = ownerIds.length
-    ? await supabase.from('profiles').select('id, plan, plan_expires_at').in('id', ownerIds)
-    : { data: [], error: null }
-  if (ownersErr) return fail('owners', ownersErr)
-  const planOkByOwner = new Map(
-    (owners ?? []).map(o => [o.id, Boolean(PLANS[getEffectivePlan(o) as PlanId]?.whatsappNotifications)])
-  )
-
+  // Autorização por CAPACIDADE do dono, NÃO por plano (2026-07-30).
+  // ⚠️ O filtro tem que acontecer AQUI, ANTES da varredura e do claim: se o
+  // dono não autorizado chegasse até o envio, o cron adquiriria o claim,
+  // levaria 403 do sink e liberaria o claim — repetindo a cada 15 min. Era o
+  // "martelo" que já custou 35 tentativas no mesmo lead em 27/07.
+  // Como a capacidade é uma lista de UUIDs, nem precisa consultar `profiles`.
   const formMap = new Map(
-    (forms ?? []).filter(f => planOkByOwner.get(f.user_id)).map(f => [f.id, f])
+    (forms ?? []).filter(f => canUseLeadWhatsApp(f.user_id)).map(f => [f.id, f])
   )
   const actionableFormIds = [...formMap.keys()]
   if (actionableFormIds.length === 0) {

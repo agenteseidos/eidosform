@@ -11,6 +11,7 @@ import { FormUpdateSchema, formatZodIssues } from '@/lib/schemas/form-schema'
 import { sanitizeContentBlocksServer as sanitizeContentBlocks } from '@/lib/html-server'
 import { isSafeUrl } from '@/lib/html'
 import { getEffectivePlan } from '@/lib/plans'
+import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string | null | undefined): string | null {
@@ -348,8 +349,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(hide_branding !== undefined && { hide_branding }),
     ...(notify_email_enabled !== undefined && { notify_email_enabled }),
     ...(integrationValidation.values.notify_email !== undefined && { notify_email: integrationValidation.values.notify_email }),
-    ...(notify_whatsapp_enabled !== undefined && { notify_whatsapp_enabled }),
-    ...(integrationValidation.values.notify_whatsapp_number !== undefined && { notify_whatsapp_number: integrationValidation.values.notify_whatsapp_number }),
+    // Campos LEGADOS de WhatsApp: IGNORADOS para quem não tem a capacidade
+    // (2026-07-30). São ignorados, NUNCA rejeitados — o builder envia
+    // `notify_whatsapp_*` em TODO autosave, mesmo sem o usuário abrir o painel;
+    // recusar o payload quebraria o salvamento inteiro de todos os clientes.
+    // (Hoje esses campos são inertes: o envio real lê `form_whatsapp_settings`.)
+    ...(canUseLeadWhatsApp(user.id) && notify_whatsapp_enabled !== undefined && { notify_whatsapp_enabled }),
+    ...(canUseLeadWhatsApp(user.id) && integrationValidation.values.notify_whatsapp_number !== undefined && { notify_whatsapp_number: integrationValidation.values.notify_whatsapp_number }),
     ...(google_sheets_enabled !== undefined && { google_sheets_enabled }),
     ...(integrationValidation.values.google_sheets_id !== undefined && { google_sheets_id: integrationValidation.values.google_sheets_id }),
     ...(connectedSheetsId && { google_sheets_id: connectedSheetsId, google_sheets_enabled: true }),

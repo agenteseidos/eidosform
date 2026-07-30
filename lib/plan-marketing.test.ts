@@ -43,9 +43,11 @@ const CLAIM_RULES: Array<{
   { label: 'Exportação CSV', pattern: /exportação csv/i, holds: (p) => p.csvExport },
   { label: 'Exportação PDF', pattern: /exportação pdf/i, holds: (p) => p.pdfExport },
   {
-    label: 'Notificação email+WhatsApp',
+    // Só EMAIL desde 2026-07-30 — a notificação por WhatsApp saiu da vitrine
+    // (ver `nenhum plano promete notificação de LEAD por WhatsApp` abaixo).
+    label: 'Notificação por email',
     pattern: /notificação por email/i,
-    holds: (p) => p.emailNotifications && p.whatsappNotifications,
+    holds: (p) => p.emailNotifications,
   },
   // Alerta de 80% é Plus+ (decisão 0.2b; gate real em sendNearLimitAlert)
   { label: 'Alerta de limite 80%', pattern: /alerta de limite/i, holds: (_p, id) => planAtLeast(id, 'plus') },
@@ -118,5 +120,25 @@ describe('plan-marketing × plan-definitions', () => {
 
   it('Professional não repete WhatsApp (D4 — já herdado do Plus via "Tudo do Plus +")', () => {
     expect(PLAN_MARKETING.professional.features.some((f) => /whatsapp/i.test(f))).toBe(false)
+  })
+
+  it('NENHUM plano promete notificação de LEAD por WhatsApp (decisão Sidney 2026-07-30)', () => {
+    // A feature saiu da vitrine: depende de cliente não-oficial que levou a linha
+    // a uma restrição de 6h, e hoje vale só p/ a lista de `whatsapp-capability`.
+    // ⚠️ "Suporte por WhatsApp" (canal de atendimento) CONTINUA válido e não pode
+    // ser pego por esta regra — por isso o padrão é específico de notificação.
+    const promessaDeNotificacao = /(notifica\w*|alerta\w*|lead\w*|receb\w*)[^,]*whatsapp|whatsapp[^,]*(notifica\w*|lead\w*)/i
+    for (const p of PLAN_MARKETING_LIST) {
+      for (const f of p.features) {
+        expect(promessaDeNotificacao.test(f), `"${f}" promete notificação por WhatsApp sem lastro`).toBe(false)
+      }
+    }
+  })
+
+  it('"Suporte por WhatsApp" segue permitido (é canal, não a feature)', () => {
+    const temSuporte = PLAN_MARKETING_LIST.some((p) =>
+      p.features.some((f) => /suporte por whatsapp/i.test(f))
+    )
+    expect(temSuporte).toBe(true)
   })
 })

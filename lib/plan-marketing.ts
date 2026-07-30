@@ -104,7 +104,7 @@ export const PLAN_MARKETING: Record<PlanId, PlanMarketing> = {
       'TikTok Pixel',
       'Conversões personalizadas por resposta',
       'Webhooks para automações',
-      'Notificação por email e WhatsApp',
+      'Notificação por email',
       'Bloco HTML / Embeds',
       'Exportação PDF',
       'Suporte prioritário',

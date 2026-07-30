@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { getEffectivePlan, PLAN_ORDER } from '@/lib/plans'
+import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
 import {
   getWhatsAppSettings,
   createWhatsAppSettings,
@@ -17,11 +17,6 @@ interface RouteParams {
 /**
  * Validate that user has Plus+ plan (plus or professional)
  */
-function isPlusPlan(plan: string | null | undefined): boolean {
-  const normalizedPlan = (plan?.trim().toLowerCase() ?? 'free') as typeof PLAN_ORDER[number]
-  return PLAN_ORDER.indexOf(normalizedPlan as typeof PLAN_ORDER[number]) >= PLAN_ORDER.indexOf('plus')
-}
-
 /**
  * Get Supabase client with service role for server operations
  */
@@ -155,11 +150,10 @@ export async function POST(
       )
     }
 
-    if (!isPlusPlan(getEffectivePlan(profile))) {
-      return NextResponse.json(
-        { error: 'This feature requires Plus+ plan' },
-        { status: 403 }
-      )
+    // Capacidade do DONO do formulário (2026-07-30) — substitui o gate por
+    // plano: a feature saiu da vitrine e vale só p/ a lista de UUIDs.
+    if (!canUseLeadWhatsApp(user.id)) {
+      return NextResponse.json({ error: LEAD_WHATSAPP_UNAVAILABLE }, { status: 403 })
     }
 
     // 3. Form ownership check
@@ -287,11 +281,10 @@ export async function PATCH(
       )
     }
 
-    if (!isPlusPlan(getEffectivePlan(profile))) {
-      return NextResponse.json(
-        { error: 'This feature requires Plus+ plan' },
-        { status: 403 }
-      )
+    // Capacidade do DONO do formulário (2026-07-30) — substitui o gate por
+    // plano: a feature saiu da vitrine e vale só p/ a lista de UUIDs.
+    if (!canUseLeadWhatsApp(user.id)) {
+      return NextResponse.json({ error: LEAD_WHATSAPP_UNAVAILABLE }, { status: 403 })
     }
 
     // 3. Form ownership check

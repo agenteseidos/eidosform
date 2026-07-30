@@ -102,7 +102,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     webhooks: true,
     redirect: true,
     emailNotifications: true,
-    whatsappNotifications: true,
+    whatsappNotifications: false,
     prioritySupport: true,
   },
   professional: {
@@ -124,7 +124,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     webhooks: true,
     redirect: true,
     emailNotifications: true,
-    whatsappNotifications: true,
+    whatsappNotifications: false,
     prioritySupport: true,
   },
 }

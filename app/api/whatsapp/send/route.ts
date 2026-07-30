@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getWhatsAppSettings } from '@/lib/whatsapp'
 import { logError, logWarn } from '@/lib/logger'
 import { createServerClient } from '@supabase/ssr'
-import { PLANS } from '@/lib/plan-limits'
-import { getEffectivePlan, type PlanId } from '@/lib/plans'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
 import { buildMessage } from '@/lib/whatsapp-template'
 import { isValidWhatsAppPhone } from '@/lib/phone'
+import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
 
 const MAX_SENDS_PER_HOUR = 100
 
@@ -213,36 +212,29 @@ async function handleFormAwareSend(
   )
   // P1-7 (auditoria Codex 2026-07-23): este caminho — o usado pelo submit normal
   // — ignorava o `error` da query. Form ausente/erro de banco PULAVA o bloco
-  // inteiro e o envio seguia SEM gate de plano (fail-OPEN). O direct-send já
-  // tinha sido corrigido; aqui não. Agora é fail-CLOSED igual.
+  // inteiro e o envio seguia SEM gate (fail-OPEN). Agora é fail-CLOSED.
   const { data: formData, error: formErr } = await supabase
     .from('forms')
     .select('user_id')
     .eq('id', data.formId)
     .single()
   if (formErr || !formData?.user_id) {
-    logError(`[whatsapp/send] gate de plano: form ${data.formId} não resolvido`, formErr)
+    logError(`[whatsapp/send] gate: form ${data.formId} não resolvido`, formErr)
     return NextResponse.json(
-      { success: false, error: 'Form not found for plan gate' },
+      { success: false, error: 'Form not found for capability gate' },
       { status: 403 }
     )
   }
-  const { data: ownerProfile, error: profErr } = await supabase
-    .from('profiles')
-    .select('plan, plan_expires_at')
-    .eq('id', formData.user_id)
-    .single()
-  if (profErr || !ownerProfile) {
-    logError(`[whatsapp/send] gate de plano: perfil do dono não resolvido (form ${data.formId})`, profErr)
+  // ─── GATE DEFINITIVO (2026-07-30) — capacidade do DONO, não plano ───────────
+  // Este é o SINK: TODO envio de lead passa por aqui, então é a última linha de
+  // defesa. Fica ANTES do rate limit e de qualquer chamada à VPS — recusado
+  // aqui, nada toca o WhatsApp.
+  // Substitui o gate por plano: a feature saiu da vitrine e
+  // `PLANS.*.whatsappNotifications` é false para todos, então decidir por plano
+  // bloquearia até o dono autorizado. A autorização agora é por lista de UUID.
+  if (!canUseLeadWhatsApp(formData.user_id)) {
     return NextResponse.json(
-      { success: false, error: 'Owner profile not found for plan gate' },
-      { status: 403 }
-    )
-  }
-  const plan = getEffectivePlan(ownerProfile) as PlanId
-  if (!PLANS[plan]?.whatsappNotifications) {
-    return NextResponse.json(
-      { success: false, error: 'WhatsApp requires Plus or Professional plan' },
+      { success: false, error: LEAD_WHATSAPP_UNAVAILABLE },
       { status: 403 }
     )
   }
@@ -302,46 +294,43 @@ async function handleFormAwareSend(
 async function handleDirectSend(data: DirectSendRequest & { formId?: string; idempotencyKey?: string }): Promise<NextResponse> {
   const cleanPhone = data.to.replace(/\D/g, '')
 
-  // P2: Plan gate when formId is present
-  if (data.formId) {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { cookies: { getAll: () => [], setAll: () => {} } }
+  // ─── `formId` É OBRIGATÓRIO (2026-07-30) ────────────────────────────────────
+  // Antes, direct-send SEM formId passava sem gate nenhum — bastava o segredo
+  // interno. Era o bypass mais largo do sistema: qualquer caminho interno podia
+  // disparar para qualquer número sem que ninguém checasse de quem era o
+  // formulário. Agora, sem formId não há dono para autorizar ⇒ recusa.
+  if (!data.formId) {
+    logWarn('[whatsapp/send] direct-send SEM formId recusado — sem dono não há autorização')
+    return NextResponse.json(
+      { success: false, error: 'formId is required' },
+      { status: 400 }
     )
-    const { data: formData, error: formErr } = await supabase
-      .from('forms')
-      .select('user_id')
-      .eq('id', data.formId)
-      .single()
-    // Fail-CLOSED (auditoria Codex 2026-07-23): erro/ausência de form ou perfil
-    // não pode liberar o envio — com formId presente, o gate é obrigatório.
-    if (formErr || !formData?.user_id) {
-      return NextResponse.json(
-        { success: false, error: 'Form not found for plan gate' },
-        { status: 403 }
-      )
-    }
-    const { data: ownerProfile, error: profErr } = await supabase
-      .from('profiles')
-      .select('plan, plan_expires_at')
-      .eq('id', formData.user_id)
-      .single()
-    if (profErr || !ownerProfile) {
-      return NextResponse.json(
-        { success: false, error: 'Owner profile not found for plan gate' },
-        { status: 403 }
-      )
-    }
-    const plan = getEffectivePlan(ownerProfile) as PlanId
-    if (!PLANS[plan]?.whatsappNotifications) {
-      return NextResponse.json(
-        { success: false, error: 'WhatsApp requires Plus or Professional plan' },
-        { status: 403 }
-      )
-    }
-  } else {
-    logWarn('[whatsapp/send] Direct send without formId — no plan gate applied')
+  }
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { cookies: { getAll: () => [], setAll: () => {} } }
+  )
+  const { data: formData, error: formErr } = await supabase
+    .from('forms')
+    .select('user_id')
+    .eq('id', data.formId)
+    .single()
+  // Fail-CLOSED (auditoria Codex 2026-07-23): erro/ausência de form não pode
+  // liberar o envio.
+  if (formErr || !formData?.user_id) {
+    return NextResponse.json(
+      { success: false, error: 'Form not found for capability gate' },
+      { status: 403 }
+    )
+  }
+  // Mesma política do sink form-aware — uma só fonte de verdade.
+  if (!canUseLeadWhatsApp(formData.user_id)) {
+    return NextResponse.json(
+      { success: false, error: LEAD_WHATSAPP_UNAVAILABLE },
+      { status: 403 }
+    )
   }
 
   if (!isValidPhoneNumber(cleanPhone)) {

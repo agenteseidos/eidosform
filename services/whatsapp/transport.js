@@ -62,7 +62,16 @@ function alternateBrazilianPhone(phone) {
   return null;
 }
 
-async function sendWithNumberFallback(transport, phone, message, context, { log, hashPhone }) {
+/** Espera curta o suficiente pro handshake assentar, curta demais pra atrasar lead. */
+const COLD_SESSION_RETRY_MS = 2_000;
+
+async function sendWithNumberFallback(
+  transport,
+  phone,
+  message,
+  context,
+  { log, hashPhone, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), retryColdSessionMs = COLD_SESSION_RETRY_MS },
+) {
   const cleaned = String(phone || '').replace(/\D/g, '');
   const candidates = transport.phoneCandidates
     ? transport.phoneCandidates(cleaned)
@@ -84,11 +93,35 @@ async function sendWithNumberFallback(transport, phone, message, context, { log,
     return first;
   }
 
-  if (!alternate) return first;
+  if (alternate) {
+    log(`[send] Trying Brazilian number fallback via ${transport.name}: ${hashPhone(alternate)}`);
+    const second = await transport.enviarTexto(alternate, message, context);
+    if (second?.success) return second;
+  }
 
-  log(`[send] Trying Brazilian number fallback via ${transport.name}: ${hashPhone(alternate)}`);
-  const second = await transport.enviarTexto(alternate, message, context);
-  return second.success ? second : first;
+  // ─── SEGUNDA CHANCE IMEDIATA (LINHA FRIA) ────────────────────────────────
+  // O WhatsApp mantém uma linha de criptografia por APARELHO do destinatário.
+  // Quem recebe pouco tem a linha sempre "fria" e ela precisa ser negociada na
+  // hora do envio — e é justamente aí que sai o 463.
+  //
+  // O detalhe que resolve: **a tentativa que falha já negocia a linha**. Foi
+  // medido em 29/07 — depois das 2 falhas com a Karin (`554792102898`, 4
+  // aparelhos, ~1 notificação a cada 2 dias), as 4 sessões dela apareceram no
+  // banco. A tentativa seguinte encontra o caminho pronto.
+  //
+  // Sem isto, o caminho é: falha → motor RESERVA (e-mail de alerta à toa) ou
+  // fila de reenvio (notificação 1 min atrasada). Com isto, a mensagem chega em
+  // ~2s pelo motor certo, sem alarme falso.
+  //
+  // Só roda quando o transporte PROVOU que nada saiu (`retryAlternateNumber`),
+  // então reenviar aqui não pode duplicar.
+  await sleep(retryColdSessionMs);
+  log(`[send] 2a chance apos negociar sessao via ${transport.name}: ${hashPhone(firstPhone)}`);
+  const terceira = await transport.enviarTexto(firstPhone, message, context);
+  // `?.` de propósito: transporte que devolve vazio não pode derrubar o envio.
+  if (terceira?.success) return terceira;
+
+  return first;
 }
 
 async function sendWithTransportFallback({
@@ -100,8 +133,11 @@ async function sendWithTransportFallback({
   log,
   hashPhone,
   onFallback,
+  sleep,
+  retryColdSessionMs,
 }) {
-  const primaryResult = await sendWithNumberFallback(primary, phone, message, context, { log, hashPhone });
+  const deps = { log, hashPhone, ...(sleep ? { sleep } : {}), ...(retryColdSessionMs !== undefined ? { retryColdSessionMs } : {}) };
+  const primaryResult = await sendWithNumberFallback(primary, phone, message, context, deps);
   if (primaryResult.success) {
     return { ...primaryResult, transport: primary.name, fallback: false };
   }
@@ -120,7 +156,7 @@ async function sendWithTransportFallback({
     });
   }
 
-  const fallbackResult = await sendWithNumberFallback(fallback, phone, message, context, { log, hashPhone });
+  const fallbackResult = await sendWithNumberFallback(fallback, phone, message, context, deps);
   return {
     ...fallbackResult,
     transport: fallback.name,
@@ -130,6 +166,7 @@ async function sendWithTransportFallback({
 }
 
 module.exports = {
+  COLD_SESSION_RETRY_MS,
   ERROR_CLASS,
   SUPPORTED_TRANSPORTS,
   alternateBrazilianPhone,

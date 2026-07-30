@@ -13,7 +13,7 @@ import {
 } from './transport-wuzapi.js'
 import { classifyWacliFailure, createWacliTransport } from './transport-wacli.js'
 
-const deps = { log: vi.fn(), hashPhone: () => 'hash' }
+const deps = { log: vi.fn(), hashPhone: () => 'hash', sleep: async () => {}, retryColdSessionMs: 0 }
 
 function fakeTransport(name, results) {
   const queue = [...results]
@@ -118,6 +118,68 @@ describe('fallback brasileiro 8/9 dígitos', () => {
       '558399999999',
       '5583999999999',
     ])
+  })
+})
+
+describe('LINHA FRIA — o caso da Karin (destinatário de baixo volume)', () => {
+  // Medido em 29/07: `554792102898` recebe ~1 notificação a cada 2 dias e tem 4
+  // aparelhos. A linha de criptografia esfria, o 1º envio dá 463 negociando a
+  // sessão, e a tentativa SEGUINTE passa. Antes disso custava: ou o motor
+  // reserva (com e-mail de alarme falso) ou 1 minuto de atraso na fila.
+  const c463 = {
+    success: false,
+    error: 'wuzapi_rejeitado_463',
+    errorClass: ERROR_CLASS.PRE_FLIGHT,
+    retryAlternateNumber: true,
+  }
+
+  it('entrega na 2a chance, no MESMO motor, sem acionar o reserva', async () => {
+    const primary = fakeTransport('wuzapi', [
+      c463,                                   // 12 dígitos: negocia a sessão e falha
+      c463,                                   // 13 dígitos: idem
+      { success: true, messageId: 'CHEGOU' }, // 2a chance: sessão já pronta
+    ])
+    const fallback = fakeTransport('wacli', [{ success: true, messageId: 'RESERVA' }])
+    const onFallback = vi.fn()
+
+    const r = await sendWithTransportFallback({
+      primary, fallback, phone: '554792102898', message: 'lead', onFallback, ...deps,
+    })
+
+    expect(r).toEqual(expect.objectContaining({
+      success: true, messageId: 'CHEGOU', transport: 'wuzapi', fallback: false,
+    }))
+    expect(fallback.enviarTexto).not.toHaveBeenCalled() // reserva intocado
+    expect(onFallback).not.toHaveBeenCalled()           // e NENHUM e-mail de alarme
+  })
+
+  it('a 2a chance repete o número PROVADO, não a variante', async () => {
+    const primary = fakeTransport('wuzapi', [c463, c463, { success: true, messageId: 'OK' }])
+    await sendWithTransportFallback({
+      primary, fallback: null, phone: '554792102898', message: 'x', ...deps,
+    })
+    const tentativas = primary.enviarTexto.mock.calls.map((c) => c[0])
+    expect(tentativas).toEqual(['554792102898', '5547992102898', '554792102898'])
+  })
+
+  it('se a 2a chance também falhar, o reserva assume (rede de baixo intacta)', async () => {
+    const primary = fakeTransport('wuzapi', [c463, c463, c463])
+    const fallback = fakeTransport('wacli', [{ success: true, messageId: 'RESERVA' }])
+    const r = await sendWithTransportFallback({
+      primary, fallback, phone: '554792102898', message: 'x', ...deps,
+    })
+    expect(r).toEqual(expect.objectContaining({ transport: 'wacli', fallback: true }))
+  })
+
+  it('erro AMBÍGUO (timeout) NÃO ganha 2a chance — poderia duplicar', async () => {
+    const primary = fakeTransport('wuzapi', [
+      { success: false, error: 'timeout', errorClass: ERROR_CLASS.IN_FLIGHT },
+      { success: true, messageId: 'NAO_DEVIA' },
+    ])
+    await sendWithTransportFallback({
+      primary, fallback: null, phone: '554792102898', message: 'x', ...deps,
+    })
+    expect(primary.enviarTexto).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -267,18 +329,17 @@ describe('classificação de erro', () => {
   })
 
   it('463 percorre a escada: outra variante -> motor reserva (em vez de morrer)', async () => {
-    const primary = fakeTransport('wuzapi', [
-      { success: false, error: 'wuzapi_rejeitado_463', errorClass: ERROR_CLASS.PRE_FLIGHT, retryAlternateNumber: true },
-      { success: false, error: 'wuzapi_rejeitado_463', errorClass: ERROR_CLASS.PRE_FLIGHT, retryAlternateNumber: true },
-    ])
+    const r463 = { success: false, error: 'wuzapi_rejeitado_463', errorClass: ERROR_CLASS.PRE_FLIGHT, retryAlternateNumber: true }
+    // 3 falhas: variante 1, variante 2 e a 2a chance da linha fria.
+    const primary = fakeTransport('wuzapi', [r463, r463, r463])
     primary.phoneCandidates = () => ['558396966457', '5583996966457']
     const fallback = fakeTransport('wacli', [{ success: true, messageId: 'SALVO' }])
 
     const r = await sendWithTransportFallback({
       primary, fallback, phone: '5583996966457', message: 'x', ...deps,
     })
-    // as DUAS variantes foram tentadas...
-    expect(primary.enviarTexto).toHaveBeenCalledTimes(2)
+    // as duas variantes E a 2a chance foram tentadas...
+    expect(primary.enviarTexto).toHaveBeenCalledTimes(3)
     // ...e o reserva salvou a notificação em vez de ela virar carta morta
     expect(r).toEqual(expect.objectContaining({ success: true, transport: 'wacli', fallback: true }))
   })

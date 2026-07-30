@@ -2,11 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { isValidWhatsAppPhone, toWhatsAppDigits } from '@/lib/phone'
 import { NextRequest, NextResponse } from 'next/server'
+import { safeLocalRedirect } from '@/lib/safe-redirect'
 import { createHash } from 'crypto'
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, fullName, phone } = await req.json()
+    const { email, password, fullName, phone, next } = await req.json()
 
     // Validate input
     if (
@@ -76,7 +77,14 @@ export async function POST(req: NextRequest) {
       password,
       options: {
         data: { full_name: fullName, phone: normalizedPhone },
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+        // type=signup é o gatilho do WhatsApp de cadastro no callback (parecer
+        // Codex 30/07: o PKCE NÃO propaga type sozinho — sem isto o disparo
+        // nunca acontecia). `next` preserva o destino (ex.: checkout) através
+        // da confirmação de e-mail; validado com safeLocalRedirect nas duas
+        // pontas (aqui e no callback).
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?type=signup${
+          typeof next === 'string' && next ? `&next=${encodeURIComponent(safeLocalRedirect(next))}` : ''
+        }`,
       },
     })
 

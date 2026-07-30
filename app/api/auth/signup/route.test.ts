@@ -106,3 +106,29 @@ describe('POST /api/auth/signup — normalização e propagação', () => {
     expect(mockRateLimit).not.toHaveBeenCalled()
   })
 })
+
+describe('callback de confirmação (parecer Codex 30/07)', () => {
+  it('emailRedirectTo SEMPRE leva type=signup (gatilho do WhatsApp de cadastro)', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://eidosform.com.br'
+    await POST(makeReq(VALID))
+    const url = signUp.mock.calls[0][0].options.emailRedirectTo as string
+    expect(url).toContain('/auth/callback?type=signup')
+  })
+
+  it('next válido é preservado através da confirmação de e-mail', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://eidosform.com.br'
+    await POST(makeReq({ ...VALID, next: '/billing?plan=plus&cycle=yearly' }))
+    const url = signUp.mock.calls[0][0].options.emailRedirectTo as string
+    expect(url).toContain('type=signup&next=')
+    expect(decodeURIComponent(url.split('next=')[1])).toBe('/billing?plan=plus&cycle=yearly')
+  })
+
+  it('next malicioso (URL externa) é neutralizado pelo safeLocalRedirect', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://eidosform.com.br'
+    await POST(makeReq({ ...VALID, next: 'https://evil.com/phish' }))
+    const url = signUp.mock.calls[0][0].options.emailRedirectTo as string
+    const next = decodeURIComponent(url.split('next=')[1] ?? '')
+    expect(next.startsWith('/')).toBe(true)
+    expect(next).not.toContain('evil.com')
+  })
+})

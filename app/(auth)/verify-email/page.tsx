@@ -12,6 +12,10 @@ import { Mail } from 'lucide-react'
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams()
+  // Destino preservado do cadastro (ex.: checkout). Repassado no reenvio para
+  // o novo e-mail recompor o MESMO callback (type=signup + next) — parecer
+  // Codex 30/07: sem isto o reenvio derrubava o gatilho do WhatsApp e o destino.
+  const nextParam = searchParams.get('next') || ''
   const email = searchParams.get('email') || ''
   const [isResending, setIsResending] = useState(false)
 
@@ -25,7 +29,7 @@ function VerifyEmailContent() {
       const res = await fetch('/api/auth/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, ...(nextParam ? { next: nextParam } : {}) }),
       })
 
       if (res.status === 429) {

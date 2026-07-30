@@ -1,10 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
+import { safeLocalRedirect } from '@/lib/safe-redirect'
 
 export async function POST(req: NextRequest) {
   try {
-    const { email } = await req.json()
+    const { email, next } = await req.json()
 
     if (!email) {
       return NextResponse.json(
@@ -35,7 +36,11 @@ export async function POST(req: NextRequest) {
       type: 'signup',
       email,
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+        // Recompõe o MESMO callback do signup (type=signup + next) — sem isto o
+        // reenvio derrubava o gatilho do WhatsApp e o destino preservado.
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?type=signup${
+          typeof next === 'string' && next ? `&next=${encodeURIComponent(safeLocalRedirect(next))}` : ''
+        }`,
       },
     })
 

@@ -246,6 +246,9 @@ plan 'free' + status 'active').
   access-token nativo; depois remover o código do fallback HMAC.
 - PIX/Boleto no checkout: decisão de 2026-06-10 = NÃO implementar agora.
 - Multi-user: REMOVIDO da oferta em 2026-06-10 (não existe no produto).
-- `ADMIN_ALERT_EMAIL`: setar na Vercel (Production) — sem ela os alertas
-  operacionais de billing (estorno/cancel falho, DLQ) NÃO são entregues; o log
-  acusa em erro alto a cada cold start. Não bloqueia venda, mas é a rede de alertas.
+- ✅ `ADMIN_ALERT_EMAIL`: **JÁ CONFIGURADA** — conferido via API da Vercel em 2026-07-29:
+  `sidney@institutoeidos.com.br`, nos 3 ambientes (production/preview/development).
+  A memória do vault já registrava isso desde 2026-06-15 (o "faltando" original era
+  artefato do ambiente LOCAL de quem auditou, não da produção). Esta linha ficou
+  desatualizada aqui e fez o Claude reportar ao Sidney uma pendência inexistente em
+  29/07 — não reabrir. Para reconferir: `GET /v9/projects/eidosform/env`.

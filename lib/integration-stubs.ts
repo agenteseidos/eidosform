@@ -1,7 +1,7 @@
 import { log, logWarn, logError } from '@/lib/logger'
 import { createPublicClient } from '@/lib/supabase/public'
 import { formatAnswerValue } from '@/lib/answer-format'
-import { buildNotificationModel, type NotificationFormInfo } from '@/lib/notification-model'
+import { buildNotificationModel, utmParts, type NotificationFormInfo } from '@/lib/notification-model'
 
 export type LeadFormInfo = NotificationFormInfo
 
@@ -138,6 +138,11 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
     utm_campaign: model.utm.campaign ?? '',
     utm_term: model.utm.term ?? '',
     utm_content: model.utm.content ?? '',
+    // {origem}: as UTMs presentes juntas, EXATAMENTE como o e-mail mostra
+    // (mesma função `utmParts`, mesma ordem, mesmo separador). Vazio quando o
+    // lead chegou sem UTM — e aí o buildMessage apaga a linha inteira, que é o
+    // comportamento que os {utm_*} individuais nunca tiveram.
+    origem: utmParts(model).join(' · '),
   }
 }
 

@@ -49,6 +49,7 @@ export const SAMPLE_LEAD_DATA: Record<string, unknown> = {
   respostas: '*Qual seu nome?*\nJoão da Silva\n\n*Seu WhatsApp?*\n5511999990000',
   meta_events: 'Lead, LeadQualificado',
   abandono_minutos: '30',
+  origem: 'facebook · cpc · lancamento-julho',
   utm_source: 'facebook',
   utm_medium: 'cpc',
   utm_campaign: 'lancamento-julho',
@@ -87,6 +88,13 @@ export function buildMessage(template: string, leadData: Record<string, unknown>
   const metaEventsValue = sanitizeSingleLine(leadData.meta_events)
   if (!metaEventsValue) msg = dropLineWith(msg, /\{meta_events\}/)
 
+  // {origem}: mesma regra do e-mail — a maioria dos leads chega sem UTM e uma
+  // linha "Origem:  ·" em toda notificação é ruído. Os {utm_*} individuais
+  // NÃO somem (resolvem pra string vazia): quem quiser a linha auto-ocultável
+  // usa {origem}.
+  const origemValue = sanitizeSingleLine(leadData.origem)
+  if (!origemValue) msg = dropLineWith(msg, /\{origem\}/)
+
   const normalizedLead = new Map<string, unknown>()
   for (const [k, v] of Object.entries(leadData)) normalizedLead.set(normalizeKey(k), v)
 
@@ -112,6 +120,8 @@ export function buildMessage(template: string, leadData: Record<string, unknown>
         return sanitizeSingleLine(leadData.response_link || 'N/A')
       case 'metaevents':
         return metaEventsValue
+      case 'origem':
+        return origemValue
     }
     if (normalizedLead.has(nk)) return sanitizeMultiLine(normalizedLead.get(nk))
     return undefined

@@ -49,6 +49,15 @@ const CLAIM_RULES: Array<{
     pattern: /notificação por email/i,
     holds: (p) => p.emailNotifications,
   },
+  // Alerta de LEAD ABANDONADO por e-mail (Entrega 2, 2026-07-30). A regra entra
+  // ANTES do bullet: quando a vitrine anunciar isso, já nasce com lastro
+  // obrigatório em PLANS[].abandonedLeadAlert. Ordem exigida pelo plano —
+  // primeiro o alerta funcionando, depois a promessa.
+  {
+    label: 'Alerta de lead abandonado',
+    pattern: /lead abandonado|lead incompleto|quem desistiu/i,
+    holds: (p) => p.abandonedLeadAlert,
+  },
   // Alerta de 80% é Plus+ (decisão 0.2b; gate real em sendNearLimitAlert)
   { label: 'Alerta de limite 80%', pattern: /alerta de limite/i, holds: (_p, id) => planAtLeast(id, 'plus') },
   // Bloco HTML é o tipo html_block, gated Plus+ (QUESTION_TYPE_MIN_PLAN)

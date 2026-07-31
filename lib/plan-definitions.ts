@@ -34,6 +34,14 @@ export interface PlanConfig {
   redirect: boolean
   emailNotifications: boolean
   whatsappNotifications: boolean
+  /**
+   * Alerta de LEAD ABANDONADO (comecou a preencher e parou) por e-mail.
+   * Separado de `emailNotifications` de proposito: notificar resposta COMPLETA
+   * e avisar quem DESISTIU sao promessas diferentes e podem ser vendidas
+   * separadamente. Hoje andam juntas (Plus+), mas o flag existe para nao
+   * precisar de refactor quando nao andarem.
+   */
+  abandonedLeadAlert: boolean
   prioritySupport: boolean
 }
 
@@ -58,6 +66,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     redirect: false,
     emailNotifications: false,
     whatsappNotifications: false,
+    abandonedLeadAlert: false,
     prioritySupport: false,
   },
   starter: {
@@ -80,6 +89,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     redirect: true,
     emailNotifications: false,
     whatsappNotifications: false,
+    abandonedLeadAlert: false,
     prioritySupport: false,
   },
   plus: {
@@ -103,6 +113,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     redirect: true,
     emailNotifications: true,
     whatsappNotifications: false,
+    abandonedLeadAlert: true,
     prioritySupport: true,
   },
   professional: {
@@ -125,6 +136,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     redirect: true,
     emailNotifications: true,
     whatsappNotifications: false,
+    abandonedLeadAlert: true,
     prioritySupport: true,
   },
 }

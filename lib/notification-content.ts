@@ -26,6 +26,8 @@ export interface EmailContent {
 
 const BRAND = '#6366f1'
 const WHATSAPP_GREEN = '#25D366'
+/** Mesmo âmbar do alerta de 80% do limite — sinaliza 'preciso da sua ação'. */
+const WARNING = '#f59e0b'
 
 /** Texto de uma linha, pronto pra HTML. */
 const h1line = (v: unknown) => escapeHtml(sanitizeSingleLine(v))
@@ -73,19 +75,67 @@ const CONVERSION_DISCLAIMER =
   'Indica os eventos registrados pelo EidosForm; não confirma recebimento pelas plataformas de anúncios.'
 
 /**
- * E-mail de NOVA RESPOSTA. A Entrega 2 acrescenta a variante de lead
- * abandonado reaproveitando as mesmas seções (identidade, tabela, origem,
- * sinais, botões) — por isso elas estão fatiadas em funções.
+ * O que muda entre os dois e-mails de lead. Tudo o mais — identidade, tabela de
+ * respostas, origem, sinais de conversão, botões, escape — é o MESMO código,
+ * para os dois avisos serem reconhecíveis como a mesma família.
  */
+interface LeadEmailVariant {
+  /** Prefixo do assunto: "Novo lead" / "Lead incompleto". */
+  subjectPrefix: string
+  /** Título dentro do e-mail. */
+  heading: string
+  /** Cor do título. */
+  headingColor: string
+  /** Linha logo abaixo do título, quando houver (ex.: "Sem atividade há…"). */
+  lede?: string
+  /** Rótulo do horário: "Recebido em" / "Última atividade". */
+  timeLabel: string
+  /** Título da tabela de respostas. */
+  answersTitle: string
+}
+
+/** E-mail de NOVA RESPOSTA (Entrega 1). */
 export function buildNewResponseEmail(model: NotificationModel): EmailContent {
+  return renderLeadEmail(model, {
+    subjectPrefix: 'Novo lead',
+    heading: 'Novo lead 🎉',
+    headingColor: BRAND,
+    timeLabel: 'Recebido em',
+    answersTitle: 'Respostas',
+  })
+}
+
+/**
+ * E-mail de LEAD ABANDONADO (Entrega 2) — começou a preencher e parou.
+ *
+ * A semântica do tempo é "SEM ATIVIDADE há X min", nunca "começou a preencher
+ * há X min" (herdado da auditoria P2-8 do WhatsApp): o lead pode ter mexido no
+ * formulário por 20 minutos e ter parado há 30. Dizer "começou" seria mentira.
+ */
+export function buildAbandonedLeadEmail(model: NotificationModel): EmailContent {
+  const min = model.inactiveMinutes
+  return renderLeadEmail(model, {
+    subjectPrefix: 'Lead incompleto',
+    heading: 'Lead incompleto ⚠️',
+    headingColor: WARNING,
+    lede:
+      typeof min === 'number' && Number.isFinite(min) && min >= 0
+        ? `Sem atividade há ${min} min — não finalizou.`
+        : 'Começou a preencher e não finalizou.',
+    timeLabel: 'Última atividade',
+    answersTitle: 'O que já foi respondido',
+  })
+}
+
+function renderLeadEmail(model: NotificationModel, v: LeadEmailVariant): EmailContent {
   const nome = model.identity.fullName?.trim() ?? ''
   const formTitle = model.form.title
 
   // O nome vem PRIMEIRO de propósito: se o cliente de e-mail truncar o
   // assunto, o que importa para triagem sobrevive.
   const subject = nome
-    ? `Novo lead: ${sanitizeSingleLine(nome)} — ${sanitizeSingleLine(formTitle)}`
-    : `Novo lead em ${sanitizeSingleLine(formTitle)}`
+    ? `${v.subjectPrefix}: ${sanitizeSingleLine(nome)} — ${sanitizeSingleLine(formTitle)}`
+    : `${v.subjectPrefix} em ${sanitizeSingleLine(formTitle)}`
 
   const waDigits = toWhatsAppDigits(model.identity.phone)
   const quando = formatEventAt(model.response.eventAt)
@@ -103,19 +153,20 @@ export function buildNewResponseEmail(model: NotificationModel): EmailContent {
     nome ? ['Nome', nome] : null,
     model.identity.email ? ['E-mail', model.identity.email] : null,
     model.identity.phone ? ['Telefone', model.identity.phone] : null,
-    quando ? ['Recebido em', `${quando} (horário de Brasília)`] : null,
+    quando ? [v.timeLabel, `${quando} (horário de Brasília)`] : null,
   ].filter((r): r is [string, string] => r !== null)
 
   const identityHtml = identityRows
+    // NÃO usar `v` como nome aqui: sombrearia a variante do e-mail.
     .map(
-      ([k, v]) =>
-        `<tr><td style="padding:4px 12px 4px 0;color:#666;white-space:nowrap">${h1line(k)}</td>` +
-        `<td style="padding:4px 0;color:#111"><strong>${h1line(v)}</strong></td></tr>`
+      ([label, value]) =>
+        `<tr><td style="padding:4px 12px 4px 0;color:#666;white-space:nowrap">${h1line(label)}</td>` +
+        `<td style="padding:4px 0;color:#111"><strong>${h1line(value)}</strong></td></tr>`
     )
     .join('')
 
   const answersHtml = rows.length
-    ? `<h3 style="margin:24px 0 8px;font-size:15px;color:#111">Respostas</h3>
+    ? `<h3 style="margin:24px 0 8px;font-size:15px;color:#111">${escapeHtml(v.answersTitle)}</h3>
        <table style="width:100%;border-collapse:collapse;font-size:14px">
          ${rows
            .map(
@@ -154,8 +205,9 @@ export function buildNewResponseEmail(model: NotificationModel): EmailContent {
   const html = `
     ${preheader}
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#111">
-      <h2 style="color:${BRAND};margin:0 0 4px">Novo lead 🎉</h2>
-      <p style="margin:0 0 16px;color:#666">em <strong>${h1line(formTitle)}</strong></p>
+      <h2 style="color:${v.headingColor};margin:0 0 4px">${escapeHtml(v.heading)}</h2>
+      <p style="margin:0 0 ${v.lede ? '8' : '16'}px;color:#666">em <strong>${h1line(formTitle)}</strong></p>
+      ${v.lede ? `<p style="margin:0 0 16px;color:#111;font-weight:bold">${escapeHtml(v.lede)}</p>` : ''}
       <table style="border-collapse:collapse;font-size:14px">${identityHtml}</table>
       ${answersHtml}
       ${origemHtml}
@@ -173,14 +225,15 @@ export function buildNewResponseEmail(model: NotificationModel): EmailContent {
 
   // ── Texto puro ──────────────────────────────────────────────────────────
   const textLines: string[] = [
-    nome ? `Novo lead: ${sanitizeSingleLine(nome)}` : 'Novo lead',
+    nome ? `${v.subjectPrefix}: ${sanitizeSingleLine(nome)}` : v.subjectPrefix,
     `Formulário: ${sanitizeSingleLine(formTitle)}`,
   ]
+  if (v.lede) textLines.push(v.lede)
   if (model.identity.email) textLines.push(`E-mail: ${sanitizeSingleLine(model.identity.email)}`)
   if (model.identity.phone) textLines.push(`Telefone: ${sanitizeSingleLine(model.identity.phone)}`)
-  if (quando) textLines.push(`Recebido em: ${quando} (horário de Brasília)`)
+  if (quando) textLines.push(`${v.timeLabel}: ${quando} (horário de Brasília)`)
   if (rows.length) {
-    textLines.push('', 'RESPOSTAS')
+    textLines.push('', v.answersTitle.toUpperCase())
     for (const a of rows) {
       textLines.push('', sanitizeSingleLine(a.question), sanitizeMultiLine(a.value))
     }

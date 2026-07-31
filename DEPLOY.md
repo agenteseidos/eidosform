@@ -62,6 +62,52 @@ A conta é **Hobby** (máx. 2 crons, só diários). Por isso o `vercel.json` age
 | `sweep-received` | crontab da VPS (`22 * * * *`) |
 | `reconcile-subscriptions` | crontab da VPS (`37 * * * *`) |
 | `abandoned-leads` | timer systemd `eidosform-abandoned.timer` (15 min) |
+| `abandoned-leads-email` | timer systemd `eidosform-abandoned-email.timer` (15 min) — **⚠️ ainda NÃO instalado** |
+
+### Agendar o `abandoned-leads-email` (pendente — Sidney)
+
+Ordem obrigatória: **(1)** rodar a migração
+`supabase/migrations-manual/2026-07-30-alerta-abandono-email.sql` no SQL Editor →
+**(2)** subir o deploy → **(3)** só então agendar. Sem a tabela, o endpoint falha
+fechado (`stage: 'migracao-ausente'`) e não manda nada — de propósito.
+
+O `run-cron.sh` já aceita qualquer endpoint, então basta um par unit/timer novo
+espelhando o do WhatsApp:
+
+```ini
+# /etc/systemd/system/eidosform-abandoned-email.service
+[Unit]
+Description=EidosForm - alerta de lead abandonado por E-MAIL
+[Service]
+Type=oneshot
+User=sidney
+ExecStart=/home/sidney/.eidos-credentials/produtos/run-cron.sh abandoned-leads-email
+StandardOutput=append:/home/sidney/.eidos-credentials/produtos/cron.log
+StandardError=append:/home/sidney/.eidos-credentials/produtos/cron.log
+```
+
+```ini
+# /etc/systemd/system/eidosform-abandoned-email.timer
+[Unit]
+Description=Dispara o alerta de lead abandonado por e-mail a cada 15 min
+[Timer]
+OnBootSec=7min
+OnUnitActiveSec=15min
+# Defasado do timer de WhatsApp de propósito: os dois varrem `responses` e não
+# há motivo para baterem no banco no mesmo segundo.
+RandomizedDelaySec=90
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now eidosform-abandoned-email.timer
+systemctl list-timers | grep abandoned          # confere os dois
+```
+
+Teste manual (sem esperar o timer):
+`/home/sidney/.eidos-credentials/produtos/run-cron.sh abandoned-leads-email`
 
 ## Configurar Google OAuth no Supabase (Pendente — Sidney)
 

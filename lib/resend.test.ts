@@ -55,10 +55,15 @@ describe('sendLeadNotificationEmail — política de retry', () => {
   })
 
   /** Resolve a promise deixando os `setTimeout` de backoff correrem. */
-  async function run(p: Promise<unknown>) {
+  async function run<T>(p: Promise<T>): Promise<T> {
     await vi.runAllTimersAsync()
     return p
   }
+
+  /** Os args do fetch mockado — `vi.fn()` sem parâmetros declarados tipa
+   *  `calls` como tupla vazia, e indexar [1] não compila. */
+  const argsOf = (m: { mock: { calls: unknown[][] } }, i = 0) =>
+    m.mock.calls[i] as unknown as [string, RequestInit & { body: string; headers: Record<string, string> }]
 
   it('4xx permanente NÃO repete — devolve na primeira tentativa', async () => {
     const fetchMock = vi.fn(async () => ({ ok: false, status: 422, json: async () => ({ message: 'invalid' }) }))
@@ -120,7 +125,7 @@ describe('sendLeadNotificationEmail — política de retry', () => {
 
     await run(sendLeadNotificationEmail(payload))
 
-    const init = fetchMock.mock.calls[0][1] as unknown as RequestInit
+    const [, init] = argsOf(fetchMock)
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 
@@ -142,7 +147,7 @@ describe('sendLeadNotificationEmail — política de retry', () => {
 
     await run(sendLeadNotificationEmail({ ...payload, idempotencyKey: 'chave-123' }))
 
-    const init = fetchMock.mock.calls[0][1] as unknown as { body: string; headers: Record<string, string> }
+    const [, init] = argsOf(fetchMock)
     const body = JSON.parse(init.body)
     expect(body.html).toBe('<p>oi</p>')
     expect(body.text).toBe('oi')

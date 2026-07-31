@@ -70,7 +70,10 @@ export function resolveEmailRecipients(input: {
  * (dono + endereço extra) colidiriam na Resend e um sumiria em silêncio.
  */
 export function buildEmailIdempotencyKey(params: {
-  event: 'new-response'
+  /** `abandoned` é evento DIFERENTE de `new-response` para o mesmo lead: quem
+   *  abandonou e depois completou recebe os dois avisos, e as chaves não podem
+   *  colidir (a segunda sumiria). */
+  event: 'new-response' | 'abandoned'
   formId: string
   responseId: string
   email: string

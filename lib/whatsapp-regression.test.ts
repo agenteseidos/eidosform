@@ -193,6 +193,7 @@ describe('REGRESSÃO — mensagem de WhatsApp inalterada pelo refactor', () => {
         "nome": "Maria",
         "nome_completo": "Maria Fernanda Souza",
         "o que te trouxe aqui?": "Ansiedade, Relacionamento",
+        "origem": "facebook · cpc · julho · criativo-a",
         "phone": "83999998888",
         "primeiro_nome": "Maria",
         "q_orfa": "resposta sem pergunta correspondente",

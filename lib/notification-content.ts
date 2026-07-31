@@ -16,7 +16,7 @@
 import { escapeHtml } from './html'
 import { sanitizeSingleLine, sanitizeMultiLine } from './text-sanitize'
 import { toWhatsAppDigits } from './phone'
-import type { NotificationModel } from './notification-model'
+import { utmParts, type NotificationModel } from './notification-model'
 
 export interface EmailContent {
   subject: string
@@ -48,13 +48,10 @@ export function formatEventAt(eventAt: string): string {
   return `${data} às ${hora}`
 }
 
-/** Valores de UTM presentes, na ordem canônica. Vazio ⇒ a linha some. */
-function utmParts(model: NotificationModel): string[] {
-  const { source, medium, campaign, term, content } = model.utm
-  return [source, medium, campaign, term, content].filter(
-    (v): v is string => typeof v === 'string' && v.trim().length > 0
-  )
-}
+/**
+ * Valores de UTM presentes, na ordem canônica. Vazio ⇒ a linha some.
+ * A regra mora em lib/notification-model.ts porque o WhatsApp usa a MESMA.
+ */
 
 /** Pares pergunta/resposta que têm o que mostrar nesta rendição. */
 function visibleAnswers(model: NotificationModel) {

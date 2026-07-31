@@ -221,3 +221,18 @@ export function buildNotificationModel(params: BuildNotificationModelParams): No
     ...(params.inactiveMinutes !== undefined ? { inactiveMinutes: params.inactiveMinutes } : {}),
   }
 }
+
+/**
+ * Valores de UTM presentes, na ordem canônica. Lista vazia ⇒ o canal deve
+ * ESCONDER a linha de origem inteira.
+ *
+ * Vive aqui (modelo neutro) e não no renderizador de e-mail porque os DOIS
+ * canais precisam da mesma regra: duplicar a ordem/filtragem faria e-mail e
+ * WhatsApp divergirem na primeira mudança.
+ */
+export function utmParts(model: NotificationModel): string[] {
+  const { source, medium, campaign, term, content } = model.utm
+  return [source, medium, campaign, term, content].filter(
+    (v): v is string => typeof v === 'string' && v.trim().length > 0
+  )
+}

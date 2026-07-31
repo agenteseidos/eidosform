@@ -27,6 +27,19 @@ describe('tradução de status dos Últimos envios', () => {
     })).toEqual({ status: 'na fila', kind: 'abandono' })
   })
 
+  it('REGRESSÃO (saga Karin, 31/07): bloqueio operacional NÃO é "enviado"', () => {
+    // O bug que este teste impede: 'bloqueado' é uma string TRUTHY, então sem
+    // o desvio explícito ela cai no mesmo `if (row.wacli_message_id)` que
+    // marca "enviado" — mostrando bolinha verde pra um lead que NUNCA saiu.
+    // É a MESMA classe de mentira binária que o teste acima (28/07) corrigiu,
+    // só que na direção oposta (falso "enviado" em vez de falso "erro").
+    expect(traduzirStatusLog({
+      status: 'abandoned_alert',
+      wacli_message_id: 'bloqueado',
+      error_message: 'Bloqueado operacionalmente (WHATSAPP_NUNCA_ENVIAR) — repassar manualmente',
+    })).toEqual({ status: 'ignorado', kind: 'abandono' })
+  })
+
   it('skipped = "decidimos não mandar", não é erro', () => {
     expect(traduzirStatusLog({
       status: 'skipped', wacli_message_id: null, error_message: 'whatsapp desligado no form',

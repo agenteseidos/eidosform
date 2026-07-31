@@ -61,7 +61,7 @@ function normalizeValue(value: string): string {
 /**
  * Send message via WhatsApp VPS server
  */
-async function sendViaVps(phone: string, message: string, idempotencyKey?: string): Promise<{ messageId: string | null; duplicate?: boolean; queued?: boolean; transport?: string | null }> {
+async function sendViaVps(phone: string, message: string, idempotencyKey?: string): Promise<{ messageId: string | null; duplicate?: boolean; queued?: boolean; blocked?: boolean; transport?: string | null }> {
   const cleanPhone = phone.replace(/\D/g, '')
 
   try {
@@ -101,6 +101,14 @@ async function sendViaVps(phone: string, message: string, idempotencyKey?: strin
     // na fila — e o cron marcaria o alerta como concluído no banco.
     if (response.status === 202 || data.queued === true) {
       return { messageId: null, queued: true }
+    }
+
+    // BLOQUEADO (31/07): a VPS decidiu NÃO enviar (WHATSAPP_NUNCA_ENVIAR) —
+    // não é falha de transporte, é decisão operacional. `response.ok` é true
+    // (a VPS responde 200 de propósito, não 500) então sem este desvio o app
+    // inventaria um messageId de "sucesso" pra algo que nunca saiu.
+    if (data.blocked === true) {
+      return { messageId: null, blocked: true }
     }
 
     // `||` (não `??`): a VPS pode devolver messageId como string vazia quando o
@@ -270,6 +278,16 @@ async function handleFormAwareSend(
         timestamp: new Date().toISOString(),
       }, { status: 202 })
     }
+    // BLOQUEADO: decisão operacional, não erro — 200 (não 500/502), pra quem
+    // chama (o cron) não tratar como falha de transporte e retentar.
+    if (result.blocked) {
+      return NextResponse.json({
+        success: false,
+        blocked: true,
+        error: 'destino_bloqueado_operacionalmente',
+        timestamp: new Date().toISOString(),
+      })
+    }
     return NextResponse.json({
       success: true,
       messageId: result.messageId,
@@ -356,6 +374,17 @@ async function handleDirectSend(data: DirectSendRequest & { formId?: string; ide
         error: 'Queued for retry',
         timestamp: new Date().toISOString(),
       }, { status: 202 })
+    }
+    // BLOQUEADO: decisão operacional, não erro — 200 (não 500/502). É este
+    // caminho (direct-send) que o cron de abandono usa; sem este desvio ele
+    // trataria como falha de transporte e reclamaria o lead de novo em 15 min.
+    if (result.blocked) {
+      return NextResponse.json({
+        success: false,
+        blocked: true,
+        error: 'destino_bloqueado_operacionalmente',
+        timestamp: new Date().toISOString(),
+      })
     }
     return NextResponse.json({
       success: true,

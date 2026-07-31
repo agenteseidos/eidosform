@@ -253,6 +253,15 @@ async function drainOutbox() {
       log(`[outbox] REENTREGUE key=${item.key} transport=${result.transport} tentativa=${item.attempts + 1}`);
       continue;
     }
+    // Bloqueio operacional é DECISÃO, não falha: morre em silêncio, sem contar
+    // pro alarme de carta morta (na prática não deveria chegar aqui — o kill
+    // já acontece na 1ª tentativa, antes de entrar na fila — mas cobre o caso
+    // de um item ter sido enfileirado ANTES do destino entrar no bloqueio).
+    if (result.errorClass === ERROR_CLASS.BLOQUEADO) {
+      await outbox.killNow({ key: item.key, to: item.to, error: result.error, silent: true });
+      log(`[outbox] descartado em silencio (bloqueio operacional) key=${item.key}`);
+      continue;
+    }
     if (result.errorClass === ERROR_CLASS.PERMANENTE) {
       await outbox.killNow({ key: item.key, to: item.to, error: result.error });
       log(`[outbox] descartado por erro permanente key=${item.key}: ${result.error}`);
@@ -267,8 +276,18 @@ async function drainOutbox() {
 /**
  * Decide o destino de um envio que falhou. Só PERMANENTE morre na hora:
  * destinatário inválido não melhora esperando.
+ *
+ * BLOQUEADO é tratado ANTES de tudo, de propósito: é uma DECISÃO nossa (não
+ * enviar para este número), não uma falha do transporte. Por isso NÃO conta
+ * pro `notifyFailure` (alarme de falhas consecutivas) e morre em silêncio —
+ * sem o e-mail de carta morta, que soaria a cada 15 min enquanto o bloqueio
+ * durar (era exatamente o ruído que o caso Karin deixou, 31/07).
  */
 async function handleFailedSend({ key, to, message, result }) {
+  if (result.errorClass === ERROR_CLASS.BLOQUEADO) {
+    if (key) await outbox.killNow({ key, to, error: result.error, silent: true });
+    return { queued: false, blocked: true };
+  }
   await notifyFailure({ transport: result.transport, error: result.error });
   if (!key) return { queued: false };
   if (result.errorClass === ERROR_CLASS.PERMANENTE) {
@@ -290,9 +309,12 @@ async function handleFailedSend({ key, to, message, result }) {
  * — provável incompatibilidade dos clientes whatsmeow com algo do contato dela.
  *
  * Enquanto a causa não é resolvida, enviar para esse número = derrubar TODAS as
- * notificações até alguém reparear QR. O bloqueio devolve PERMANENTE ⇒ o lead
- * vira carta morta ⇒ o e-mail de carta morta avisa o Sidney para repassar
- * MANUALMENTE (do celular sempre funciona).
+ * notificações até alguém reparear QR. O bloqueio devolve BLOQUEADO (31/07:
+ * ANTES devolvia PERMANENTE, e cada tentativa virava carta morta + e-mail de
+ * alerta — com o cron de abandono reclamando o mesmo lead a cada 15 min,
+ * disparava um e-mail por rodada, indefinidamente, enquanto o número
+ * permanecesse na lista). Agora morre em silêncio: sem alarme, sem contar pro
+ * alarme de falhas consecutivas. O chamador (EidosForm) decide como repassar.
  */
 const NUNCA_ENVIAR = new Set(
   (process.env.WHATSAPP_NUNCA_ENVIAR || '')
@@ -315,7 +337,7 @@ async function performSend(phone, message, idempotencyKey) {
     return {
       success: false,
       error: 'destino_bloqueado_operacionalmente',
-      errorClass: ERROR_CLASS.PERMANENTE,
+      errorClass: ERROR_CLASS.BLOQUEADO,
       transport: 'nenhum',
     };
   }
@@ -437,7 +459,14 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, r
     if (result.status === 'failed') {
       const bruto = result.raw || { error: result.error };
       const destino = await handleFailedSend({ key: idempotencyKey, to, message, result: bruto });
-      log(`[send] falhou key=${idempotencyKey}: ${result.error} fila=${destino.queued}`);
+      log(`[send] falhou key=${idempotencyKey}: ${result.error} fila=${destino.queued} bloqueado=${Boolean(destino.blocked)}`);
+      if (destino.blocked) {
+        // 200 (NÃO 500): não é erro, é uma DECISÃO nossa de não enviar. Um
+        // 500 faria o chamador (cron) tratar como falha de transporte e
+        // reclamar o lead de novo na próxima rodada — o mesmo ruído a cada
+        // 15 min que o bloqueio da Karin deixou em 31/07.
+        return reply.send({ success: false, blocked: true, error: result.error });
+      }
       if (destino.queued) {
         // 202: NÃO foi entregue, mas também NÃO foi perdida. É a diferença
         // entre este incidente e o de 27/07, quando a notificação sumia aqui.
@@ -453,6 +482,10 @@ fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, r
 
   const result = await performSend(to, message, null);
   if (!result.success) {
+    if (result.errorClass === ERROR_CLASS.BLOQUEADO) {
+      log(`[send] bloqueado key=- : ${result.error}`);
+      return reply.send({ success: false, blocked: true, error: result.error });
+    }
     // Sem chave de idempotência não há como deduplicar um reenvio, então este
     // caminho não entra na fila — mas o alarme de falha vale igual.
     await notifyFailure({ transport: result.transport, error: result.error });

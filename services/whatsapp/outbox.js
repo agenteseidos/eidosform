@@ -134,10 +134,21 @@ function createOutbox({
     return 'retry';
   }
 
-  /** Item que nunca deveria ser retentado (destinatário inválido, payload ruim). */
-  async function killNow({ key, to, error }) {
+  /**
+   * Item que nunca deveria ser retentado (destinatário inválido, payload ruim).
+   *
+   * `silent`: a morte é uma DECISÃO (bloqueio operacional), não uma FALHA — não
+   * deve gerar o e-mail de carta morta. Continua registrada aqui (a prova de
+   * que o lead não foi avisado não pode sumir), só não entra no que
+   * `takeUnalertedDead()` devolve pro alerta.
+   */
+  async function killNow({ key, to, error, silent = false }) {
     pending.delete(key);
-    dead.push({ key, to, firstFailedAt: now(), diedAt: now(), lastError: String(error || 'permanent') });
+    dead.push({
+      key, to, firstFailedAt: now(), diedAt: now(),
+      lastError: String(error || 'permanent'),
+      ...(silent ? { silent: true } : {}),
+    });
     if (dead.length > 100) dead = dead.slice(-100);
     await save();
   }
@@ -158,9 +169,13 @@ function createOutbox({
    * Devolve as cartas mortas ainda não alertadas e marca como alertadas.
    * NÃO apaga: a carta morta é a prova de que um lead não foi avisado, e essa
    * evidência precisa sobreviver ao e-mail.
+   *
+   * `silent` NUNCA entra no alerta — é bloqueio operacional (decisão), não
+   * falha. Fica de fora da checagem de `alerted` de propósito: não precisa
+   * "consumir" o item pra parar de aparecer, ele já nunca aparece.
    */
   async function takeUnalertedDead() {
-    const novos = dead.filter((item) => !item.alerted);
+    const novos = dead.filter((item) => !item.alerted && !item.silent);
     if (novos.length === 0) return [];
     for (const item of novos) item.alerted = true;
     await save();

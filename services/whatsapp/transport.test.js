@@ -59,7 +59,7 @@ describe('fallback entre transportes', () => {
     expect(result).toEqual(expect.objectContaining({ transport: 'wacli', fallback: true }))
   })
 
-  it.each([ERROR_CLASS.IN_FLIGHT, ERROR_CLASS.PERMANENTE])(
+  it.each([ERROR_CLASS.IN_FLIGHT, ERROR_CLASS.PERMANENTE, ERROR_CLASS.BLOQUEADO])(
     '%s nunca aciona outro motor',
     async (errorClass) => {
       const primary = fakeTransport('wuzapi', [{ success: false, error: 'x', errorClass }])

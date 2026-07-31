@@ -4,6 +4,12 @@ const ERROR_CLASS = Object.freeze({
   PRE_FLIGHT: 'PRE_FLIGHT',
   IN_FLIGHT: 'IN_FLIGHT',
   PERMANENTE: 'PERMANENTE',
+  // Não enviamos de PROPÓSITO (WHATSAPP_NUNCA_ENVIAR). Diferente de PERMANENTE:
+  // aquele é uma FALHA real (destinatário inválido) e deve virar alerta de
+  // carta morta. Isto é uma DECISÃO nossa — não é falha, não conta pro alarme
+  // de falhas consecutivas, e não deveria acordar ninguém a cada 15 min só
+  // porque a decisão continua de pé (ver server.js `destinoBloqueado`).
+  BLOQUEADO: 'BLOQUEADO',
 });
 
 const SUPPORTED_TRANSPORTS = new Set(['wacli', 'wuzapi']);

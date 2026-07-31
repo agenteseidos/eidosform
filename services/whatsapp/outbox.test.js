@@ -76,6 +76,25 @@ describe('fila de reenvio', () => {
     expect(fila.snapshot()).toEqual(expect.objectContaining({ pending: 0, dead: 1 }))
   })
 
+  it('killNow silent=true morre em silêncio: conta como carta morta, mas NUNCA alerta', async () => {
+    const fila = createOutbox({ now: relogio().now })
+    await fila.killNow({ key: 'abandoned:1', to: '55', error: 'destino_bloqueado_operacionalmente', silent: true })
+    // Conta em snapshot() (dead=1) — é evidência, não desaparece do painel.
+    expect(fila.snapshot()).toEqual(expect.objectContaining({ pending: 0, dead: 1 }))
+    // Mas NUNCA aparece pro que dispara e-mail de carta morta.
+    expect(await fila.takeUnalertedDead()).toHaveLength(0)
+    expect(await fila.takeUnalertedDead()).toHaveLength(0)
+  })
+
+  it('bloqueio silencioso e carta morta normal coexistem sem um esconder o outro', async () => {
+    const fila = createOutbox({ now: relogio().now })
+    await fila.killNow({ key: 'abandoned:1', to: '55', error: 'destino_bloqueado_operacionalmente', silent: true })
+    await fila.killNow({ key: 'lead:2', to: '55', error: 'destinatario_invalido' })
+    expect(fila.snapshot()).toEqual(expect.objectContaining({ pending: 0, dead: 2 }))
+    const alertaveis = await fila.takeUnalertedDead()
+    expect(alertaveis.map((i) => i.key)).toEqual(['lead:2'])
+  })
+
   it('sobrevive ao restart do processo', async () => {
     const arquivo = `/tmp/claude-0/-home/4cc049d7-7214-4c38-9920-899a6df05174/scratchpad/outbox-test-${process.pid}.json`
     const a = createOutbox({ file: arquivo })

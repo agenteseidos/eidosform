@@ -33,6 +33,12 @@ export function traduzirStatusLog(row: Pick<WhatsAppLogRow, 'status' | 'wacli_me
   if (row.status === 'queued') return { status: 'na fila', kind: 'lead' }
   if (row.status === 'skipped') return { status: 'ignorado', kind: 'lead' }
   if (row.status === 'abandoned_alert') {
+    // 'bloqueado' (31/07, WHATSAPP_NUNCA_ENVIAR) NÃO é o mesmo que "enviado":
+    // é um marcador que fecha o claim de propósito, sem nunca ter saído.
+    // Checar ANTES do `if (row.wacli_message_id)` genérico — senão essa
+    // string truthy cai no mesmo balde de "enviado", repetindo a MESMA classe
+    // de mentira binária que este comentário documenta acima.
+    if (row.wacli_message_id === 'bloqueado') return { status: 'ignorado', kind: 'abandono' }
     // Ciclo de vida do claim (ver cron abandoned-leads): id preenchido =
     // promovido = alerta entregue; sem id = pendente/na fila de reenvio.
     if (row.wacli_message_id) return { status: 'enviado', kind: 'abandono' }

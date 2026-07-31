@@ -230,6 +230,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const stats = {
     examinados: 0, enviados: 0, enfileirados: 0, semTelefone: 0, jaAvisados: 0,
     falhas: 0, paginas: 0, retomados: 0, revalidadosFora: 0,
+    // Bloqueio operacional (WHATSAPP_NUNCA_ENVIAR) é DECISÃO, não falha — não
+    // soma em `falhas` (isso alimentaria o alarme de falhas consecutivas com
+    // algo que não é uma falha do transporte).
+    bloqueados: 0,
   }
   let cortadoPorTempo = false
   let varreduraCompleta = false
@@ -457,6 +461,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const sendBudget = Math.max(1_000, budgetLeft() - 3_000)
     let sendOk = false
     let queued = false
+    let blocked = false
     let messageId: string | null = null
     let transportUsado: string | null = null
     try {
@@ -474,19 +479,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }),
         signal: AbortSignal.timeout(sendBudget),
       })
-      const result = await res.json().catch(() => ({})) as { success?: boolean; messageId?: string; error?: string; queued?: boolean; transport?: string | null }
+      const result = await res.json().catch(() => ({})) as { success?: boolean; messageId?: string; error?: string; queued?: boolean; blocked?: boolean; transport?: string | null }
       // `queued` = a VPS não entregou AGORA, mas assumiu a entrega na fila de
       // reenvio. Não é sucesso (não pode virar messageId falso no banco) e não
       // é falha para re-disparar: se o cron reclamasse este lead a cada 15 min,
       // voltaria o martelo que gerou 35 tentativas em 27/07. A fila entrega ou
       // alerta como carta morta.
       queued = res.status === 202 || result.queued === true
-      sendOk = res.ok && result.success === true && !queued
+      // `blocked` = a VPS decidiu NÃO enviar (WHATSAPP_NUNCA_ENVIAR). Também
+      // NÃO é falha de transporte — tratar como tal fazia este cron reclamar o
+      // MESMO lead a cada 15 min, indefinidamente, enquanto o bloqueio durasse
+      // (saga Karin, 30-31/07: 15 alertas de carta morta num único incidente).
+      blocked = !queued && result.blocked === true
+      sendOk = res.ok && result.success === true && !queued && !blocked
       messageId = result.messageId ?? null
       transportUsado = result.transport ?? null
       if (queued) {
         stats.enfileirados += 1
         log('[abandoned-leads] enfileirado para reenvio', { responseId: row.id })
+      } else if (blocked) {
+        stats.bloqueados += 1
+        log('[abandoned-leads] bloqueado operacionalmente — repassar manualmente', { responseId: row.id })
       } else if (sendOk) stats.enviados += 1
       else {
         stats.falhas += 1
@@ -497,7 +510,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       logError('[abandoned-leads] erro no envio', err)
     }
 
-    // 3e) PROMOVE o claim (pendente → enviado) ou libera pra retry.
+    // 3e) PROMOVE o claim (pendente → enviado), fecha SEM retry (bloqueio), ou
+    //     libera pra retry (falha de verdade).
     if (queued) {
       // Fecha o claim SEM inventar messageId: a entrega saiu das mãos do cron e
       // passou a ser responsabilidade da fila de reenvio da VPS. Registrar
@@ -508,6 +522,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         .eq('response_id', row.id)
         .eq('status', 'abandoned_alert')
       if (queueErr) logError('[abandoned-leads] claim não marcado como enfileirado', { responseId: row.id, queueErr })
+    } else if (blocked) {
+      // Fecha o claim de vez, SEM soltar pra retry (senão volta o martelo a
+      // cada 15 min) e SEM fingir que foi enviado. `wacli_message_id` recebe
+      // um marcador que NÃO é formato de id de mensagem real (não `sent-` nem
+      // hex de motor) — só assim `traduzirStatusLog` consegue diferenciar "de
+      // propósito não enviado" de "enviado", em vez de mostrar bolinha verde
+      // pra um lead que ninguém recebeu.
+      const { error: blockErr } = await supabase
+        .from('form_whatsapp_logs')
+        .update({
+          wacli_message_id: 'bloqueado',
+          phone_number: leadPhone,
+          error_message: 'Bloqueado operacionalmente (WHATSAPP_NUNCA_ENVIAR) — repassar manualmente',
+        })
+        .eq('response_id', row.id)
+        .eq('status', 'abandoned_alert')
+      if (blockErr) logError('[abandoned-leads] claim não marcado como bloqueado', { responseId: row.id, blockErr })
     } else if (sendOk) {
       const { error: promoteErr } = await supabase
         .from('form_whatsapp_logs')

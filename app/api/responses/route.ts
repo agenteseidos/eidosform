@@ -7,7 +7,6 @@ import { checkAndIncrementResponseCount, sendNearLimitAlert, PLANS } from '@/lib
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { extractLead } from '@/lib/lead-extraction'
-import { sendEmailNotification } from '@/lib/notify'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
 import { isResponseComplete } from '@/lib/form-response-security'
@@ -21,7 +20,8 @@ import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import { isValidSessionKey, hashSessionKey, hashLogPrefix } from '@/lib/partial-session'
 import { extractIdentity, identitiesMatch } from '@/lib/identity-match'
 import { sanitizeUrlParams } from '@/lib/url-params'
-import { sendNewResponseNotification } from '@/lib/resend'
+import { buildNotificationModel } from '@/lib/notification-model'
+import { resolveEmailRecipients, sendNewResponseEmails } from '@/lib/notification-email'
 import { filterQuestionsByPlan } from '@/lib/questions'
 
 // Maximum payload size (1MB — covers long text forms with URLs; file uploads go to R2)
@@ -398,6 +398,8 @@ export async function POST(req: NextRequest) {
   // a mesma chave idempotente no banco.
   let responseId: string
   let responseMetaEvents: string[] = []
+  // Horário PERSISTIDO da resposta — alimenta o e-mail de notificação.
+  let responseSubmittedAt: string | null = null
   let existingSheetsRowIndex: number | null = null
   let effectiveUrlParams: Record<string, string> | null = urlParams
   // true só quando o submit criou response NOVA (sem adotar parcial) — alimenta
@@ -416,8 +418,11 @@ export async function POST(req: NextRequest) {
       // Mesmo um submit completo nasce como parcial. A promoção para completed
       // só acontece depois da reserva idempotente de cota.
       .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed: false, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData, url_params: urlParams, ...(sessionHash ? { partial_session_hash: sessionHash } : {}) } as ResponseInsert)
-      .select('id, meta_events, sheets_row_index, url_params')
-      .single() as { data: { id: string; meta_events?: string[] } | null; error: { message: string; code?: string } | null }
+      // submitted_at volta do INSERT porque é o horário PERSISTIDO do lead — o
+      // e-mail mostra ele, nunca o relógio do envio (numa retentativa, o aviso
+      // apresentaria a hora do aviso como se fosse a hora do lead).
+      .select('id, meta_events, sheets_row_index, url_params, submitted_at')
+      .single() as { data: { id: string; meta_events?: string[]; submitted_at?: string } | null; error: { message: string; code?: string } | null }
 
     if (insertError || !newResponse) {
       // 23505 no índice (form_id, partial_session_hash): a parcial da MESMA
@@ -457,6 +462,7 @@ export async function POST(req: NextRequest) {
     } else {
       responseId = newResponse.id
       responseMetaEvents = Array.isArray(newResponse.meta_events) ? newResponse.meta_events : []
+      responseSubmittedAt = newResponse.submitted_at ?? null
       createdFresh = true
     }
   }
@@ -502,8 +508,8 @@ export async function POST(req: NextRequest) {
       .eq('id', responseId)
       .eq('form_id', form_id as string)
       .eq('completed', false)
-      .select('id, meta_events, sheets_row_index, url_params')
-      .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null } | null; error: unknown }
+      .select('id, meta_events, sheets_row_index, url_params, submitted_at')
+      .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null; submitted_at?: string } | null; error: unknown }
 
     if (updateError || !updated) {
       const { data: check } = await supabase
@@ -523,6 +529,7 @@ export async function POST(req: NextRequest) {
     }
 
     responseMetaEvents = Array.isArray(updated.meta_events) ? updated.meta_events : []
+    responseSubmittedAt = updated.submitted_at ?? responseSubmittedAt
     existingSheetsRowIndex = updated.sheets_row_index ?? existingSheetsRowIndex
     effectiveUrlParams = urlParams ?? sanitizeUrlParams(updated.url_params) ?? effectiveUrlParams
   }
@@ -549,57 +556,74 @@ export async function POST(req: NextRequest) {
   // quando a resposta HTTP termina. Por isso acumulamos promises e aguardamos.
   const postSubmitTasks: Promise<unknown>[] = []
   if (completed) {
-    // Notificação principal para o dono do formulário — feature gated em Plus+.
-    if (ownerProfile?.email && ownerPlanConfig?.emailNotifications) {
-      console.log('[responses] sending owner email notification', { formId: form_id, responseId, ownerPlan, hasOwnerEmail: true })
-      postSubmitTasks.push(
-        sendNewResponseNotification({
-          to: ownerProfile.email,
-          formTitle: form.title ?? 'Formulário',
+    // Notificação por e-mail — CONSTRUTOR ÚNICO (2026-07-30). Antes existiam
+    // dois e-mails divergentes para a mesma resposta (lib/resend.ts para o dono,
+    // lib/notify.ts para o endereço extra), com conteúdo, identidade visual,
+    // idempotência e retry diferentes. Agora: um modelo, um conteúdo, um envio
+    // POR DESTINATÁRIO.
+    //
+    // Regra de negócio preservada: o e-mail do DONO é notificado sempre que o
+    // plano permite; `notify_email_enabled` só ACRESCENTA um segundo
+    // destinatário. A dedup agora normaliza caixa/espaços.
+    if (ownerPlanConfig?.emailNotifications) {
+      const emailRecipients = resolveEmailRecipients({
+        ownerEmail: ownerProfile?.email,
+        notifyEmail: form.notify_email,
+        notifyEmailEnabled: form.notify_email_enabled,
+      })
+
+      if (emailRecipients.length > 0) {
+        console.log('[responses] sending lead email notification', {
+          formId: form_id, responseId, ownerPlan,
+          recipientRoles: emailRecipients.map((r) => r.role),
+        })
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'
+        // Modelo montado no caminho da requisição, de propósito: é barato e não
+        // faz I/O (§3.5 — não existe fila durável para e-mail; não piorar).
+        const emailModel = buildNotificationModel({
           formId: form_id as string,
           responseId,
-        }).then((result) => {
-          if (result?.error) {
-            logError('Owner response email rejected', undefined, { formId: form_id, responseId, ownerPlan, error: result.error })
-          }
-        }).catch((err) => logError('Failed to send owner response email', err))
-      )
+          responseData: answers as Record<string, unknown>,
+          form: {
+            id: form.id,
+            title: form.title,
+            user_id: form.user_id,
+            questions: effectiveQuestions as Array<{ id: string; title?: string; type?: string }>,
+          },
+          appUrl,
+          // Horário PERSISTIDO. O fallback só existe porque o banco pode não
+          // devolver a coluna (corrida de adoção 23505); nesse caso o instante
+          // atual é a melhor aproximação disponível.
+          eventAt: responseSubmittedAt ?? new Date().toISOString(),
+          metaEvents: responseMetaEvents,
+          urlParams: effectiveUrlParams,
+          utm: utmData,
+        })
+        postSubmitTasks.push(
+          sendNewResponseEmails({ model: emailModel, recipients: emailRecipients })
+            .then((outcomes) => {
+              for (const outcome of outcomes) {
+                if (outcome.error) {
+                  logError('Lead email rejected', undefined, {
+                    formId: form_id, responseId, ownerPlan, role: outcome.role, error: outcome.error,
+                  })
+                }
+              }
+            })
+            .catch((err) => logError('Failed to send lead email notification', err))
+        )
+      } else {
+        console.log('[responses] lead email notification skipped — sem destinatário', {
+          formId: form_id, responseId, ownerPlan,
+          hasOwnerEmail: Boolean(ownerProfile?.email),
+          notifyEmailEnabled: form.notify_email_enabled,
+          hasNotifyEmail: Boolean(form.notify_email),
+        })
+      }
     } else {
-      console.log('[responses] owner email notification skipped', {
-        formId: form_id,
-        responseId,
-        ownerPlan,
-        hasOwnerEmail: Boolean(ownerProfile?.email),
+      console.log('[responses] lead email notification skipped — plano', {
+        formId: form_id, responseId, ownerPlan,
         planAllowsEmailNotifications: Boolean(ownerPlanConfig?.emailNotifications),
-      })
-    }
-
-    // Notificação por email configurada no form — feature gated.
-    // Evita duplicidade se o email configurado for o mesmo do dono.
-    if (
-      form.notify_email_enabled &&
-      form.notify_email &&
-      ownerPlanConfig?.emailNotifications &&
-      form.notify_email !== ownerProfile?.email
-    ) {
-      console.log('[responses] sending integration email notification', { formId: form_id, responseId, ownerPlan, notifyEmailEnabled: true })
-      postSubmitTasks.push(
-        sendEmailNotification({
-          toEmail: form.notify_email,
-          formTitle: form.title ?? 'Formulário',
-          formId: form_id as string,
-          answersCount: Object.keys(answers as Record<string, unknown>).length,
-        }).catch((err) => logError('Failed to send email notification', err))
-      )
-    } else {
-      console.log('[responses] integration email notification skipped', {
-        formId: form_id,
-        responseId,
-        ownerPlan,
-        notifyEmailEnabled: form.notify_email_enabled,
-        hasNotifyEmail: Boolean(form.notify_email),
-        planAllowsEmailNotifications: Boolean(ownerPlanConfig?.emailNotifications),
-        sameAsOwnerEmail: form.notify_email === ownerProfile?.email,
       })
     }
 

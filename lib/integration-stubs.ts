@@ -1,14 +1,9 @@
 import { log, logWarn, logError } from '@/lib/logger'
 import { createPublicClient } from '@/lib/supabase/public'
-import { NAME_QUESTION_KEYWORDS, firstName, capitalizeFullName } from '@/lib/name-utils'
-import { formatAnswerValue, NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
+import { formatAnswerValue } from '@/lib/answer-format'
+import { buildNotificationModel, type NotificationFormInfo } from '@/lib/notification-model'
 
-export interface LeadFormInfo {
-  id: string
-  title: string | null
-  user_id: string
-  questions?: Array<{ id: string; title?: string; type?: string }>
-}
+export type LeadFormInfo = NotificationFormInfo
 
 export interface BuildLeadDataParams {
   formId: string
@@ -24,121 +19,83 @@ export interface BuildLeadDataParams {
   utm?: Record<string, string | null> | null
   form: LeadFormInfo
   appUrl: string
+  /**
+   * Horário PERSISTIDO do evento (ISO). O WhatsApp não usa — {data}/{horario}
+   * dele seguem sendo o relógio do ENVIO, como sempre foram. O campo existe
+   * porque o modelo neutro pede, e o cron poderá passar `last_activity_at`
+   * sem que nada aqui mude.
+   */
+  eventAt?: string
 }
 
 /**
- * Monta o leadData (variáveis do template) a partir de uma resposta.
+ * Monta o leadData (variáveis do template de WhatsApp) a partir de uma resposta.
  * Exportado para reuso pelo cron de lead abandonado — a montagem é idêntica,
  * só muda o template. (Auditoria Codex 2026-07-23.)
+ *
+ * ADAPTADOR DE CANAL (2026-07-30): identidade e pares pergunta/resposta agora
+ * vêm do modelo neutro (lib/notification-model.ts); o que sobra aqui é o que é
+ * genuinamente WhatsApp — Markdown de asterisco, emoji do formatter e os
+ * placeholders livres `{título da pergunta}`. A saída é IDÊNTICA à anterior,
+ * provada por lib/whatsapp-regression.test.ts.
  */
 export function buildLeadData(params: BuildLeadDataParams): Record<string, unknown> {
   const { formId, responseId, responseData, appUrl } = params
-  const urlParams = params.urlParams ?? null
 
-  // Map question IDs to titles/types for readable data
-  const questionsMap = new Map<string, string>()
-  const questionTypeMap = new Map<string, string>()
-  if (params.form.questions) {
-    for (const q of params.form.questions) {
-      if (q.id && q.title) questionsMap.set(q.id, q.title.toLowerCase().trim())
-      if (q.id && q.type) questionTypeMap.set(q.id, q.type)
-    }
+  const model = buildNotificationModel({
+    formId,
+    responseId,
+    responseData,
+    form: params.form,
+    appUrl,
+    // O WhatsApp ignora eventAt (ver comentário do campo). Sem valor vindo do
+    // chamador, o modelo recebe o instante atual só para satisfazer o contrato.
+    eventAt: params.eventAt ?? new Date().toISOString(),
+    metaEvents: params.meta_events,
+    urlParams: params.urlParams,
+    utm: params.utm,
+  })
+
+  // Placeholders livres `{título da pergunta}`: mapa título(minúsculo) → valor
+  // formatado PARA WHATSAPP (emoji 📎/✅, anexo em duas linhas). É a única
+  // parte que precisa da formatação de canal no mapa inteiro, inclusive nas
+  // chaves órfãs (resposta sem pergunta correspondente).
+  const questionTitleById = new Map<string, string>()
+  const questionTypeById = new Map<string, string>()
+  for (const q of params.form.questions ?? []) {
+    if (q.id && q.title) questionTitleById.set(q.id, q.title.toLowerCase().trim())
+    if (q.id && q.type) questionTypeById.set(q.id, q.type)
   }
-
-  // Build lead data by matching answer keys to question titles.
-  // Formatter de domínio: objeto (arquivo/endereço/calendly) vira texto legível —
-  // NUNCA "[object Object]" (o String(value) antigo quebrava {endereço} etc.).
   const mappedAnswers: Record<string, string> = {}
   for (const [key, value] of Object.entries(responseData)) {
-    const label = questionsMap.get(key) || key
+    const label = questionTitleById.get(key) || key
     mappedAnswers[label] = formatAnswerValue(value, {
       sink: 'whatsapp',
-      questionType: questionTypeMap.get(key),
+      questionType: questionTypeById.get(key),
     })
   }
 
-  // Bloco {respostas}: todas as perguntas respondidas, uma por bloco, na ordem
-  // do FORMULÁRIO. Blocos de conteúdo (html/content) não são dados de lead.
-  const respostasValue = (params.form.questions ?? [])
-    .filter((q) => !NON_ANSWER_QUESTION_TYPES.has(q.type ?? ''))
-    .map((q) => ({
-      title: (q.title ?? '').trim(),
-      answer: formatAnswerValue(responseData[q.id], { sink: 'whatsapp', questionType: q.type }),
+  // Bloco {respostas}: pares do modelo, renderizados no Markdown do WhatsApp.
+  // O filtro de vazio usa a rendição DO CANAL (um anexo sem nome vira "📎 ",
+  // que é conteúdo legítimo aqui e some na rendição neutra).
+  const respostasValue = model.answers
+    .map((a) => ({
+      title: a.question,
+      answer: formatAnswerValue(a.rawValue, { sink: 'whatsapp', questionType: a.questionType }),
     }))
     .filter((pair) => pair.title && pair.answer) // pergunta sem resposta é omitida
     .map((pair) => `*${pair.title}*\n${pair.answer}`) // pergunta em negrito no WhatsApp (asterisco único)
     .join('\n\n')
 
-  // Busca de identidade por título de pergunta, separada em EXATA e DIFUSA
-  // (includes). A difusa é perigosa: "telefone da empresa" casa "telefone".
-  // Por isso a ordem final de prioridade (abaixo) coloca os url_params ENTRE
-  // a exata e a difusa — um telefone secundário digitado não pode roubar a
-  // identidade do lead vinda da URL da campanha (bug pego no teste real 23/07;
-  // era o P2 de colisão apontado pela auditoria Codex).
-  const findByLabelExact = (...labels: string[]): string => {
-    for (const label of labels) {
-      for (const [key, val] of Object.entries(mappedAnswers)) {
-        if (key === label && val) return val
-      }
-    }
-    return ''
-  }
-  const findByLabelFuzzy = (...labels: string[]): string => {
-    for (const label of labels) {
-      for (const [key, val] of Object.entries(mappedAnswers)) {
-        if (key.includes(label) && val) return val
-      }
-    }
-    return ''
-  }
-
-  // Find by canonical question type — more robust than scanning titles.
-  // P2-4 (2ª auditoria Codex): usava `.find()` e PARAVA na primeira pergunta do
-  // tipo mesmo se estivesse vazia — um form com duas perguntas `phone` onde a
-  // primeira ficou em branco perdia o telefone que o lead realmente preencheu.
-  // Agora percorre todas e devolve a primeira resposta NÃO VAZIA.
-  const findByType = (...types: string[]): string => {
-    if (!params.form.questions) return ''
-    for (const t of types) {
-      for (const q of params.form.questions) {
-        if (q.type !== t || !q.id) continue
-        const raw = responseData[q.id]
-        if (raw == null) continue
-        const value = String(raw).trim()
-        if (value) return value
-      }
-    }
-    return ''
-  }
-
-  // Identidade vinda da URL (campos ocultos de campanha) — FALLBACK quando o form
-  // não pergunta nome/email/telefone. Mesmas chaves das colunas do Sheets
-  // (nome/email/telefone) + variantes comuns. Sem isso, {nome}/{telefone} e o
-  // {whatsapp_link} saem vazios nos forms de tráfego pago (caso RCGT0826).
-  const fromUrl = (...keys: string[]): string => {
-    if (!urlParams) return ''
-    for (const k of keys) {
-      const v = urlParams[k]
-      if (typeof v === 'string' && v.trim()) return v.trim()
-    }
-    return ''
-  }
-
-  // Prioridade p/ cada identidade: (1) tipo canônico da pergunta → (2) título
-  // EXATO → (3) parâmetro da URL (identidade da campanha) → (4) título DIFUSO
-  // (último recurso). Assim url_params vence "telefone da empresa" & cia.
-  const nameKw = [...NAME_QUESTION_KEYWORDS]
-  const fullNameRaw = findByLabelExact(...nameKw) || fromUrl('nome', 'name') || findByLabelFuzzy(...nameKw)
-  const fullNameValue = fullNameRaw ? capitalizeFullName(fullNameRaw) : ''
-  const firstNameValue = firstName(fullNameRaw) || 'Lead'
-  const emailValue = findByType('email') || findByLabelExact('email', 'e-mail')
-    || fromUrl('email', 'e-mail') || findByLabelFuzzy('email', 'e-mail') || 'N/A'
-  const phoneValue = findByType('phone') || findByLabelExact('telefone', 'phone', 'celular', 'whatsapp')
-    || fromUrl('telefone', 'phone', 'celular', 'whatsapp', 'tel')
-    || findByLabelFuzzy('telefone', 'phone', 'celular', 'whatsapp') || ''
+  const firstNameValue = model.identity.firstName
+  const fullNameValue = model.identity.fullName ?? ''
+  const emailValue = model.identity.email ?? 'N/A'
+  const phoneValue = model.identity.phone ?? ''
 
   // Variáveis de data/hora — usa fuso de São Paulo pra render natural pro
-  // dono brasileiro. Calculadas no momento do envio (não persistidas).
+  // dono brasileiro. Calculadas no momento do envio (não persistidas):
+  // "🕒 Recebido ..." no WhatsApp sempre significou "avisei agora", e mexer
+  // nisso quebraria a invariante de regressão do canal (§4.3 do plano).
   const now = new Date()
   const sp = (parts: Intl.DateTimeFormatOptions) =>
     now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', ...parts })
@@ -162,9 +119,9 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
     telefone: phoneValue,
     celular: phoneValue,
     whatsapp: phoneValue,
-    form_name: params.form.title || 'Formulário',
-    response_id: responseId,
-    response_link: `${appUrl}/forms/${formId}/responses?response=${responseId}`,
+    form_name: model.form.title,
+    response_id: model.response.id,
+    response_link: model.response.link,
     horario: horarioValue,
     data: dataValue,
     dia_semana: diaSemanaValue,
@@ -176,11 +133,11 @@ export function buildLeadData(params: BuildLeadDataParams): Record<string, unkno
     meta_events: (params.meta_events ?? []).join(', '),
     // {utm_*}: origem/campanha do lead na notificação — vazio quando o lead
     // chegou sem UTM (o sanitizador do template lida com string vazia).
-    utm_source: params.utm?.utm_source ?? '',
-    utm_medium: params.utm?.utm_medium ?? '',
-    utm_campaign: params.utm?.utm_campaign ?? '',
-    utm_term: params.utm?.utm_term ?? '',
-    utm_content: params.utm?.utm_content ?? '',
+    utm_source: model.utm.source ?? '',
+    utm_medium: model.utm.medium ?? '',
+    utm_campaign: model.utm.campaign ?? '',
+    utm_term: model.utm.term ?? '',
+    utm_content: model.utm.content ?? '',
   }
 }
 

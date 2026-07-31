@@ -7,6 +7,9 @@
  */
 
 import { toWhatsAppDigits } from './phone'
+// P2-7 mora em lib/text-sanitize.ts desde 2026-07-30 — o e-mail precisa da MESMA
+// limpeza de invisíveis, e duplicar a regra seria perder as duas de vista.
+import { sanitizeSingleLine, sanitizeMultiLine } from './text-sanitize'
 
 export const DEFAULT_WHATSAPP_MESSAGE_TEMPLATE = [
   '🔔 *Novo lead* em {form_name}',
@@ -51,36 +54,6 @@ export const SAMPLE_LEAD_DATA: Record<string, unknown> = {
   utm_campaign: 'lancamento-julho',
   utm_term: 'formulario-online',
   utm_content: 'criativo-a',
-}
-
-/**
- * P2-7: conteúdo do lead não pode FORJAR linhas da notificação nem esconder
- * texto. Duas classes recebem tratamento DIFERENTE, de propósito:
- *  - `\p{Cf}` (formatação invisível: zero-width, overrides bidirecionais) é
- *    REMOVIDA — não separa palavras, só serve pra enganar quem lê.
- *  - `\p{Cc}` (controle: \n, \r, \t) vira ESPAÇO — era um separador legítimo,
- *    e apagá-lo grudaria palavras ("João\nSilva" → "JoãoSilva").
- */
-const INVISIBLE_FORMAT = /\p{Cf}/gu
-const CONTROL_CHARS = /\p{Cc}/gu
-/** Controles EXCETO \n (blocos legítimos multi-linha: {respostas}, anexos). */
-const CONTROL_EXCEPT_NEWLINE = /[^\n\P{Cc}]/gu
-
-function sanitizeSingleLine(value: unknown): string {
-  return String(value ?? '')
-    .normalize('NFKC')
-    .replace(INVISIBLE_FORMAT, '')
-    .replace(CONTROL_CHARS, ' ')
-    .replace(/ {2,}/g, ' ')
-    .trim()
-}
-
-function sanitizeMultiLine(value: unknown): string {
-  return String(value ?? '')
-    .normalize('NFKC')
-    .replace(/\r\n?/g, '\n')
-    .replace(INVISIBLE_FORMAT, '')
-    .replace(CONTROL_EXCEPT_NEWLINE, ' ')
 }
 
 /** Remove do template a(s) linha(s) que contêm o placeholder (self-hide). */

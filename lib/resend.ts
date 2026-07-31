@@ -7,8 +7,10 @@ import { escapeHtml } from '@/lib/html'
 import { logWarn, logError } from '@/lib/logger'
 import { createHash } from 'crypto'
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
+// Lidas por chamada (não no import): além de permitir teste sem recarregar o
+// módulo, evita congelar uma env que a plataforma injeta tarde.
+const getApiKey = () => process.env.RESEND_API_KEY
+const getFromEmail = () => process.env.RESEND_FROM_EMAIL ?? 'EidosForm <noreply@eidosform.com.br>'
 // Destino dos alertas operacionais de billing (sub órfã, subcobrança pendente etc.).
 // Sem fallback hardcoded (P3, auditoria 2026-06-10): se a env sumir, loga erro
 // alto em vez de mandar alertas de dinheiro para um endereço fixo no código.
@@ -24,16 +26,53 @@ const PII_PATTERNS = [
   /\b(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}[-.\s]?\d{4}\b/g, // phone BR
 ]
 
+/** Teto do assunto. Era 50 — decepava qualquer assunto informativo; 78 é o
+ *  ponto onde os clientes de e-mail costumam cortar na listagem. */
+export const SUBJECT_MAX_CHARS = 78
+
 /**
- * Sanitize email subject: truncate to 50 chars and strip PII patterns.
+ * Sanitiza o assunto do e-mail. A ORDEM importa:
+ *  1. remove `\p{Cf}` (invisíveis: zero-width, override bidirecional);
+ *  2. converte `\p{Cc}` em espaço — inclui CR/LF, que é o vetor de INJEÇÃO DE
+ *     CABEÇALHO (um "\r\nBcc: ..." no nome do lead viraria cabeçalho de verdade);
+ *  3. colapsa espaços;
+ *  4. só ENTÃO mascara PII (CPF, e-mail, telefone) — se rodasse antes, um CR
+ *     no meio de um CPF escaparia do padrão;
+ *  5. e por último trunca.
  */
-function sanitizeSubject(subject: string): string {
-  let s = subject
+export function sanitizeSubject(subject: string): string {
+  let s = String(subject ?? '')
+    .normalize('NFKC')
+    .replace(/\p{Cf}/gu, '')
+    .replace(/\p{Cc}/gu, ' ')
+    .replace(/ {2,}/g, ' ')
+    .trim()
   for (const pattern of PII_PATTERNS) {
     s = s.replace(pattern, '***')
   }
-  return s.length > 50 ? s.slice(0, 47) + '...' : s
+  return s.length > SUBJECT_MAX_CHARS ? s.slice(0, SUBJECT_MAX_CHARS - 3) + '...' : s
 }
+
+/**
+ * Destinatário para LOG: hash curto + domínio. A base de clientes é de
+ * psicólogos e o assunto agora carrega o nome do lead — endereço em claro no
+ * log de infraestrutura seria vazamento. O hash basta para correlacionar
+ * tentativas do mesmo destinatário.
+ */
+function maskRecipient(to: string): string {
+  const digest = createHash('sha256').update(to.trim().toLowerCase()).digest('hex').slice(0, 8)
+  const domain = to.includes('@') ? to.slice(to.lastIndexOf('@') + 1) : 'sem-dominio'
+  return `${digest}@${domain}`
+}
+
+/** Status que vale a pena repetir. 4xx permanente (400/401/403/422) NÃO entra:
+ *  repetir só queima cota e atrasa o próximo envio. */
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500
+}
+
+/** Tempo máximo por tentativa. Sem isto o fetch podia pendurar a execução. */
+const REQUEST_TIMEOUT_MS = 10_000
 
 /**
  * Alerta operacional de BILLING para a equipe (não pro cliente). Usado em casos de dinheiro
@@ -65,20 +104,26 @@ async function sendEmailWithRetry(payload: {
   to: string
   subject: string
   html: string
+  /** Alternativa em texto puro — vai no MESMO payload da Resend. */
+  text?: string
   idempotencyKey?: string
 }): Promise<{ id?: string; error?: string }> {
-  if (!RESEND_API_KEY) {
+  const apiKey = getApiKey()
+  if (!apiKey) {
     logWarn('[resend] RESEND_API_KEY not configured')
     return { error: 'RESEND_API_KEY not configured' }
   }
 
+  const fromEmail = getFromEmail()
   const safeSubject = sanitizeSubject(payload.subject)
   const body = JSON.stringify({
-    from: FROM_EMAIL,
+    from: fromEmail,
     to: payload.to,
     subject: safeSubject,
     html: payload.html,
+    ...(payload.text ? { text: payload.text } : {}),
   })
+  const maskedTo = maskRecipient(payload.to)
 
   const delays = [0, 1000, 5000, 10000]
   let lastError: string | undefined
@@ -90,7 +135,7 @@ async function sendEmailWithRetry(payload: {
 
     try {
       const headers: Record<string, string> = {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       }
       if (payload.idempotencyKey) {
@@ -101,55 +146,53 @@ async function sendEmailWithRetry(payload: {
         method: 'POST',
         headers,
         body,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
-      const data = await res.json()
+      // Corpo pode não ser JSON (502/HTML de proxy) — não pode derrubar o envio.
+      const data = await res.json().catch(() => ({} as Record<string, unknown>))
       if (res.ok) {
-        console.log('[resend] email sent', { id: data.id, from: FROM_EMAIL, to: payload.to, subject: safeSubject })
-        return { id: data.id }
+        // Log SEM PII: nada de assunto (carrega o nome do lead) nem endereço em claro.
+        console.log('[resend] email sent', { id: (data as { id?: string }).id, from: fromEmail, to: maskedTo })
+        return { id: (data as { id?: string }).id }
       }
-      lastError = JSON.stringify(data)
-      console.error('[resend] API rejected email', { from: FROM_EMAIL, to: payload.to, subject: safeSubject, status: res.status, data })
+
+      lastError = `HTTP ${res.status}`
+      console.error('[resend] API rejected email', { from: fromEmail, to: maskedTo, status: res.status })
+      // 4xx permanente: repetir não muda o resultado. Devolve na hora.
+      if (!isRetryableStatus(res.status)) return { error: lastError }
     } catch (err) {
-      logError('[resend] Error sending email:', err)
-      lastError = String(err)
+      // Timeout (AbortError) e erro de rede SÃO repetíveis.
+      const name = err instanceof Error ? err.name : 'Error'
+      logError('[resend] Error sending email:', err, { to: maskedTo })
+      lastError = name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : String(err)
     }
   }
 
   return { error: lastError }
 }
 
-/** Nova resposta recebida em um formulário */
-export async function sendNewResponseNotification(params: {
+/**
+ * Envio de UMA notificação de lead para UM destinatário.
+ *
+ * Baixo nível de propósito: quem monta a lista de destinatários, normaliza,
+ * deduplica e calcula a chave de idempotência é lib/notification-email.ts.
+ * Um envio por destinatário (nunca um POST com vários) preserva privacidade,
+ * rastreabilidade, retry e idempotência individuais.
+ */
+export async function sendLeadNotificationEmail(params: {
   to: string
-  formTitle: string
-  responseId: string
-  formId: string
-}) {
-  const { to, formTitle, responseId, formId } = params
-  const safeFormTitle = escapeHtml(formTitle)
-
-  // Idempotency key = hash(formId + responseId) to avoid duplicate emails on retry
-  const idempotencyKey = createHash('sha256')
-    .update(`new-response:${formId}:${responseId}`)
-    .digest('hex')
-
-  return sendEmailWithRetry({
-    to,
-    subject: `Nova resposta em "${safeFormTitle}"`,
-    idempotencyKey,
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-        <h2 style="color:#6366f1">Nova resposta recebida! 🎉</h2>
-        <p>Seu formulário <strong>${safeFormTitle}</strong> recebeu uma nova resposta.</p>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/forms/${formId}/responses?response=${responseId}"
-           style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
-          Ver resposta
-        </a>
-        <p style="color:#888;font-size:12px;margin-top:24px">EidosForm — Formulários inteligentes</p>
-      </div>
-    `,
-  })
+  subject: string
+  html: string
+  text?: string
+  idempotencyKey?: string
+}): Promise<{ id?: string; error?: string }> {
+  return sendEmailWithRetry(params)
 }
+
+// `sendNewResponseNotification` foi REMOVIDA em 2026-07-30. Era um dos DOIS
+// construtores de "nova resposta" (o outro era lib/notify.ts), divergentes em
+// conteúdo, identidade visual, idempotência e retry. Agora existe um só:
+// lib/notification-content.ts monta e lib/notification-email.ts envia.
 
 /** Alerta de 80% do limite de respostas */
 export async function sendLimitAlert(params: {

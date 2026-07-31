@@ -7,6 +7,9 @@ import { signPartialToken } from '@/lib/partial-token'
 //  - respondent_id errado em row autenticada → 403
 //  - honeypot, limites e validações continuam intactos
 
+/** Horário PERSISTIDO devolvido pelo banco — o e-mail tem que usar ESTE. */
+const SUBMITTED_AT = '2026-07-30T17:32:10.000Z'
+
 type Result = { data?: unknown; error?: unknown }
 const state: {
   form: Result
@@ -47,7 +50,7 @@ function makeBuilder(table: string) {
       const existing = state.existingResponse.data as { id: string } | null
       const inserted = state.insertResult.data as { id: string } | null
       const target = existing ?? inserted
-      res = { data: target ? { id: target.id, meta_events: [], sheets_row_index: null } : null, error: null }
+      res = { data: target ? { id: target.id, meta_events: [], sheets_row_index: null, submitted_at: SUBMITTED_AT } : null, error: null }
     }
     return Promise.resolve(res).then(resolve)
   }
@@ -58,7 +61,11 @@ const fakeClient = { from: (t: string) => makeBuilder(t) }
 vi.mock('@/lib/supabase/public', () => ({ createPublicClient: () => fakeClient }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fakeClient }))
 vi.mock('@/lib/supabase/request-auth', () => ({ getRequestUser: vi.fn(async () => null) }))
-vi.mock('@/lib/plan-limits', () => ({
+vi.mock('@/lib/plan-limits', async () => ({
+  // PLANS REAL: o gate de notificação por e-mail é `PLANS[plano].emailNotifications`.
+  // Com o stub `{}` de antes, nenhum teste da rota conseguia entrar no bloco de
+  // e-mail — o gate ficava sempre falso e a cobertura era ilusória.
+  PLANS: (await vi.importActual<typeof import('@/lib/plan-definitions')>('@/lib/plan-definitions')).PLANS,
   checkAndIncrementResponseCount: vi.fn(async () => ({
     allowed: true,
     usage: 1,
@@ -68,7 +75,6 @@ vi.mock('@/lib/plan-limits', () => ({
     alreadyCounted: false,
     unavailable: false,
   })),
-  PLANS: {},
 }))
 vi.mock('@/lib/response-rate-limit', () => ({
   checkResponseRateLimitAsync: vi.fn(async () => ({ allowed: true, remaining: 9, resetIn: 0 })),
@@ -77,14 +83,19 @@ vi.mock('@/lib/rate-limit', () => ({
   checkRateLimitAsync: vi.fn(async () => ({ allowed: true, remaining: 59, resetIn: 0 })),
 }))
 vi.mock('@/lib/webhook-dispatcher', () => ({ dispatchWebhook: vi.fn(async () => undefined) }))
-vi.mock('@/lib/notify', () => ({ sendEmailNotification: vi.fn(async () => undefined) }))
+vi.mock('@/lib/notification-email', async (importOriginal) => {
+  // resolveEmailRecipients é PURA (normaliza e deduplica) — o teste usa a real
+  // e só finge o envio, senão a dedup de destinatário ficaria sem cobertura.
+  const actual = await importOriginal<typeof import('@/lib/notification-email')>()
+  return { ...actual, sendNewResponseEmails: vi.fn(async () => []) }
+})
 vi.mock('@/lib/integration-stubs', () => ({ sendWhatsAppOnFormResponse: vi.fn(async () => undefined) }))
 vi.mock('@/lib/google-sheets', () => ({ upsertSubmission: vi.fn(async () => ({ rowIndex: null })) }))
 vi.mock('@/lib/meta-capi', () => ({
   sendMetaCAPIEvent: vi.fn(async () => true),
   extractPIIFromAnswers: vi.fn(() => ({})),
 }))
-vi.mock('@/lib/resend', () => ({ sendNewResponseNotification: vi.fn(async () => ({})) }))
+vi.mock('@/lib/resend', () => ({ sendLeadNotificationEmail: vi.fn(async () => ({})) }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn(), logWarn: vi.fn(), log: vi.fn() }))
 
 import { POST } from './route'
@@ -126,8 +137,9 @@ beforeEach(() => {
   state.form = { data: formRow, error: null }
   state.profile = { data: { plan: 'professional', email: null, plan_expires_at: null }, error: null }
   state.existingResponse = { data: null, error: null }
-  state.insertResult = { data: { id: NEW_ID, meta_events: [] }, error: null }
+  state.insertResult = { data: { id: NEW_ID, meta_events: [], submitted_at: SUBMITTED_AT }, error: null }
   state.calls = []
+  vi.clearAllMocks()
 })
 
 const anonRow = { id: RESP_ID, respondent_id: null, completed: false, sheets_row_index: null }
@@ -327,5 +339,70 @@ describe('POST /api/responses — defesas básicas', () => {
     const res = await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'x' } }))
     expect(res.status).toBe(503)
     expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
+  })
+})
+
+// Cobre a lacuna apontada em §4.7 do plano: até aqui NENHUM teste da rota
+// exercitava o caminho dono + e-mail adicional, porque os casos acima usam de
+// propósito respostas INCOMPLETAS para pular o pós-submit.
+describe('POST /api/responses — notificação por e-mail (resposta completa)', () => {
+  const respostaCompleta = { form_id: FORM_ID, answers: { q1: 'Maria', 'q-req': 'ok' } }
+
+  async function outroEnvio() {
+    const { sendNewResponseEmails } = await import('@/lib/notification-email')
+    return vi.mocked(sendNewResponseEmails)
+  }
+
+  it('dono + e-mail adicional distintos: UM envio com os DOIS destinatários', async () => {
+    state.profile = { data: { plan: 'professional', email: 'dono@clinica.com', plan_expires_at: null }, error: null }
+    state.form = { data: { ...formRow, notify_email_enabled: true, notify_email: 'secretaria@clinica.com' }, error: null }
+
+    await POST(makeReq(respostaCompleta))
+
+    const send = await outroEnvio()
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0][0].recipients).toEqual([
+      { email: 'dono@clinica.com', role: 'owner' },
+      { email: 'secretaria@clinica.com', role: 'form_email' },
+    ])
+  })
+
+  it('e-mail adicional IGUAL ao do dono a menos de caixa/espaço: UM destinatário só', async () => {
+    state.profile = { data: { plan: 'professional', email: 'dono@clinica.com', plan_expires_at: null }, error: null }
+    state.form = { data: { ...formRow, notify_email_enabled: true, notify_email: '  Dono@Clinica.COM ' }, error: null }
+
+    await POST(makeReq(respostaCompleta))
+
+    const send = await outroEnvio()
+    expect(send.mock.calls[0][0].recipients).toEqual([{ email: 'dono@clinica.com', role: 'owner' }])
+  })
+
+  it('o modelo leva o horário PERSISTIDO da resposta, não o relógio do envio', async () => {
+    state.profile = { data: { plan: 'professional', email: 'dono@clinica.com', plan_expires_at: null }, error: null }
+
+    await POST(makeReq(respostaCompleta))
+
+    const send = await outroEnvio()
+    const model = send.mock.calls[0][0].model
+    expect(model.response.eventAt).toBe(SUBMITTED_AT)
+    expect(model.form.id).toBe(FORM_ID)
+    expect(model.identity.firstName).toBe('Maria')
+  })
+
+  it('plano sem notificação por e-mail (Starter): ninguém é notificado', async () => {
+    state.profile = { data: { plan: 'starter', email: 'dono@clinica.com', plan_expires_at: null }, error: null }
+    state.form = { data: { ...formRow, notify_email_enabled: true, notify_email: 'secretaria@clinica.com' }, error: null }
+
+    await POST(makeReq(respostaCompleta))
+
+    expect(await outroEnvio()).not.toHaveBeenCalled()
+  })
+
+  it('resposta INCOMPLETA não dispara e-mail', async () => {
+    state.profile = { data: { plan: 'professional', email: 'dono@clinica.com', plan_expires_at: null }, error: null }
+
+    await POST(makeReq({ form_id: FORM_ID, answers: { q1: 'só a primeira' } }))
+
+    expect(await outroEnvio()).not.toHaveBeenCalled()
   })
 })

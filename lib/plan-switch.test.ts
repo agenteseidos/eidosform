@@ -34,7 +34,27 @@ vi.mock('@/lib/billing-lock', () => ({
   acquireLock: vi.fn(async () => true),
   releaseLock: vi.fn(async () => undefined),
 }))
-vi.mock('@/lib/resend', () => ({ sendBillingOpsAlert: vi.fn(async () => undefined) }))
+const resendMocks = vi.hoisted(() => ({
+  sendBillingOpsAlert: vi.fn(async () => undefined),
+  sendPlanChanged: vi.fn(async () => ({ ok: true })),
+}))
+vi.mock('@/lib/resend', () => resendMocks)
+// Fan-out de troca (mesa 2026-08-03): WhatsApp mockado; planLabel/brDate reais.
+const wppMocks = vi.hoisted(() => ({
+  notifyPlanoAlterado: vi.fn(async () => ({ sent: true })),
+}))
+vi.mock('@/lib/whatsapp-confirmations', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/lib/whatsapp-confirmations')>()
+  return { ...orig, ...wppMocks }
+})
+// Marker de supressão do plano_ativado da sub nova (mesa 2026-08-03).
+const activationMocks = vi.hoisted(() => ({
+  markActivationEffectsClaimed: vi.fn(async () => undefined),
+}))
+vi.mock('@/lib/billing-activation', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/lib/billing-activation')>()
+  return { ...orig, ...activationMocks }
+})
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }))
 vi.mock('@/lib/plan-limits', () => ({
   handleUpgrade: vi.fn(async () => ({ unpausedCount: 0 })),
@@ -113,6 +133,51 @@ describe('executePlanSwitch', () => {
     // profile trocado + checkout paid de auditoria
     expect(state.calls.some(c => c.table === 'profiles' && c.op === 'update')).toBe(true)
     expect(state.calls.some(c => c.table === 'billing_checkouts' && c.op === 'upsert')).toBe(true)
+  })
+
+  // ── Mesa 2026-08-03: marker de supressão + fan-out espelho WhatsApp/e-mail ──
+
+  it('sucesso: pré-grava o marker de efeitos da sub NOVA (renovação não dispara plano_ativado)', async () => {
+    state.profileRow = { asaas_subscription_id: 'sub_old', plan: 'starter', plan_cycle: 'MONTHLY' }
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams })
+    expect(r.ok).toBe(true)
+    expect(activationMocks.markActivationEffectsClaimed).toHaveBeenCalledWith(
+      expect.anything(), 'sub_new', 'plus', 'MONTHLY',
+    )
+  })
+
+  it('troca de plano: fan-out dispara WhatsApp E e-mail com de→para e idempotência por sub', async () => {
+    state.profileRow = {
+      asaas_subscription_id: 'sub_old', plan: 'starter', plan_cycle: 'MONTHLY',
+      email: 'sidney@institutoeidos.com.br', full_name: 'Sidney Crystian', plan_expires_at: '2026-09-02T02:59:59+00:00',
+    }
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams })
+    expect(r.ok).toBe(true)
+    await vi.waitFor(() => {
+      expect(wppMocks.notifyPlanoAlterado).toHaveBeenCalledWith(PROFILE_ID, { fromLabel: 'Starter Mensal' })
+      expect(resendMocks.sendPlanChanged).toHaveBeenCalledTimes(1)
+    })
+    const email = (resendMocks.sendPlanChanged.mock.calls as unknown as Array<[Record<string, unknown>]>)[0]![0]
+    expect(email.to).toBe('sidney@institutoeidos.com.br')
+    expect(email.fromPlan).toBe('Starter Mensal')
+    expect(email.toPlan).toBe('Plus Mensal')
+    expect(email.nextCharge).toBe('01/09/2026') // BRT da expiração
+    expect(email.idempotencyKey).toEqual(expect.any(String)) // 1 e-mail por troca (hash da sub nova)
+  })
+
+  it('reativação de MESMO plano+ciclo: marker gravado, mas NENHUMA notificação (S1)', async () => {
+    state.profileRow = {
+      asaas_subscription_id: 'sub_old', plan: 'plus', plan_cycle: 'MONTHLY',
+      email: 'sidney@institutoeidos.com.br', full_name: 'Sidney', plan_expires_at: null,
+    }
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams })
+    expect(r.ok).toBe(true)
+    expect(activationMocks.markActivationEffectsClaimed).toHaveBeenCalledWith(
+      expect.anything(), 'sub_new', 'plus', 'MONTHLY',
+    )
+    await new Promise((res) => setTimeout(res, 20)) // janela pro fan-out (que NÃO deve existir)
+    expect(wppMocks.notifyPlanoAlterado).not.toHaveBeenCalled()
+    expect(resendMocks.sendPlanChanged).not.toHaveBeenCalled()
   })
 
   it('CAS pré-voo: sub do profile mudou → aborta SEM criar nada no Asaas', async () => {

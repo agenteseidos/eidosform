@@ -129,3 +129,11 @@ describe('notify* — busca o perfil e monta os params', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
+
+describe('templates _v2 (mesa 2026-08-03)', () => {
+  it('TODAS as constantes apontam pros _v2 com botão — NUNCA regredir pros v1', () => {
+    for (const [key, name] of Object.entries(CONFIRMATION_TEMPLATES)) {
+      expect(name, `CONFIRMATION_TEMPLATES.${key}`).toMatch(/_v2$/)
+    }
+  })
+})

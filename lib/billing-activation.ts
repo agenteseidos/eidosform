@@ -137,6 +137,39 @@ export async function claimActivationEffects(
   return true
 }
 
+/**
+ * Pré-grava o marker de efeitos de ativação para uma assinatura CRIADA por
+ * executePlanSwitch (troca de plano ou reativação). O 1º pagamento dessa sub
+ * NÃO é uma ativação nova na cabeça do cliente — sem este marker, a primeira
+ * renovação dispararia "plano ativado" (e-mail + WhatsApp) indevido, porque a
+ * chave effects:<sub>:<plan>:<cycle> seria inédita (parecer Codex + mesa
+ * 2026-08-03). NÃO muda a semântica de claimActivationEffects: apenas OCUPA a
+ * chave. handleUpgrade não se perde (executePlanSwitch já chama applyFormLimits)
+ * e finalizeActivation não é gateada pelo claim.
+ * Falha aqui NÃO bloqueia a troca — degrada pro comportamento antigo (mensagem
+ * indevida na renovação), que é o estado atual, nunca pior.
+ */
+export async function markActivationEffectsClaimed(
+  db: SupabaseClient,
+  subscriptionId: string,
+  plan: string,
+  cycle: string,
+): Promise<void> {
+  const eventId = `effects:${subscriptionId}:${plan}:${cycle}`
+  try {
+    const { error } = await (db as unknown as {
+      from: (t: string) => { insert: (v: unknown) => Promise<{ error: { code?: string } | null }> }
+    })
+      .from('asaas_webhook_events')
+      .insert({ event_id: eventId, event: 'ACTIVATION_EFFECTS', status: 'processed' })
+    if (error && error.code !== '23505') {
+      log('[billing] markActivationEffectsClaimed: falha não-conflito ao pré-gravar (não-bloqueante)', { eventId, code: error.code })
+    }
+  } catch (err) {
+    logError('[billing] markActivationEffectsClaimed lançou (não-bloqueante)', err, { eventId })
+  }
+}
+
 export interface FinalizeActivationResult {
   /** true se pulou tudo (sem newSub ou profile já aponta outra sub — fluxo concorrente venceu). */
   skipped: boolean

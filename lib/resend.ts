@@ -250,6 +250,46 @@ export async function sendPlanActivated(params: {
   })
 }
 
+/**
+ * Troca de plano (upgrade/downgrade) — espelho do WhatsApp `plano_alterado`
+ * (premissa P1 da mesa 2026-08-03: todo evento de plano gera e-mail; mesmo
+ * gatilho, mesma idempotência do fan-out no executePlanSwitch). Sem isto, o
+ * upgrade ficaria com ZERO e-mail após a supressão do "plano ativado" indevido.
+ */
+export async function sendPlanChanged(params: {
+  to: string
+  name: string
+  fromPlan: string
+  toPlan: string
+  nextCharge?: string | null
+  /** ex.: hash de plan-changed:<newSubId> — 1 e-mail por troca, mesmo com retry. */
+  idempotencyKey?: string
+}) {
+  const { to, name, fromPlan, toPlan, nextCharge, idempotencyKey } = params
+  const safeName = escapeHtml(name)
+  const chargeLine = nextCharge
+    ? `<p>Próxima cobrança: <strong>${escapeHtml(nextCharge)}</strong>.</p>`
+    : ''
+  return sendEmailWithRetry({
+    to,
+    subject: `Seu plano mudou: ${toPlan}`,
+    idempotencyKey,
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#6366f1">Alteração de plano confirmada</h2>
+        <p>Olá, <strong>${safeName}</strong>!</p>
+        <p>Sua assinatura EidosForm mudou de <strong>${escapeHtml(fromPlan)}</strong> para <strong>${escapeHtml(toPlan)}</strong>.</p>
+        ${chargeLine}
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/billing"
+           style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
+          Gerenciar assinatura
+        </a>
+        <p style="color:#888;font-size:12px;margin-top:24px">EidosForm — Formulários inteligentes</p>
+      </div>
+    `,
+  })
+}
+
 /** Webhook do formulário falhando após 3+ falhas em 7 dias (J1) */
 export async function sendWebhookFailureAlert(params: {
   to: string

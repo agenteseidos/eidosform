@@ -24,9 +24,12 @@ import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { PLANS } from '@/lib/plan-definitions'
 import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
-import { sendBillingOpsAlert } from '@/lib/resend'
+import { sendBillingOpsAlert, sendPlanChanged } from '@/lib/resend'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
-import { notifyPlanoAlterado, planLabel } from '@/lib/whatsapp-confirmations'
+import { notifyPlanoAlterado, planLabel, brDate } from '@/lib/whatsapp-confirmations'
+import { markActivationEffectsClaimed } from '@/lib/billing-activation'
+import { after } from 'next/server'
+import { createHash } from 'crypto'
 
 export interface PlanSwitchParams {
   /** Client service-role (escritas de billing não passam pela RLS do usuário). */
@@ -222,13 +225,52 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
 
   await stampAnnualStart(db, profileId, cycle)
 
-  // Confirmação ao cliente (upgrade/downgrade/reativação) — fire-and-forget,
-  // espelha o padrão dos e-mails do webhook. Reativação de mesmo plano+ciclo
-  // não é "mudança" na cabeça do cliente → não notifica.
+  // Marker de efeitos de ativação da sub NOVA (mesa 2026-08-03): a sub criada
+  // pela troca/reativação NÃO é ativação nova — sem isto, o 1º pagamento dela
+  // (a renovação, ~30d depois) dispararia "plano ativado" (e-mail + WhatsApp)
+  // indevido no webhook, porque a chave effects:<sub>:<plan>:<cycle> seria
+  // inédita. Incondicional: vale também pra reativação de mesmo plano+ciclo.
+  await markActivationEffectsClaimed(db, newSub.id, plan, cycle)
+
+  // Confirmação ao cliente (upgrade/downgrade) — WhatsApp + E-MAIL, mesmo
+  // gatilho (premissa P1 da mesa: canais espelho; e-mail vai sempre, WhatsApp
+  // depende de telefone). Registrado em after() — `void` solto em serverless
+  // pode morrer quando a resposta HTTP termina; fora de contexto de request
+  // (improvável), cai no void direto. O CAS acima é o claim: só um fluxo por
+  // troca chega aqui. Reativação de mesmo plano+ciclo não é "mudança" na
+  // cabeça do cliente → não notifica (decisão S1, ratificada 2026-08-03).
   if (!(currentProfile?.plan === plan && currentProfile?.plan_cycle === cycle)) {
-    void notifyPlanoAlterado(profileId, {
-      fromLabel: planLabel(currentProfile?.plan, currentProfile?.plan_cycle),
-    })
+    const fromLabel = planLabel(currentProfile?.plan, currentProfile?.plan_cycle)
+    const toLabel = planLabel(plan, cycle)
+    const fanout = async () => {
+      const results = await Promise.allSettled([
+        notifyPlanoAlterado(profileId, { fromLabel }),
+        (async () => {
+          const { data: p } = await db
+            .from('profiles')
+            .select('email, full_name, plan_expires_at')
+            .eq('id', profileId)
+            .single<{ email: string | null; full_name: string | null; plan_expires_at: string | null }>()
+          if (!p?.email) return
+          await sendPlanChanged({
+            to: p.email,
+            name: p.full_name ?? 'usuário',
+            fromPlan: fromLabel,
+            toPlan: toLabel,
+            nextCharge: brDate(p.plan_expires_at),
+            idempotencyKey: createHash('sha256').update(`plan-changed:${newSub.id}`).digest('hex'),
+          })
+        })(),
+      ])
+      for (const r of results) {
+        if (r.status === 'rejected') logError(`${tag}: canal do fan-out de troca falhou (não-bloqueante)`, r.reason, { profileId })
+      }
+    }
+    try {
+      after(fanout)
+    } catch {
+      void fanout().catch(() => {})
+    }
   }
 
   // 3) Limites de forms (downgrade pausa excedentes — crítico, com DLQ).

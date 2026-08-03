@@ -27,12 +27,18 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { toWhatsAppDigits } from '@/lib/phone'
 import { log, logError, logWarn } from '@/lib/logger'
 
+// _v2 = versões com botão de URL (4× "Acessar minha conta"→/login; cancelada:
+// "Gerenciar assinatura"→/billing). APROVADAS na Meta em 08/2026; contagem de
+// params conferida contra a Graph API (1/3/4/3/3) antes da troca. Botão é URL
+// ESTÁTICA — não entra parâmetro de botão no envio. Os v1 (sem botão) foram
+// arquivados; NUNCA reintroduzir fallback automático v1/v2 (risco de mensagem
+// duplicada se a Meta aceitar e a resposta se perder — ordem Codex 2026-07-30).
 export const CONFIRMATION_TEMPLATES = {
-  cadastroConfirmado: 'eidosform_cadastro_confirmado',
-  planoAtivado: 'eidosform_plano_ativado',
-  planoAlterado: 'eidosform_plano_alterado',
-  assinaturaCancelada: 'eidosform_assinatura_cancelada',
-  acessoAtualizado: 'eidosform_acesso_atualizado',
+  cadastroConfirmado: 'eidosform_cadastro_confirmado_v2',
+  planoAtivado: 'eidosform_plano_ativado_v2',
+  planoAlterado: 'eidosform_plano_alterado_v2',
+  assinaturaCancelada: 'eidosform_assinatura_cancelada_v2',
+  acessoAtualizado: 'eidosform_acesso_atualizado_v2',
 } as const
 
 const PLAN_PT: Record<string, string> = {

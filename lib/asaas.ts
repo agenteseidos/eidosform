@@ -63,7 +63,9 @@ async function asaasFetch(path: string, options: RequestInit = {}) {
   const data = await res.json()
   if (!res.ok) {
     logWarn(`Asaas API error ${res.status}`, { errors: JSON.stringify(data.errors ?? data) })
-    throw new Error(`Asaas API error ${res.status}`)
+    // Corpo do erro VIAJA na exceção (achado #6, teste 05/08): sem isso o motivo
+    // real da recusa morria no console da Vercel e o diagnóstico ficava cego.
+    throw new Error(`Asaas API error ${res.status}: ${JSON.stringify(data.errors ?? data).slice(0, 300)}`)
   }
   return data
 }
@@ -316,8 +318,11 @@ export async function createSubscriptionWithToken(params: {
   creditCardToken: string
   description: string
   externalReference?: string
+  /** IP do CLIENTE (antifraude Asaas). Sem ele, a análise vê o IP do datacenter
+   *  da Vercel e pode recusar a transação na porta (achado #6, teste 05/08). */
+  remoteIp?: string
 }): Promise<{ id: string }> {
-  const { customerId, value, cycle, nextDueDate, creditCardToken, description, externalReference } = params
+  const { customerId, value, cycle, nextDueDate, creditCardToken, description, externalReference, remoteIp } = params
   const payload = {
     customer: customerId,
     billingType: 'CREDIT_CARD',
@@ -327,6 +332,7 @@ export async function createSubscriptionWithToken(params: {
     description,
     creditCardToken,
     ...(externalReference ? { externalReference } : {}),
+    ...(remoteIp ? { remoteIp } : {}),
   }
   const data = await asaasFetch('/subscriptions', { method: 'POST', body: JSON.stringify(payload) })
   return { id: data.id }
@@ -345,8 +351,10 @@ export async function createPaymentWithToken(params: {
   creditCardToken: string
   description: string
   externalReference: string
+  /** IP do CLIENTE (antifraude Asaas) — ver nota em createSubscriptionWithToken. */
+  remoteIp?: string
 }): Promise<{ id: string; status: string }> {
-  const { customerId, value, creditCardToken, description, externalReference } = params
+  const { customerId, value, creditCardToken, description, externalReference, remoteIp } = params
   const payload = {
     customer: customerId,
     billingType: 'CREDIT_CARD',
@@ -355,6 +363,7 @@ export async function createPaymentWithToken(params: {
     description,
     creditCardToken,
     externalReference,
+    ...(remoteIp ? { remoteIp } : {}),
   }
   const data = await asaasFetch('/payments', { method: 'POST', body: JSON.stringify(payload) })
   return { id: data.id, status: String(data.status ?? '') }

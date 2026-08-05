@@ -93,6 +93,9 @@ export async function POST(
 ) {
   const { plan } = await params
   const cycle = ((req.nextUrl.searchParams.get('cycle') ?? 'monthly').toUpperCase()) as BillingCycle
+  // IP do CLIENTE p/ antifraude do Asaas (achado #6, teste 05/08): sem remoteIp a
+  // análise vê o IP do datacenter da Vercel e recusa cobrança por token na porta.
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || undefined
   // P2 (Codex): o frontend envia a `action` que o PREVIEW mostrou. Se o recálculo no POST
   // (new Date() avançou — virada UTC etc.) der uma action DIFERENTE (ex.: credit_covered↔checkout,
   // R$0↔cobra), abortamos com 409 p/ o usuário revisar — em vez de cobrar algo que ele não viu.
@@ -298,6 +301,7 @@ export async function POST(
           cycle,
           nextDueDate: coverageNextDue,
           reason: profile.asaasSubscriptionId ? 'credit_covered' : 'reactivate',
+          remoteIp: clientIp,
           isPlanDowngrade: change.isPlanDowngrade,
           proration,
           prorationBasisDays: basisForSwitch,
@@ -416,6 +420,7 @@ export async function POST(
             creditCardToken: token,
             description: `EidosForm — Mudança para Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'}) — diferença prorateada`,
             externalReference: planChangeRef,
+            remoteIp: clientIp,
           })
         } catch (err) {
           // O throw pode ser FALSO-NEGATIVO (rede caiu DEPOIS de o Asaas criar a cobrança). Antes de
@@ -428,6 +433,15 @@ export async function POST(
           } else if (recheck.ok) {
             // recheck OK e NÃO achou → cobrança genuinamente não criada → falha limpa.
             logError('[checkout] Mudança paga — cobrança avulsa FALHOU (avulso não criado)', err, { userId: profile.profileId, plan, cycle, value: proration.finalPrice })
+            // Achados #6/#7 (teste 05/08): falha de cobrança em troca de plano ALERTA ops
+            // (antes só logava na Vercel — invisível) e o erro cru fica AUDITÁVEL na linha
+            // de recuperação, pra diagnóstico nunca mais depender de log de plataforma.
+            const chargeErrSnippet = String(err instanceof Error ? err.message : err).slice(0, 220)
+            void sendBillingOpsAlert({
+              subject: 'Troca de plano: cobrança no cartão salvo FALHOU (cliente viu tela de fallback)',
+              lines: { userId: profile.profileId, plan, cycle, valor: proration.finalPrice, erro: chargeErrSnippet },
+            }).catch(() => {})
+            await sSupa.from('billing_checkouts').update({ last_event: `PLAN_CHANGE_CHARGE_FAILED: ${chargeErrSnippet}`.slice(0, 250) }).eq('checkout_id', recoveryCheckoutId)
             // ── FALLBACK DE CARTÃO MORTO — Site 2: token MORTO/recusado (2026-07-03) ──
             // Em vez do 402 sem saída, abre a sessão DETACHED hospedada p/ pagar a diferença
             // com OUTRO cartão (mesmo attemptId; o upsert do fallback re-grava a linha como
@@ -489,6 +503,7 @@ export async function POST(
         reason: 'upgrade_paid',
         isPlanDowngrade: change.isPlanDowngrade,
         proration,
+        remoteIp: clientIp,
       })
       if (!result.ok) {
         // FAIL-CLOSED: cobramos e a troca não concluiu → ESTORNA o avulso. Nunca ficar

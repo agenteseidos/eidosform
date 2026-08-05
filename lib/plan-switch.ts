@@ -62,6 +62,8 @@ export interface PlanSwitchParams {
    *   - null → grava null (legado; read cai no fallback 30/365 com log).
    */
   prorationBasisDays?: number | null
+  /** IP do CLIENTE p/ antifraude do Asaas (achado #6). Backstops/crons omitem. */
+  remoteIp?: string
 }
 
 export type PlanSwitchResult =
@@ -136,7 +138,7 @@ async function applyFormLimits(db: SupabaseClient, profileId: string, plan: Plan
 }
 
 export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanSwitchResult> {
-  const { db, profileId, customerId, cardToken, expectedOldSubscriptionId, plan, cycle, nextDueDate, reason, isPlanDowngrade, proration } = params
+  const { db, profileId, customerId, cardToken, expectedOldSubscriptionId, plan, cycle, nextDueDate, reason, isPlanDowngrade, proration, remoteIp } = params
   const tag = `[plan-switch:${reason}]`
 
   // CAS pré-voo: o profile ainda está no estado em que a decisão foi tomada?
@@ -171,6 +173,7 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
       creditCardToken: cardToken,
       description: `EidosForm — Plano ${plan} (${cycle === 'MONTHLY' ? 'Mensal' : 'Anual'})`,
       externalReference: buildExternalReference(profileId, plan, cycle),
+      ...(remoteIp ? { remoteIp } : {}),
     })
   } catch (err) {
     logError(`${tag}: falha ao criar a assinatura nova via token — nada foi alterado`, err, { profileId, plan, cycle })

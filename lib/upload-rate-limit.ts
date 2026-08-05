@@ -1,4 +1,4 @@
-import { createPublicClient } from '@/lib/supabase/public'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 
 const WINDOW_MS = 60_000
 const MAX_REQUESTS = 10
@@ -46,7 +46,7 @@ function checkMemoryFallback(key: string) {
 
 export async function checkUploadRateLimitAsync(userId: string) {
   try {
-    const supabase = createPublicClient()
+    const supabase = createServiceRoleClient()
     const { data, error } = await supabase.rpc('check_rate_limit', {
       p_key: `upload:${userId}`,
       p_window_ms: WINDOW_MS,

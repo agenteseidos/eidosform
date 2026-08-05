@@ -1,6 +1,6 @@
 import type { ResponseInsert, ResponseUpdate, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
 import { NextRequest, NextResponse, after } from 'next/server'
-import { createPublicClient } from '@/lib/supabase/public'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkAndIncrementResponseCount, sendNearLimitAlert, PLANS } from '@/lib/plan-limits'
@@ -24,7 +24,8 @@ import { buildNotificationModel } from '@/lib/notification-model'
 import { resolveEmailRecipients, sendNewResponseEmails } from '@/lib/notification-email'
 import { filterQuestionsByPlan } from '@/lib/questions'
 
-// Maximum payload size (1MB — covers long text forms with URLs; file uploads go to R2)
+// Teto do payload: 50 KB (P2-3/P3-2 da auditoria de maio: o comentário dizia 1MB
+// e mentia — 50 KB cobre forms longos de texto; arquivo vai por upload próprio).
 const MAX_PAYLOAD_BYTES = 50 * 1024
 // Maximum number of answer keys (prevents flooding with fake question ids)
 const MAX_ANSWER_KEYS = 200
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Use service-role client for anonymous submissions (no auth required)
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
 
   // Bug #6: Catch invalid JSON
   let rawBody: string

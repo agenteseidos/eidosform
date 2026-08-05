@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createPublicClient } from '@/lib/supabase/public'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { logError } from '@/lib/logger'
 
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     const path = `${form.user_id}/${form_id}/${uuid}.${ext}`
 
     // Create signed upload URL
-    const supabase = createPublicClient()
+    const supabase = createServiceRoleClient()
     const { data: signedData, error: signError } = await supabase.storage
       .from('form-uploads')
       .createSignedUploadUrl(path)

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import Script from 'next/script'
-import { createPublicClient } from '@/lib/supabase/public'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { FormPlayer } from '@/components/form-player/form-player'
 import { Form } from '@/lib/database.types'
 import { getEffectivePlan } from '@/lib/plans'
@@ -17,7 +17,7 @@ interface FormPageProps {
 // UUID v4 regex
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-async function fetchOwnerPlan(supabase: ReturnType<typeof createPublicClient>, formId: string): Promise<string> {
+async function fetchOwnerPlan(supabase: ReturnType<typeof createServiceRoleClient>, formId: string): Promise<string> {
   const { data: form } = await supabase
     .from('forms')
     .select('user_id')
@@ -33,7 +33,7 @@ async function fetchOwnerPlan(supabase: ReturnType<typeof createPublicClient>, f
   return getEffectivePlan(profile)
 }
 
-async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient>, slugOrId: string) {
+async function fetchPublishedForm(supabase: ReturnType<typeof createServiceRoleClient>, slugOrId: string) {
   // Try by slug first
   const { data: bySlug } = await supabase
     .from('forms')
@@ -61,7 +61,7 @@ async function fetchPublishedForm(supabase: ReturnType<typeof createPublicClient
 
 export async function generateMetadata({ params }: FormPageProps) {
   const { slug } = await params
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
 
   const form = await fetchPublishedForm(supabase, slug) as { id: string; title: string; description: string | null; slug: string } | null
 
@@ -101,7 +101,7 @@ export async function generateMetadata({ params }: FormPageProps) {
 
 export default async function FormPage({ params }: FormPageProps) {
   const { slug } = await params
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
   // Nonce da CSP por request (A2) — gerado no middleware, exigido pelos
   // browsers modernos em qualquer script inline desta página.
   const nonce = (await headers()).get('x-nonce') ?? undefined

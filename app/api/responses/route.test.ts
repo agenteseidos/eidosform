@@ -58,7 +58,7 @@ function makeBuilder(table: string) {
 }
 
 const fakeClient = { from: (t: string) => makeBuilder(t) }
-vi.mock('@/lib/supabase/public', () => ({ createPublicClient: () => fakeClient }))
+vi.mock('@/lib/supabase/service-role', () => ({ createServiceRoleClient: () => fakeClient }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fakeClient }))
 vi.mock('@/lib/supabase/request-auth', () => ({ getRequestUser: vi.fn(async () => null) }))
 vi.mock('@/lib/plan-limits', async () => ({

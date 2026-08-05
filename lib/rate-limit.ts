@@ -12,7 +12,7 @@
 //   Use sliding window algorithm with Upstash for sub-ms latency.
 //   Current Supabase RPC adds ~20-50ms per check.
 
-import { createPublicClient } from '@/lib/supabase/public'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 
 const WINDOW_MS = 60 * 1000 // 1 minute
 const MAX_REQUESTS = 100
@@ -75,7 +75,7 @@ export async function checkRateLimitAsync(
   const windowMs = options?.windowMs ?? WINDOW_MS
 
   try {
-    const supabase = createPublicClient()
+    const supabase = createServiceRoleClient()
     const { data, error } = await supabase.rpc('check_rate_limit', {
       p_key: `api:${key}`,
       p_window_ms: windowMs,

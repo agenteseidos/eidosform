@@ -1,5 +1,5 @@
 import { log, logWarn, logError } from '@/lib/logger'
-import { createPublicClient } from '@/lib/supabase/public'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { formatAnswerValue } from '@/lib/answer-format'
 import { buildNotificationModel, utmParts, type NotificationFormInfo } from '@/lib/notification-model'
 
@@ -232,7 +232,7 @@ export async function logWhatsAppSend(
   // "por onde saiu" em Últimos envios.
   transport?: string | null
 ) {
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
   const table = (supabase as unknown as {
     from: (t: string) => { insert: (d: Record<string, unknown>) => Promise<{ error?: { message?: string } | null }> }
   }).from('form_whatsapp_logs')

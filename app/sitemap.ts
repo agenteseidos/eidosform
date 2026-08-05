@@ -26,8 +26,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   try {
-    const { createPublicClient } = await import('@/lib/supabase/public')
-    const supabase = createPublicClient()
+    const { createServiceRoleClient } = await import('@/lib/supabase/service-role')
+    const supabase = createServiceRoleClient()
     const TEST_SLUG_PATTERNS = /(?:test|zefa|qa|debug)/i
 
     const { data: forms } = await supabase

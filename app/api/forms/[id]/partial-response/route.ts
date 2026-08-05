@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createPublicClient } from '@/lib/supabase/public'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
@@ -40,7 +40,7 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
   }
 
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
 
   // Verify form exists and is published
   const { data: form, error: formError } = await supabase
@@ -123,7 +123,7 @@ export async function PUT(
     )
   }
 
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
 
   // Verify form exists and is published
   const { data: form, error: formError } = await supabase

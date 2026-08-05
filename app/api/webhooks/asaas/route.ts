@@ -12,7 +12,7 @@ import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscriptio
 import { finalizeActivation, claimActivationEffects, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
 import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
 import { logError, logWarn, log } from '@/lib/logger'
-import { verifyAsaasSignature, verifyAsaasAccessToken } from '@/lib/webhook-hmac'
+import { verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
 
@@ -403,34 +403,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Autenticação: aceita DOIS mecanismos.
-  //  1. asaas-access-token — mecanismo NATIVO do Asaas: o authToken configurado
-  //     no webhook é enviado nesse header e comparado por igualdade. É o que o
-  //     Asaas realmente manda. Sem isto, todo webhook real toma 401 e o Asaas
-  //     entra em retry storm (consumiu a cota de 30k req do sandbox).
-  //  2. asaas-signature — HMAC-SHA256 do payload (esquema custom). DEPRECATED
-  //     (B3, auditoria 2026-06-10): o Asaas padrão NÃO assina o payload, então
-  //     este caminho só existe por compatibilidade legada. Desative com
-  //     ASAAS_ALLOW_HMAC_FALLBACK=0 assim que confirmado que produção só usa o
-  //     access token; remoção definitiva no próximo ciclo.
-  const allowHmacFallback = process.env.ASAAS_ALLOW_HMAC_FALLBACK !== '0'
+  // Autenticação: SÓ o mecanismo NATIVO do Asaas — asaas-access-token (o
+  // authToken do webhook, comparado em tempo constante). O fallback HMAC
+  // (asaas-signature) foi REMOVIDO na faxina de 05/08: o Asaas nunca assinou
+  // payload (causa-raiz da retry storm de 19/05), o caminho estava deprecated
+  // desde 10/06 com log de visibilidade, e meses de produção (incl. o teste de
+  // compra real de 05/08) autenticaram exclusivamente pelo access-token.
   const accessTokenHeader = req.headers.get('asaas-access-token')
-  const hmacMatch = allowHmacFallback && !!(hmacHeader && verifyAsaasSignature(rawBody, hmacHeader, webhookToken))
   const tokenMatch = verifyAsaasAccessToken(accessTokenHeader, webhookToken)
 
-  // Visibilidade da deprecação: autenticou SÓ pelo HMAC (sem access token
-  // válido) — não deveria acontecer com o Asaas real. Loga alto para detectar
-  // uso inesperado do caminho legado antes de removê-lo.
-  if (hmacMatch && !tokenMatch) {
-    logWarn('[asaas-webhook] Autenticado APENAS pelo HMAC legado (asaas-signature) — investigar origem; este caminho será removido', {
-      hasAccessTokenHeader: !!accessTokenHeader,
-      host: req.headers.get('host'),
-    })
-  }
-
-  if (!hmacMatch && !tokenMatch) {
+  if (!tokenMatch) {
     logWarn('[asaas-webhook] Auth failed', {
-      hasHmacHeader: !!hmacHeader,
+      hasLegacyHmacHeader: !!hmacHeader,
       hasAccessTokenHeader: !!accessTokenHeader,
       tokenPrefix: webhookToken.slice(0, 8),
     })

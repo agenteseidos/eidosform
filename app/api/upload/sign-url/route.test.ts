@@ -18,8 +18,8 @@ vi.mock('@/lib/supabase/admin', () => ({
     }),
   }),
 }))
-vi.mock('@/lib/supabase/public', () => ({
-  createPublicClient: () => ({
+vi.mock('@/lib/supabase/service-role', () => ({
+  createServiceRoleClient: () => ({
     storage: {
       from: () => ({ createSignedUploadUrl }),
     },

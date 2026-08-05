@@ -4,7 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
-import { createPublicClient } from '@/lib/supabase/public'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { sendLimitAlert } from '@/lib/resend'
 import { logError } from '@/lib/logger'
@@ -41,7 +41,7 @@ export async function sendNearLimitAlert(
   // free/starter a RPC consome a flag mas nenhum email é enviado.
   if (!planAtLeast(plan, 'plus')) return
 
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
   const { data: userData } = await supabase
     .from('profiles')
     .select('email, full_name')
@@ -60,7 +60,7 @@ export async function sendNearLimitAlert(
 }
 
 export async function incrementResponseCount(userId: string): Promise<void> {
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
   await supabase.rpc('increment_responses_used', { p_user_id: userId })
 }
 
@@ -73,7 +73,7 @@ export async function checkAndIncrementResponseCount(userId: string, responseId:
   alreadyCounted: boolean
   unavailable: boolean
 }> {
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
 
   try {
     const { data, error } = await supabase
@@ -323,7 +323,7 @@ export async function handleUpgrade(
  * Count paused forms for a user
  */
 export async function countPausedForms(userId: string): Promise<number> {
-  const supabase = createPublicClient()
+  const supabase = createServiceRoleClient()
 
   const { count } = await supabase
     .from('forms')

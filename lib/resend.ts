@@ -322,6 +322,30 @@ export async function sendAccessUpdated(params: {
   })
 }
 
+/** Segurança: telefone da conta ALTERADO (camada 1 da propagação, 05/08). */
+export async function sendPhoneChangedEmail(params: {
+  to: string
+  name: string
+  oldPhoneMasked: string
+  newPhoneMasked: string
+}) {
+  const { to, name, oldPhoneMasked, newPhoneMasked } = params
+  return sendEmailWithRetry({
+    to,
+    subject: 'Alteração no telefone da sua conta EidosForm',
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#f59e0b">Telefone alterado</h2>
+        <p>Olá, <strong>${escapeHtml(name)}</strong>!</p>
+        <p>O telefone de contato da sua conta foi alterado de <strong>${escapeHtml(oldPhoneMasked)}</strong> para <strong>${escapeHtml(newPhoneMasked)}</strong>.</p>
+        <p><strong>Foi você?</strong> Então está tudo certo — as confirmações da sua conta passam a chegar no número novo.</p>
+        <p>Se <strong>não</strong> foi você, responda este e-mail imediatamente para nossa equipe proteger sua conta.</p>
+        <p style="color:#888;font-size:12px;margin-top:24px">EidosForm — Formulários inteligentes</p>
+      </div>
+    `,
+  })
+}
+
 /** Webhook do formulário falhando após 3+ falhas em 7 dias (J1) */
 export async function sendWebhookFailureAlert(params: {
   to: string

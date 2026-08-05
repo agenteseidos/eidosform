@@ -80,32 +80,27 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
 
     setIsSaving(true)
     try {
-      const { data: authData } = await supabase.auth.getUser()
-      const userId = authData.user?.id
-      if (!userId) {
-        toast.error('Sessão expirada. Faça login novamente.')
-        return
-      }
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: form.fullName.trim(),
+      // Save via rota SERVER (05/08): a troca de TELEFONE propaga — e-mail de
+      // segurança, Asaas na hora e aviso à atendente. Client-side não alcança isso.
+      const res = await fetch('/api/settings/billing-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: form.fullName.trim(),
           phone: form.phone.trim() || null,
-          cpf_cnpj: form.cpfCnpj.trim() || null,
+          cpfCnpj: form.cpfCnpj.trim() || null,
           address: form.address.trim() || null,
-          address_number: form.addressNumber.trim() || null,
-          postal_code: form.postalCode.trim() || null,
+          addressNumber: form.addressNumber.trim() || null,
+          postalCode: form.postalCode.trim() || null,
           complement: form.complement?.trim() || null,
           province: form.province.trim() || null,
           city: form.city.trim() || null,
           state: form.state.trim() || null,
-        })
-        .eq('id', userId)
-
-      if (error) {
-        console.error('billing profile update error', error)
-        toast.error('Não consegui salvar os dados de cobrança.')
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Não consegui salvar os dados de cobrança.')
         return
       }
 

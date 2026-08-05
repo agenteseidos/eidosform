@@ -22,7 +22,7 @@ import { createHmac } from 'crypto'
 import { toWhatsAppDigits } from '@/lib/phone'
 import { log, logWarn } from '@/lib/logger'
 
-export type ElenEventoTipo = 'cadastro' | 'ativado' | 'alterado' | 'cancelado' | 'acesso'
+export type ElenEventoTipo = 'cadastro' | 'ativado' | 'alterado' | 'cancelado' | 'acesso' | 'telefone'
 
 /** Mesmo normalizador do ENVIO (55+DDD+número) — a chave do contato no bot nasce do waId. */
 function digits(v: string | null | undefined): string | null {

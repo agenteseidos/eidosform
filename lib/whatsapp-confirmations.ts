@@ -42,6 +42,11 @@ export const CONFIRMATION_TEMPLATES = {
   acessoAtualizado: 'eidosform_acesso_atualizado_v2',
 } as const
 
+/** Aviso ao número ANTIGO na troca de telefone (camada 1, 05/08). Fora do mapa
+ *  TEMPLATE_EVENTO de propósito: o evento à Elen é emitido pela rota, pros DOIS
+ *  números. Destrava sozinho quando a Meta aprovar (send_failed até lá). */
+export const TELEFONE_ALTERADO_TEMPLATE = 'eidosform_telefone_alterado_v1'
+
 const PLAN_PT: Record<string, string> = {
   free: 'Gratuito',
   starter: 'Starter',

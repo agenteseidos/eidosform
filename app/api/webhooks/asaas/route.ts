@@ -3,7 +3,7 @@
  * Eventos: PAYMENT_CONFIRMED, PAYMENT_OVERDUE, SUBSCRIPTION_DELETED
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
 import { notifyPlanoAtivado, notifyAssinaturaCancelada, planLabel } from '@/lib/whatsapp-confirmations'
@@ -360,6 +360,17 @@ async function checkAndMarkIdempotent(
   if (error.code === '23505') return 'duplicate'
   logError('[asaas-webhook] Idempotency check DB error (failing closed)', { eventId, error: error.message })
   return 'error'
+}
+
+// void solto em serverless pode morrer quando a resposta termina (parecer Codex,
+// medição f do teste 05/08). after() garante execução pós-resposta; fora de
+// contexto de request (impossível aqui, defensivo), degrada pro void atual.
+function agendar(tarefa: () => Promise<unknown>) {
+  try {
+    after(() => tarefa().catch(() => {}))
+  } catch {
+    void tarefa().catch(() => {})
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -825,7 +836,7 @@ export async function POST(req: NextRequest) {
         if (await claimActivationEffects(supabase, payment.subscription, plan, cycle)) {
           await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
           // WhatsApp espelha o e-mail: mesmo ponto, mesma idempotência (claim acima).
-          void notifyPlanoAtivado(user.id)
+          agendar(() => notifyPlanoAtivado(user.id))
           const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
           log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
         } else {
@@ -1021,7 +1032,7 @@ export async function POST(req: NextRequest) {
           await updateCheckoutLink({ customerId, subscriptionId: subscription?.id ?? null, externalReference: subscription?.externalReference ?? null, event, status: 'cancelled' })
           log('[asaas-webhook] SUBSCRIPTION_DELETED — cancelamento do usuário; acesso mantido até o fim do período', { userId: user.id, expiresAt: deletedProfile.plan_expires_at })
           await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: user.plan ?? 'starter' }).catch((err) => logError('Failed to send plan cancellation email', err))
-          void notifyAssinaturaCancelada(user.id, { planLabel: planLabel(user.plan ?? 'starter') })
+          agendar(() => notifyAssinaturaCancelada(user.id, { planLabel: planLabel(user.plan ?? 'starter') }))
           break
         }
 
@@ -1064,7 +1075,7 @@ export async function POST(req: NextRequest) {
         log('[asaas-webhook] Downgrade processed', { userId: user.id, pausedForms: downgrade.pausedCount })
 
         await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan }).catch((err) => logError('Failed to send plan cancellation email', err))
-        void notifyAssinaturaCancelada(user.id, { planLabel: planLabel(oldPlan) })
+        agendar(() => notifyAssinaturaCancelada(user.id, { planLabel: planLabel(oldPlan) }))
         break
       }
 
@@ -1179,8 +1190,8 @@ export async function POST(req: NextRequest) {
         log('[asaas-webhook] Downgrade processed (chargeback/inactivated)', { userId: user.id, pausedForms: downgrade.pausedCount, event })
 
         await sendPlanCancelled({ to: user.email, name: user.full_name ?? 'usuário', plan: oldPlan })
-        void notifyAssinaturaCancelada(user.id, { planLabel: planLabel(oldPlan) })
           .catch((err) => logError('Failed to send chargeback/inactivation notification email', err))
+        agendar(() => notifyAssinaturaCancelada(user.id, { planLabel: planLabel(oldPlan) }))
         break
       }
 

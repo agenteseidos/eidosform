@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
 import { normalizeConditional } from '@/lib/form-logic-engine'
+import { cloneQuestionDeep, countQuestionReferences, removeQuestionAndReferences } from '@/lib/question-integrity'
 import { shouldApplyEcho, nextAutosaveDelay, hasPendingEdits, nextVersionRef } from '@/lib/autosave-policy'
 import { questionTypes, createDefaultQuestion, getQuestionTypeInfo, questionTypeAllowed, QUESTION_TYPE_MIN_PLAN } from '@/lib/questions'
 import { PLANS } from '@/lib/plan-definitions'
@@ -80,6 +81,7 @@ import {
   TextCursorInput,
   Workflow,
   Split,
+  X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { FormPreview } from './form-preview'
@@ -205,10 +207,10 @@ function QuestionReorderItem({
               {(question.jumpRules?.length ?? 0) > 0 && (
                 <span
                   className="inline-flex items-center gap-0.5 text-[10px] font-bold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5"
-                  title={`${question.jumpRules!.length} regra(s) de ramificação`}
+                  title={`${question.jumpRules!.length} salto(s) condicional(is)`}
                 >
                   <Split className="w-2.5 h-2.5" />
-                  {question.jumpRules!.length} {question.jumpRules!.length === 1 ? 'caminho' : 'caminhos'}
+                  {question.jumpRules!.length} {question.jumpRules!.length === 1 ? 'salto' : 'saltos'}
                 </span>
               )}
             </div>
@@ -275,7 +277,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
   const [mobilePanel, setMobilePanel] = useState<'questions' | 'editor' | 'preview'>('questions')
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; questionId: string | null; label: string }>({ open: false, questionId: null, label: '' })
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; questionId: string | null; label: string; references: number }>({ open: false, questionId: null, label: '', references: 0 })
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [sidebarSection, setSidebarSection] = useState<'welcome' | 'questions' | 'thankyou' | null>(null)
   const [previewMode, setPreviewMode] = useState<"full" | "step">("full")
@@ -362,6 +364,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
   const shouldShowMobileSidebar = mobilePanel === 'questions' || isMobileUtilityTab
   const shouldShowMobilePreview = !isMobileUtilityTab && (mobilePanel === 'preview' || mobilePanel === 'editor')
   const shouldShowMobileRightPanel = !isMobileUtilityTab && mobilePanel === 'editor'
+  // md–xl: o painel direito é um drawer que só abre quando há conteúdo para editar
+  const rightPanelHasContent = !!selectedQuestion || sidebarSection === 'welcome' || sidebarSection === 'thankyou'
 
   // Fonte ÚNICA de verdade do preview passo-a-passo: `selectedQuestionId`.
   // O `stepPreviewIndex` é DERIVADO da seleção por este único efeito (seleção → índice).
@@ -867,24 +871,27 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
     const question = questions.find(q => q.id === id)
     if (!question) return
     const label = question.title || question.type
-    setDeleteDialog({ open: true, questionId: id, label })
+    const references = countQuestionReferences(questions, id).total
+    setDeleteDialog({ open: true, questionId: id, label, references })
   }
 
   const confirmDeleteQuestion = () => {
     if (!deleteDialog.questionId) return
-    setQuestions(questions.filter(q => q.id !== deleteDialog.questionId))
+    // Remove a pergunta E as regras de outras perguntas que a referenciavam
+    // (salto com destino/condição nela, exibição condicional) — senão o form
+    // publica referências órfãs que quebram o roteamento em silêncio.
+    setQuestions(removeQuestionAndReferences(questions, deleteDialog.questionId))
     if (selectedQuestionId === deleteDialog.questionId) {
       setSelectedQuestionId(null)
     }
     markDirty()
-    setDeleteDialog({ open: false, questionId: null, label: '' })
+    setDeleteDialog({ open: false, questionId: null, label: '', references: 0 })
   }
 
   const duplicateQuestion = (id: string) => {
     const idx = questions.findIndex(q => q.id === id)
     if (idx === -1) return
-    const source = questions[idx]
-    const clone: QuestionConfig = { ...source, id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()) }
+    const clone = cloneQuestionDeep(questions[idx])
     const newQuestions = [...questions]
     newQuestions.splice(idx + 1, 0, clone)
     setQuestions(newQuestions)
@@ -989,16 +996,16 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                 Upgrade
               </Link>
             )}
-            {/* B06: Autosave status indicator */}
-            <span className="text-xs text-slate-400 hidden sm:flex items-center gap-1 min-w-[70px] justify-end">
+            {/* B06: Autosave status indicator — visível também no mobile */}
+            <span aria-live="polite" className="text-xs text-slate-600 flex items-center gap-1 min-w-0 sm:min-w-[70px] justify-end">
               {saveStatus === 'saving' && (
-                <><Loader2 className="w-3 h-3 animate-spin" /> Salvando...</>
+                <><Loader2 className="w-3 h-3 animate-spin" /><span className="hidden sm:inline"> Salvando...</span></>
               )}
               {saveStatus === 'saved' && (
-                <span className="text-emerald-500">Salvo ✓</span>
+                <span className="text-emerald-700">Salvo ✓</span>
               )}
               {saveStatus === 'error' && (
-                <span className="text-red-500">Erro ao salvar</span>
+                <span className="text-red-700 font-medium">Erro ao salvar</span>
               )}
             </span>
 
@@ -2202,8 +2209,23 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
         </>
         )}
 
-        {/* Right Panel - Fixed property editor */}
-        <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} md:flex fixed md:relative inset-0 md:inset-auto z-40 md:z-auto w-full md:w-80 lg:w-96 bg-white border-l border-slate-200 flex-col md:shrink-0 overflow-y-auto overflow-x-hidden pb-16 md:pb-0`}>
+        {/* Right Panel - editor de propriedades.
+            <md: overlay de tela cheia controlado pela bottom nav (mobilePanel).
+            md–xl: drawer fixo à direita, aberto só quando há algo selecionado —
+            três painéis estáticos lado a lado não cabem nessa faixa (o preview
+            ficava com ~144px úteis em 1024px).
+            xl+: coluna estática como sempre. */}
+        <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} ${rightPanelHasContent ? 'md:flex' : 'md:hidden'} xl:flex fixed xl:relative inset-0 md:inset-y-0 md:right-0 md:left-auto xl:inset-auto z-40 xl:z-auto w-full md:w-96 bg-white border-l border-slate-200 flex-col md:shadow-2xl xl:shadow-none xl:shrink-0 overflow-y-auto overflow-x-hidden pb-16 md:pb-0`}>
+          {/* Fechar o drawer (só na faixa md–xl, onde ele cobre o conteúdo) */}
+          <div className="hidden md:flex xl:hidden items-center justify-end border-b border-slate-100 px-2 py-1 shrink-0">
+            <button
+              onClick={() => { setSelectedQuestionId(null); setSidebarSection(null) }}
+              aria-label="Fechar painel de propriedades"
+              className="flex h-10 w-10 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
           <ErrorBoundary
             key={`right-panel-${selectedQuestion?.id || sidebarSection || 'none'}`}
             label="right-panel"
@@ -2415,7 +2437,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
             </DialogDescription>
           </DialogHeader>
           <div className="p-3 bg-slate-50 rounded-lg">
-            <code className="text-sm text-blue-600">
+            <code className="text-sm text-blue-600 block break-all">
               {typeof window !== 'undefined' ? window.location.origin : ''}/f/{form.slug}
             </code>
           </div>
@@ -2445,8 +2467,14 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
               A pergunta <strong>&quot;{deleteDialog.label}&quot;</strong> será removida permanentemente. Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
+          {deleteDialog.references > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              Esta pergunta é usada em <b>{deleteDialog.references} regra{deleteDialog.references > 1 ? 's' : ''} de lógica</b> de
+              outras perguntas (saltos ou exibição condicional). Ao excluir, essas regras serão removidas junto.
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialog({ open: false, questionId: null, label: '' })}>
+            <Button variant="outline" onClick={() => setDeleteDialog({ open: false, questionId: null, label: '', references: 0 })}>
               Cancelar
             </Button>
             <Button variant="destructive" onClick={confirmDeleteQuestion}>

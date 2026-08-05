@@ -130,3 +130,37 @@ describe('buildLogicGraph', () => {
     }
   })
 })
+
+describe('detecção de laços de salto', () => {
+  it('alerta quando um salto cria um círculo (A→B por salto, B→A por salto)', () => {
+    const g = buildLogicGraph([
+      q('a', { required: true, jumpRules: [
+        { id: 'r1', condition: { questionId: 'a', operator: 'equals', value: 'sim' }, action: { type: 'jump', targetQuestionId: 'b' } },
+      ] }),
+      q('b', { required: true, jumpRules: [
+        { id: 'r2', condition: { questionId: 'b', operator: 'equals', value: 'sim' }, action: { type: 'jump', targetQuestionId: 'a' } },
+      ] }),
+    ])
+    expect(g.warnings.some(w => /Laço no fluxo/.test(w.message))).toBe(true)
+  })
+
+  it('alerta salto para trás (volta por salto + avanço sequencial fecha o círculo)', () => {
+    const g = buildLogicGraph([
+      q('a'),
+      q('b', { required: true, jumpRules: [
+        { id: 'r1', condition: { questionId: 'b', operator: 'equals', value: 'de novo' }, action: { type: 'jump', targetQuestionId: 'a' } },
+      ] }),
+    ])
+    expect(g.warnings.some(w => w.nodeId === 'b' && /Laço no fluxo/.test(w.message))).toBe(true)
+  })
+
+  it('NÃO alerta salto para frente (sem caminho de volta)', () => {
+    const g = buildLogicGraph([
+      q('a', { required: true, jumpRules: [
+        { id: 'r1', condition: { questionId: 'a', operator: 'equals', value: 'x' }, action: { type: 'jump', targetQuestionId: 'c' } },
+      ] }),
+      q('b'), q('c'),
+    ])
+    expect(g.warnings.some(w => /Laço no fluxo/.test(w.message))).toBe(false)
+  })
+})

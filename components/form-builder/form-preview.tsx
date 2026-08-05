@@ -364,7 +364,7 @@ export function FormPreview({
                               const options = (question.options || []).filter((_, idx) => idx !== i)
                               onUpdateQuestion(question.id, { options })
                             }}
-                            className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded"
+                            className="opacity-60 md:opacity-0 md:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity p-2.5 -m-2 rounded"
                             title="Remover opção"
                           >
                             <X className="w-3.5 h-3.5" style={{ color: theme.textColor }} />
@@ -400,7 +400,7 @@ export function FormPreview({
                             e.stopPropagation()
                             onUpdateQuestion(question.id, { allowOther: false })
                           }}
-                          className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded"
+                          className="opacity-60 md:opacity-0 md:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity p-2.5 -m-2 rounded"
                           title="Remover opção Outro"
                         >
                           <X className="w-3.5 h-3.5" style={{ color: theme.textColor }} />
@@ -502,7 +502,7 @@ export function FormPreview({
                                 const options = (question.options || []).filter((_, idx) => idx !== i)
                                 onUpdateQuestion(question.id, { options })
                               }}
-                              className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded"
+                              className="opacity-60 md:opacity-0 md:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity p-2.5 -m-2 rounded"
                               title="Remover opção"
                             >
                               <X className="w-3.5 h-3.5" style={{ color: theme.textColor }} />
@@ -532,7 +532,7 @@ export function FormPreview({
                             e.stopPropagation()
                             onUpdateQuestion(question.id, { allowOther: false })
                           }}
-                          className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded"
+                          className="opacity-60 md:opacity-0 md:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity p-2.5 -m-2 rounded"
                           title="Remover opção Outro"
                         >
                           <X className="w-3 h-3" style={{ color: theme.textColor }} />

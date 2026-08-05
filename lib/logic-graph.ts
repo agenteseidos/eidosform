@@ -252,6 +252,35 @@ export function buildLogicGraph(
     }
   }
 
+  // ── Laços criados por saltos ────────────────────────────────────────────
+  // Um salto A→B onde B alcança A de volta (por saltos e/ou sequência) cria um
+  // círculo em que o respondente pode ficar preso. O player tem trava de
+  // segurança, mas o dono precisa saber que montou um laço.
+  const forward = new Map<string, string[]>()
+  for (const e of edges) {
+    if (!forward.has(e.source)) forward.set(e.source, [])
+    forward.get(e.source)!.push(e.target)
+  }
+  const reaches = (from: string, to: string): boolean => {
+    const seen = new Set<string>([from])
+    const stack = [from]
+    while (stack.length) {
+      const cur = stack.pop()!
+      for (const nxt of forward.get(cur) ?? []) {
+        if (nxt === to) return true
+        if (!seen.has(nxt)) { seen.add(nxt); stack.push(nxt) }
+      }
+    }
+    return false
+  }
+  for (const e of edges) {
+    if (e.kind !== 'jump') continue
+    if (reaches(e.target, e.source)) {
+      const targetName = byId.get(e.target)?.title?.trim() || 'outra pergunta'
+      addWarn(e.source, 'warning', `Laço no fluxo: o salto para "${targetName}" permite voltar a esta pergunta — o respondente pode ficar preso em círculos.`)
+    }
+  }
+
   // Anexa warnings finais aos nós
   for (const n of nodes) {
     n.data.warnings = warnings

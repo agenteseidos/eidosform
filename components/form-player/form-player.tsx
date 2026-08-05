@@ -36,6 +36,11 @@ function ensureHttps(url: string): string {
   return 'https://' + url
 }
 
+// Quantas vezes uma mesma pergunta pode ser alvo de salto numa sessão antes de
+// o player tratar como laço e seguir sequencial. Alto o bastante para revisitas
+// legítimas (voltar e mudar resposta), baixo o bastante para nunca prender.
+const MAX_JUMP_REVISITS = 25
+
 export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'free', allowEmbed = false }: FormPlayerProps) {
   const questions = useMemo<QuestionConfig[]>(() => (form.questions as QuestionConfig[]) || [], [form.questions])
   const theme = getTheme(form.theme)
@@ -128,6 +133,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const partialSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSubmittedRef = useRef(false)
   const isSubmittingRef = useRef(false)
+  // Trava de segurança contra laços de salto (A→B e B→A): conta quantas vezes
+  // cada pergunta foi ALVO de salto nesta sessão; acima do limite o salto é
+  // ignorado e o fluxo segue sequencial, em vez de prender o respondente.
+  const jumpVisitsRef = useRef<Record<string, number>>({})
   const lastIndexRef = useRef(0)
   const isAuthenticatedRef = useRef(false)
   const errorRef = useRef<HTMLParagraphElement>(null)
@@ -314,12 +323,18 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         if (jumpAction.type === 'jump' && jumpAction.targetQuestionId) {
           const target = visibleAfterAnswer.find(q => q.id === jumpAction.targetQuestionId)
           if (target) {
-            setNavigationHistory(prev => [...prev, currentQuestion.id])
-            setDirection(1)
-            setCurrentQuestionId(target.id)
-            return
+            const visits = (jumpVisitsRef.current[target.id] ?? 0) + 1
+            if (visits <= MAX_JUMP_REVISITS) {
+              jumpVisitsRef.current[target.id] = visits
+              setNavigationHistory(prev => [...prev, currentQuestion.id])
+              setDirection(1)
+              setCurrentQuestionId(target.id)
+              return
+            }
+            console.warn('[EidosForm] Salto ignorado: laço de navegação detectado — seguindo o fluxo sequencial.')
+          } else {
+            console.warn('[EidosForm] Salto ignorado: pergunta-destino oculta por lógica condicional.')
           }
-          console.warn('[EidosForm] Salto ignorado: pergunta-destino oculta por lógica condicional.')
         }
       }
     }

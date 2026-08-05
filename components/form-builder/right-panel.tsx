@@ -88,10 +88,11 @@ export function RightPanel({
           <div className="p-4 space-y-5 max-w-full overflow-hidden">
             <div className="flex items-center justify-between gap-3 py-1 max-w-full">
               <div>
-                <Label className="text-xs font-medium text-slate-700">Ativar tela de boas vindas</Label>
-                <p className="text-[10px] text-slate-500">Mostrar antes das perguntas</p>
+                <Label htmlFor="rp-welcome-enabled" className="text-xs font-medium text-slate-700">Ativar tela de boas vindas</Label>
+                <p className="text-[10px] text-slate-600">Mostrar antes das perguntas</p>
               </div>
               <Switch
+                id="rp-welcome-enabled"
                 checked={form.welcome_enabled || false}
                 onCheckedChange={(checked) => onUpdateForm({ welcome_enabled: checked })}
               />
@@ -144,7 +145,7 @@ export function RightPanel({
                         <div className="flex flex-col items-center gap-1">
                           <Upload className="w-5 h-5 text-slate-400" />
                           <span className="text-xs text-slate-500">Clique ou arraste</span>
-                          <span className="text-[10px] text-slate-500">PNG, JPG, GIF, WEBP (até 2MB)</span>
+                          <span className="text-[10px] text-slate-600">PNG, JPG, GIF, WEBP (até 2MB)</span>
                         </div>
                       )}
                       <input
@@ -188,10 +189,11 @@ export function RightPanel({
           <div className="p-4 space-y-5 max-w-full overflow-hidden">
             <div className="flex items-center justify-between gap-3 py-1 max-w-full">
               <div>
-                <Label className="text-xs font-medium text-slate-700">Ativar tela de agradecimento</Label>
-                <p className="text-[10px] text-slate-500">Mostrar depois do envio. Se desativada, com redirect_url o usuário é redirecionado direto; sem redirect, vê um aviso mínimo.</p>
+                <Label htmlFor="rp-thankyou-enabled" className="text-xs font-medium text-slate-700">Ativar tela de agradecimento</Label>
+                <p className="text-[10px] text-slate-600">Mostrar depois do envio. Se desativada, com redirect_url o usuário é redirecionado direto; sem redirect, vê um aviso mínimo.</p>
               </div>
               <Switch
+                id="rp-thankyou-enabled"
                 checked={form.thank_you_enabled !== false}
                 onCheckedChange={(checked) => onUpdateForm({ thank_you_enabled: checked })}
               />
@@ -243,7 +245,7 @@ export function RightPanel({
                 placeholder="Obrigado pela sua resposta!"
                 rows={2}
               />
-              <p className="text-[10px] text-slate-500 mt-1">Usada como fallback se título estiver vazio</p>
+              <p className="text-[10px] text-slate-600 mt-1">Usada como fallback se título estiver vazio</p>
             </div>
             </>
             )}
@@ -343,6 +345,8 @@ export function RightPanel({
           <div className="border-b border-slate-200">
             <button
               onClick={() => toggleBlock('actions')}
+              aria-expanded={!collapsed['actions']}
+              aria-controls="rp-block-actions"
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 transition-colors"
             >
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -352,7 +356,7 @@ export function RightPanel({
               <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${collapsed['actions'] ? '-rotate-90' : ''}`} />
             </button>
             {!collapsed['actions'] && (
-              <div className="px-4 pb-4 space-y-4">
+              <div id="rp-block-actions" className="px-4 pb-4 space-y-4">
                 {/* Tipo do campo */}
                 <div className="w-full max-w-full overflow-hidden">
                   <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Tipo do campo</Label>
@@ -373,10 +377,11 @@ export function RightPanel({
                 {selectedQuestion.type !== 'content_block' && (
                   <div className="flex items-center justify-between py-1 w-full">
                     <div className="flex-1 min-w-0 mr-3">
-                      <Label className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
-                      <p className="text-[10px] text-slate-500">Respondentes devem responder</p>
+                      <Label htmlFor="rp-required" className="text-xs font-medium text-slate-700">Campo obrigatório</Label>
+                      <p className="text-[10px] text-slate-600">Respondentes devem responder</p>
                     </div>
                     <Switch
+                      id="rp-required"
                       checked={selectedQuestion.required}
                       onCheckedChange={(checked) =>
                         onUpdateQuestion(selectedQuestion.id, { required: checked })
@@ -416,6 +421,8 @@ export function RightPanel({
           <div className="border-b border-slate-200">
             <button
               onClick={() => toggleBlock('logic')}
+              aria-expanded={!collapsed['logic']}
+              aria-controls="rp-block-logic"
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 transition-colors"
             >
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -425,7 +432,7 @@ export function RightPanel({
               <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${collapsed['logic'] ? '-rotate-90' : ''}`} />
             </button>
             {!collapsed['logic'] && (
-              <div className="px-4 pb-4 space-y-4">
+              <div id="rp-block-logic" className="px-4 pb-4 space-y-4">
                 <QuestionEditor
                   question={selectedQuestion}
                   allQuestions={allQuestions}
@@ -441,6 +448,8 @@ export function RightPanel({
           <div className="border-b border-slate-200">
             <button
               onClick={() => toggleBlock('config')}
+              aria-expanded={!collapsed['config']}
+              aria-controls="rp-block-config"
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 transition-colors"
             >
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -450,7 +459,7 @@ export function RightPanel({
               <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${collapsed['config'] ? '-rotate-90' : ''}`} />
             </button>
             {!collapsed['config'] && (
-              <div className="px-4 pb-4 space-y-4">
+              <div id="rp-block-config" className="px-4 pb-4 space-y-4">
                 {/* Type-specific technical config (without title/description/options/placeholder) */}
                 <QuestionEditor
                   question={selectedQuestion}
@@ -470,7 +479,7 @@ export function RightPanel({
                   >
                     <div>
                       <p className="text-xs font-medium text-slate-600">ID técnico do campo</p>
-                      <p className="text-[10px] text-slate-500">Use só se precisar referenciar este bloco em automações ou suporte.</p>
+                      <p className="text-[10px] text-slate-600">Use só se precisar referenciar este bloco em automações ou suporte.</p>
                     </div>
                     <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showTechnicalId ? 'rotate-180' : ''}`} />
                   </button>

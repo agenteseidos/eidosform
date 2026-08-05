@@ -78,7 +78,7 @@ function QuestionNode({ data }: NodeProps<FlowNode>) {
     >
       <Handle type="target" id="in" position={isLR ? Position.Left : Position.Top} style={{ background: '#94a3b8', width: 9, height: 9 }} />
       <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
           {data.number ? `${data.number} · ` : ''}{data.typeLabel}
         </span>
         {hasWarn && <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: hasError ? '#dc2626' : '#d97706' }} />}
@@ -211,7 +211,18 @@ export function LogicMap({
     const sizes = graph.nodes.map(n => ({ id: n.id, width: 280, height: estimateHeight(n.data) }))
     elkLayout(sizes, graph.edges, direction)
       .then(pos => { if (!cancelled) setElkPos(pos) })
-      .catch(() => { /* layout falhou — mantém posições atuais */ })
+      .catch(() => {
+        // Layout falhou — fallback determinístico: pilha vertical simples,
+        // para o mapa nunca renderizar todos os nós sobrepostos em (0,0).
+        if (cancelled) return
+        const fallback = new Map<string, { x: number; y: number }>()
+        let y = 0
+        for (const s of sizes) {
+          fallback.set(s.id, { x: 0, y })
+          y += s.height + 48
+        }
+        setElkPos(fallback)
+      })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey])
@@ -237,6 +248,18 @@ export function LogicMap({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey, elkPos])
 
+  // ── Mudanças NÃO estruturais (título, condição, pixel, avisos) ───────────
+  // O efeito acima só roda quando a topologia muda; este mescla o `data` novo
+  // nos nós existentes preservando posição e viewport, para o cartão não
+  // mostrar informação velha após uma edição de conteúdo.
+  useEffect(() => {
+    setRfNodes(prev => prev.map(n => {
+      const fresh = graph.nodes.find(g => g.id === n.id)
+      return fresh ? { ...n, data: fresh.data } : n
+    }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph])
+
   const edges: Edge[] = useMemo(
     () => graph.edges
       .filter(e => showDefaultEdges || e.kind !== 'sequential')
@@ -251,7 +274,7 @@ export function LogicMap({
         animated: e.kind === 'jump',
         data: { kind: e.kind, questionId: e.questionId },
         style: EDGE_STYLE[e.kind],
-        labelStyle: { fontSize: 10, fontWeight: 600, fill: e.kind === 'sequential' ? '#94a3b8' : '#475569' },
+        labelStyle: { fontSize: 10, fontWeight: 600, fill: e.kind === 'sequential' ? '#64748b' : '#475569' },
         labelBgStyle: { fill: '#fff', fillOpacity: 0.92 },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 4,
@@ -322,8 +345,8 @@ export function LogicMap({
           <GitFork className="w-3.5 h-3.5 mr-1" />
           {showDefaultEdges ? 'Ocultar caminho padrão' : 'Mostrar caminho padrão'}
         </Button>
-        <span className="text-[11px] text-slate-400 ml-1 hidden md:inline">
-          Clique numa pergunta para editar a lógica dela · use “+ Salto” para criar uma ramificação
+        <span className="text-[11px] text-slate-600 ml-1 hidden md:inline">
+          Clique numa pergunta para editar a lógica dela · use “+ Salto” para desviar o fluxo conforme a resposta
         </span>
       </div>
 
@@ -402,7 +425,7 @@ export function LogicMap({
 
       {/* Modal: regras de salto */}
       <Dialog open={!!jumpQuestion} onOpenChange={(o) => !o && setJumpEditorFor(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Saltos de “{jumpQuestion?.title?.trim() || 'pergunta'}”</DialogTitle>
             <DialogDescription>Defina para onde o formulário vai conforme a resposta.</DialogDescription>
@@ -423,7 +446,7 @@ export function LogicMap({
 
       {/* Modal: conversões de pixel da pergunta */}
       <Dialog open={!!pixelQuestion} onOpenChange={(o) => !o && setPixelEditorFor(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Conversões de “{pixelQuestion?.title?.trim() || 'pergunta'}”</DialogTitle>
             <DialogDescription>Dispare um evento de pixel conforme a resposta desta pergunta.</DialogDescription>
@@ -440,7 +463,7 @@ export function LogicMap({
 
       {/* Modal: evento de pixel de início / conclusão */}
       <Dialog open={!!terminalPixelFor} onOpenChange={(o) => !o && setTerminalPixelFor(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {terminalPixelFor === 'start' ? 'Evento ao iniciar o formulário' : 'Evento ao concluir o formulário'}

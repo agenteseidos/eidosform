@@ -198,9 +198,9 @@ export function PixelBranchingEditor({ question, onChange, hasPixelPlan }: Pixel
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 space-y-1">
             <p className="text-[11px] font-semibold text-amber-700">Conversões avançadas (não ligadas a uma opção)</p>
             {extra.map(r => (
-              <div key={r.id} className="flex items-center justify-between text-[11px] text-amber-800">
-                <span>{r.condition.operator} “{r.condition.value}” → {r.event?.name}</span>
-                <Button variant="ghost" size="sm" className="h-5 w-5 p-0"
+              <div key={r.id} className="flex items-center justify-between gap-2 text-[11px] text-amber-800">
+                <span className="min-w-0 break-words [overflow-wrap:anywhere]">{r.condition.operator} “{r.condition.value}” → {r.event?.name}</span>
+                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 shrink-0"
                   onClick={() => onChange(rules.filter(x => x.id !== r.id))}>
                   <X className="w-3 h-3 text-red-400" />
                 </Button>

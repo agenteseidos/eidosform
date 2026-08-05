@@ -46,13 +46,35 @@ assert(pReorder.profileId === UUID && pReorder.plan === 'starter' && pReorder.cy
 const pBadPlan = parseExternalReference(`profile:${UUID}|plan:enterprise|cycle:MONTHLY`)
 assert(pBadPlan.profileId === UUID && pBadPlan.plan === null && pBadPlan.cycle === 'MONTHLY', 'plano desconhecido → plan null (dono e ciclo ok)')
 
-// kind:planchange (redesenho 2026-06-10) — marcador do AVULSO de mudança de plano
-const refPC = buildPlanChangeReference(UUID, 'plus', 'MONTHLY')
-assert(refPC === `profile:${UUID}|plan:plus|cycle:MONTHLY|kind:planchange`, `build planchange (got ${refPC})`)
+// kind:planchange — FORMATO COMPACTO (achado #6, 05/08): o formato longo com
+// |attempt:<uuid36> estourava o limite do Asaas (invalid_externalReference 400)
+// e TODO upgrade pago falhava. Compacto: p:<uuid>|plan:X|c:M|k:pc|a:<hex8>.
+const ATTEMPT = 'aabbccdd-eeff-0011-2233-445566778899'
+const refPC = buildPlanChangeReference(UUID, 'plus', 'MONTHLY', ATTEMPT)
+assert(refPC === `p:${UUID}|plan:plus|c:M|k:pc|a:aabbccdd`, `build planchange compacto (got ${refPC})`)
 const ppc = parseExternalReference(refPC)
-assert(ppc.profileId === UUID && ppc.plan === 'plus' && ppc.cycle === 'MONTHLY' && ppc.kind === 'planchange', 'parse planchange round-trip')
+assert(ppc.profileId === UUID && ppc.plan === 'plus' && ppc.cycle === 'MONTHLY' && ppc.kind === 'planchange' && ppc.attempt === 'aabbccdd', 'parse compacto round-trip (cycle M→MONTHLY, kind pc→planchange)')
+
+// TETO DE TAMANHO: pior caso real (professional/MONTHLY) precisa caber com folga no
+// limite do Asaas — 84 chars é o maior comprovadamente aceito em produção (junho).
+const worst = buildPlanChangeReference(UUID, 'professional', 'MONTHLY', ATTEMPT)
+assert(worst.length <= 84, `pior caso ≤ 84 chars (got ${worst.length}: ${worst})`)
+
+// Compat: formato LEGADO (pagamentos de junho) segue parseável
+const legacy = `profile:${UUID}|plan:plus|cycle:MONTHLY|kind:planchange|attempt:${ATTEMPT}`
+const pl = parseExternalReference(legacy)
+assert(pl.profileId === UUID && pl.plan === 'plus' && pl.cycle === 'MONTHLY' && pl.kind === 'planchange' && pl.attempt === ATTEMPT, 'parse legado intacto')
+
+// attemptMatches: truncado casa com o cheio; legado casa por igualdade; lixo não casa
+import { attemptMatches } from './asaas'
+assert(attemptMatches('aabbccdd', ATTEMPT), 'attempt truncado (8 hex) casa com o UUID cheio')
+assert(attemptMatches(ATTEMPT, ATTEMPT), 'attempt legado (UUID = UUID) casa')
+assert(!attemptMatches('11223344', ATTEMPT), 'attempt de OUTRA tentativa não casa')
+assert(!attemptMatches(null, ATTEMPT) && !attemptMatches('aabbccdd', null), 'ausentes → false')
+
 assert(parseExternalReference(`profile:${UUID}|plan:plus`).kind === null, 'ref sem kind → kind null')
 assert(parseExternalReference(`profile:${UUID}|kind:outracoisa`).kind === null, 'kind desconhecido → null (restrito a planchange)')
+assert(parseExternalReference(`p:${UUID}|k:xx`).kind === null, 'k compacto desconhecido → null')
 
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed > 0 ? 1 : 0)

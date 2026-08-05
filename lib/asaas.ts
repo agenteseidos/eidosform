@@ -138,11 +138,28 @@ export function buildExternalReference(profileId: string, plan?: string, cycle?:
  * entre cobrar e recriar a sub. Pagamentos criados via API persistem o externalReference
  * (ao contrário do hosted checkout — smoke 2026-06-08).
  */
-export function buildPlanChangeReference(profileId: string, plan: string, cycle: string): string {
-  return `${buildExternalReference(profileId, plan, cycle)}|kind:planchange`
+/**
+ * 🔴 ACHADO #6 REAL do teste de compra (05/08): o formato longo
+ * `profile:<uuid>|plan:X|cycle:Y|kind:planchange|attempt:<uuid36>` chegava a
+ * ~130 chars e o Asaas RECUSAVA com `invalid_externalReference` (400) — todo
+ * upgrade pago falhava sem criar cobrança. O maior ref comprovadamente aceito
+ * em produção tinha 84 chars (junho, sem o sufixo attempt do P0-A).
+ *
+ * Formato COMPACTO: `p:<uuid>|plan:<plan>|c:M|k:pc|a:<hex8>` — pior caso
+ * (professional) = 76 chars, abaixo do teto provado. O attempt entra TRUNCADO
+ * em 8 hex do UUID da tentativa: continua determinístico por tentativa (o
+ * mesmo attemptId re-gera o MESMO ref no retry — dedupe P0-A preservado) e a
+ * chance de colisão entre tentativas do mesmo profile+plan+cycle é ~4bi:1.
+ * O parser abaixo lê AMBOS os formatos (pagamentos de junho seguem legíveis).
+ */
+export function buildPlanChangeReference(profileId: string, plan: string, cycle: string, attemptId?: string): string {
+  const c = cycle === 'YEARLY' ? 'Y' : 'M'
+  let ref = `p:${profileId}|plan:${plan}|c:${c}|k:pc`
+  if (attemptId) ref += `|a:${attemptId.replace(/-/g, '').slice(0, 8)}`
+  return ref
 }
 
-/** Faz o parse de um externalReference no formato acima (campos ausentes → null). */
+/** Faz o parse de um externalReference (formatos legado E compacto; ausentes → null). */
 export function parseExternalReference(ref?: string | null): { profileId: string | null; plan: string | null; cycle: string | null; kind: string | null; attempt: string | null } {
   const out = { profileId: null as string | null, plan: null as string | null, cycle: null as string | null, kind: null as string | null, attempt: null as string | null }
   if (!ref) return out
@@ -151,18 +168,32 @@ export function parseExternalReference(ref?: string | null): { profileId: string
     if (idx < 0) continue
     const k = part.slice(0, idx)
     const v = part.slice(idx + 1)
-    if (k === 'profile' && /^[0-9a-fA-F-]{36}$/.test(v)) out.profileId = v
+    if ((k === 'profile' || k === 'p') && /^[0-9a-fA-F-]{36}$/.test(v)) out.profileId = v
     // plan só é aceito se for um plano CONHECIDO (evita persistir plano inválido caso o
     // campo venha truncado/editado → cairia em erro de DB). (P3 round 4, Codex 2026-06-07.)
     else if (k === 'plan' && v && Object.prototype.hasOwnProperty.call(PLAN_PRICES, v)) out.plan = v
     else if (k === 'cycle' && (v === 'MONTHLY' || v === 'YEARLY')) out.cycle = v
-    // kind restrito a valores conhecidos (hoje só 'planchange') — mesmo racional do plan.
+    else if (k === 'c' && (v === 'M' || v === 'Y')) out.cycle = v === 'M' ? 'MONTHLY' : 'YEARLY'
+    // kind restrito a valores conhecidos — 'pc' é o compacto de 'planchange'.
     else if (k === 'kind' && v === 'planchange') out.kind = v
+    else if (k === 'k' && v === 'pc') out.kind = 'planchange'
     // attempt (P0-A 2026-06-15): nonce por TENTATIVA de troca — o backstop só aplica o avulso se
     // este attempt casar com a tentativa atual da linha de recuperação (anti reuso/fora-de-ordem).
-    else if (k === 'attempt' && v) out.attempt = v
+    // No compacto ('a') o nonce é o PREFIXO de 8 hex do attemptId — comparações downstream
+    // devem usar attemptMatches() abaixo, nunca igualdade direta com o UUID cheio.
+    else if ((k === 'attempt' || k === 'a') && v) out.attempt = v
   }
   return out
+}
+
+/**
+ * Compara o attempt de um ref (possivelmente TRUNCADO em 8 hex no formato compacto)
+ * com o attemptId completo da linha de recuperação.
+ */
+export function attemptMatches(refAttempt: string | null | undefined, fullAttemptId: string | null | undefined): boolean {
+  if (!refAttempt || !fullAttemptId) return false
+  if (refAttempt === fullAttemptId) return true // formato legado (UUID completo)
+  return fullAttemptId.replace(/-/g, '').slice(0, 8) === refAttempt
 }
 
 /** Cria checkout hospedado — retorna URL para redirecionamento */

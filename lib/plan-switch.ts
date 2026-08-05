@@ -18,7 +18,7 @@
  * O lock não é reentrante; adquirir aqui dentro causaria deadlock no fluxo pago.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createSubscriptionWithToken, cancelSubscription, reconcileActiveSubscriptions, buildExternalReference, refundPayment, getPaymentById, getPaymentWithCard, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createSubscriptionWithToken, cancelSubscription, reconcileActiveSubscriptions, buildExternalReference, refundPayment, getPaymentById, getPaymentWithCard, attemptMatches, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { expiryFromNextDueDate, stampAnnualStart } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { PLANS } from '@/lib/plan-definitions'
@@ -454,10 +454,12 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
     // superseded = attempt de OUTRA tentativa — NÃO depende de in-flight (a linha 'paid' da PRÓPRIA
     // tentativa é o caso NORMAL: o webhook do avulso legítimo chega após o POST síncrono concluir e
     // marcar 'paid' → isso é already_applied, JAMAIS superseded/estorno).
-    //  - attempt presente → casa com o attempt da linha (terminal ou não).
+    //  - attempt presente → casa com o attempt da linha (terminal ou não). ⚠️ attemptMatches,
+    //    NUNCA igualdade direta: no ref COMPACTO (achado #6, 05/08) o attempt viaja truncado
+    //    em 8 hex — igualdade direta julgaria pagamento LEGÍTIMO como superseded e o estornaria.
     //  - attempt ausente (avulso legado) → só se a linha TAMBÉM é legada (sem attempt) e mesmo alvo.
     const attemptMine = attempt
-      ? rowAttempt === attempt
+      ? attemptMatches(attempt, rowAttempt)
       : (rowAttempt === null && rec?.plan === plan && (rec?.cycle ?? 'MONTHLY') === cycle)
 
     // Avulso de OUTRA tentativa (superseded/abandonada): cobrado sem troca correspondente → ESTORNA.

@@ -339,7 +339,10 @@ export async function POST(
         .eq('checkout_id', recoveryCheckoutId)
         .maybeSingle()
       const { attemptId, savedPaymentId } = decidePlanChangeAttempt(prevRow as PlanChangeRecoveryRow | null, plan, cycle, randomUUID())
-      const planChangeRef = `${buildPlanChangeReference(profile.profileId, plan, cycle)}|attempt:${attemptId}`
+      // Formato COMPACTO (achado #6, 05/08): o formato antigo com |attempt:<uuid36>
+      // chegava a ~130 chars e o Asaas recusava com invalid_externalReference —
+      // TODO upgrade pago falhava. O attempt agora entra truncado dentro do builder.
+      const planChangeRef = buildPlanChangeReference(profile.profileId, plan, cycle, attemptId)
 
       // ── FALLBACK DE CARTÃO MORTO — Site 1: token AUSENTE (2026-07-03) ──
       // Chegou aqui sem token (flag ON + customer presente, ver guard antes do lock): não há

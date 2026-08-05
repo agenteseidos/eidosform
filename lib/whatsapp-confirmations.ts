@@ -24,6 +24,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { emitirEventoElen, type ElenEventoTipo } from '@/lib/elen-eventos'
 import { toWhatsAppDigits } from '@/lib/phone'
 import { log, logError, logWarn } from '@/lib/logger'
 
@@ -94,11 +95,21 @@ async function isOptedOut(phoneDigits: string): Promise<boolean> {
  * Envia um template de confirmação. Nunca lança. Retorna o resultado para
  * quem quiser registrar (ex.: journal do admin), mas pode ser ignorado.
  */
+const TEMPLATE_EVENTO: Record<string, ElenEventoTipo> = {
+  [CONFIRMATION_TEMPLATES.cadastroConfirmado]: 'cadastro',
+  [CONFIRMATION_TEMPLATES.planoAtivado]: 'ativado',
+  [CONFIRMATION_TEMPLATES.planoAlterado]: 'alterado',
+  [CONFIRMATION_TEMPLATES.assinaturaCancelada]: 'cancelado',
+  [CONFIRMATION_TEMPLATES.acessoAtualizado]: 'acesso',
+}
+
 export async function sendConfirmationTemplate(params: {
   toPhone: string | null | undefined
   template: string
   bodyParams: string[]
   context: string
+  /** Rótulo curto pro evento da Elen (ex.: "Plus Mensal", "Starter → Plus"). */
+  eventoDetalhe?: string
 }): Promise<{ sent: boolean; skipped?: string }> {
   try {
     const creds = cloudCreds()
@@ -141,7 +152,16 @@ export async function sendConfirmationTemplate(params: {
       })
       return { sent: false, skipped: 'send_failed' }
     }
-    log('[wpp-confirm] Confirmação enviada', { context: params.context, template: params.template, wamid: json.messages[0].id })
+    const wamid = json.messages[0].id
+    log('[wpp-confirm] Confirmação enviada', { context: params.context, template: params.template, wamid })
+    // Pacote B (mesa 2026-08-03): avisa a Elen NO ATO — ficha invalidada + memória
+    // do evento. O WAMID (antes descartado) vira a chave de idempotência. Roda no
+    // MESMO contexto pós-resposta do chamador; falha nunca afeta a confirmação.
+    const evento = TEMPLATE_EVENTO[params.template]
+    if (evento) {
+      await emitirEventoElen({ evento, telefone: params.toPhone, wamid, detalhe: params.eventoDetalhe ?? null })
+        .catch((err) => logWarn('[wpp-confirm] emitirEventoElen lançou (não bloqueante)', { err: String(err).slice(0, 120) }))
+    }
     return { sent: true }
   } catch (err) {
     logError('[wpp-confirm] Exceção no envio de confirmação (não bloqueante)', err, { context: params.context })
@@ -205,6 +225,7 @@ export async function notifyPlanoAtivado(profileId: string, opts?: { chargeInfo?
     template: CONFIRMATION_TEMPLATES.planoAtivado,
     bodyParams: [firstName(p.full_name), planLabel(p.plan, p.plan_cycle), charge],
     context: `ativado:${profileId}`,
+    eventoDetalhe: planLabel(p.plan, p.plan_cycle),
   })
 }
 
@@ -218,6 +239,7 @@ export async function notifyPlanoAlterado(profileId: string, opts: { fromLabel: 
     template: CONFIRMATION_TEMPLATES.planoAlterado,
     bodyParams: [firstName(p.full_name), opts.fromLabel, planLabel(p.plan, p.plan_cycle), charge],
     context: `alterado:${profileId}`,
+    eventoDetalhe: `${opts.fromLabel} → ${planLabel(p.plan, p.plan_cycle)}`,
   })
 }
 
@@ -231,6 +253,7 @@ export async function notifyAssinaturaCancelada(profileId: string, opts: { planL
     template: CONFIRMATION_TEMPLATES.assinaturaCancelada,
     bodyParams: [firstName(p.full_name), opts.planLabel, until],
     context: `cancelada:${profileId}`,
+    eventoDetalhe: `${opts.planLabel} — acesso até ${until}`,
   })
 }
 
@@ -244,5 +267,6 @@ export async function notifyAcessoAtualizado(profileId: string, opts?: { validUn
     template: CONFIRMATION_TEMPLATES.acessoAtualizado,
     bodyParams: [firstName(p.full_name), planLabel(p.plan, p.plan_cycle), until],
     context: `acesso:${profileId}`,
+    eventoDetalhe: `${planLabel(p.plan, p.plan_cycle)} até ${until}`,
   })
 }

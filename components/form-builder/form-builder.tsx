@@ -1861,36 +1861,61 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                         </p>
                         <p className="text-xs text-slate-500">A cada nova resposta, você recebe um e-mail no endereço da sua conta. Opcionalmente, encaminhe também para um e-mail adicional (equipe, CRM, parceiro).</p>
                       </div>
-                      {(userPlan === 'plus' || userPlan === 'professional') && (
-                        <Switch
-                          checked={form.notify_email_enabled ?? false}
-                          onCheckedChange={(checked) => {
-                            setForm(prev => ({ ...prev, notify_email_enabled: checked }))
-                            markDirty()
-                          }}
-                        />
-                      )}
                     </div>
                     {userPlan !== 'plus' && userPlan !== 'professional' ? (
                       <p className="text-xs text-slate-500">
                         Disponível nos planos Plus e Professional.{' '}
                         <Link href="/billing" className="text-blue-600 underline">Fazer upgrade</Link>
                       </p>
-                    ) : form.notify_email_enabled ? (
-                      <div>
-                        <Label className="text-xs text-slate-600">E-mail adicional para encaminhamento (opcional)</Label>
-                        <Input
-                          value={form.notify_email ?? ""}
-                          onChange={(e) => {
-                            setForm(prev => ({ ...prev, notify_email: e.target.value || null }))
-                            markDirty()
-                          }}
-                          className="mt-1.5 text-slate-900 placeholder:text-slate-400 text-sm"
-                          placeholder="equipe@empresa.com"
-                          type="email"
-                        />
+                    ) : (
+                      <div className="space-y-3">
+                        {/* UX-notificações (05/08): DOIS toggles INDEPENDENTES — dono e
+                            e-mail adicional. Qualquer combinação vale. */}
+                        <div className="flex items-center justify-between gap-3 rounded-md border border-slate-100 bg-slate-50/60 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-slate-700">Enviar notificações para o e-mail da conta</p>
+                            <p className="text-xs text-slate-500 truncate">{userInfo?.email ?? 'e-mail da conta'}</p>
+                          </div>
+                          <Switch
+                            checked={form.notify_owner_enabled ?? true}
+                            onCheckedChange={(checked) => {
+                              setForm(prev => ({ ...prev, notify_owner_enabled: checked }))
+                              markDirty()
+                            }}
+                          />
+                        </div>
+                        <div className="rounded-md border border-slate-100 bg-slate-50/60 px-3 py-2 space-y-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium text-slate-700">Encaminhar também para um e-mail adicional</p>
+                              <p className="text-xs text-slate-500">Equipe, CRM, parceiro.</p>
+                            </div>
+                            <Switch
+                              checked={form.notify_email_enabled ?? false}
+                              onCheckedChange={(checked) => {
+                                setForm(prev => ({ ...prev, notify_email_enabled: checked }))
+                                markDirty()
+                              }}
+                            />
+                          </div>
+                          {form.notify_email_enabled ? (
+                            <Input
+                              value={form.notify_email ?? ""}
+                              onChange={(e) => {
+                                setForm(prev => ({ ...prev, notify_email: e.target.value || null }))
+                                markDirty()
+                              }}
+                              className="text-slate-900 placeholder:text-slate-400 text-sm"
+                              placeholder="equipe@empresa.com"
+                              type="email"
+                            />
+                          ) : null}
+                        </div>
+                        {(form.notify_owner_enabled ?? true) === false && !form.notify_email_enabled && (
+                          <p className="text-xs text-amber-600">Com as duas chaves desligadas, você não receberá notificação de novas respostas deste formulário.</p>
+                        )}
                       </div>
-                    ) : null}
+                    )}
                   </div>
 
                   {/* WhatsApp Panel — só para quem tem a capacidade (2026-07-30).

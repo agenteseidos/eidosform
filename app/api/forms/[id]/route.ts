@@ -36,7 +36,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const FORM_COLUMNS = 'id, user_id, folder_id, title, description, slug, status, is_public, is_published, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, redirect_delay, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, version, created_at, updated_at'
+  const FORM_COLUMNS = 'id, user_id, folder_id, title, description, slug, status, is_public, is_published, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, plan, redirect_url, redirect_delay, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, paused, hide_branding, notify_email_enabled, notify_email, notify_owner_enabled, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, version, created_at, updated_at'
 
   const { data, error } = await supabase
     .from('forms')
@@ -96,7 +96,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     )
   }
   const body = parsed.data
-  const { title, description, slug, status, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url, expectedVersion } = body
+  const { title, description, slug, status, theme, questions, thank_you_enabled, thank_you_message, thank_you_title, thank_you_description, thank_you_button_text, thank_you_button_url, pixels, redirect_url, webhook_url, pixel_event_on_start, pixel_event_on_complete, welcome_enabled, welcome_title, welcome_description, welcome_button_text, welcome_image_url, is_closed, hide_branding, notify_email_enabled, notify_email, notify_owner_enabled, notify_whatsapp_enabled, notify_whatsapp_number, google_sheets_enabled, google_sheets_id, google_sheets_share_email, google_sheets_url, expectedVersion } = body
 
   // P1-C: Ignore 'plan' field — plan is managed exclusively via billing/admin endpoints
   // Prevents users from escalating their own plan via PATCH
@@ -348,6 +348,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     ...(is_closed !== undefined && { is_closed }),
     ...(hide_branding !== undefined && { hide_branding }),
     ...(notify_email_enabled !== undefined && { notify_email_enabled }),
+    // Toggle do DONO (UX-notificações 05/08): sem gate de plano — default é true
+    // e desligar é inócuo em plano sem e-mail (o gate de envio é por plano).
+    ...(notify_owner_enabled !== undefined && { notify_owner_enabled: notify_owner_enabled === true }),
     ...(integrationValidation.values.notify_email !== undefined && { notify_email: integrationValidation.values.notify_email }),
     // Campos LEGADOS de WhatsApp: IGNORADOS para quem não tem a capacidade
     // (2026-07-30). São ignorados, NUNCA rejeitados — o builder envia

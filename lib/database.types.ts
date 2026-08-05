@@ -518,6 +518,7 @@ export interface Database {
           paused: boolean
           hide_branding: boolean
           notify_email_enabled: boolean
+          notify_owner_enabled?: boolean | null
           notify_email: string | null
           notify_whatsapp_enabled: boolean
           notify_whatsapp_number: string | null
@@ -563,6 +564,7 @@ export interface Database {
           paused?: boolean
           hide_branding?: boolean
           notify_email_enabled?: boolean
+          notify_owner_enabled?: boolean | null
           notify_email?: string | null
           notify_whatsapp_enabled?: boolean
           notify_whatsapp_number?: string | null
@@ -605,6 +607,7 @@ export interface Database {
           paused?: boolean
           hide_branding?: boolean
           notify_email_enabled?: boolean
+          notify_owner_enabled?: boolean | null
           notify_email?: string | null
           notify_whatsapp_enabled?: boolean
           notify_whatsapp_number?: string | null

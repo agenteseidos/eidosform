@@ -81,3 +81,17 @@ describe('buildEmailIdempotencyKey — chave POR DESTINATÁRIO', () => {
     expect(k).not.toContain('paciente')
   })
 })
+
+describe('toggle do DONO (UX-notificações 05/08)', () => {
+  it('false explícito remove o dono; extra continua obedecendo o próprio toggle', () => {
+    const r = resolveEmailRecipients({ ownerEmail: 'dono@x.com', notifyEmail: 'crm@x.com', notifyEmailEnabled: true, notifyOwnerEnabled: false })
+    expect(r).toEqual([{ email: 'crm@x.com', role: 'form_email' }])
+  })
+  it('legado (undefined/null) = LIGADO — ninguém é silenciado por omissão', () => {
+    expect(resolveEmailRecipients({ ownerEmail: 'dono@x.com' })).toEqual([{ email: 'dono@x.com', role: 'owner' }])
+    expect(resolveEmailRecipients({ ownerEmail: 'dono@x.com', notifyOwnerEnabled: null })).toEqual([{ email: 'dono@x.com', role: 'owner' }])
+  })
+  it('as duas chaves OFF → zero destinatários (aviso fica na UI)', () => {
+    expect(resolveEmailRecipients({ ownerEmail: 'dono@x.com', notifyEmail: 'crm@x.com', notifyEmailEnabled: false, notifyOwnerEnabled: false })).toEqual([])
+  })
+})

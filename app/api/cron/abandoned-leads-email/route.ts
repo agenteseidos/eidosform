@@ -225,7 +225,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const { data: formRows, error: formsErr } = await supabase
     .from('forms')
-    .select('id, title, user_id, questions, notify_email, notify_email_enabled')
+    .select('id, title, user_id, questions, notify_email, notify_email_enabled, notify_owner_enabled')
     .in('user_id', [...ownerEmailById.keys()])
   if (formsErr) return fail('forms', formsErr)
 
@@ -238,6 +238,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ownerEmail: ownerEmailById.get(f.user_id as string),
       notifyEmail: f.notify_email as string | null,
       notifyEmailEnabled: f.notify_email_enabled as boolean | null,
+      notifyOwnerEnabled: f.notify_owner_enabled as boolean | null,
     })
     if (recipients.length === 0) continue
     formMap.set(f.id as string, {

@@ -304,6 +304,8 @@ const baseFormShape = {
   is_closed: z.boolean().optional(),
   hide_branding: z.boolean().optional(),
   notify_email_enabled: z.boolean().optional(),
+  // Toggle do DONO (UX-notificações 05/08) — par independente do notify_email_enabled.
+  notify_owner_enabled: z.boolean().optional(),
   notify_email: z.string().email().max(320).nullable().optional().or(z.literal('')),
   notify_whatsapp_enabled: z.boolean().optional(),
   notify_whatsapp_number: z.string().max(40).nullable().optional(),

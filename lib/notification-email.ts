@@ -44,12 +44,16 @@ export function resolveEmailRecipients(input: {
   ownerEmail?: string | null
   notifyEmail?: string | null
   notifyEmailEnabled?: boolean | null
+  /** Toggle do DONO (UX-notificações 05/08). null/undefined = legado → LIGADO. */
+  notifyOwnerEnabled?: boolean | null
 }): EmailRecipient[] {
   const candidates: EmailRecipient[] = []
   const normalize = (v: string | null | undefined) => (v ?? '').trim().toLowerCase()
 
   const owner = normalize(input.ownerEmail)
-  if (owner) candidates.push({ email: owner, role: 'owner' })
+  // Só `false` explícito desliga o dono — forms antigos (coluna nova, default true)
+  // e chamadores legados continuam notificando (regra: não silenciar ninguém).
+  if (owner && input.notifyOwnerEnabled !== false) candidates.push({ email: owner, role: 'owner' })
 
   const extra = normalize(input.notifyEmail)
   if (input.notifyEmailEnabled && extra) candidates.push({ email: extra, role: 'form_email' })

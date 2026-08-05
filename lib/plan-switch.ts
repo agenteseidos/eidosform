@@ -26,7 +26,7 @@ import { PLAN_ORDER, type PlanId } from '@/lib/plans'
 import { log, logError } from '@/lib/logger'
 import { sendBillingOpsAlert, sendPlanChanged } from '@/lib/resend'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
-import { notifyPlanoAlterado, planLabel, brDate } from '@/lib/whatsapp-confirmations'
+import { notifyPlanoAlterado, planLabel, brDate, firstName } from '@/lib/whatsapp-confirmations'
 import { markActivationEffectsClaimed } from '@/lib/billing-activation'
 import { after } from 'next/server'
 import { createHash } from 'crypto'
@@ -257,7 +257,7 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
           if (!p?.email) return
           await sendPlanChanged({
             to: p.email,
-            name: p.full_name ?? 'usuário',
+            name: firstName(p.full_name),
             fromPlan: fromLabel,
             toPlan: toLabel,
             nextCharge: brDate(p.plan_expires_at),

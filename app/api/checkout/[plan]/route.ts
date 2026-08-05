@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { createCheckout, createCustomer, updateCustomer, buildExternalReference, buildPlanChangeReference, createPaymentWithToken, refundPayment, getPaymentById, findPaymentByExternalReference, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
+import { createCheckout, createCustomer, updateCustomer, disableCustomerNotifications, buildExternalReference, buildPlanChangeReference, createPaymentWithToken, refundPayment, getPaymentById, findPaymentByExternalReference, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
 import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
 import { computePlanChange, decidePlanChangeAttempt, type PlanChangeRecoveryRow } from '@/lib/plan-change'
@@ -603,6 +603,12 @@ export async function POST(
         log('[checkout] Customer do Asaas — payload inalterado, skip updateCustomer', { userId: profile.profileId, customerId })
       }
     }
+
+    // E-mails nativos do Asaas OFF pro cliente (decisão Sidney 05/08): todo evento
+    // já tem canal próprio espelhado. NF/módulo fiscal não passa por aqui. Falha
+    // não bloqueia (comportamento antigo = e-mail duplicado, nunca pior).
+    const notif = await disableCustomerNotifications(customerId)
+    if (notif.disabled > 0) log('[checkout] Notificações Asaas do customer desligadas', { customerId, disabled: notif.disabled })
 
     const basePrice = cycle === 'MONTHLY'
       ? PLAN_PRICES[plan as keyof typeof PLAN_PRICES].monthly

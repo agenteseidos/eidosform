@@ -45,6 +45,7 @@ vi.mock('@/lib/whatsapp-confirmations', () => ({
   notifyAcessoAtualizado: vi.fn(async () => ({ sent: true })),
   planLabel: (p: string) => p,
   brDate: () => '30/09/2026',
+  firstName: (n?: string | null) => (n ?? '').split(' ')[0] || 'tudo bem',
 }))
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }))
 

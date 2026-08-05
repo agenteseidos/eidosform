@@ -198,6 +198,11 @@ export function BillingFieldsDialog({
             const isMissing = missingSet.has(f.key)
             const value = form[f.key]
             const isEmail = f.key === 'email'
+            // Telefone TRAVADO quando já existe no perfil (decisão Sidney 05/08):
+            // é a chave conta↔WhatsApp (confirmações + atendente); editar aqui
+            // divergiria do perfil. Correção de número = Configurações. Se o
+            // perfil ainda não tem telefone (ex.: cadastro Google), fica editável.
+            const isLockedPhone = f.key === 'phone' && Boolean((initialData.phone ?? '').trim())
             const fieldClass = [
               'mt-1.5',
               isMissing ? 'border-amber-400 focus-visible:ring-amber-400' : '',
@@ -209,6 +214,9 @@ export function BillingFieldsDialog({
                 <Label htmlFor={`bf-${f.key}`} className="flex items-center gap-1.5">
                   {f.label}
                   {isMissing && <span className="text-xs font-medium text-amber-600">• obrigatório</span>}
+                  {f.key === 'phone' && isLockedPhone && (
+                    <span className="text-xs text-slate-400">(alterar em Configurações)</span>
+                  )}
                 </Label>
                 {f.key === 'postalCode' ? (
                   <div className="flex gap-2 mt-1.5">
@@ -236,7 +244,7 @@ export function BillingFieldsDialog({
                     value={value}
                     placeholder={f.placeholder}
                     maxLength={f.maxLength}
-                    disabled={isEmail}
+                    disabled={isEmail || isLockedPhone}
                     className={fieldClass}
                     onChange={(e) =>
                       updateField(f.key, f.key === 'state' ? e.target.value.toUpperCase() : e.target.value)

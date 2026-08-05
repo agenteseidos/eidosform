@@ -8,7 +8,7 @@ import { recordAdminAction } from '@/lib/admin-journal'
 import { sendAccessUpdated, sendPlanActivated, sendPlanChanged, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError, logWarn } from '@/lib/logger'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
-import { notifyPlanoAlterado, notifyPlanoAtivado, notifyAssinaturaCancelada, notifyAcessoAtualizado, planLabel, brDate } from '@/lib/whatsapp-confirmations'
+import { notifyPlanoAlterado, notifyPlanoAtivado, notifyAssinaturaCancelada, notifyAcessoAtualizado, planLabel, brDate, firstName } from '@/lib/whatsapp-confirmations'
 
 /**
  * PATCH /api/admin/users/[id]/plan — plano e expiração pelo painel admin.
@@ -332,7 +332,7 @@ export async function PATCH(
         if (currentProfile.email) {
           const r = await sendAccessUpdated({
             to: currentProfile.email,
-            name: (currentProfile.full_name ?? '').split(/\s+/)[0] || 'tudo bem',
+            name: firstName(currentProfile.full_name),
             plan: planLabel(currentPlan, currentProfile.plan_cycle),
             validUntil: validade,
           }).catch(() => ({ error: 'send failed' }))
@@ -491,7 +491,7 @@ export async function PATCH(
     if (notifyCustomer) {
       const fromLabel = planLabel(currentPlan, currentProfile.plan_cycle)
       const toLabel = planLabel(newPlan, null)
-      const firstName = (currentProfile.full_name ?? '').split(/\s+/)[0] || 'tudo bem'
+      const saudacao = firstName(currentProfile.full_name)
       const email = currentProfile.email
       const markEmail = (r: unknown) => { emailNotified = !(r && typeof r === 'object' && 'error' in r && (r as { error?: string }).error) }
       if (newPlan === 'free') {
@@ -499,20 +499,20 @@ export async function PATCH(
           planLabel: fromLabel,
           accessUntil: 'hoje',
         })
-        if (email) markEmail(await sendPlanCancelled({ to: email, name: firstName, plan: fromLabel }).catch(() => ({ error: 'send failed' })))
+        if (email) markEmail(await sendPlanCancelled({ to: email, name: saudacao, plan: fromLabel }).catch(() => ({ error: 'send failed' })))
       } else if (currentPlan === 'free') {
         const validade = brDate(expiryParsed.value as string) ?? 'a data combinada'
         notified = await notifyPlanoAtivado(id, {
           chargeInfo: `nenhuma — cortesia válida até ${validade}`,
         })
-        if (email) markEmail(await sendPlanActivated({ to: email, name: firstName, plan: toLabel }).catch(() => ({ error: 'send failed' })))
+        if (email) markEmail(await sendPlanActivated({ to: email, name: saudacao, plan: toLabel }).catch(() => ({ error: 'send failed' })))
       } else {
         const validade = brDate(expiryParsed.value as string) ?? 'a data combinada'
         notified = await notifyPlanoAlterado(id, {
           fromLabel,
           chargeInfo: `nenhuma — cortesia válida até ${validade}`,
         })
-        if (email) markEmail(await sendPlanChanged({ to: email, name: firstName, fromPlan: fromLabel, toPlan: toLabel, nextCharge: `nenhuma — cortesia válida até ${validade}` }).catch(() => ({ error: 'send failed' })))
+        if (email) markEmail(await sendPlanChanged({ to: email, name: saudacao, fromPlan: fromLabel, toPlan: toLabel, nextCharge: `nenhuma — cortesia válida até ${validade}` }).catch(() => ({ error: 'send failed' })))
       }
     }
 

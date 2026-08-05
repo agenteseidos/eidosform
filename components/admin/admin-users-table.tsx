@@ -355,7 +355,7 @@ export function AdminUsersTable() {
       </Card>
 
       <Dialog open={Boolean(selectedUser)} onOpenChange={(open) => !open && setSelectedUser(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Alterar plano</DialogTitle>
             <DialogDescription>
@@ -365,10 +365,10 @@ export function AdminUsersTable() {
 
           {selectedUser?.hasSubscription && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Este usuário tem <strong>assinatura ativa no Asaas</strong>. Troca de plano e ajuste
-              de data pelo painel estão bloqueados para não desalinhar a cobrança — o caminho é o
-              próprio usuário trocar em /billing. (Sincronização de datas com o gateway chega na
-              próxima fase do painel.)
+              Este usuário tem <strong>assinatura ativa no Asaas</strong>.{' '}
+              {selectedUser.planCycle === 'YEARLY'
+                ? 'Assinatura ANUAL: ajuste de data segue bloqueado (gateway não caracterizado). Troca de plano é pelo próprio usuário em /billing.'
+                : 'Ajuste de DATA é sincronizado: move a cobrança pendente e a assinatura no Asaas junto (Fase 4). Troca de PLANO segue pelo próprio usuário em /billing (proração).'}
             </p>
           )}
 
@@ -443,9 +443,9 @@ export function AdminUsersTable() {
               className="mt-0.5 h-4 w-4 accent-emerald-600"
             />
             <span>
-              Avisar o cliente por WhatsApp
+              Avisar o cliente (WhatsApp + e-mail)
               <span className="block text-xs text-slate-500">
-                Desmarque apenas para testes ou ajustes internos. A escolha fica no histórico.
+                Os dois canais são espelho. Desmarque apenas para testes ou ajustes internos. A escolha fica no histórico.
               </span>
             </span>
           </label>

@@ -171,9 +171,16 @@ async function fetchProfile(profileId: string): Promise<ProfileLite | null> {
   }
 }
 
-function firstName(fullName?: string | null): string {
+// Conta com nome INSTITUCIONAL (ex.: "Instituto Eidos") não pode virar
+// "Olá, Instituto!" (teste real 05/08). Heurística conservadora: palavra
+// inicial tipicamente empresarial → saudação neutra. Falso negativo =
+// comportamento antigo (chama pelo 1º nome); falso positivo = "Olá, tudo bem".
+const INSTITUTIONAL_RE = /^(instituto|agencia|agência|clinica|clínica|consultorio|consultório|escritorio|escritório|studio|estudio|estúdio|grupo|centro|empresa|comercio|comércio|servicos|serviços|associacao|associação|fundacao|fundação|igreja|colegio|colégio|escola|faculdade|universidade|hospital|farmacia|farmácia|loja|restaurante|hotel|pousada|academia|oficina|imobiliaria|imobiliária|construtora|transportadora|distribuidora|editora|produtora|holding|ltda|eireli|mei)$/i
+
+export function firstName(fullName?: string | null): string {
   const first = String(fullName ?? '').trim().split(/\s+/)[0]
-  return first || 'tudo bem'
+  if (!first || INSTITUTIONAL_RE.test(first)) return 'tudo bem'
+  return first
 }
 
 /** Cadastro concluído (e-mail confirmado). Dedupe é do chamador (flag em user_metadata). */

@@ -137,3 +137,15 @@ describe('templates _v2 (mesa 2026-08-03)', () => {
     }
   })
 })
+
+describe('saudação institucional (lote 05/08)', () => {
+  it('nome de PESSOA → primeiro nome; EMPRESA → neutro; vazio → neutro', async () => {
+    const { firstName } = await import('./whatsapp-confirmations')
+    expect(firstName('Sidney Crystian Medeiros')).toBe('Sidney')
+    expect(firstName('Instituto Eidos')).toBe('tudo bem')
+    expect(firstName('Clínica Vida Plena')).toBe('tudo bem')
+    expect(firstName('Agência Grilo')).toBe('tudo bem')
+    expect(firstName('')).toBe('tudo bem')
+    expect(firstName(null)).toBe('tudo bem')
+  })
+})

@@ -81,8 +81,60 @@ export async function updateCustomer(customerId: string, payload: Partial<AsaasC
 /** Cria ou retorna customer existente pelo email */
 export async function createCustomer(payload: AsaasCustomerPayload): Promise<{ id: string; name: string; email: string }> {
   const existing = await asaasFetch(`/customers?email=${encodeURIComponent(payload.email)}`)
-  if (existing.totalCount > 0) return existing.data[0]
+  if (existing.totalCount > 0) {
+    const found = existing.data[0]
+    // Achado #4 (teste 05/08): reuso por e-mail devolvia o customer com dados
+    // VELHOS (nome/CPF/telefone de outra época) ignorando o que o cliente
+    // digitou no modal — compra por CNPJ saía como pessoa física. Atualiza
+    // SEMPRE no reuso; falha não bloqueia (dados velhos = comportamento antigo).
+    try {
+      await updateCustomer(found.id, payload)
+    } catch (err) {
+      logWarn('[asaas] update do customer reusado falhou — segue com dados antigos', { customerId: found.id, err: String(err) })
+    }
+    return found
+  }
   return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+/**
+ * Desliga as notificações do Asaas voltadas ao CLIENTE (e-mail/SMS/WhatsApp/voz)
+ * — decisão Sidney 05/08: todo evento já tem canal PRÓPRIO espelhado (WhatsApp +
+ * e-mail); o Asaas duplicava tudo. A emissão de NOTA FISCAL (módulo fiscal) NÃO
+ * passa por estes eventos — permanece intacta. Notificações pro PROVEDOR (nós)
+ * não são tocadas. Idempotente; falha é log, nunca bloqueia checkout.
+ */
+export async function disableCustomerNotifications(customerId: string): Promise<{ ok: boolean; disabled: number }> {
+  try {
+    const list = await asaasFetch(`/customers/${customerId}/notifications`)
+    const items = (list?.data ?? []) as Array<{
+      id: string
+      emailEnabledForCustomer?: boolean
+      smsEnabledForCustomer?: boolean
+      whatsappEnabledForCustomer?: boolean
+      phoneCallEnabledForCustomer?: boolean
+    }>
+    const toUpdate = items.filter((n) =>
+      n.emailEnabledForCustomer || n.smsEnabledForCustomer || n.whatsappEnabledForCustomer || n.phoneCallEnabledForCustomer)
+    if (!toUpdate.length) return { ok: true, disabled: 0 }
+    await asaasFetch('/notifications/batch', {
+      method: 'PUT',
+      body: JSON.stringify({
+        customer: customerId,
+        notifications: toUpdate.map((n) => ({
+          id: n.id,
+          emailEnabledForCustomer: false,
+          smsEnabledForCustomer: false,
+          whatsappEnabledForCustomer: false,
+          phoneCallEnabledForCustomer: false,
+        })),
+      }),
+    })
+    return { ok: true, disabled: toUpdate.length }
+  } catch (err) {
+    logWarn('[asaas] disableCustomerNotifications falhou (não bloqueante)', { customerId, err: String(err) })
+    return { ok: false, disabled: 0 }
+  }
 }
 
 /** Mapeia o VALOR cheio de uma assinatura para o plano/ciclo (preços únicos → 1:1). */

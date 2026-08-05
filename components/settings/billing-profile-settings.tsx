@@ -5,7 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { MapPin, Loader2 } from 'lucide-react'
+import { MapPin, Loader2, MessageCircleWarning } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 
@@ -30,6 +31,11 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
   const [form, setForm] = useState(initialData)
   const [isSaving, setIsSaving] = useState(false)
   const [loadingCep, setLoadingCep] = useState(false)
+  // Confirmação de troca de TELEFONE (decisão Sidney 05/08): é dado sensível —
+  // define onde chegam as confirmações por WhatsApp e como a atendente
+  // reconhece a conta. Troca só com confirmação explícita.
+  const [confirmPhoneOpen, setConfirmPhoneOpen] = useState(false)
+  const phoneChanged = (form.phone ?? '').replace(/\D/g, '') !== (initialData.phone ?? '').replace(/\D/g, '')
 
   function updateField(field: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -61,9 +67,14 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
     }
   }, [])
 
-  async function handleSave() {
+  async function handleSave(opts?: { phoneConfirmed?: boolean }) {
     if (!form.fullName.trim()) {
       toast.error('Informe seu nome completo')
+      return
+    }
+    // Telefone mudou e ainda não foi confirmado → abre o diálogo em vez de salvar.
+    if (phoneChanged && initialData.phone && !opts?.phoneConfirmed) {
+      setConfirmPhoneOpen(true)
       return
     }
 
@@ -175,9 +186,38 @@ export function BillingProfileSettings({ initialData }: BillingProfileSettingsPr
         </div>
       </div>
 
-      <Button className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-medium" onClick={handleSave} disabled={isSaving}>
+      <Button className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-medium" onClick={() => handleSave()} disabled={isSaving}>
         {isSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : 'Salvar dados de cobrança'}
       </Button>
+
+      {/* Confirmação de troca de telefone (dado sensível — decisão Sidney 05/08). */}
+      <Dialog open={confirmPhoneOpen} onOpenChange={setConfirmPhoneOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircleWarning className="w-5 h-5 text-amber-500" />
+              Confirmar alteração de telefone
+            </DialogTitle>
+            <DialogDescription>
+              O telefone define <strong>onde você recebe as confirmações da sua conta por WhatsApp</strong> e
+              como nosso atendimento reconhece você. Confira com atenção:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm">
+            <p className="text-slate-500">Número anterior: <span className="line-through">{initialData.phone || '—'}</span></p>
+            <p className="mt-1 font-semibold text-slate-800">Número novo: {form.phone || '—'}</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmPhoneOpen(false)}>Cancelar</Button>
+            <Button
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+              onClick={() => { setConfirmPhoneOpen(false); void handleSave({ phoneConfirmed: true }) }}
+            >
+              Confirmar novo telefone
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

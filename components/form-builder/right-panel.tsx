@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Image from 'next/image'
 import { QuestionConfig, QuestionType, Form } from '@/lib/database.types'
 import { questionTypes, getQuestionTypeInfo } from '@/lib/questions'
@@ -15,6 +15,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  GitFork,
   HandMetal,
   Loader2,
   MousePointerClick,
@@ -39,6 +40,8 @@ interface RightPanelProps {
   onWelcomeImageUpload?: (file: File) => void
   onRemoveWelcomeImage?: () => void
   isUploadingImage?: boolean
+  /** Aba Lógica ativa: prioriza o bloco de lógica e adapta o estado vazio. */
+  logicFocus?: boolean
 }
 
 export function RightPanel({
@@ -54,6 +57,7 @@ export function RightPanel({
   onWelcomeImageUpload,
   onRemoveWelcomeImage,
   isUploadingImage,
+  logicFocus,
 }: RightPanelProps) {
   const [copied, setCopied] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
@@ -63,6 +67,12 @@ export function RightPanel({
   const toggleBlock = useCallback((key: string) => {
     setCollapsed(prev => ({ ...prev, [key]: !prev[key] }))
   }, [])
+
+  // Na aba Lógica o interesse é a lógica: recolhe Ações/Configurações e abre
+  // o bloco de lógica; ao voltar para Editar, restaura tudo aberto.
+  useEffect(() => {
+    setCollapsed(logicFocus ? { actions: true, config: true, logic: false } : {})
+  }, [logicFocus])
 
   // B08: Welcome screen editor
   if (sidebarSection === 'welcome' && form && onUpdateForm) {
@@ -244,6 +254,23 @@ export function RightPanel({
   }
 
   if (!selectedQuestion) {
+    if (logicFocus) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full px-6 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center mb-4">
+            <GitFork className="w-8 h-8 text-violet-300" />
+          </div>
+          <p className="text-sm font-medium text-slate-600">
+            Clique numa pergunta do mapa para editar a lógica dela
+          </p>
+          <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+            Aqui você define <b>saltos</b> (para onde o fluxo vai conforme a resposta),
+            <b> exibição condicional</b> (quando a pergunta aparece) e
+            <b> conversões de pixel</b>.
+          </p>
+        </div>
+      )
+    }
     return (
       <div className="flex flex-col items-center justify-center h-full px-6 text-center">
         <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">

@@ -7,6 +7,7 @@ import {
   Controls,
   MiniMap,
   Handle,
+  Panel,
   Position,
   MarkerType,
   useNodesState,
@@ -35,7 +36,6 @@ interface LogicMapProps {
   selectedQuestionId: string | null
   onSelectQuestion: (id: string) => void
   onUpdateQuestion: (id: string, updates: Partial<QuestionConfig>) => void
-  onReorderQuestions: (questions: QuestionConfig[]) => void
   onAddQuestion: () => void
   formPixelEvents: { onStart: string | null; onComplete: string | null }
   onUpdateFormPixel: (updates: { pixel_event_on_start?: string | null; pixel_event_on_complete?: string | null }) => void
@@ -46,11 +46,12 @@ type FlowNode = Node<LogicNodeData>
 
 interface MapCtx {
   selectedQuestionId: string | null
+  onEditJump: (questionId: string) => void
   onEditPixel: (questionId: string) => void
   onEditTerminalPixel: (which: 'start' | 'complete') => void
 }
 const LogicMapContext = createContext<MapCtx>({
-  selectedQuestionId: null, onEditPixel: () => {}, onEditTerminalPixel: () => {},
+  selectedQuestionId: null, onEditJump: () => {}, onEditPixel: () => {}, onEditTerminalPixel: () => {},
 })
 
 const HANDLE_COLOR = { sequential: '#cbd5e1', jump: '#7c3aed', submit: '#16a34a' } as const
@@ -66,6 +67,7 @@ function QuestionNode({ data }: NodeProps<FlowNode>) {
   const selected = data.questionId === ctx.selectedQuestionId
   const hasError = data.warnings.some(w => w.severity === 'error')
   const hasWarn = data.warnings.length > 0
+  const hasJumps = data.outHandles.some(h => h.kind !== 'sequential')
   const borderColor = selected ? '#7c3aed' : hasError ? '#dc2626' : hasWarn ? '#d97706' : '#e2e8f0'
   const isLR = data.direction === 'LR'
   const handles = data.outHandles
@@ -76,7 +78,9 @@ function QuestionNode({ data }: NodeProps<FlowNode>) {
     >
       <Handle type="target" id="in" position={isLR ? Position.Left : Position.Top} style={{ background: '#94a3b8', width: 9, height: 9 }} />
       <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{data.typeLabel}</span>
+        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+          {data.number ? `${data.number} · ` : ''}{data.typeLabel}
+        </span>
         {hasWarn && <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: hasError ? '#dc2626' : '#d97706' }} />}
       </div>
       <p className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2">{data.title}</p>
@@ -92,13 +96,22 @@ function QuestionNode({ data }: NodeProps<FlowNode>) {
           <span className="line-clamp-1">{p}</span>
         </div>
       ))}
-      <button
-        className="nodrag nopan mt-2 w-full text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 rounded py-1 border border-dashed border-emerald-200 flex items-center justify-center gap-1 transition-colors"
-        onClick={(e) => { e.stopPropagation(); if (data.questionId) ctx.onEditPixel(data.questionId) }}
-      >
-        <Target className="w-3 h-3" />
-        {data.pixelEvents.length > 0 ? 'Editar conversões' : '+ Conversão (pixel)'}
-      </button>
+      <div className="mt-2 flex gap-1.5">
+        <button
+          className="nodrag nopan flex-1 text-[10px] font-medium text-violet-700 hover:bg-violet-50 rounded py-1 border border-dashed border-violet-300 flex items-center justify-center gap-1 transition-colors"
+          onClick={(e) => { e.stopPropagation(); if (data.questionId) ctx.onEditJump(data.questionId) }}
+        >
+          <GitFork className="w-3 h-3" />
+          {hasJumps ? 'Editar saltos' : '+ Salto'}
+        </button>
+        <button
+          className="nodrag nopan flex-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 rounded py-1 border border-dashed border-emerald-200 flex items-center justify-center gap-1 transition-colors"
+          onClick={(e) => { e.stopPropagation(); if (data.questionId) ctx.onEditPixel(data.questionId) }}
+        >
+          <Target className="w-3 h-3" />
+          {data.pixelEvents.length > 0 ? 'Conversões' : '+ Pixel'}
+        </button>
+      </div>
       {/* Pontos de saída — um por aresta, espaçados para a bifurcação ficar clara */}
       {handles.map((h, i) => (
         <Handle
@@ -165,10 +178,10 @@ function estimateHeight(d: LogicNodeData): number {
 
 export function LogicMap({
   questions, selectedQuestionId, onSelectQuestion, onUpdateQuestion,
-  onReorderQuestions, onAddQuestion, formPixelEvents, onUpdateFormPixel, hasPixelPlan,
+  onAddQuestion, formPixelEvents, onUpdateFormPixel, hasPixelPlan,
 }: LogicMapProps) {
   const nodeTypes = useMemo(() => ({ question: QuestionNode, terminal: TerminalNode }), [])
-  const direction: LogicDirection = 'LR' // visualização horizontal (padrão fixo)
+  const direction: LogicDirection = 'TB' // vertical — formulário se lê de cima para baixo
   const [showDefaultEdges, setShowDefaultEdges] = useState(true)
   const [jumpEditorFor, setJumpEditorFor] = useState<string | null>(null)
   const [pixelEditorFor, setPixelEditorFor] = useState<string | null>(null)
@@ -210,7 +223,9 @@ export function LogicMap({
       type: n.data.kind === 'question' ? 'question' : 'terminal',
       position: elkPos.get(n.id) ?? { x: 0, y: 0 },
       data: n.data,
-      draggable: n.data.kind === 'question',
+      // O mapa é auto-organizado (ELK); arrastar não reordena o formulário —
+      // reordenação de perguntas fica na aba Editar, onde é explícita.
+      draggable: false,
     }))
     setRfNodes(next)
     // Só enquadra uma vez (carga inicial). Em edições normais — inclusive
@@ -250,28 +265,7 @@ export function LogicMap({
     if (data.kind === 'question' && data.questionId) onSelectQuestion(data.questionId)
   }, [onSelectQuestion])
 
-  // Arrasto de um bloco = REORDENAR a sequência do fluxo. A posição X onde o
-  // bloco foi solto define o novo índice na ordem das perguntas — isso reflete
-  // direto na aba de edição normal (mesma lista de perguntas).
-  const onNodeDragStop = useCallback((_: unknown, node: Node) => {
-    const data = node.data as LogicNodeData
-    if (data.kind !== 'question' || !data.questionId) return
-    const draggedId = data.questionId
-    // Quantos outros blocos de pergunta ficaram à esquerda do ponto de soltura
-    const others = rfNodes.filter(n => (n.data as LogicNodeData).kind === 'question' && n.id !== draggedId)
-    const newIndex = others.filter(n => n.position.x < node.position.x).length
-    const without = questions.filter(q => q.id !== draggedId)
-    const dragged = questions.find(q => q.id === draggedId)
-    if (!dragged) return
-    const reordered = [...without.slice(0, newIndex), dragged, ...without.slice(newIndex)]
-    // Só aplica se a ordem realmente mudou
-    if (reordered.some((q, i) => q.id !== questions[i].id)) {
-      onReorderQuestions(reordered)
-      toast.success('Sequência do fluxo atualizada.')
-    }
-  }, [rfNodes, questions, onReorderQuestions])
-
-  // Etapa 2: conectar dois blocos cria uma regra de salto.
+  // Conectar dois blocos (arrastando de um ponto de saída) cria uma regra de salto.
   const onConnect = useCallback((conn: Connection) => {
     const { source, target } = conn
     if (!source || !target || source === target) return
@@ -292,7 +286,7 @@ export function LogicMap({
     toast.success('Salto criado — defina quando ele acontece.')
   }, [questions, onUpdateQuestion])
 
-  // Etapa 3: clicar numa aresta edita/remove o salto.
+  // Clicar numa aresta edita/remove o salto.
   const onEdgeClick = useCallback((_: unknown, edge: Edge) => {
     const d = edge.data as { kind?: string; questionId?: string } | undefined
     if (!d || d.kind === 'sequential') {
@@ -304,12 +298,14 @@ export function LogicMap({
 
   const ctxValue = useMemo<MapCtx>(() => ({
     selectedQuestionId,
-    onEditPixel: (qId) => setPixelEditorFor(qId),
+    onEditJump: (qId) => { onSelectQuestion(qId); setJumpEditorFor(qId) },
+    onEditPixel: (qId) => { onSelectQuestion(qId); setPixelEditorFor(qId) },
     onEditTerminalPixel: (which) => setTerminalPixelFor(which),
-  }), [selectedQuestionId])
+  }), [selectedQuestionId, onSelectQuestion])
 
   const errors = graph.warnings.filter(w => w.severity === 'error')
   const warns = graph.warnings.filter(w => w.severity === 'warning')
+  const hasBranching = graph.edges.some(e => e.kind !== 'sequential')
   const jumpQuestion = jumpEditorFor ? questions.find(q => q.id === jumpEditorFor) : null
   const pixelQuestion = pixelEditorFor ? questions.find(q => q.id === pixelEditorFor) : null
 
@@ -327,8 +323,8 @@ export function LogicMap({
           <GitFork className="w-3.5 h-3.5 mr-1" />
           {showDefaultEdges ? 'Ocultar caminho padrão' : 'Mostrar caminho padrão'}
         </Button>
-        <span className="text-[11px] text-slate-400 ml-1 hidden lg:inline">
-          Arraste um bloco para mudar a ordem do fluxo · arraste uma seta de saída para criar um salto condicional
+        <span className="text-[11px] text-slate-400 ml-1 hidden md:inline">
+          Clique numa pergunta para editar a lógica dela · use “+ Salto” para criar uma ramificação
         </span>
       </div>
 
@@ -373,7 +369,6 @@ export function LogicMap({
               nodeTypes={nodeTypes}
               onNodesChange={onNodesChange}
               onNodeClick={onNodeClick}
-              onNodeDragStop={onNodeDragStop}
               onEdgeClick={onEdgeClick}
               onConnect={onConnect}
               onInit={(inst) => { instRef.current = inst }}
@@ -384,6 +379,37 @@ export function LogicMap({
               <Background color="#e2e8f0" gap={20} />
               <Controls showInteractive={false} />
               <MiniMap pannable zoomable nodeColor={(n) => ((n.data as LogicNodeData)?.kind === 'question' ? '#c4b5fd' : '#94a3b8')} />
+              {/* Legenda das linhas */}
+              <Panel position="top-right">
+                <div className="bg-white/95 border border-slate-200 rounded-lg px-3 py-2 shadow-sm space-y-1.5 text-[10px] text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-6 border-t-2 border-dashed" style={{ borderColor: '#cbd5e1' }} />
+                    caminho padrão
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-6 border-t-2" style={{ borderColor: '#7c3aed' }} />
+                    salto condicional
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-6 border-t-2" style={{ borderColor: '#16a34a' }} />
+                    envio do formulário
+                  </div>
+                </div>
+              </Panel>
+              {/* Formulário linear: explica para que o mapa serve */}
+              {!hasBranching && (
+                <Panel position="top-center">
+                  <div className="max-w-sm bg-violet-50/95 border border-violet-200 rounded-xl px-4 py-3 shadow-sm text-xs text-violet-900">
+                    <p className="font-semibold mb-1 flex items-center gap-1.5">
+                      <GitFork className="w-3.5 h-3.5" /> Seu formulário segue um caminho único
+                    </p>
+                    <p className="leading-relaxed">
+                      Clique em <b>“+ Salto”</b> numa pergunta para criar ramificações — por exemplo,
+                      quem responde “Não” pode pular direto para o fim.
+                    </p>
+                  </div>
+                </Panel>
+              )}
             </ReactFlow>
           </LogicMapContext.Provider>
         )}

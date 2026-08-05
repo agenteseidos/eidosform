@@ -1084,7 +1084,6 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
               selectedQuestionId={selectedQuestionId}
               onSelectQuestion={(id) => { setSelectedQuestionId(id); setSidebarSection(null); setMobilePanel('editor') }}
               onUpdateQuestion={updateQuestion}
-              onReorderQuestions={(qs) => { setQuestions(qs); markDirty() }}
               onAddQuestion={() => setShowAddQuestion(true)}
               formPixelEvents={{ onStart: form.pixel_event_on_start || null, onComplete: form.pixel_event_on_complete || null }}
               onUpdateFormPixel={(updates) => { setForm(prev => ({ ...prev, ...updates })); markDirty() }}
@@ -2231,6 +2230,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
               onWelcomeImageUpload={handleWelcomeImageUpload}
               onRemoveWelcomeImage={handleRemoveWelcomeImage}
               isUploadingImage={isUploadingImage}
+              logicFocus={activeTab === 'logic'}
             />
           </ErrorBoundary>
         </aside>

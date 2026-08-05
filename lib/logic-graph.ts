@@ -25,6 +25,8 @@ export type LogicNodeData = {
   questionId?: string
   title: string
   typeLabel: string
+  /** Posição da pergunta na sequência (1-based) — bate com a lista da aba Editar. */
+  number?: number
   conditionLabel?: string
   pixelEvents: string[]
   formEvent?: string
@@ -176,7 +178,7 @@ export function buildLogicGraph(
             outHandles: outHandles.get(START) ?? [], warnings: [] },
   })
 
-  questions.forEach((q) => {
+  questions.forEach((q, i) => {
     const nodeWarnings: { severity: WarningSeverity; message: string }[] = []
     let conditionLabel: string | undefined
     const condGroup = normalizeConditional(q.conditionalLogic)
@@ -210,6 +212,7 @@ export function buildLogicGraph(
         questionId: q.id,
         title: q.title?.trim() || (q.type === 'content_block' ? 'Bloco de conteúdo' : 'Pergunta sem título'),
         typeLabel: TYPE_LABELS[q.type] ?? q.type,
+        number: i + 1,
         conditionLabel,
         pixelEvents: (q.pixelEvents ?? []).map(pixelEventLabel),
         direction,

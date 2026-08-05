@@ -587,6 +587,31 @@ export async function getEarliestPendingDueDate(subscriptionId: string): Promise
   }
 }
 
+/**
+ * Cobranças PENDENTES de uma assinatura, com id e vencimento (Fase 4 do painel:
+ * a caracterização de 05/08 provou que cobrança JÁ EMITIDA se move
+ * INDIVIDUALMENTE — a sub só controla a geração futura).
+ */
+export async function getPendingPaymentsBySubscription(subscriptionId: string): Promise<{ ok: boolean; payments: Array<{ id: string; dueDate: string; value: number }> }> {
+  try {
+    const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=20`)
+    const payments = (data?.data ?? []).map((p: { id: string; dueDate: string; value: number }) => ({ id: p.id, dueDate: p.dueDate, value: p.value }))
+    return { ok: true, payments }
+  } catch (err) {
+    logWarn('[asaas] getPendingPaymentsBySubscription falhou', { subscriptionId, err: String(err) })
+    return { ok: false, payments: [] }
+  }
+}
+
+/** Move o vencimento de UMA cobrança emitida (a alavanca certa — caracterização 05/08). */
+export async function updatePaymentDueDate(paymentId: string, dueDate: string): Promise<{ id: string; dueDate: string }> {
+  const data = await asaasFetch(`/payments/${paymentId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ dueDate }),
+  })
+  return { id: data.id ?? paymentId, dueDate: data.dueDate ?? dueDate }
+}
+
 export async function alignPendingPaymentsDueDate(subscriptionId: string, dueDate: string): Promise<{ moved: number; failed: number }> {
   // FASE 1 — COLETA todos os IDs pendentes desalinhados SEM mutar (pagina estável; mutar durante a
   // paginação por offset faria a próxima página pular pendentes, se a API ordenar por dueDate).

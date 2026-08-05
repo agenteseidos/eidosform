@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PLAN_ORDER, PlanId, normalizePlan } from '@/lib/plans'
 import { getAdminSupabase, requireAdmin } from '@/lib/admin-auth'
 import { PLANS, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
-import { cancelSubscription } from '@/lib/asaas'
+import { cancelSubscription, updateSubscription, getPendingPaymentsBySubscription, updatePaymentDueDate, hasConfirmedPaymentForSubscription } from '@/lib/asaas'
 import { expiryFromNextDueDate } from '@/lib/billing-activation'
 import { recordAdminAction } from '@/lib/admin-journal'
+import { sendAccessUpdated, sendPlanActivated, sendPlanChanged, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError, logWarn } from '@/lib/logger'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
-import { notifyPlanoAlterado, notifyAssinaturaCancelada, notifyAcessoAtualizado, planLabel, brDate } from '@/lib/whatsapp-confirmations'
+import { notifyPlanoAlterado, notifyPlanoAtivado, notifyAssinaturaCancelada, notifyAcessoAtualizado, planLabel, brDate } from '@/lib/whatsapp-confirmations'
 
 /**
  * PATCH /api/admin/users/[id]/plan — plano e expiração pelo painel admin.
@@ -41,6 +42,13 @@ type ExpiryParse =
   | { ok: true; value: string | null | undefined }
   | { ok: false; error: string }
 
+/** YYYY-MM-DD + n dias (aritmética de calendário pura — sem fuso). */
+function addDaysToDay(day: string, days: number): string {
+  const d = new Date(`${day}T12:00:00.000Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
 /** expiresOn 'YYYY-MM-DD' (preferido, fim do dia BRT) ou expiresAt ISO (legado). */
 function parseExpiry(body: { expiresOn?: unknown; expiresAt?: unknown }): ExpiryParse {
   if (body.expiresOn !== undefined) {
@@ -64,11 +72,12 @@ function parseExpiry(body: { expiresOn?: unknown; expiresAt?: unknown }): Expiry
 }
 
 const PROFILE_COLS =
-  'id, email, plan, plan_cycle, plan_status, plan_expires_at, asaas_subscription_id, lifetime_access, responses_used, responses_limit'
+  'id, email, full_name, plan, plan_cycle, plan_status, plan_expires_at, asaas_subscription_id, lifetime_access, responses_used, responses_limit'
 
 type ProfileRow = {
   id: string
   email: string | null
+  full_name: string | null
   plan: string | null
   plan_cycle: string | null
   plan_status: string | null
@@ -175,14 +184,6 @@ export async function PATCH(
           { status: 400 }
         )
       }
-      // Sincronização com a cobrança chega na Fase 4. Até lá, mover só a data
-      // local de quem tem sub faz o painel prometer um prazo que o Asaas ignora.
-      if (currentSub) {
-        return NextResponse.json(
-          { error: 'Este usuário tem assinatura ativa no Asaas. Ajustar a data local NÃO move a cobrança — a sincronização com o gateway chega na próxima fase do painel. Por ora, ajuste de data só para concessões manuais (sem assinatura).' },
-          { status: 409 }
-        )
-      }
       if (expiryParsed.value === undefined) {
         return NextResponse.json({ error: 'Informe a nova data de expiração.' }, { status: 400 })
       }
@@ -193,23 +194,150 @@ export async function PATCH(
         )
       }
 
-      // SÓ a data. Nada de cota, período, alerta, status ou forms (bug A1).
+      // ── FASE 4 (mesa 2026-08-03; caracterização com sub REAL em 05/08): ajuste
+      // SINCRONIZADO com o Asaas. Regra de ouro MEDIDA: cobrança já emitida
+      // move-se INDIVIDUALMENTE (PUT no payment); a sub controla só a geração
+      // FUTURA (nextDueDate = alvo + 1 ciclo); NUNCA alignPendingPaymentsDueDate
+      // em bloco. `canceling` = sub já cancelada no gateway → ajuste é LOCAL.
+      const needsSync = Boolean(currentSub) && currentProfile.plan_status !== 'canceling'
+      let chargeMoved: { paymentId: string; from: string; to: string } | null = null
+
+      if (needsSync) {
+        // Anual: comportamento do gateway não caracterizado (matriz 05/08 só mensal).
+        if ((currentProfile.plan_cycle ?? 'MONTHLY') !== 'MONTHLY') {
+          return NextResponse.json(
+            { error: 'Assinatura ANUAL: o ajuste sincronizado ainda não foi caracterizado com o gateway. Por ora, só assinaturas mensais.' },
+            { status: 409 }
+          )
+        }
+        const targetDay = String(body.expiresOn) // YYYY-MM-DD validado no parseExpiry
+        const subNextDue = addDaysToDay(targetDay, 30) // geração futura = alvo + 1 ciclo nominal
+
+        // Journal DURÁVEL: estado 'requested' ANTES de tocar o gateway — se o
+        // processo morrer no meio, a trilha existe e aponta reconciliação.
+        await recordAdminAction({
+          actorId: auth.user.id, actorEmail: auth.user.email ?? '',
+          targetUserId: id, targetEmail: currentProfile.email,
+          action: 'expiry_adjust_sync', reason, state: 'requested', before,
+          after: { target_day: targetDay, sub_next_due: subNextDue },
+          subscriptionId: currentSub,
+        })
+
+        const pend = await getPendingPaymentsBySubscription(currentSub!)
+        if (!pend.ok) {
+          return NextResponse.json(
+            { error: 'Não foi possível consultar as cobranças no Asaas agora. Nada foi alterado — tente novamente.' },
+            { status: 503 }
+          )
+        }
+        const charge = pend.payments.sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null
+        if (!charge) {
+          // Sem pendente: ou o período já foi CONFIRMADO (mover seria retroativo —
+          // rejeita, ajuste só após a renovação emitir a próxima) ou não há nada a mover.
+          const conf = await hasConfirmedPaymentForSubscription(currentSub!)
+          const motivo = conf.confirmed
+            ? 'A cobrança do período já está CONFIRMADA — ajuste retroativo é proibido. Faça o ajuste após a próxima cobrança ser emitida.'
+            : 'Nenhuma cobrança pendente encontrada na assinatura — nada a sincronizar. Verifique a assinatura no Asaas.'
+          await recordAdminAction({
+            actorId: auth.user.id, actorEmail: auth.user.email ?? '',
+            targetUserId: id, targetEmail: currentProfile.email,
+            action: 'expiry_adjust_sync', reason, state: 'failed', before,
+            after: { target_day: targetDay }, subscriptionId: currentSub,
+            error: `rejeitado: ${motivo.slice(0, 180)}`,
+          })
+          return NextResponse.json({ error: motivo }, { status: 409 })
+        }
+
+        // Provider passo 1: move a COBRANÇA emitida. Falhou → nada mudou (fail-closed).
+        try {
+          await updatePaymentDueDate(charge.id, targetDay)
+        } catch (err) {
+          logError('[admin/plan] Fase 4: mover cobrança falhou — nada alterado', err, { userId: id, paymentId: charge.id })
+          await recordAdminAction({
+            actorId: auth.user.id, actorEmail: auth.user.email ?? '',
+            targetUserId: id, targetEmail: currentProfile.email,
+            action: 'expiry_adjust_sync', reason, state: 'failed', before,
+            after: { target_day: targetDay }, subscriptionId: currentSub,
+            error: String(err instanceof Error ? err.message : err).slice(0, 200),
+          })
+          return NextResponse.json(
+            { error: 'Falha ao mover a cobrança no Asaas. Nada foi alterado — tente novamente.' },
+            { status: 502 }
+          )
+        }
+        chargeMoved = { paymentId: charge.id, from: charge.dueDate, to: targetDay }
+
+        // Provider passo 2: geração futura da sub. Falhou → cobrança JÁ moveu ⇒
+        // reconciliação obrigatória (nunca silêncio em efeito externo parcial).
+        try {
+          await updateSubscription(currentSub!, { nextDueDate: subNextDue })
+        } catch (err) {
+          logError('[admin/plan] Fase 4: cobrança movida mas sub NÃO — reconciliar', err, { userId: id, sub: currentSub })
+          await recordAdminAction({
+            actorId: auth.user.id, actorEmail: auth.user.email ?? '',
+            targetUserId: id, targetEmail: currentProfile.email,
+            action: 'expiry_adjust_sync', reason, state: 'reconcile_required', before,
+            after: { target_day: targetDay, charge_moved: chargeMoved, sub_next_due_pending: subNextDue },
+            subscriptionId: currentSub,
+            error: `sub update failed: ${String(err instanceof Error ? err.message : err).slice(0, 180)}`,
+          })
+          void sendBillingOpsAlert({
+            subject: 'Fase 4: cobrança movida mas nextDueDate da sub NÃO — reconciliar MANUALMENTE',
+            lines: { userId: id, sub: currentSub, paymentId: charge.id, movedTo: targetDay, subShouldBe: subNextDue },
+          }).catch(() => {})
+          return NextResponse.json(
+            { error: `A cobrança foi movida para ${brDate(expiryParsed.value)} mas a assinatura NÃO acompanhou — registrado para reconciliação. NÃO repita a ação; verifique o Asaas.` },
+            { status: 502 }
+          )
+        }
+      }
+
+      // Escrita local (data). Com sync feito, falha aqui = reconciliação (gateway já moveu).
       const { error } = await supabase
         .from('profiles')
         .update({ plan_expires_at: expiryParsed.value })
         .eq('id', id)
 
       if (error) {
+        if (needsSync) {
+          await recordAdminAction({
+            actorId: auth.user.id, actorEmail: auth.user.email ?? '',
+            targetUserId: id, targetEmail: currentProfile.email,
+            action: 'expiry_adjust_sync', reason, state: 'reconcile_required', before,
+            after: { charge_moved: chargeMoved, local_write: 'failed' }, subscriptionId: currentSub,
+            error: 'local write failed após mover gateway',
+          })
+          void sendBillingOpsAlert({
+            subject: 'Fase 4: gateway movido mas perfil local NÃO — reconciliar',
+            lines: { userId: id, sub: currentSub, chargeMoved: JSON.stringify(chargeMoved) },
+          }).catch(() => {})
+          return NextResponse.json(
+            { error: 'O Asaas foi atualizado, mas o perfil local não — registrado para reconciliação. NÃO repita a ação.' },
+            { status: 500 }
+          )
+        }
         return NextResponse.json({ error: 'Failed to update expiration' }, { status: 500 })
       }
 
       const { data: after } = await supabase
         .from('profiles').select(PROFILE_COLS).eq('id', id).single<ProfileRow>()
 
-      // Confirmação ao cliente (decisão Sidney 30/07): ligada por padrão.
+      // Confirmação ao cliente (decisão Sidney 30/07 + premissa P1 da mesa:
+      // e-mail e WhatsApp são ESPELHOS, mesma checkbox).
       let notified: { sent: boolean; skipped?: string } = { sent: false, skipped: 'not_requested' }
+      let emailNotified = false
       if (notifyCustomer) {
-        notified = await notifyAcessoAtualizado(id, { validUntil: brDate(expiryParsed.value) ?? undefined })
+        const validade = brDate(expiryParsed.value) ?? 'a data definida'
+        notified = await notifyAcessoAtualizado(id, { validUntil: validade })
+        if (currentProfile.email) {
+          const r = await sendAccessUpdated({
+            to: currentProfile.email,
+            name: (currentProfile.full_name ?? '').split(/\s+/)[0] || 'tudo bem',
+            plan: planLabel(currentPlan, currentProfile.plan_cycle),
+            validUntil: validade,
+          }).catch(() => ({ error: 'send failed' }))
+          emailNotified = !('error' in (r ?? {})) || !(r as { error?: string }).error
+        }
       }
 
       await recordAdminAction({
@@ -217,17 +345,26 @@ export async function PATCH(
         actorEmail: auth.user.email ?? '',
         targetUserId: id,
         targetEmail: currentProfile.email,
-        action: 'expiry_adjust',
+        action: needsSync ? 'expiry_adjust_sync' : 'expiry_adjust',
         reason,
+        state: 'completed',
         before,
         after: {
           plan_expires_at: after?.plan_expires_at ?? expiryParsed.value,
           customer_notified: notified.sent,
+          customer_notified_email: emailNotified,
+          ...(chargeMoved ? { charge_moved: chargeMoved } : {}),
           ...(notified.skipped ? { notify_skipped: notified.skipped } : {}),
         },
+        subscriptionId: currentSub,
       })
 
-      return NextResponse.json({ success: true, user: after ? toApiUser(after) : null, warnings })
+      return NextResponse.json({
+        success: true,
+        user: after ? toApiUser(after) : null,
+        warnings,
+        ...(chargeMoved ? { chargeMoved: { from: brDate(`${chargeMoved.from}T12:00:00Z`), to: brDate(`${chargeMoved.to}T12:00:00Z`) } } : {}),
+      })
     }
 
     // ── Caminho 2: troca de plano ────────────────────────────────────────────
@@ -344,20 +481,38 @@ export async function PATCH(
     //  → grant pago     = plano_alterado, com "Próxima cobrança" preenchida
     //                     como cortesia (grants não têm cobrança; quem tem sub
     //                     nem chega aqui — 409 acima).
+    // Mapa ação→confirmação (decisão Sidney 30/07 + premissa P1 da mesa 03/08:
+    // e-mail SEMPRE espelha o WhatsApp, mesma checkbox):
+    //  → free            = assinatura_cancelada (+ e-mail)
+    //  → grant NOVO      = plano_ativado (+ e-mail) — conta vinha do free
+    //  → troca de grant  = plano_alterado (+ e-mail)
     let notified: { sent: boolean; skipped?: string } = { sent: false, skipped: 'not_requested' }
+    let emailNotified = false
     if (notifyCustomer) {
       const fromLabel = planLabel(currentPlan, currentProfile.plan_cycle)
+      const toLabel = planLabel(newPlan, null)
+      const firstName = (currentProfile.full_name ?? '').split(/\s+/)[0] || 'tudo bem'
+      const email = currentProfile.email
+      const markEmail = (r: unknown) => { emailNotified = !(r && typeof r === 'object' && 'error' in r && (r as { error?: string }).error) }
       if (newPlan === 'free') {
         notified = await notifyAssinaturaCancelada(id, {
           planLabel: fromLabel,
           accessUntil: 'hoje',
         })
+        if (email) markEmail(await sendPlanCancelled({ to: email, name: firstName, plan: fromLabel }).catch(() => ({ error: 'send failed' })))
+      } else if (currentPlan === 'free') {
+        const validade = brDate(expiryParsed.value as string) ?? 'a data combinada'
+        notified = await notifyPlanoAtivado(id, {
+          chargeInfo: `nenhuma — cortesia válida até ${validade}`,
+        })
+        if (email) markEmail(await sendPlanActivated({ to: email, name: firstName, plan: toLabel }).catch(() => ({ error: 'send failed' })))
       } else {
         const validade = brDate(expiryParsed.value as string) ?? 'a data combinada'
         notified = await notifyPlanoAlterado(id, {
           fromLabel,
           chargeInfo: `nenhuma — cortesia válida até ${validade}`,
         })
+        if (email) markEmail(await sendPlanChanged({ to: email, name: firstName, fromPlan: fromLabel, toPlan: toLabel, nextCharge: `nenhuma — cortesia válida até ${validade}` }).catch(() => ({ error: 'send failed' })))
       }
     }
 
@@ -373,6 +528,7 @@ export async function PATCH(
         ? {
             plan: after.plan, plan_status: after.plan_status, plan_expires_at: after.plan_expires_at,
             customer_notified: notified.sent,
+            customer_notified_email: emailNotified,
             ...(notified.skipped ? { notify_skipped: notified.skipped } : {}),
           }
         : null,

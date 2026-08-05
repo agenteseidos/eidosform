@@ -13,7 +13,20 @@ vi.mock('@/lib/admin-auth', () => ({
   requireAdmin: vi.fn(),
   getAdminSupabase: vi.fn(),
 }))
-vi.mock('@/lib/asaas', () => ({ cancelSubscription: vi.fn() }))
+vi.mock('@/lib/asaas', () => ({
+  cancelSubscription: vi.fn(),
+  updateSubscription: vi.fn(async () => ({ id: 'sub_1', nextDueDate: '2026-10-30' })),
+  getPendingPaymentsBySubscription: vi.fn(async () => ({ ok: true, payments: [{ id: 'pay_pend', dueDate: '2026-09-04', value: 127 }] })),
+  updatePaymentDueDate: vi.fn(async () => ({ id: 'pay_pend', dueDate: '2026-09-30' })),
+  hasConfirmedPaymentForSubscription: vi.fn(async () => ({ confirmed: false, ok: true })),
+}))
+vi.mock('@/lib/resend', () => ({
+  sendAccessUpdated: vi.fn(async () => ({ id: 'em1' })),
+  sendPlanActivated: vi.fn(async () => ({ id: 'em2' })),
+  sendPlanChanged: vi.fn(async () => ({ id: 'em3' })),
+  sendPlanCancelled: vi.fn(async () => ({ id: 'em4' })),
+  sendBillingOpsAlert: vi.fn(async () => ({ id: 'em5' })),
+}))
 vi.mock('@/lib/plan-limits', () => ({
   PLANS: {
     free: { maxResponses: 100 },
@@ -27,6 +40,7 @@ vi.mock('@/lib/plan-limits', () => ({
 vi.mock('@/lib/admin-journal', () => ({ recordAdminAction: vi.fn(async () => undefined) }))
 vi.mock('@/lib/whatsapp-confirmations', () => ({
   notifyPlanoAlterado: vi.fn(async () => ({ sent: true })),
+  notifyPlanoAtivado: vi.fn(async () => ({ sent: true })),
   notifyAssinaturaCancelada: vi.fn(async () => ({ sent: true })),
   notifyAcessoAtualizado: vi.fn(async () => ({ sent: true })),
   planLabel: (p: string) => p,
@@ -154,16 +168,66 @@ describe('ajuste de data SEM troca de plano (bug A1 + reativação acidental)', 
     expect(updates[0].plan_expires_at).toBe(new Date('2026-09-30T23:59:59-03:00').toISOString())
   })
 
-  it('bloqueia ajuste de data de quem TEM sub Asaas (409, até a Fase 4)', async () => {
-    const { client, updates } = makeSupabase(profileFixture({ asaas_subscription_id: 'sub_123' }))
+  it('FASE 4: sub MENSAL → ajuste SINCRONIZADO (move cobrança emitida + sub + local)', async () => {
+    const { updatePaymentDueDate, updateSubscription } = await import('@/lib/asaas')
+    const { client, updates } = makeSupabase(profileFixture({ asaas_subscription_id: 'sub_123', plan_cycle: 'MONTHLY' }))
+    mockGetAdminSupabase.mockReturnValue(client as never)
+    const res = await PATCH(
+      makeReq({ plan: 'starter', expiresOn: FUTURE, reason: 'cortesia de 15 dias' }),
+      params
+    )
+    expect(res.status).toBe(200)
+    // Regra de ouro da caracterização 05/08: cobrança emitida move INDIVIDUALMENTE...
+    expect(vi.mocked(updatePaymentDueDate)).toHaveBeenCalledWith('pay_pend', FUTURE)
+    // ...e a sub controla só a geração FUTURA (alvo + 1 ciclo).
+    expect(vi.mocked(updateSubscription)).toHaveBeenCalledTimes(1)
+    expect(updates.length).toBeGreaterThan(0) // escrita local aconteceu
+    // Journal durável: requested ANTES do gateway + completed no fim.
+    const states = mockRecordAdminAction.mock.calls.map((c) => c[0].state)
+    expect(states).toContain('requested')
+    expect(states).toContain('completed')
+  })
+
+  it('FASE 4: sub ANUAL segue 409 (gateway não caracterizado)', async () => {
+    const { client, updates } = makeSupabase(profileFixture({ asaas_subscription_id: 'sub_123', plan_cycle: 'YEARLY' }))
     mockGetAdminSupabase.mockReturnValue(client as never)
     const res = await PATCH(
       makeReq({ plan: 'starter', expiresOn: FUTURE, reason: 'tentativa de cortesia' }),
       params
     )
     expect(res.status).toBe(409)
-    expect((await res.json()).error).toMatch(/NÃO move a cobrança/i)
+    expect((await res.json()).error).toMatch(/anual/i)
     expect(updates).toHaveLength(0)
+  })
+
+  it('FASE 4: cobrança do período já CONFIRMADA e sem pendente → rejeita retroativo (409)', async () => {
+    const { getPendingPaymentsBySubscription, hasConfirmedPaymentForSubscription } = await import('@/lib/asaas')
+    vi.mocked(getPendingPaymentsBySubscription).mockResolvedValueOnce({ ok: true, payments: [] })
+    vi.mocked(hasConfirmedPaymentForSubscription).mockResolvedValueOnce({ confirmed: true, ok: true })
+    const { client, updates } = makeSupabase(profileFixture({ asaas_subscription_id: 'sub_123', plan_cycle: 'MONTHLY' }))
+    mockGetAdminSupabase.mockReturnValue(client as never)
+    const res = await PATCH(
+      makeReq({ plan: 'starter', expiresOn: FUTURE, reason: 'tentativa retroativa' }),
+      params
+    )
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/CONFIRMADA/i)
+    expect(updates).toHaveLength(0)
+  })
+
+  it('FASE 4: cobrança moveu mas sub falhou → reconcile_required + 502 (nunca silêncio)', async () => {
+    const { updateSubscription } = await import('@/lib/asaas')
+    vi.mocked(updateSubscription).mockRejectedValueOnce(new Error('Asaas API error 500'))
+    const { client, updates } = makeSupabase(profileFixture({ asaas_subscription_id: 'sub_123', plan_cycle: 'MONTHLY' }))
+    mockGetAdminSupabase.mockReturnValue(client as never)
+    const res = await PATCH(
+      makeReq({ plan: 'starter', expiresOn: FUTURE, reason: 'cortesia' }),
+      params
+    )
+    expect(res.status).toBe(502)
+    const states = mockRecordAdminAction.mock.calls.map((c) => c[0].state)
+    expect(states).toContain('reconcile_required')
+    expect(updates).toHaveLength(0) // local NÃO escrito após falha parcial
   })
 
   it('rejeita remover a expiração de plano pago (grant eterno proibido)', async () => {
@@ -285,14 +349,26 @@ describe('confirmação ao cliente (checkbox Avisar)', () => {
     expect((entry.after as Record<string, unknown>).customer_notified).toBe(false)
   })
 
-  it('grant pago novo notifica plano_alterado com cortesia (sem cobrança)', async () => {
-    const { notifyPlanoAlterado } = await import('@/lib/whatsapp-confirmations')
+  it('grant pago NOVO (free→pago) notifica plano_ATIVADO + e-mail espelho (mapa 30/07 + P1)', async () => {
+    const { notifyPlanoAtivado } = await import('@/lib/whatsapp-confirmations')
+    const { sendPlanActivated } = await import('@/lib/resend')
     const { client } = makeSupabase(profileFixture({ plan: 'free', plan_expires_at: null }))
     mockGetAdminSupabase.mockReturnValue(client as never)
     await PATCH(makeReq({ plan: 'plus', expiresOn: FUTURE, reason: 'cortesia de lançamento' }), params)
-    expect(vi.mocked(notifyPlanoAlterado)).toHaveBeenCalledTimes(1)
-    const opts = vi.mocked(notifyPlanoAlterado).mock.calls[0][1]
+    expect(vi.mocked(notifyPlanoAtivado)).toHaveBeenCalledTimes(1)
+    const opts = vi.mocked(notifyPlanoAtivado).mock.calls[0][1] as { chargeInfo?: string }
     expect(opts.chargeInfo).toMatch(/cortesia/i)
+    expect(vi.mocked(sendPlanActivated)).toHaveBeenCalledTimes(1)
+  })
+
+  it('troca de GRANT (pago→pago sem sub) notifica plano_alterado + e-mail espelho', async () => {
+    const { notifyPlanoAlterado } = await import('@/lib/whatsapp-confirmations')
+    const { sendPlanChanged } = await import('@/lib/resend')
+    const { client } = makeSupabase(profileFixture({ plan: 'starter', asaas_subscription_id: null }))
+    mockGetAdminSupabase.mockReturnValue(client as never)
+    await PATCH(makeReq({ plan: 'plus', expiresOn: FUTURE, reason: 'upgrade de cortesia' }), params)
+    expect(vi.mocked(notifyPlanoAlterado)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(sendPlanChanged)).toHaveBeenCalledTimes(1)
   })
 
   it('mover para free notifica assinatura_cancelada com acesso até hoje', async () => {

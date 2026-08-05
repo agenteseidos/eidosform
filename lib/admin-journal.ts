@@ -19,9 +19,9 @@ export type AdminActionEntry = {
   actorEmail: string
   targetUserId: string
   targetEmail?: string | null
-  action: 'plan_change' | 'expiry_adjust' | 'account_delete'
+  action: 'plan_change' | 'expiry_adjust' | 'expiry_adjust_sync' | 'account_delete'
   reason: string
-  state?: 'completed' | 'failed' | 'reconcile_required'
+  state?: 'completed' | 'failed' | 'reconcile_required' | 'requested'
   before?: Record<string, unknown> | null
   after?: Record<string, unknown> | null
   subscriptionId?: string | null

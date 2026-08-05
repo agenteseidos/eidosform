@@ -290,6 +290,38 @@ export async function sendPlanChanged(params: {
   })
 }
 
+/**
+ * Acesso atualizado pelo ADMIN (cortesia/ajuste de data) — espelho do WhatsApp
+ * `acesso_atualizado` (premissa P1 da mesa 2026-08-03; Fase 4 do painel).
+ */
+export async function sendAccessUpdated(params: {
+  to: string
+  name: string
+  plan: string
+  validUntil: string
+  idempotencyKey?: string
+}) {
+  const { to, name, plan, validUntil, idempotencyKey } = params
+  const safeName = escapeHtml(name)
+  return sendEmailWithRetry({
+    to,
+    subject: `Seu acesso ao ${plan} foi atualizado`,
+    idempotencyKey,
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#6366f1">Atualização da sua conta</h2>
+        <p>Olá, <strong>${safeName}</strong>!</p>
+        <p>Seu acesso ao plano <strong>${escapeHtml(plan)}</strong> agora é válido até <strong>${escapeHtml(validUntil)}</strong>.</p>
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/login"
+           style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none">
+          Acessar minha conta
+        </a>
+        <p style="color:#888;font-size:12px;margin-top:24px">EidosForm — Formulários inteligentes</p>
+      </div>
+    `,
+  })
+}
+
 /** Webhook do formulário falhando após 3+ falhas em 7 dias (J1) */
 export async function sendWebhookFailureAlert(params: {
   to: string

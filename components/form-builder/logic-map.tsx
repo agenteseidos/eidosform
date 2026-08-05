@@ -305,7 +305,6 @@ export function LogicMap({
 
   const errors = graph.warnings.filter(w => w.severity === 'error')
   const warns = graph.warnings.filter(w => w.severity === 'warning')
-  const hasBranching = graph.edges.some(e => e.kind !== 'sequential')
   const jumpQuestion = jumpEditorFor ? questions.find(q => q.id === jumpEditorFor) : null
   const pixelQuestion = pixelEditorFor ? questions.find(q => q.id === pixelEditorFor) : null
 
@@ -396,20 +395,6 @@ export function LogicMap({
                   </div>
                 </div>
               </Panel>
-              {/* Formulário linear: explica para que o mapa serve */}
-              {!hasBranching && (
-                <Panel position="top-center">
-                  <div className="max-w-sm bg-violet-50/95 border border-violet-200 rounded-xl px-4 py-3 shadow-sm text-xs text-violet-900">
-                    <p className="font-semibold mb-1 flex items-center gap-1.5">
-                      <GitFork className="w-3.5 h-3.5" /> Seu formulário segue um caminho único
-                    </p>
-                    <p className="leading-relaxed">
-                      Clique em <b>“+ Salto”</b> numa pergunta para criar ramificações — por exemplo,
-                      quem responde “Não” pode pular direto para o fim.
-                    </p>
-                  </div>
-                </Panel>
-              )}
             </ReactFlow>
           </LogicMapContext.Provider>
         )}

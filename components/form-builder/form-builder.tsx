@@ -524,6 +524,10 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
     hide_branding: form.hide_branding ?? false,
     notify_email_enabled: form.notify_email_enabled ?? false,
     notify_email: form.notify_email || null,
+    // Toggle do DONO: precisa viajar no autosave — sem esta linha o PATCH nunca
+    // enviava o campo e o ECO do servidor devolvia true por cima do clique
+    // (bug pego pelo Sidney no teste E2E, 05/08).
+    notify_owner_enabled: form.notify_owner_enabled ?? true,
     notify_whatsapp_enabled: form.notify_whatsapp_enabled ?? false,
     notify_whatsapp_number: form.notify_whatsapp_number || null,
     google_sheets_enabled: form.google_sheets_enabled ?? false,

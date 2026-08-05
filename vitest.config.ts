@@ -10,7 +10,6 @@ export default defineConfig({
       // compatíveis com o runner do vitest. (lib/proration.test.ts foi convertido p/ Vitest.)
       'lib/plan-change.test.ts',
       'lib/billing-activation.test.ts',
-      'lib/asaas-external-ref.test.ts',
       // **/node_modules: o default 'node_modules/**' só cobre a raiz — services/whatsapp/
       // node_modules trazia ~580 arquivos de teste de dependências pro bare `vitest run`.
       '**/node_modules/**',

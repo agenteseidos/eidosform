@@ -133,29 +133,32 @@ export function buildExternalReference(profileId: string, plan?: string, cycle?:
 
 /**
  * externalReference do PAGAMENTO AVULSO de mudança de plano (redesenho cancelar+recriar,
- * 2026-06-10). O `kind:planchange` permite ao webhook distinguir este avulso de um pagamento
+ * 2026-06-10). O marcador de kind permite ao webhook distinguir este avulso de um pagamento
  * de assinatura — é o gatilho do BACKSTOP que completa a troca se o fluxo síncrono morrer
  * entre cobrar e recriar a sub. Pagamentos criados via API persistem o externalReference
  * (ao contrário do hosted checkout — smoke 2026-06-08).
- */
-/**
+ *
+ * ⚠️ Chaves `p`/`c`/`k`/`a` são NAMESPACE RESERVADO deste formato (parecer Codex 05/08):
+ * nenhum outro produtor de externalReference deve reutilizá-las.
+ *
  * 🔴 ACHADO #6 REAL do teste de compra (05/08): o formato longo
  * `profile:<uuid>|plan:X|cycle:Y|kind:planchange|attempt:<uuid36>` chegava a
  * ~130 chars e o Asaas RECUSAVA com `invalid_externalReference` (400) — todo
  * upgrade pago falhava sem criar cobrança. O maior ref comprovadamente aceito
  * em produção tinha 84 chars (junho, sem o sufixo attempt do P0-A).
  *
- * Formato COMPACTO: `p:<uuid>|plan:<plan>|c:M|k:pc|a:<hex8>` — pior caso
- * (professional) = 76 chars, abaixo do teto provado. O attempt entra TRUNCADO
- * em 8 hex do UUID da tentativa: continua determinístico por tentativa (o
- * mesmo attemptId re-gera o MESMO ref no retry — dedupe P0-A preservado) e a
- * chance de colisão entre tentativas do mesmo profile+plan+cycle é ~4bi:1.
- * O parser abaixo lê AMBOS os formatos (pagamentos de junho seguem legíveis).
+ * Formato COMPACTO: `p:<uuid>|plan:<plan>|c:M|k:pc|a:<hex12>` — pior caso
+ * (professional) = 80 chars, abaixo do teto provado (100 aceito na sonda de
+ * 05/08; 84 = maior aceito historicamente). O attempt entra TRUNCADO em
+ * 12 hex do UUID da tentativa (parecer Codex: em money-path, 12 > 8 — colisão
+ * de aniversário ~1:8,6k em mil tentativas com 8 vira desprezível com 12):
+ * determinístico por tentativa (mesmo attemptId re-gera o MESMO ref no retry —
+ * dedupe P0-A preservado). O parser lê AMBOS os formatos (junho segue legível).
  */
 export function buildPlanChangeReference(profileId: string, plan: string, cycle: string, attemptId?: string): string {
   const c = cycle === 'YEARLY' ? 'Y' : 'M'
   let ref = `p:${profileId}|plan:${plan}|c:${c}|k:pc`
-  if (attemptId) ref += `|a:${attemptId.replace(/-/g, '').slice(0, 8)}`
+  if (attemptId) ref += `|a:${attemptId.replace(/-/g, '').slice(0, 12)}`
   return ref
 }
 
@@ -193,7 +196,10 @@ export function parseExternalReference(ref?: string | null): { profileId: string
 export function attemptMatches(refAttempt: string | null | undefined, fullAttemptId: string | null | undefined): boolean {
   if (!refAttempt || !fullAttemptId) return false
   if (refAttempt === fullAttemptId) return true // formato legado (UUID completo)
-  return fullAttemptId.replace(/-/g, '').slice(0, 8) === refAttempt
+  // Compacto: prefixo hex do UUID sem hífens. Aceita ≥8 (histórico 8, atual 12) —
+  // nunca menos, senão um prefixo curto casaria com qualquer tentativa.
+  if (refAttempt.length < 8) return false
+  return fullAttemptId.replace(/-/g, '').startsWith(refAttempt)
 }
 
 /** Cria checkout hospedado — retorna URL para redirecionamento */

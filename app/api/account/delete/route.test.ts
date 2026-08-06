@@ -13,6 +13,13 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/asaas', () => ({ cancelSubscription: vi.fn() }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn(), log: vi.fn(), logWarn: vi.fn() }))
+// O rate limit (3 tentativas/15min por usuário) NÃO estava mockado: usava a implementação real,
+// cujo contador acumulava entre os testes deste arquivo. Isso tornava a suíte dependente da ORDEM
+// e do NÚMERO de casos — a partir do 4º teste tudo devolvia 429. Mockado como "sempre permite";
+// o comportamento do limitador é coberto pelos testes de `lib/rate-limit`. (Auditoria 2026-08.)
+vi.mock('@/lib/rate-limit', () => ({
+  checkRateLimitAsync: vi.fn(async () => ({ allowed: true, remaining: 3 })),
+}))
 
 import { POST } from './route'
 import { createClient } from '@/lib/supabase/server'
@@ -33,9 +40,12 @@ type Profile = {
 function makeSupabase({
   user = { id: 'user-1' } as { id: string } | null,
   profile = null as Profile | null,
+  profileError = null as unknown,
 } = {}) {
-  const single = vi.fn().mockResolvedValue({ data: profile })
-  const eq = vi.fn().mockReturnValue({ single })
+  // `maybeSingle` (não `single`): perfil ausente deve devolver data:null SEM erro — senão o
+  // fail-closed da leitura (lote 1D) bloquearia a deleção de quem nunca teve assinatura.
+  const maybeSingle = vi.fn().mockResolvedValue({ data: profile, error: profileError })
+  const eq = vi.fn().mockReturnValue({ maybeSingle })
   const select = vi.fn().mockReturnValue({ eq })
   const from = vi.fn().mockReturnValue({ select })
 
@@ -113,6 +123,42 @@ describe('POST /api/account/delete', () => {
       asaasError,
       expect.objectContaining({ subscriptionId: 'sub_123' }),
     )
+  })
+
+  it('FAIL-CLOSED NA LEITURA: erro ao ler o profile aborta a deleção (503, não deleta, não cancela)', async () => {
+    // Auditoria 2026-08, lote 1D. Antes o erro da leitura era descartado: `profile` ficava
+    // indefinido, o bloco de cancelamento era PULADO e a conta era deletada com a assinatura
+    // seguindo ACTIVE no Asaas — cobrando alguém que já não existe, sem estado p/ reconciliar.
+    const readError = { message: 'connection terminated', code: '57P01' }
+    const supabase = makeSupabase({
+      profile: { asaas_subscription_id: 'sub_123', plan_status: 'active' },
+      profileError: readError,
+    })
+    const adminSupabase = makeAdminSupabase()
+    mockCreateClient.mockResolvedValue(supabase as never)
+    mockCreateAdminClient.mockReturnValue(adminSupabase as never)
+
+    const res = await POST()
+
+    expect(res.status).toBe(503)
+    expect(adminSupabase._mocks.deleteUser).not.toHaveBeenCalled()
+    // Não pode nem tentar cancelar: não sabemos se há assinatura.
+    expect(mockCancelSubscription).not.toHaveBeenCalled()
+  })
+
+  it('perfil ausente (sem linha) NÃO bloqueia: nada a cancelar, deleta normalmente', async () => {
+    // Complemento do teste acima: `maybeSingle` devolve data:null SEM erro quando não há linha.
+    // Se usássemos `single` (que erra com PGRST116), o fail-closed barraria quem nunca assinou.
+    const supabase = makeSupabase({ profile: null })
+    const adminSupabase = makeAdminSupabase()
+    mockCreateClient.mockResolvedValue(supabase as never)
+    mockCreateAdminClient.mockReturnValue(adminSupabase as never)
+
+    const res = await POST()
+
+    expect(res.status).toBe(200)
+    expect(mockCancelSubscription).not.toHaveBeenCalled()
+    expect(adminSupabase._mocks.deleteUser).toHaveBeenCalled()
   })
 
   it('404 no Asaas (sub já removida) é idempotente — prossegue e deleta', async () => {

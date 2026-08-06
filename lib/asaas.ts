@@ -644,6 +644,32 @@ export async function getEarliestPendingDueDate(subscriptionId: string): Promise
  * a caracterização de 05/08 provou que cobrança JÁ EMITIDA se move
  * INDIVIDUALMENTE — a sub só controla a geração futura).
  */
+/**
+ * Esta assinatura tem cobrança VENCIDA (OVERDUE)? (auditoria 2026-08, lote 1D.)
+ *
+ * No Asaas o status da ASSINATURA é independente do status da COBRANÇA: um cartão recusado
+ * mantém a sub `ACTIVE` gerando faturas OVERDUE. Quem decide acesso olhando só `status==='ACTIVE'`
+ * concede acesso pago indefinidamente sem receita.
+ *
+ * `hasConfirmedPaymentForSubscription` NÃO serve aqui: ela acha qualquer pagamento confirmado,
+ * inclusive de ciclos antigos — um assinante veterano inadimplente passaria.
+ * `getPendingPaymentsBySubscription` também não: filtra `status=PENDING`, que exclui OVERDUE.
+ *
+ * `ok:false` = consulta falhou → o chamador deve ser CONSERVADOR (não derrubar pagante por
+ * falha de rede), seguindo o mesmo contrato dos helpers vizinhos.
+ */
+export async function hasOverduePaymentForSubscription(subscriptionId: string): Promise<{ overdue: boolean; oldestDueDate: string | null; ok: boolean }> {
+  try {
+    const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=OVERDUE&limit=20`)
+    const pays: Array<{ dueDate?: string }> = data?.data ?? []
+    const dates = pays.map((p) => p.dueDate).filter((d): d is string => typeof d === 'string' && d.length > 0).sort()
+    return { overdue: pays.length > 0, oldestDueDate: dates[0] ?? null, ok: true }
+  } catch (err) {
+    logError('[asaas] hasOverduePaymentForSubscription: consulta falhou (ok=false)', err, { subscriptionId })
+    return { overdue: false, oldestDueDate: null, ok: false }
+  }
+}
+
 export async function getPendingPaymentsBySubscription(subscriptionId: string): Promise<{ ok: boolean; payments: Array<{ id: string; dueDate: string; value: number }> }> {
   try {
     const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=20`)

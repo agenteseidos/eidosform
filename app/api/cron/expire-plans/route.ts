@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { getSubscription } from '@/lib/asaas'
+import { getSubscription, hasOverduePaymentForSubscription } from '@/lib/asaas'
 import { PLANS, handleDowngrade } from '@/lib/plan-limits'
 import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
 import { computeProrationBasisDays } from '@/lib/proration'
@@ -20,7 +20,25 @@ import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
  *    (nextDueDate real, fim-de-dia BRT; fallback now+ciclo). Não derruba pagante.
  *  - sub 404/não-ACTIVE, ou sem sub → REVERTE p/ free + handleDowngrade (pausa forms).
  *  - erro transitório ao consultar o Asaas → conservador: NÃO reverte agora (próximo tick).
+ *  - sub ACTIVE mas com cobrança OVERDUE → só estende se estiver DENTRO da carência; passou
+ *    de OVERDUE_GRACE_DAYS, REVERTE. (auditoria 2026-08, lote 1D.)
  */
+
+/**
+ * Dias de tolerância após o vencimento antes de rebaixar. Decisão do Sidney (06/08): 5 dias.
+ * Motivo: o Asaas retenta o cartão nos dias seguintes ao vencimento; derrubar no dia 1 pausaria
+ * os formulários de um cliente que ia pagar. Acima disso, é acesso pago sem receita.
+ */
+const OVERDUE_GRACE_DAYS = 5
+
+/** Dias inteiros decorridos desde `dateStr` (YYYY-MM-DD). `null` se a data for ilegível. */
+function diasDesde(dateStr: string | null): number | null {
+  if (!dateStr) return null
+  const t = Date.parse(`${dateStr}T00:00:00-03:00`)
+  if (Number.isNaN(t)) return null
+  return Math.floor((Date.now() - t) / 86_400_000)
+}
+
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   const auth = req.headers.get('authorization')
@@ -61,6 +79,50 @@ export async function GET(req: NextRequest) {
       try {
         const sub = (await getSubscription(p.asaas_subscription_id)) as { status?: string; nextDueDate?: string }
         if (String(sub?.status ?? '').toUpperCase() === 'ACTIVE') {
+          // PROVA DE PAGAMENTO antes de estender (auditoria 2026-08, lote 1D).
+          // No Asaas o status da SUB é independente do status da COBRANÇA: cartão recusado
+          // mantém `ACTIVE` emitindo faturas OVERDUE. Sem esta checagem, o período pago já
+          // terminou (a linha só chega aqui com plan_expires_at vencido) e mesmo assim o
+          // acesso era empurrado +1 ciclo A CADA EXECUÇÃO DIÁRIA — acesso pago vitalício
+          // sem receita. O cron irmão (reconcile-checkouts) já exigia prova de dinheiro.
+          const due = await hasOverduePaymentForSubscription(p.asaas_subscription_id)
+          if (!due.ok) {
+            // Consulta falhou → conservador: não estende E não derruba (mesma postura do
+            // catch de erro transitório abaixo). Reavalia no próximo tick.
+            shouldRevert = false
+            skipped++
+            logWarn('[cron/expire-plans] consulta de OVERDUE falhou — adia decisão', { profileId: p.id })
+            continue
+          }
+          if (due.overdue) {
+            // CARÊNCIA DE 5 DIAS (decisão Sidney, 06/08). O Asaas ainda retenta o cartão nos
+            // dias seguintes ao vencimento; derrubar no primeiro dia pausaria os formulários de
+            // um cliente que ia pagar. Dentro da carência: NÃO estende e NÃO derruba — fica
+            // parado até a fatura ser paga (aí volta ao ramo de renovação) ou a carência vencer.
+            // ⚠️ A carência é SILENCIOSA hoje: o cliente não é avisado do atraso nem do
+            // rebaixamento iminente. A régua de cobrança (e-mail + WhatsApp) está registrada em
+            // `docs/demandas-futuras.md` como D-01 — sem ela, o cliente descobre pelo produto.
+            const diasVencido = diasDesde(due.oldestDueDate)
+            if (diasVencido !== null && diasVencido < OVERDUE_GRACE_DAYS) {
+              shouldRevert = false
+              skipped++
+              logWarn('[cron/expire-plans] cobrança VENCIDA dentro da carência — aguarda', {
+                profileId: p.id, subscriptionId: p.asaas_subscription_id,
+                oldestDueDate: due.oldestDueDate, diasVencido, carenciaDias: OVERDUE_GRACE_DAYS,
+              })
+              continue
+            }
+            // Fora da carência (ou data de vencimento ilegível → trata como fora, conservador
+            // quanto à RECEITA: não conceder acesso indefinido por falta de dado).
+            // `shouldRevert` continua true → cai na reversão normal lá embaixo (que pausa os
+            // formulários primeiro e só então marca free). NÃO usar `throw` aqui: o catch
+            // abaixo trata exceção como erro TRANSITÓRIO e faria justamente o contrário,
+            // adiando a reversão para sempre.
+            logWarn('[cron/expire-plans] cobrança VENCIDA além da carência — rebaixa', {
+              profileId: p.id, subscriptionId: p.asaas_subscription_id,
+              oldestDueDate: due.oldestDueDate, diasVencido, carenciaDias: OVERDUE_GRACE_DAYS,
+            })
+          } else {
           // Renovação atrasada — estende em vez de derrubar o pagante. Recomputa TAMBÉM a
           // régua de valoração (§4.F): este é o fallback do webhook-fora-do-ar; sem recomputar,
           // o divisor VELHO persistiria e a distorção que o projeto mata reapareceria. Sem
@@ -78,6 +140,7 @@ export async function GET(req: NextRequest) {
           if (extErr) logError('[cron/expire-plans] falha ao estender', extErr, { profileId: p.id })
           else extended++
           shouldRevert = false
+          }
         }
         // status != ACTIVE → reverte abaixo
       } catch (err) {

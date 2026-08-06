@@ -23,11 +23,25 @@ export async function POST() {
     return NextResponse.json({ error: 'Muitas tentativas. Tente novamente mais tarde.' }, { status: 429 })
   }
 
-  const { data: profile } = await supabase
+  // FAIL-CLOSED TAMBÉM NA LEITURA (auditoria 2026-08, lote 1D). Antes o erro era
+  // descartado (`const { data: profile } = ...`): uma falha transitória do banco deixava
+  // `profile` indefinido, o bloco de cancelamento abaixo era PULADO e a conta era deletada
+  // com a assinatura seguindo ACTIVE no Asaas — cobrando um cliente que já não existe e sem
+  // estado local para reconciliar. É o mesmo dano que o fail-closed do cancelamento evita.
+  // PGRST116 = nenhuma linha: não há assinatura a cancelar, seguir é seguro.
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('asaas_subscription_id, plan_status')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
+
+  if (profileError) {
+    logError('Leitura do profile FALHOU na deleção — abortando (fail-closed)', profileError, { userId: user.id })
+    return NextResponse.json(
+      { error: 'Não foi possível verificar sua assinatura agora. Sua conta NÃO foi deletada (para evitar cobrança indevida). Tente novamente em instantes.' },
+      { status: 503 }
+    )
+  }
 
   // Cancela a assinatura no Asaas ANTES de deletar a conta. FAIL-CLOSED (P0, audit Codex
   // 2026-06-08): se o cancelamento falhar, NÃO deleta a conta — senão o profile/auth some

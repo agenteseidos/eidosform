@@ -2,6 +2,44 @@
 
 An open-source TypeForm clone built with Next.js 16, Supabase, and Tailwind CSS.
 
+---
+
+## 🛑 REGRA Nº 1 — O REPOSITÓRIO NÃO DESCREVE O BANCO
+
+**Não existe `supabase_migrations.schema_migrations` neste projeto.** Migrations foram e são aplicadas
+manualmente, sem registro do que rodou. Consequência comprovada: **os arquivos `.sql` divergem do banco
+real.**
+
+**NUNCA afirme nada sobre o estado do banco lendo `supabase/migrations/*.sql`, `schema.sql` ou
+`schema_eidosform.sql`. SEMPRE consulte o catálogo** (`pg_proc`, `pg_policies`, `pg_indexes`,
+`pg_views`, `information_schema.role_table_grants`, `information_schema.column_privileges`)
+pelo **SQL Editor do painel Supabase**.
+
+> ⚙️ Nesta VPS não há `psql`, Supabase CLI nem connection string. O cliente PostgREST (mesmo com
+> service-role) **não executa DDL/GRANT**. Toda mudança de permissão ou estrutura passa pelo SQL
+> Editor, com o Sidney rodando. Planeje isso ao propor correções de banco.
+
+### Quatro casos reais, todos em 06/08/2026 — e os quatro invisíveis à leitura de código
+
+| # | O que o repositório dizia | O que o banco tinha |
+|---|---|---|
+| 1 | migration `20260430` de `profiles` abortava, deixando plano desprotegido | **Aplicada.** Policy existe, proteção por coluna de pé — achado da auditoria REFUTADO |
+| 2 | `REVOKE EXECUTE ... FROM PUBLIC` nas funções `SECURITY DEFINER` | **Não estava em vigor.** `anon` executava as 8 — travar cadastro e queimar cota alheia, sem login |
+| 3 | `check_and_increment_response(uuid)` | Assinatura real tem **2 parâmetros** — SQL montado pelo arquivo falhou com `42883` |
+| 4 | (nada — invisível no código) | `GRANT` amplo ao `anon` em **14 tabelas + a view `published_forms`**, que é auto-atualizável e roda com `security_invoker=false`: havia caminho para **alterar/apagar formulário publicado de qualquer cliente sem login** |
+
+**O caso 4 é o que mais importa como lição.** Uma auditoria de 30 lotes e 85 mil linhas, com dois
+modelos e passe duplo adversarial, **não o encontrou** — porque ele não existe em lugar nenhum do
+código. Risco de configuração e de estado do banco é estruturalmente invisível à revisão de código.
+
+**Receita para `GRANT`/`REVOKE`:** use bloco `DO` que descobre a assinatura real
+(`p.oid::regprocedure`) e aplica por OID — imune a divergência e a sobrecargas. E lembre que
+**views não aparecem em `pg_tables`**: varra `pg_views` também (foi assim que o caso 4 quase escapou).
+
+_Registro completo: `eidos-shared/auditoria-geral-2026-08/99-sintese/lote-1-execucao.md`_
+
+---
+
 ## Tech Stack
 
 - **Next.js 16** (App Router) with React 19

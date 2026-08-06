@@ -214,7 +214,7 @@ const FEATURE_COMPARISON: Array<{ label: string; eidos: string | boolean; typefo
 const FAQS = [
   {
     q: 'Estou em outra ferramenta. Como migro para o EidosForm?',
-    a: 'A gente migra para você, seja do Typeform, do Google Forms ou de qualquer outra plataforma. Chame a gente no WhatsApp com os links dos seus formulários: fazemos uma análise gratuita e te dizemos qual plano comporta o que você usa hoje. Assinando qualquer plano pago, recriamos tudo (até 10 formulários) em no máximo 3 dias úteis. Você só revisa e publica.',
+    a: 'A gente migra para você, seja do Typeform, do Google Forms ou de qualquer outra plataforma. Chame a gente no WhatsApp com os links dos seus formulários: fazemos uma análise gratuita e te dizemos qual plano comporta o que você usa hoje. Assinando um plano anual, recriamos tudo (até 10 formulários) em no máximo 3 dias úteis — você só revisa e publica. Se você já é assinante anual, o benefício vale nos primeiros 20 dias da assinatura.',
   },
   {
     q: 'O que o Typeform tem que vocês não têm?',
@@ -250,7 +250,7 @@ const FAQS = [
   },
   {
     q: 'E se eu assinar e me arrepender?',
-    a: 'Você tem 7 dias de garantia em qualquer plano pago: é só pedir e devolvemos 100% do valor, sem perguntas. Depois desse prazo, você ainda pode cancelar quando quiser e mantém o acesso até o fim do período já pago.',
+    a: 'Você tem 7 dias de garantia a contar do seu primeiro pagamento, em qualquer plano pago — mensal ou anual: é só pedir, pelo WhatsApp ou por e-mail, e devolvemos 100% do valor, sem perguntas. A garantia vale na primeira contratação; as renovações não abrem novo prazo. Passados os 7 dias, você ainda pode cancelar quando quiser e mantém o acesso até o fim do período já pago.',
   },
   {
     q: 'Posso cancelar minha assinatura quando quiser?',
@@ -397,8 +397,8 @@ export default function LandingV4Page() {
             <p className="text-slate-600 text-lg mb-7 max-w-2xl mx-auto">
               Typeform, Google Forms ou qualquer outra: envie os links dos seus formulários e
               fazemos uma <strong className="text-slate-900">análise gratuita</strong>. Dizemos
-              qual plano comporta o que você usa hoje. Assinou, recriamos tudo em até
-              3 dias úteis. Você só revisa e publica.
+              qual plano comporta o que você usa hoje. Assinou o plano anual, recriamos
+              tudo em até 3 dias úteis. Você só revisa e publica.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
               <a href={MIGRATION_FORM}>

@@ -182,8 +182,8 @@ export function PricingSectionV4() {
         </div>
 
         <p className="text-center text-sm text-slate-500 mt-8">
-          Pagamento por cartão de crédito, em reais. Garantia de 7 dias: devolvemos 100%, sem perguntas.
-          Cancele quando quiser, sem multa.
+          Pagamento por cartão de crédito, em reais. Garantia de 7 dias no primeiro pagamento:
+          devolvemos 100%, sem perguntas. Cancele quando quiser, sem multa.
         </p>
       </div>
     </section>

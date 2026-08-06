@@ -12,7 +12,18 @@ import { Button } from '@/components/ui/button'
 const emptySubscribe = () => () => {}
 const useMounted = () => useSyncExternalStore(emptySubscribe, () => true, () => false)
 
-export function MobileMenu() {
+// Âncoras da landing v1 (raiz atual). A /v3 tem outras seções, então passa as
+// suas por prop — antes ela reusava este menu com `#recursos`/`#como-funciona`,
+// que NÃO existem lá: 2 dos 4 links do mobile não levavam a lugar nenhum
+// (a /v4 já tinha o seu próprio menu claro com as âncoras certas).
+const DEFAULT_LINKS = [
+  { href: '#recursos', label: 'Recursos' },
+  { href: '#como-funciona', label: 'Como funciona' },
+  { href: '#precos', label: 'Preços' },
+  { href: '#faq', label: 'FAQ' },
+]
+
+export function MobileMenu({ links = DEFAULT_LINKS }: { links?: { href: string; label: string }[] }) {
   const [open, setOpen] = useState(false)
   // Portal só depois do mount: renderizar por `typeof document` fazia o
   // primeiro render do cliente divergir do SSR e derrubava a hidratação
@@ -32,12 +43,7 @@ export function MobileMenu() {
       style={{ top: '64px', zIndex: 99999 }}
     >
       <nav className="flex flex-col gap-2">
-        {[
-          { href: '#recursos', label: 'Recursos' },
-          { href: '#como-funciona', label: 'Como funciona' },
-          { href: '#precos', label: 'Preços' },
-          { href: '#faq', label: 'FAQ' },
-        ].map(({ href, label }) => (
+        {links.map(({ href, label }) => (
           <a
             key={href}
             href={href}

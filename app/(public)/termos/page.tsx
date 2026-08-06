@@ -99,13 +99,16 @@ export default function TermosPage() {
             <section>
               <h2 className="text-xl font-bold text-white mb-4">4. Direito de Arrependimento</h2>
               <p className="text-slate-400">
-                Nos termos do art. 49 do <strong className="text-white">Código de Defesa do Consumidor (Lei nº 8.078/1990)</strong>, o consumidor que contratar um plano anual por meio eletrônico tem direito ao arrependimento e ao reembolso integral, desde que o exercício se dê no prazo de <strong className="text-white">7 (sete) dias corridos</strong> a contar da data da contratação.
+                Nos termos do art. 49 do <strong className="text-white">Código de Defesa do Consumidor (Lei nº 8.078/1990)</strong>, o consumidor que contratar um plano pago por meio eletrônico tem direito ao arrependimento e ao reembolso integral, desde que o exercício se dê no prazo de <strong className="text-white">7 (sete) dias corridos</strong> a contar da data da contratação. A garantia vale para <strong className="text-white">qualquer plano pago, mensal ou anual</strong>.
               </p>
               <p className="mt-3 text-slate-400">
-                Para solicitar o arrependimento, envie um e-mail para <a href="mailto:contato@eidosform.com.br" className="text-[#F5B731] hover:underline">contato@eidosform.com.br</a> com o assunto &quot;Arrependimento — Plano Anual&quot;. O reembolso será processado pelo mesmo meio de pagamento utilizado na contratação em até 7 dias úteis.
+                O direito incide sobre a <strong className="text-white">primeira contratação</strong> de um plano pago. As <strong className="text-white">renovações automáticas</strong> não abrem novo prazo de arrependimento, pois não constituem nova contratação — para evitá-las, basta cancelar antes da data de renovação.
               </p>
               <p className="mt-3 text-slate-400">
-                Para planos mensais, não há reembolso proporcional ao período não utilizado, mas o cancelamento interrompe a renovação imediata.
+                Para solicitar o arrependimento, envie um e-mail para <a href="mailto:contato@eidosform.com.br" className="text-[#F5B731] hover:underline">contato@eidosform.com.br</a> com o assunto &quot;Arrependimento&quot;, ou fale com a gente pelo <a href="https://wa.me/5583999378937" target="_blank" rel="noopener noreferrer" className="text-[#F5B731] hover:underline">WhatsApp</a>. O reembolso será processado pelo mesmo meio de pagamento utilizado na contratação em até 7 dias úteis.
+              </p>
+              <p className="mt-3 text-slate-400">
+                Fora do prazo de arrependimento, não há reembolso proporcional ao período não utilizado, mas o cancelamento interrompe a renovação imediatamente e o acesso ao plano pago permanece até o fim do período já pago.
               </p>
             </section>
 

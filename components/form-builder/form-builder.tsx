@@ -202,7 +202,7 @@ function QuestionReorderItem({
                 {getQuestionTypeInfo(question.type)?.label || question.type}
               </span>
               {question.required && (
-                <span className="text-xs text-red-500">*</span>
+                <span className="text-xs text-red-700">*</span>
               )}
               {(question.jumpRules?.length ?? 0) > 0 && (
                 <span
@@ -373,23 +373,39 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
     && ['questions', 'design', 'config', 'logic'].includes(activeTab)
 
   // Foco do drawer (só na faixa md–xl, onde o painel abre por cima do conteúdo):
-  // ao abrir, foca o botão de fechar e guarda quem tinha o foco; ao fechar,
-  // devolve o foco ao gatilho — senão o foco cai no document ao desmontar.
+  // ao abrir, foca o botão de fechar e guarda quem tinha o foco; ao fechar
+  // EXPLICITAMENTE (foco estava dentro do drawer), devolve o foco ao gatilho.
+  // Ocultação por troca de aba não rouba o foco de onde o usuário clicou.
+  const rightPanelRef = useRef<HTMLElement>(null)
   const drawerCloseBtnRef = useRef<HTMLButtonElement>(null)
   const drawerTriggerRef = useRef<HTMLElement | null>(null)
+  const [isDrawerRange, setIsDrawerRange] = useState(false)
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (!window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches) return
+    const mq = window.matchMedia('(min-width: 768px) and (max-width: 1279px)')
+    const update = () => setIsDrawerRange(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  useEffect(() => {
+    if (!isDrawerRange) return
+    const active = document.activeElement
     if (rightPanelHasContent) {
-      if (document.activeElement instanceof HTMLElement && document.activeElement !== drawerCloseBtnRef.current) {
-        drawerTriggerRef.current = document.activeElement
+      if (active instanceof HTMLElement && !rightPanelRef.current?.contains(active)) {
+        drawerTriggerRef.current = active
       }
       drawerCloseBtnRef.current?.focus()
-    } else if (drawerTriggerRef.current) {
-      if (document.contains(drawerTriggerRef.current)) drawerTriggerRef.current.focus()
+    } else {
+      // Fechamento explícito: o botão de fechar desmontou e o foco caiu no body,
+      // ou ainda está dentro do painel. Troca de aba deixa o foco na aba clicada.
+      const wasInside = active === document.body ||
+        (active instanceof HTMLElement && rightPanelRef.current?.contains(active))
+      if (wasInside && drawerTriggerRef.current && document.contains(drawerTriggerRef.current)) {
+        drawerTriggerRef.current.focus()
+      }
       drawerTriggerRef.current = null
     }
-  }, [rightPanelHasContent])
+  }, [rightPanelHasContent, isDrawerRange])
 
   // Fonte ÚNICA de verdade do preview passo-a-passo: `selectedQuestionId`.
   // O `stepPreviewIndex` é DERIVADO da seleção por este único efeito (seleção → índice).
@@ -1222,7 +1238,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                     <p className="text-sm font-medium text-slate-700 line-clamp-2">
                       {form.welcome_title || form.title || 'Tela de boas vindas'}
                     </p>
-                    <p className="text-xs text-slate-400">{form.welcome_enabled ? 'Ativada' : 'Desativada'}</p>
+                    <p className="text-xs text-slate-600">{form.welcome_enabled ? 'Ativada' : 'Desativada'}</p>
                   </div>
                 </button>
 
@@ -1245,7 +1261,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                     <div className="text-center py-6 px-4">
                       <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />
                       <p className="text-sm text-slate-500">Nenhuma pergunta ainda</p>
-                      <p className="text-xs text-slate-400 mt-1">Clique em Adicionar para começar</p>
+                      <p className="text-xs text-slate-600 mt-1">Clique em Adicionar para começar</p>
                     </div>
                   ) : (
                     <Reorder.Group axis="y" values={questions} onReorder={handleReorder}>
@@ -1304,7 +1320,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                     <p className="text-sm font-medium text-slate-700 line-clamp-2">
                       {form.thank_you_title || 'Tela de agradecimento'}
                     </p>
-                    <p className="text-xs text-slate-400">{form.thank_you_enabled !== false ? 'Ativada' : 'Desativada'}</p>
+                    <p className="text-xs text-slate-600">{form.thank_you_enabled !== false ? 'Ativada' : 'Desativada'}</p>
                   </div>
                 </button>
 
@@ -1386,8 +1402,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                   <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 opacity-70">
                     <div>
                       <p className="text-sm font-medium text-slate-500">URL de Redirecionamento</p>
-                      <p className="text-xs text-slate-400 mt-0.5">Após envio, redirecionar o lead para a página do seu funil.</p>
-                      <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Upgrade para Starter+ →</a>
+                      <p className="text-xs text-slate-600 mt-0.5">Após envio, redirecionar o lead para a página do seu funil.</p>
+                      <a href="/billing" className="text-xs text-blue-700 hover:underline mt-1 inline-block">Upgrade para Starter+ →</a>
                     </div>
                     <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">Starter+</span>
                   </div>
@@ -1432,8 +1448,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                     <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 mt-3 opacity-70">
                       <div>
                         <p className="text-sm font-medium text-slate-500">Ocultar &quot;Feito com EidosForm&quot;</p>
-                        <p className="text-xs text-slate-400 mt-0.5">Remove o branding do rodapé do formulário.</p>
-                        <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Upgrade para Plus+ →</a>
+                        <p className="text-xs text-slate-600 mt-0.5">Remove o branding do rodapé do formulário.</p>
+                        <a href="/billing" className="text-xs text-blue-700 hover:underline mt-1 inline-block">Upgrade para Plus+ →</a>
                       </div>
                       <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">Plus+</span>
                     </div>
@@ -1460,7 +1476,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                         <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
                       </div>
                       <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
-                      <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                      <a href="/billing" className="text-xs text-blue-700 hover:underline mt-1 inline-block">Fazer upgrade →</a>
                     </div>
                   )}
 
@@ -1529,7 +1545,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                             <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
                           </div>
                           <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
-                          <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                          <a href="/billing" className="text-xs text-blue-700 hover:underline mt-1 inline-block">Fazer upgrade →</a>
                         </div>
                       )}
                     </div>
@@ -1640,7 +1656,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                           <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Starter+</span>
                         </div>
                         <p className="text-xs text-slate-400 mt-1">Disponível a partir do plano Starter.</p>
-                        <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+                        <a href="/billing" className="text-xs text-blue-700 hover:underline mt-1 inline-block">Fazer upgrade →</a>
                       </div>
                     ) : form.google_sheets_id ? (
                       <>
@@ -2109,7 +2125,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                     />
                   </div>
                   {slugError && (
-                    <p id="slug-error" className="text-xs text-red-500" role="alert">{slugError}</p>
+                    <p id="slug-error" className="text-xs text-red-700" role="alert">{slugError}</p>
                   )}
                 </div>
               </div>
@@ -2246,14 +2262,14 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
             três painéis estáticos lado a lado não cabem nessa faixa (o preview
             ficava com ~144px úteis em 1024px).
             xl+: coluna estática como sempre. */}
-        <aside className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} ${rightPanelHasContent ? 'md:flex' : 'md:hidden'} xl:flex fixed xl:relative inset-0 md:inset-y-0 md:right-0 md:left-auto xl:inset-auto z-40 xl:z-auto w-full md:w-96 bg-white border-l border-slate-200 flex-col md:shadow-2xl xl:shadow-none xl:shrink-0 overflow-y-auto overflow-x-hidden pb-16 md:pb-0`}>
+        <aside ref={rightPanelRef} className={`${shouldShowMobileRightPanel ? 'flex' : 'hidden'} ${rightPanelHasContent ? 'md:flex' : 'md:hidden'} xl:flex fixed xl:relative inset-0 md:inset-y-0 md:right-0 md:left-auto xl:inset-auto z-40 xl:z-auto w-full md:w-96 bg-white border-l border-slate-200 flex-col md:shadow-2xl xl:shadow-none xl:shrink-0 overflow-y-auto overflow-x-hidden pb-16 md:pb-0`}>
           {/* Fechar o drawer (só na faixa md–xl, onde ele cobre o conteúdo) */}
           <div className="hidden md:flex xl:hidden items-center justify-end border-b border-slate-100 px-2 py-1 shrink-0">
             <button
               ref={drawerCloseBtnRef}
               onClick={() => { setSelectedQuestionId(null); setSidebarSection(null) }}
               aria-label="Fechar painel de propriedades"
-              className="flex h-10 w-10 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 transition-colors"
+              className="flex h-11 w-11 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -2294,7 +2310,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex z-50 pb-[env(safe-area-inset-bottom)]">
         <button
           onClick={() => setMobilePanel('questions')}
-          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: shouldShowMobileSidebar ? '#F5B731' : undefined }}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-600`} style={{ color: shouldShowMobileSidebar ? '#B45309' : undefined }}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
           Perguntas
@@ -2304,7 +2320,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
             if (isMobileUtilityTab) setActiveTab('questions')
             setMobilePanel('editor')
           }}
-          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: !isMobileUtilityTab && mobilePanel === 'editor' ? '#F5B731' : undefined }}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-600`} style={{ color: !isMobileUtilityTab && mobilePanel === 'editor' ? '#B45309' : undefined }}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
           Editar
@@ -2314,7 +2330,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
             if (isMobileUtilityTab) setActiveTab('questions')
             setMobilePanel('preview')
           }}
-          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-400`} style={{ color: !isMobileUtilityTab && mobilePanel === 'preview' ? '#F5B731' : undefined }}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors text-slate-600`} style={{ color: !isMobileUtilityTab && mobilePanel === 'preview' ? '#B45309' : undefined }}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
           Preview

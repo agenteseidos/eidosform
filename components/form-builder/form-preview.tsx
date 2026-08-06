@@ -366,7 +366,7 @@ export function FormPreview({
                             }}
                             className="opacity-60 md:opacity-0 md:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity flex h-11 w-11 -m-3 shrink-0 items-center justify-center rounded"
                             title="Remover opção"
-                            aria-label="Remover opção"
+                            aria-label={`Remover opção ${option}`}
                           >
                             <X className="w-3.5 h-3.5" style={{ color: theme.textColor }} />
                           </button>
@@ -504,8 +504,9 @@ export function FormPreview({
                                 const options = (question.options || []).filter((_, idx) => idx !== i)
                                 onUpdateQuestion(question.id, { options })
                               }}
-                              className="opacity-60 md:opacity-0 md:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity p-2.5 -m-2 rounded"
+                              className="opacity-60 md:opacity-0 md:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity flex h-11 w-11 -m-3 shrink-0 items-center justify-center rounded"
                               title="Remover opção"
+                              aria-label={`Remover opção ${option}`}
                             >
                               <X className="w-3.5 h-3.5" style={{ color: theme.textColor }} />
                             </button>

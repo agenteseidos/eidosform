@@ -80,7 +80,7 @@ function ConditionRow({ cond, questions, onChange, onRemove }: {
             <option key={qq.id} value={qq.id}>{questionLabel(qq, i)}</option>
           ))}
         </select>
-        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0" onClick={onRemove}>
+        <Button variant="ghost" size="sm" className="h-11 w-11 -my-2.5 p-0 shrink-0" aria-label="Remover condição" onClick={onRemove}>
           <X className="w-3 h-3 text-red-400" />
         </Button>
       </div>
@@ -146,7 +146,7 @@ function EventCard({ ev, index, questions, onChange, onRemove }: {
     <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-3 space-y-2.5 min-w-0">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Evento {index + 1}</span>
-        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-red-500 hover:text-red-600" onClick={onRemove}>
+        <Button variant="ghost" size="sm" className="h-9 px-2 text-xs text-red-700 hover:text-red-800" aria-label="Excluir evento" onClick={onRemove}>
           <X className="w-3 h-3 mr-0.5" /> excluir
         </Button>
       </div>

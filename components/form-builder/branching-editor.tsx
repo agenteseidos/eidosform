@@ -120,7 +120,7 @@ function OpenBranching({ question, rules, others, onChange }: {
           <div key={rule.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold text-slate-500">Quando a resposta…</span>
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
+              <Button variant="ghost" size="sm" className="h-11 w-11 -my-2.5 -mr-1.5 p-0 shrink-0" aria-label={`Remover salto ${i + 1}`}
                 onClick={() => onChange(rules.filter((_, idx) => idx !== i))}>
                 <X className="w-3 h-3 text-red-400" />
               </Button>
@@ -221,7 +221,7 @@ export function BranchingEditor({ question, allQuestions, onChange }: BranchingE
             ))}
           </div>
         )}
-        <p className="text-[11px] text-slate-400">
+        <p className="text-[11px] text-slate-600">
           Cada destino pode ser: a próxima pergunta · outra pergunta · <Flag className="w-3 h-3 inline -mt-0.5" /> encerrar.
         </p>
 
@@ -231,7 +231,7 @@ export function BranchingEditor({ question, allQuestions, onChange }: BranchingE
             {extra.map(r => (
               <div key={r.id} className="flex items-center justify-between gap-2 text-[11px] text-amber-800">
                 <span className="min-w-0 break-words [overflow-wrap:anywhere]">{r.condition.operator} “{r.condition.value}” → {r.action?.type === 'submit' ? 'encerrar' : 'outra pergunta'}</span>
-                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 shrink-0"
+                <Button variant="ghost" size="sm" className="h-11 w-11 -my-2.5 -mr-1 p-0 shrink-0" aria-label="Remover regra avançada"
                   onClick={() => onChange(rules.filter(x => x.id !== r.id))}>
                   <X className="w-3 h-3 text-red-400" />
                 </Button>

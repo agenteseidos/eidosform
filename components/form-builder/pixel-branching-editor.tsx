@@ -106,7 +106,7 @@ function OpenPixel({ rules, onChange }: {
           <div key={rule.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold text-slate-500">Quando a resposta…</span>
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
+              <Button variant="ghost" size="sm" className="h-11 w-11 -my-2.5 -mr-1.5 p-0 shrink-0" aria-label={`Remover conversão ${i + 1}`}
                 onClick={() => onChange(rules.filter((_, idx) => idx !== i))}>
                 <X className="w-3 h-3 text-red-400" />
               </Button>
@@ -150,7 +150,7 @@ export function PixelBranchingEditor({ question, onChange, hasPixelPlan }: Pixel
           <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Plus+</span>
         </div>
         <p className="text-xs text-slate-400 mt-1">Disponível nos planos Plus e Professional.</p>
-        <a href="/billing" className="text-xs text-blue-500 hover:underline mt-1 inline-block">Fazer upgrade →</a>
+        <a href="/billing" className="text-xs text-blue-700 hover:underline mt-1 inline-block">Fazer upgrade →</a>
       </div>
     )
   }
@@ -200,7 +200,7 @@ export function PixelBranchingEditor({ question, onChange, hasPixelPlan }: Pixel
             {extra.map(r => (
               <div key={r.id} className="flex items-center justify-between gap-2 text-[11px] text-amber-800">
                 <span className="min-w-0 break-words [overflow-wrap:anywhere]">{r.condition.operator} “{r.condition.value}” → {r.event?.name}</span>
-                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 shrink-0"
+                <Button variant="ghost" size="sm" className="h-11 w-11 -my-2.5 -mr-1 p-0 shrink-0" aria-label="Remover conversão avançada"
                   onClick={() => onChange(rules.filter(x => x.id !== r.id))}>
                   <X className="w-3 h-3 text-red-400" />
                 </Button>

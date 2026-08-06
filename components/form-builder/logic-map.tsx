@@ -359,7 +359,10 @@ export function LogicMap({
           <p className="text-xs text-amber-800">
             A organização automática do mapa falhou — mostrando um layout simples em coluna.
           </p>
-          <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => setLayoutRetry(n => n + 1)}>
+          <Button
+            size="sm" variant="outline" className="h-9 text-xs shrink-0"
+            onClick={() => { hasFittedRef.current = false; setLayoutRetry(n => n + 1) }}
+          >
             Tentar reorganizar
           </Button>
         </div>

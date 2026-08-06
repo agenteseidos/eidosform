@@ -20,7 +20,11 @@ function slugify(value: string): string {
     .slice(0, 40) || 'form'
 }
 
-async function generateUniqueSlug(supabase: ReturnType<typeof createAdminClient>, userId: string, baseSlug: string) {
+// O slug resolve GLOBALMENTE na URL pública (/f/<slug>), então a busca por um
+// candidato livre também precisa ser global. Antes escopava por `user_id`, o que
+// devolvia slug já usado por OUTRA conta — com o índice único global isso passa a
+// estourar 23505 na inserção. (Auditoria 2026-08, lote 1C.)
+async function generateUniqueSlug(supabase: ReturnType<typeof createAdminClient>, baseSlug: string) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const suffix = attempt === 0 ? 'copy' : `copy-${attempt + 1}`
     const candidate = `${baseSlug}-${suffix}`.slice(0, 60)
@@ -28,8 +32,8 @@ async function generateUniqueSlug(supabase: ReturnType<typeof createAdminClient>
     const { data: existing } = await supabase
       .from('forms')
       .select('id')
-      .eq('user_id', userId)
       .eq('slug', candidate)
+      .limit(1)
       .maybeSingle()
 
     if (!existing) return candidate
@@ -69,7 +73,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   const baseSlug = slugify(sourceForm.slug || sourceForm.title || 'form')
-  const duplicateSlug = await generateUniqueSlug(supabase, user.id, baseSlug)
+  const duplicateSlug = await generateUniqueSlug(supabase, baseSlug)
   const now = new Date().toISOString()
 
   const duplicateForm: FormInsert = {

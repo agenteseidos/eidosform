@@ -5,6 +5,7 @@
 
 import { QuestionConfig } from '@/lib/database.types'
 import { normalizeConditional } from '@/lib/form-logic-engine'
+import type { AnswerSetEvent } from '@/types/pixel-events'
 
 const newId = () =>
   (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`
@@ -94,4 +95,36 @@ export function removeQuestionAndReferences(questions: QuestionConfig[], id: str
       }
       return next
     })
+}
+
+/** Conta condições de eventos por conjunto (pixels.answerSetEvents) que leem a pergunta `id`. */
+export function countAnswerSetReferences(events: AnswerSetEvent[] | null | undefined, id: string): number {
+  let count = 0
+  for (const ev of events || []) {
+    for (const c of ev.conditions || []) {
+      if (c.questionId === id) count++
+    }
+  }
+  return count
+}
+
+/**
+ * Remove das condições de eventos por conjunto as que leem a pergunta excluída.
+ * Evento que fica sem nenhuma condição é removido inteiro (nunca casaria de
+ * forma significativa); `minMatches` é re-clampado ao novo total de condições.
+ */
+export function removeAnswerSetReferences(events: AnswerSetEvent[] | null | undefined, id: string): AnswerSetEvent[] | undefined {
+  const next: AnswerSetEvent[] = []
+  for (const ev of events || []) {
+    const conditions = (ev.conditions || []).filter(c => c.questionId !== id)
+    if (conditions.length === 0) continue
+    next.push({
+      ...ev,
+      conditions,
+      ...(ev.match === 'at_least'
+        ? { minMatches: Math.min(Math.max(1, ev.minMatches ?? 1), conditions.length) }
+        : {}),
+    })
+  }
+  return next.length > 0 ? next : undefined
 }

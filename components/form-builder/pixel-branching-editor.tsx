@@ -175,9 +175,9 @@ export function PixelBranchingEditor({ question, onChange, hasPixelPlan }: Pixel
     return (
       <div className="space-y-2">
         <PixelSectionHeader />
-        <p className="text-xs text-slate-500 mb-1">Qual evento cada resposta dispara:</p>
+        <p className="text-xs text-slate-600 mb-1">Qual evento cada resposta dispara:</p>
         {opts.length === 0 ? (
-          <p className="text-xs text-slate-400 italic">Adicione opções de resposta para definir as conversões.</p>
+          <p className="text-xs text-slate-600 italic">Adicione opções de resposta para definir as conversões.</p>
         ) : (
           <div className="space-y-2">
             {opts.map((opt, i) => (

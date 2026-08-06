@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Form, QuestionConfig, ThemePreset, FormStatus } from '@/lib/database.types'
 import { normalizeConditional } from '@/lib/form-logic-engine'
-import { cloneQuestionDeep, countQuestionReferences, removeQuestionAndReferences } from '@/lib/question-integrity'
+import { cloneQuestionDeep, countQuestionReferences, removeQuestionAndReferences, countAnswerSetReferences, removeAnswerSetReferences } from '@/lib/question-integrity'
 import { shouldApplyEcho, nextAutosaveDelay, hasPendingEdits, nextVersionRef } from '@/lib/autosave-policy'
 import { questionTypes, createDefaultQuestion, getQuestionTypeInfo, questionTypeAllowed, QUESTION_TYPE_MIN_PLAN } from '@/lib/questions'
 import { PLANS } from '@/lib/plan-definitions'
@@ -364,8 +364,32 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
   const shouldShowMobileSidebar = mobilePanel === 'questions' || isMobileUtilityTab
   const shouldShowMobilePreview = !isMobileUtilityTab && (mobilePanel === 'preview' || mobilePanel === 'editor')
   const shouldShowMobileRightPanel = !isMobileUtilityTab && mobilePanel === 'editor'
-  // md–xl: o painel direito é um drawer que só abre quando há conteúdo para editar
-  const rightPanelHasContent = !!selectedQuestion || sidebarSection === 'welcome' || sidebarSection === 'thankyou'
+  // md–xl: o painel direito é um drawer que só abre quando há conteúdo para
+  // editar E a aba ativa usa propriedades — em Integrações/Compartilhar ele
+  // ficaria sobreposto a conteúdo sem relação (a seleção é preservada; ao
+  // voltar para Editar/Lógica o drawer reabre sozinho).
+  const rightPanelHasContent =
+    (!!selectedQuestion || sidebarSection === 'welcome' || sidebarSection === 'thankyou')
+    && ['questions', 'design', 'config', 'logic'].includes(activeTab)
+
+  // Foco do drawer (só na faixa md–xl, onde o painel abre por cima do conteúdo):
+  // ao abrir, foca o botão de fechar e guarda quem tinha o foco; ao fechar,
+  // devolve o foco ao gatilho — senão o foco cai no document ao desmontar.
+  const drawerCloseBtnRef = useRef<HTMLButtonElement>(null)
+  const drawerTriggerRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches) return
+    if (rightPanelHasContent) {
+      if (document.activeElement instanceof HTMLElement && document.activeElement !== drawerCloseBtnRef.current) {
+        drawerTriggerRef.current = document.activeElement
+      }
+      drawerCloseBtnRef.current?.focus()
+    } else if (drawerTriggerRef.current) {
+      if (document.contains(drawerTriggerRef.current)) drawerTriggerRef.current.focus()
+      drawerTriggerRef.current = null
+    }
+  }, [rightPanelHasContent])
 
   // Fonte ÚNICA de verdade do preview passo-a-passo: `selectedQuestionId`.
   // O `stepPreviewIndex` é DERIVADO da seleção por este único efeito (seleção → índice).
@@ -872,15 +896,17 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
     if (!question) return
     const label = question.title || question.type
     const references = countQuestionReferences(questions, id).total
+      + countAnswerSetReferences(pixels.answerSetEvents, id)
     setDeleteDialog({ open: true, questionId: id, label, references })
   }
 
   const confirmDeleteQuestion = () => {
     if (!deleteDialog.questionId) return
-    // Remove a pergunta E as regras de outras perguntas que a referenciavam
-    // (salto com destino/condição nela, exibição condicional) — senão o form
-    // publica referências órfãs que quebram o roteamento em silêncio.
+    // Remove a pergunta E as regras que a referenciavam — saltos com destino/
+    // condição nela, exibição condicional e eventos por conjunto de respostas.
+    // Senão o form publica referências órfãs que quebram em silêncio.
     setQuestions(removeQuestionAndReferences(questions, deleteDialog.questionId))
+    setPixels(prev => ({ ...prev, answerSetEvents: removeAnswerSetReferences(prev.answerSetEvents, deleteDialog.questionId!) }))
     if (selectedQuestionId === deleteDialog.questionId) {
       setSelectedQuestionId(null)
     }
@@ -1175,7 +1201,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
 
                 {/* === SEÇÃO: TELA DE BOAS VINDAS === */}
                 <div className="px-2 pt-3 pb-1 shrink-0">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tela de Boas Vindas</span>
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Tela de Boas Vindas</span>
                 </div>
                 <button
                   onClick={() => {
@@ -1202,7 +1228,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
 
                 {/* === SEÇÃO: QUESTÕES === */}
                 <div className="px-2 pt-4 pb-1 flex items-center justify-between shrink-0">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Questões</span>
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Questões</span>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1247,7 +1273,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                   >
                     <button
                       onClick={() => setShowAddQuestion(true)}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all text-xs font-medium"
+                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-dashed border-slate-300 text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all text-xs font-medium"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       Adicionar pergunta
@@ -1257,7 +1283,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
 
                 {/* === SEÇÃO: TELAS FINAIS === */}
                 <div className="px-2 pt-4 pb-1 shrink-0">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Telas Finais</span>
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Telas Finais</span>
                 </div>
                 <button
                   onClick={() => {
@@ -1379,6 +1405,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                       <p className="text-xs text-slate-500 mt-0.5">Impede novos envios. Respostas existentes são mantidas.</p>
                     </div>
                     <Switch
+                      aria-label="Fechar formulário"
                       checked={form.is_closed ?? false}
                       onCheckedChange={(checked) => {
                         setForm(prev => ({ ...prev, is_closed: checked }))
@@ -1393,6 +1420,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                         <p className="text-xs text-slate-500 mt-0.5">Remove o branding do rodapé do formulário.</p>
                       </div>
                       <Switch
+                        aria-label='Ocultar "Feito com EidosForm"'
                         checked={form.hide_branding ?? false}
                         onCheckedChange={(checked) => {
                           setForm(prev => ({ ...prev, hide_branding: checked }))
@@ -1887,6 +1915,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                             <p className="text-xs text-slate-500 truncate">{userInfo?.email ?? 'e-mail da conta'}</p>
                           </div>
                           <Switch
+                            aria-label="Enviar notificações para o e-mail da conta"
                             checked={form.notify_owner_enabled ?? true}
                             onCheckedChange={(checked) => {
                               setForm(prev => ({ ...prev, notify_owner_enabled: checked }))
@@ -1901,6 +1930,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                               <p className="text-xs text-slate-500">Equipe, CRM, parceiro.</p>
                             </div>
                             <Switch
+                              aria-label="Encaminhar também para um e-mail adicional"
                               checked={form.notify_email_enabled ?? false}
                               onCheckedChange={(checked) => {
                                 setForm(prev => ({ ...prev, notify_email_enabled: checked }))
@@ -2219,6 +2249,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
           {/* Fechar o drawer (só na faixa md–xl, onde ele cobre o conteúdo) */}
           <div className="hidden md:flex xl:hidden items-center justify-end border-b border-slate-100 px-2 py-1 shrink-0">
             <button
+              ref={drawerCloseBtnRef}
               onClick={() => { setSelectedQuestionId(null); setSidebarSection(null) }}
               aria-label="Fechar painel de propriedades"
               className="flex h-10 w-10 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 transition-colors"
@@ -2332,7 +2363,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
               return (
                 <div key={category.label}>
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{category.label}</span>
+                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{category.label}</span>
                     <div className="h-px flex-1 bg-slate-100" />
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -2469,8 +2500,8 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
           </DialogHeader>
           {deleteDialog.references > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-              Esta pergunta é usada em <b>{deleteDialog.references} regra{deleteDialog.references > 1 ? 's' : ''} de lógica</b> de
-              outras perguntas (saltos ou exibição condicional). Ao excluir, essas regras serão removidas junto.
+              Esta pergunta é usada em <b>{deleteDialog.references} regra{deleteDialog.references > 1 ? 's' : ''} de lógica</b> —
+              saltos, exibição condicional ou eventos por conjunto de respostas. Ao excluir, essas regras serão removidas junto.
             </div>
           )}
           <DialogFooter>

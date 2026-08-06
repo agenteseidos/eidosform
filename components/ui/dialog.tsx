@@ -84,7 +84,9 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
+      // pr-8: reserva a área do botão de fechar (44px absolutos no canto) para
+      // títulos longos não renderizarem por baixo dele.
+      className={cn("flex flex-col gap-2 text-center sm:text-left pr-8", className)}
       {...props}
     />
   )

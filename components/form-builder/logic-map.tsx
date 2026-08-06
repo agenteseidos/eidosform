@@ -187,6 +187,8 @@ export function LogicMap({
   const [pixelEditorFor, setPixelEditorFor] = useState<string | null>(null)
   const [terminalPixelFor, setTerminalPixelFor] = useState<'start' | 'complete' | null>(null)
   const [elkPos, setElkPos] = useState<Map<string, { x: number; y: number }>>(new Map())
+  const [layoutFailed, setLayoutFailed] = useState(false)
+  const [layoutRetry, setLayoutRetry] = useState(0)
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<FlowNode>([])
   const instRef = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null)
   // Enquadra o mapa apenas na primeira carga (e ao "Reorganizar") — nunca a
@@ -210,7 +212,7 @@ export function LogicMap({
     let cancelled = false
     const sizes = graph.nodes.map(n => ({ id: n.id, width: 280, height: estimateHeight(n.data) }))
     elkLayout(sizes, graph.edges, direction)
-      .then(pos => { if (!cancelled) setElkPos(pos) })
+      .then(pos => { if (!cancelled) { setElkPos(pos); setLayoutFailed(false) } })
       .catch(() => {
         // Layout falhou — fallback determinístico: pilha vertical simples,
         // para o mapa nunca renderizar todos os nós sobrepostos em (0,0).
@@ -222,10 +224,11 @@ export function LogicMap({
           y += s.height + 48
         }
         setElkPos(fallback)
+        setLayoutFailed(true)
       })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structureKey])
+  }, [structureKey, layoutRetry])
 
   // ── Sincroniza nós com o layout do ELK (a ordem das perguntas manda) ─────
   useEffect(() => {
@@ -350,6 +353,18 @@ export function LogicMap({
         </span>
       </div>
 
+      {/* Falha do layout automático — informa e oferece retry */}
+      {layoutFailed && (
+        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 flex items-center justify-between gap-3">
+          <p className="text-xs text-amber-800">
+            A organização automática do mapa falhou — mostrando um layout simples em coluna.
+          </p>
+          <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => setLayoutRetry(n => n + 1)}>
+            Tentar reorganizar
+          </Button>
+        </div>
+      )}
+
       {/* Painel de alertas */}
       {graph.warnings.length > 0 && (
         <div className="shrink-0 border-b border-slate-200 bg-amber-50/60 px-4 py-2.5 max-h-32 overflow-auto">
@@ -380,7 +395,7 @@ export function LogicMap({
 
       <div className="flex-1 min-h-0">
         {questions.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-sm text-slate-400">
+          <div className="h-full flex items-center justify-center text-sm text-slate-600">
             Adicione perguntas para ver o mapa da lógica.
           </div>
         ) : (
@@ -483,7 +498,7 @@ export function LogicMap({
                   ? { pixel_event_on_start: v } : { pixel_event_on_complete: v })
               }}
             />
-            <p className="text-[11px] text-slate-400">Deixe em branco para não disparar nenhum evento.</p>
+            <p className="text-[11px] text-slate-600">Deixe em branco para não disparar nenhum evento.</p>
           </div>
         </DialogContent>
       </Dialog>

@@ -158,7 +158,7 @@ function OpenBranching({ question, rules, others, onChange }: {
       <Button variant="outline" size="sm" onClick={addRule} className="w-full text-xs text-slate-700">
         <Plus className="w-3 h-3 mr-1" /> Adicionar regra
       </Button>
-      <p className="text-[11px] text-slate-400 italic">
+      <p className="text-[11px] text-slate-600 italic">
         Qualquer outra resposta segue para a próxima pergunta.
       </p>
     </div>
@@ -174,8 +174,8 @@ export function BranchingEditor({ question, allQuestions, onChange }: BranchingE
   if (question.type === 'content_block' || question.type === 'html_block') {
     return (
       <div className="space-y-2">
-        <SectionHeader>Ramificação</SectionHeader>
-        <p className="text-xs text-slate-500 mb-1">Depois deste bloco, ir para:</p>
+        <SectionHeader>Saltos</SectionHeader>
+        <p className="text-xs text-slate-600 mb-1">Depois deste bloco, ir para:</p>
         <DestinationSelect
           value={getBlockDestination(rules)}
           others={others}
@@ -192,18 +192,18 @@ export function BranchingEditor({ question, allQuestions, onChange }: BranchingE
     const isMultiSelect = question.type === 'checkboxes'
     return (
       <div className="space-y-2">
-        <SectionHeader>Ramificação</SectionHeader>
-        <p className="text-xs text-slate-500 mb-1">Para onde vai cada resposta:</p>
+        <SectionHeader>Saltos</SectionHeader>
+        <p className="text-xs text-slate-600 mb-1">Para onde vai cada resposta:</p>
         {isMultiSelect && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
             ⚠️ Como o respondente pode marcar várias, o destino que dispara é o da
             <strong> primeira opção marcada que tiver caminho definido</strong> (de cima pra baixo).
-            Use ramificação aqui só pra opções &quot;exclusivas&quot; (ex.: &quot;Outro&quot; → pergunta de detalhe).
+            Use salto aqui só pra opções &quot;exclusivas&quot; (ex.: &quot;Outro&quot; → pergunta de detalhe).
           </div>
         )}
 
         {opts.length === 0 ? (
-          <p className="text-xs text-slate-400 italic">Adicione opções de resposta para definir a ramificação.</p>
+          <p className="text-xs text-slate-600 italic">Adicione opções de resposta para definir os saltos.</p>
         ) : (
           <div className="rounded-xl border-2 border-slate-200 overflow-hidden">
             {opts.map((opt, i) => (

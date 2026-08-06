@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cloneQuestionDeep, countQuestionReferences, removeQuestionAndReferences } from './question-integrity'
+import { cloneQuestionDeep, countQuestionReferences, removeQuestionAndReferences, countAnswerSetReferences, removeAnswerSetReferences } from './question-integrity'
 import { evaluateJumpRules } from './form-logic-engine'
 import type { QuestionConfig } from './database.types'
 
@@ -102,5 +102,46 @@ describe('countQuestionReferences / removeQuestionAndReferences', () => {
   it('não altera perguntas sem referência à excluída', () => {
     const next = removeQuestionAndReferences(questions, 'c')
     expect(next.find(x => x.id === 'a')!.title).toBe('a')
+  })
+})
+
+describe('answerSetEvents: contagem e limpeza na exclusão', () => {
+  const events = [
+    { id: 'e1', name: 'LeadQualificado', match: 'all' as const, conditions: [
+      { questionId: 'a', condition: { operator: 'equals' as const, value: 'sim' } },
+      { questionId: 'b', condition: { operator: 'equals' as const, value: '10' } },
+    ] },
+    { id: 'e2', name: 'SoDaPerguntaA', match: 'at_least' as const, minMatches: 1, conditions: [
+      { questionId: 'a', condition: { operator: 'equals' as const, value: 'x' } },
+    ] },
+  ]
+
+  it('conta condições que leem a pergunta', () => {
+    expect(countAnswerSetReferences(events, 'a')).toBe(2)
+    expect(countAnswerSetReferences(events, 'b')).toBe(1)
+    expect(countAnswerSetReferences(events, 'zzz')).toBe(0)
+    expect(countAnswerSetReferences(undefined, 'a')).toBe(0)
+  })
+
+  it('remove condições órfãs e derruba evento que fica sem condição', () => {
+    const next = removeAnswerSetReferences(events, 'a')!
+    expect(next).toHaveLength(1)
+    expect(next[0].id).toBe('e1')
+    expect(next[0].conditions).toHaveLength(1)
+    expect(next[0].conditions[0].questionId).toBe('b')
+  })
+
+  it('re-clampa minMatches ao novo total de condições', () => {
+    const ev = [{ id: 'e3', name: 'Dois', match: 'at_least' as const, minMatches: 2, conditions: [
+      { questionId: 'a', condition: { operator: 'equals' as const, value: '1' } },
+      { questionId: 'b', condition: { operator: 'equals' as const, value: '2' } },
+    ] }]
+    const next = removeAnswerSetReferences(ev, 'a')!
+    expect(next[0].minMatches).toBe(1)
+  })
+
+  it('devolve undefined quando não sobra evento', () => {
+    expect(removeAnswerSetReferences([events[1]], 'a')).toBeUndefined()
+    expect(removeAnswerSetReferences(undefined, 'a')).toBeUndefined()
   })
 })

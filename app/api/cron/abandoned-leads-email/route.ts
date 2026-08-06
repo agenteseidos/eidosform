@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { createHash } from 'crypto'
 import { buildNotificationModel } from '@/lib/notification-model'
 import { buildAbandonedLeadEmail } from '@/lib/notification-content'
 import { resolveEmailRecipients, buildEmailIdempotencyKey, type EmailRecipient } from '@/lib/notification-email'
@@ -12,6 +11,12 @@ import { log, logError } from '@/lib/logger'
 // e a varredura por cursor é justamente a parte que já custou uma starvation em
 // produção (P1-1). Reescrevê-la aqui seria repetir o bug, não evitá-lo.
 import { scanForCandidates, parseThresholdMin, type ScanRow, type ClaimState } from '../abandoned-leads/route'
+// Canônicas na lib desde o corte "sem fila retroativa" (2026-08-05): o baseline
+// da ativação de chave (lib/notification-baseline.ts) usa EXATAMENTE o mesmo
+// hash e o mesmo filtro de conteúdo que este cron — divergir os dois deixaria
+// acervo vazar ou lead legítimo calado. Re-exportadas para os testes daqui.
+import { hasAnsweredSomething, recipientHash } from '@/lib/notification-baseline'
+export { hasAnsweredSomething, recipientHash }
 
 /**
  * CRON — Alerta de LEAD ABANDONADO por E-MAIL (Entrega 2).
@@ -94,11 +99,6 @@ function toMs(value: unknown): number {
   return Number.isFinite(ms) ? ms : -Infinity
 }
 
-/** Hash do destinatário — auditoria sem guardar o endereço. */
-export function recipientHash(email: string): string {
-  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex')
-}
-
 interface EligibleForm {
   id: string
   title: string | null
@@ -113,25 +113,6 @@ interface ClaimRow {
   recipient_role: string
   status: string
   created_at: string
-}
-
-/**
- * Um lead está pronto para virar e-mail? Exige ao menos UMA resposta com
- * conteúdo — alertar sobre um formulário em branco seria ruído para o dono.
- *
- * O que este filtro NÃO faz, de propósito: exigir telefone. O `isActionable` do
- * cron de WhatsApp exige, e reutilizá-lo aqui descartaria justamente os leads
- * que só dá para recuperar por e-mail.
- */
-export function hasAnsweredSomething(answers: unknown): boolean {
-  if (!answers || typeof answers !== 'object') return false
-  return Object.values(answers as Record<string, unknown>).some((v) => {
-    if (v === null || v === undefined) return false
-    if (typeof v === 'string') return v.trim().length > 0
-    if (Array.isArray(v)) return v.length > 0
-    if (typeof v === 'object') return Object.keys(v as object).length > 0
-    return true
-  })
 }
 
 /**

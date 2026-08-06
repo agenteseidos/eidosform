@@ -12,6 +12,9 @@ import { sanitizeContentBlocksServer as sanitizeContentBlocks } from '@/lib/html
 import { isSafeUrl } from '@/lib/html'
 import { getEffectivePlan } from '@/lib/plans'
 import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
+import { detectNewlyActivatedRecipients, baselineAbandonedEmailClaims, type BaselineClient } from '@/lib/notification-baseline'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { parseThresholdMin } from '../../cron/abandoned-leads/route'
 
 // T1/T2: Ensure URLs have protocol before persisting
 function ensureHttps(url: string | null | undefined): string | null {
@@ -70,7 +73,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // Verify ownership
   const { data: existing } = await supabase
     .from('forms')
-    .select('id, title, questions, google_sheets_id, google_sheets_enabled, version')
+    .select('id, title, questions, google_sheets_id, google_sheets_enabled, version, notify_owner_enabled, notify_email_enabled, notify_email')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
@@ -125,7 +128,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, email')
     .eq('id', user.id)
     .single()
 
@@ -257,6 +260,56 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       { error: 'Dados de integração inválidos', details: integrationValidation.errors },
       { status: 400 }
     )
+  }
+
+  // ── UX-notificações, corte SEM FILA RETROATIVA (pedido Sidney 05/08) ───────
+  // Se este save faz um destinatário de e-mail PASSAR A EXISTIR (chave do dono
+  // religada, e-mail adicional ativado/preenchido), cada abandono JÁ existente
+  // do formulário ganha claim-baseline ANTES de a chave ligar: o cron passa a
+  // enviar só abandono novo. Fail-closed de propósito — sem baseline a chave
+  // não liga, senão o acervo de 72h desagua no destinatário novo de uma vez
+  // (a rajada de 10 "Lead incompleto" num minuto de 05/08).
+  const prevNotify = existing as unknown as {
+    notify_owner_enabled: boolean | null
+    notify_email_enabled: boolean | null
+    notify_email: string | null
+  }
+  const newlyActivated = detectNewlyActivatedRecipients({
+    prev: {
+      notify_owner_enabled: prevNotify.notify_owner_enabled ?? null,
+      notify_email_enabled: prevNotify.notify_email_enabled ?? null,
+      notify_email: prevNotify.notify_email ?? null,
+    },
+    next: {
+      ...(notify_owner_enabled !== undefined && { notify_owner_enabled: notify_owner_enabled === true }),
+      ...(notify_email_enabled !== undefined && { notify_email_enabled }),
+      ...(integrationValidation.values.notify_email !== undefined && { notify_email: integrationValidation.values.notify_email }),
+    },
+    ownerEmail: (profile as { email?: string | null } | null)?.email,
+  })
+  if (newlyActivated.length > 0) {
+    const thresholdMin = parseThresholdMin(process.env.ABANDONED_LEAD_MINUTES)
+    if (thresholdMin === null) {
+      logError('PATCH /api/forms/[id] baseline: ABANDONED_LEAD_MINUTES inválido — chave NÃO ativada', null, { id })
+      return NextResponse.json(
+        { error: 'Não foi possível ativar a notificação agora. Tente novamente em instantes.' },
+        { status: 500 }
+      )
+    }
+    try {
+      await baselineAbandonedEmailClaims({
+        client: createServiceRoleClient() as unknown as BaselineClient,
+        formId: id,
+        recipients: newlyActivated,
+        thresholdMin,
+      })
+    } catch (e) {
+      logError('PATCH /api/forms/[id] baseline de abandono falhou — chave NÃO ativada', e, { id })
+      return NextResponse.json(
+        { error: 'Não foi possível ativar a notificação agora. Tente novamente em instantes.' },
+        { status: 500 }
+      )
+    }
   }
 
   // Google Sheets: connect to user-provided spreadsheet

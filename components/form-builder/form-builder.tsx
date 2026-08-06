@@ -1954,6 +1954,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                         {(form.notify_owner_enabled ?? true) === false && !form.notify_email_enabled && (
                           <p className="text-xs text-amber-600">Com as duas chaves desligadas, você não receberá notificação de novas respostas deste formulário.</p>
                         )}
+                        <p className="text-[11px] text-slate-400">As chaves valem daqui pra frente: ao ligar uma chave, respostas e abandonos anteriores não geram e-mail retroativo.</p>
                       </div>
                     )}
                   </div>

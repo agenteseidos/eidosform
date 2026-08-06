@@ -855,3 +855,67 @@ export async function updateSubscription(
   subscriptionCache.delete(subscriptionId)
   return data
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// NFS-e (notas fiscais de serviço) — wrappers finos; a política mora em lib/nfse.ts.
+
+export type AsaasInvoiceStatus =
+  | 'SCHEDULED' | 'SYNCHRONIZED' | 'AUTHORIZED'
+  | 'PROCESSING_CANCELLATION' | 'CANCELED' | 'CANCELLATION_DENIED' | 'ERROR'
+
+export interface AsaasInvoiceSummary {
+  id: string
+  status: AsaasInvoiceStatus
+  payment?: string | null
+  value?: number
+  number?: string | null
+}
+
+/** Lista as notas vinculadas a uma cobrança (GET /v3/invoices?payment=). */
+export async function listInvoicesByPayment(paymentId: string): Promise<AsaasInvoiceSummary[]> {
+  const data = await asaasFetch(`/invoices?payment=${encodeURIComponent(paymentId)}&limit=100`)
+  const rows: AsaasInvoiceSummary[] = data.data ?? []
+  // Cinto e suspensório: se a API ignorar o filtro (param desconhecido em versão
+  // futura), o filtro client-side impede agir sobre nota de OUTRA cobrança.
+  return rows.filter((inv) => !inv.payment || inv.payment === paymentId)
+}
+
+/**
+ * Agenda a emissão de uma NFS-e vinculada a uma cobrança (POST /v3/invoices).
+ * A emissão em si é assíncrona no Asaas (SCHEDULED → SYNCHRONIZED → AUTHORIZED/ERROR).
+ */
+export async function scheduleInvoiceForPayment(params: {
+  paymentId: string
+  value: number
+  effectiveDate: string // YYYY-MM-DD
+  serviceDescription: string
+  observations: string
+  municipalServiceId: string
+  municipalServiceName: string
+  externalReference: string
+  taxes: { retainIss: boolean; iss: number; pis: number; cofins: number; csll: number; inss: number; ir: number }
+}): Promise<{ id: string; status: string }> {
+  const data = await asaasFetch('/invoices', {
+    method: 'POST',
+    body: JSON.stringify({
+      payment: params.paymentId,
+      serviceDescription: params.serviceDescription,
+      observations: params.observations,
+      value: params.value,
+      deductions: 0,
+      effectiveDate: params.effectiveDate,
+      externalReference: params.externalReference,
+      municipalServiceId: params.municipalServiceId,
+      municipalServiceName: params.municipalServiceName,
+      // NÃO usar updatePayment: a nota nunca deve mexer no valor da cobrança.
+      taxes: params.taxes,
+    }),
+  })
+  return { id: data.id, status: data.status }
+}
+
+/** Cancela uma NFS-e (POST /v3/invoices/{id}/cancel). Gratuito; sujeito a prazo municipal. */
+export async function cancelInvoice(invoiceId: string): Promise<{ id: string; status: string }> {
+  const data = await asaasFetch(`/invoices/${encodeURIComponent(invoiceId)}/cancel`, { method: 'POST' })
+  return { id: data.id, status: data.status }
+}

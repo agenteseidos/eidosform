@@ -11,6 +11,7 @@ import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limi
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
 import { finalizeActivation, claimActivationEffects, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
 import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
+import { emitirNotaParaPagamento, cancelarNotasDoPagamento } from '@/lib/nfse'
 import { logError, logWarn, log } from '@/lib/logger'
 import { verifyAsaasAccessToken } from '@/lib/webhook-hmac'
 import { logWebhookEvent } from '@/lib/webhook-logger'
@@ -471,6 +472,17 @@ export async function POST(req: NextRequest) {
       case 'PAYMENT_RECEIVED': {
         const customerId = payment?.customer
         if (!customerId) break
+
+        // NFS-e automática (decisão Sidney 05/08): TODO pagamento confirmado gera nota —
+        // fica ANTES do branching de propósito, cobrindo assinatura, avulso de troca de
+        // plano E fallback de cartão. Idempotente por cobrança dentro do próprio módulo
+        // (CONFIRMED e RECEIVED do mesmo payment não duplicam; retries idem). Best-effort
+        // em after(): nunca segura a ativação nem manda o evento pra DLQ.
+        if (payment?.id && typeof payment?.value === 'number') {
+          const nfsePaymentId = String(payment.id)
+          const nfseValue = payment.value
+          agendar(() => emitirNotaParaPagamento({ paymentId: nfsePaymentId, value: nfseValue }))
+        }
 
         // Fluxo de assinatura: TODO pagamento recorrente carrega payment.subscription.
         // Sem ela, não dá pra cancelar/reconciliar/corrigir a sub depois — ativar seria
@@ -1070,6 +1082,17 @@ export async function POST(req: NextRequest) {
       case 'SUBSCRIPTION_INACTIVATED': {
         const customerId = payment?.customer ?? subscription?.customer
         const subscriptionId = payment?.subscription ?? subscription?.id ?? null
+
+        // NFS-e: estorno/chargeback cancela a nota da cobrança (decisão Sidney 05/08).
+        // Chargeback REQUESTED cancela JÁ na abertura da disputa — se esperássemos o
+        // desfecho, o prazo municipal de cancelamento poderia vencer; se a disputa for
+        // ganha, reemite-se manualmente (caso raro > nota órfã irrecuperável).
+        // SUBSCRIPTION_INACTIVATED não tem payment → noop natural. Best-effort em after().
+        if (event !== 'SUBSCRIPTION_INACTIVATED' && payment?.id) {
+          const nfsePaymentId = String(payment.id)
+          const nfseMotivo = event
+          agendar(() => cancelarNotasDoPagamento({ paymentId: nfsePaymentId, motivo: nfseMotivo }))
+        }
         if (!customerId) break
 
         const { user } = await resolveBillingContext({

@@ -74,6 +74,10 @@ vi.mock('@/lib/webhook-hmac', () => ({
 }))
 vi.mock('@/lib/webhook-logger', () => ({ logWebhookEvent: vi.fn() }))
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }))
+vi.mock('@/lib/nfse', () => ({
+  emitirNotaParaPagamento: vi.fn().mockResolvedValue('scheduled'),
+  cancelarNotasDoPagamento: vi.fn().mockResolvedValue('cancelled'),
+}))
 
 import { POST } from './route'
 import { createClient } from '@supabase/supabase-js'
@@ -463,5 +467,95 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
       && JSON.stringify(c.args) === JSON.stringify(['payment_method', 'plan_switch_fallback']))
     // 1 no resolveBillingContext inicial (opção 3) + 1 no re-resolve do updateCheckoutLink (opção 3).
     expect(neqCalls.length).toBeGreaterThanOrEqual(2)
+  })
+})
+
+// ── NFS-e automática (2026-08-05): ganchos de emissão e cancelamento no webhook ──
+import { emitirNotaParaPagamento, cancelarNotasDoPagamento } from '@/lib/nfse'
+const mockEmitirNota = vi.mocked(emitirNotaParaPagamento)
+const mockCancelarNotas = vi.mocked(cancelarNotasDoPagamento)
+
+/** agendar() cai no fallback void (o mock de next/server não tem after) — flush de microtasks. */
+async function flushAgendadas() {
+  for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r))
+}
+
+describe('POST /api/webhooks/asaas — ganchos de NFS-e', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.ASAAS_WEBHOOK_TOKEN = 'whsec-test'
+    mockEmitirNota.mockResolvedValue('scheduled')
+    mockCancelarNotas.mockResolvedValue('cancelled')
+  })
+
+  it('PAYMENT_CONFIRMED de AVULSO (planchange) agenda emissão — o gancho fica ANTES do branching', async () => {
+    const { db } = makeRecordingDb({ asaas_webhook_events: [{ error: null }] })
+    mockCreateClient.mockReturnValue(db as never)
+    mockPlanChange.mockResolvedValue('switched' as never)
+
+    const body = { id: 'evt_nf1', event: 'PAYMENT_CONFIRMED', payment: { customer: 'cus_1', value: 78, id: 'pay_nf1', externalReference: 'profile:user-1|plan:plus|cycle:MONTHLY|kind:planchange|attempt:att1' } }
+    await POST(makeReq(body))
+    await flushAgendadas()
+
+    expect(mockEmitirNota).toHaveBeenCalledWith({ paymentId: 'pay_nf1', value: 78 })
+  })
+
+  it('PAYMENT_RECEIVED também dispara emissão (dedupe por cobrança mora no módulo nfse)', async () => {
+    const { db } = makeRecordingDb(baseResults())
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+    mockClaim.mockResolvedValue('claimed' as never)
+    mockFinalize.mockResolvedValue({ ok: true } as never)
+
+    const body = { id: 'evt_nf2', event: 'PAYMENT_RECEIVED', payment: { customer: 'cus_1', value: 49, id: 'pay_nf2', subscription: 'sub_1' } }
+    await POST(makeReq(body))
+    await flushAgendadas()
+
+    expect(mockEmitirNota).toHaveBeenCalledWith({ paymentId: 'pay_nf2', value: 49 })
+  })
+
+  it('PAYMENT_CONFIRMED sem payment.id ou sem value numérico NÃO agenda emissão', async () => {
+    const { db } = makeRecordingDb({ asaas_webhook_events: [{ error: null }] })
+    mockCreateClient.mockReturnValue(db as never)
+    mockCardFallback.mockResolvedValue('switched' as never)
+
+    const body = { id: 'evt_nf3', event: 'PAYMENT_CONFIRMED', payment: { customer: 'cus_1', checkoutSession: 'chk_1' } }
+    await POST(makeReq(body))
+    await flushAgendadas()
+
+    expect(mockEmitirNota).not.toHaveBeenCalled()
+  })
+
+  it('PAYMENT_REFUNDED agenda cancelamento da nota MESMO sem customer no payload', async () => {
+    const { db } = makeRecordingDb({ asaas_webhook_events: [{ error: null }] })
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_nf4', event: 'PAYMENT_REFUNDED', payment: { id: 'pay_nf4', value: 49 } }
+    await POST(makeReq(body))
+    await flushAgendadas()
+
+    expect(mockCancelarNotas).toHaveBeenCalledWith({ paymentId: 'pay_nf4', motivo: 'PAYMENT_REFUNDED' })
+  })
+
+  it('PAYMENT_CHARGEBACK_REQUESTED agenda cancelamento (não espera o desfecho da disputa)', async () => {
+    const { db } = makeRecordingDb({ asaas_webhook_events: [{ error: null }] })
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_nf5', event: 'PAYMENT_CHARGEBACK_REQUESTED', payment: { id: 'pay_nf5', value: 49 } }
+    await POST(makeReq(body))
+    await flushAgendadas()
+
+    expect(mockCancelarNotas).toHaveBeenCalledWith({ paymentId: 'pay_nf5', motivo: 'PAYMENT_CHARGEBACK_REQUESTED' })
+  })
+
+  it('SUBSCRIPTION_INACTIVATED NÃO cancela nota (sem payment; evento de sub, não de dinheiro)', async () => {
+    const { db } = makeRecordingDb({ asaas_webhook_events: [{ error: null }] })
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_nf6', event: 'SUBSCRIPTION_INACTIVATED', subscription: { id: 'sub_x', customer: 'cus_1' } }
+    await POST(makeReq(body))
+    await flushAgendadas()
+
+    expect(mockCancelarNotas).not.toHaveBeenCalled()
   })
 })

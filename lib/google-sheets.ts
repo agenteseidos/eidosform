@@ -212,6 +212,80 @@ interface UpsertOptions {
  * appenda nova linha e retorna o índice — quem chamar deve persistir esse
  * número em `responses.sheets_row_index` pra updates futuros sem scan.
  */
+/**
+ * Monta a linha 1 da planilha (auditoria 2026-08, lote 3 · L3-5).
+ *
+ * O DEFEITO que isto corrige: a versão anterior RECALCULAVA a ordem inteira das colunas e
+ * reescrevia só a linha 1 — sem mexer nas linhas de dados abaixo. Sempre que uma pergunta nova
+ * era adicionada ao formulário, ela era INSERIDA no meio (antes de `meta_events` e das UTMs),
+ * empurrando essas colunas uma casa para a direita **apenas no cabeçalho**. Todas as respostas
+ * já gravadas passavam a exibir o valor de uma coluna sob o título de outra: o histórico inteiro
+ * do cliente ficava desalinhado, em silêncio, por uma edição banal do formulário.
+ *
+ * A REGRA AGORA É: **só acrescentar, nunca reordenar.** Numa planilha que já tem dados, o
+ * cabeçalho existente é tratado como imutável — coluna nova entra no FIM, mesmo que isso deixe
+ * uma pergunta depois das UTMs. A ordem fica menos bonita; o histórico fica correto. Não há
+ * escolha entre as duas: reordenar o cabeçalho sem reescrever milhares de linhas de dados
+ * corrompe a planilha, e reescrever os dados exigiria reprocessar respostas que talvez nem
+ * existam mais no banco.
+ *
+ * A montagem da linha de dados (`finalHeaders.map(...)`) casa por NOME de coluna, não por
+ * posição — por isso acrescentar no fim funciona sem nenhuma outra mudança.
+ *
+ * Planilha VAZIA é o único caso em que a ordem canônica bonita é aplicada: não há histórico
+ * para desalinhar.
+ */
+export function computeSheetHeaders(
+  existingHeaders: string[],
+  fieldLabels: string[]
+): { headers: string[]; needsUpdate: boolean } {
+  if (existingHeaders.length === 0) {
+    return {
+      headers: dedup([
+        'Data/Hora',
+        ...IDENTITY_COLUMNS,
+        RESPONSE_ID_COLUMN,
+        STATUS_COLUMN,
+        ...fieldLabels,
+        META_EVENTS_COLUMN,
+        ...UTM_COLUMNS,
+      ]),
+      needsUpdate: true,
+    }
+  }
+
+  const jaExiste = new Set(existingHeaders)
+  const acrescentar: string[] = []
+  const marcar = (col: string) => {
+    if (!col || jaExiste.has(col)) return
+    jaExiste.add(col)
+    acrescentar.push(col)
+  }
+
+  // Planilhas conectadas antes destas colunas existirem continuam ganhando as duas — no fim.
+  marcar(RESPONSE_ID_COLUMN)
+  marcar(STATUS_COLUMN)
+  // Perguntas novas do formulário. Pergunta RENOMEADA vira coluna nova e a antiga permanece com
+  // o histórico dela — que é o comportamento correto: os dados antigos foram coletados sob a
+  // pergunta antiga.
+  for (const label of fieldLabels) marcar(label)
+  marcar(META_EVENTS_COLUMN)
+  for (const col of UTM_COLUMNS) marcar(col)
+
+  // IDENTITY_COLUMNS ("nome", "email", "telefone") NUNCA entram em planilha existente: são
+  // campos ocultos e acrescentá-las a quem nunca as teve só cria coluna vazia.
+
+  return {
+    headers: acrescentar.length > 0 ? [...existingHeaders, ...acrescentar] : existingHeaders,
+    needsUpdate: acrescentar.length > 0,
+  }
+}
+
+function dedup(cols: string[]): string[] {
+  const visto = new Set<string>()
+  return cols.filter((c) => (c && !visto.has(c) ? (visto.add(c), true) : false))
+}
+
 export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResult> {
   const { spreadsheetId, fieldLabels, answers, questionIdToLabel, utmData, urlParams, responseId, status, rowIndex } = opts
   try {
@@ -226,46 +300,10 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
     })
     const existingHeaders: string[] = (headerRes.data.values?.[0] as string[]) ?? []
 
-    const hasResponseId = existingHeaders.includes(RESPONSE_ID_COLUMN)
-    const hasStatus = existingHeaders.includes(STATUS_COLUMN)
-    const utmStartIndex = existingHeaders.findIndex((h) => UTM_COLUMNS.includes(h))
-    const metaEventsIndex = existingHeaders.indexOf(META_EVENTS_COLUMN)
-    // Coluna de identidade (campos ocultos) = header chamado nome/email/telefone
-    // que NÃO é título de pergunta DESTE form — robusto a reordenação manual de
-    // colunas pelo cliente (regra posicional anterior quebrava se movessem o
-    // response_id pra antes da identidade). Pergunta intitulada "email" continua
-    // sendo coluna de dados. Nunca inserir identidade em planilha antiga.
-    const isIdentityHeader = (h: string) =>
-      (IDENTITY_COLUMNS as readonly string[]).includes(h) && !fieldLabels.includes(h)
-    const presentIdentity = existingHeaders.length === 0
-      ? [...IDENTITY_COLUMNS]
-      : IDENTITY_COLUMNS.filter((c) => existingHeaders.includes(c) && !fieldLabels.includes(c))
-
-    // Onde terminam os campos de dados (antes do meta_events/UTMs)
-    const endOfDataIdx = metaEventsIndex >= 0
-      ? metaEventsIndex
-      : (utmStartIndex >= 0 ? utmStartIndex : existingHeaders.length)
-    // Campos de dados = tudo antes do meta_events/UTMs que não é coluna especial
-    const dataHeaders = existingHeaders.slice(0, endOfDataIdx).filter((h) => {
-      if (h === 'Data/Hora' || h === RESPONSE_ID_COLUMN || h === STATUS_COLUMN) return false
-      if (isIdentityHeader(h)) return false
-      return true
-    })
-
-    const newLabels = fieldLabels.filter((label) => !dataHeaders.includes(label))
-    const needsHeaderUpdate = !hasResponseId || !hasStatus || newLabels.length > 0 || existingHeaders.length === 0
+    const { headers: updatedHeaders, needsUpdate: needsHeaderUpdate } =
+      computeSheetHeaders(existingHeaders, fieldLabels)
 
     if (needsHeaderUpdate) {
-      const updatedHeaders = [
-        'Data/Hora',
-        ...presentIdentity,
-        RESPONSE_ID_COLUMN,
-        STATUS_COLUMN,
-        ...dataHeaders,
-        ...newLabels,
-        META_EVENTS_COLUMN,
-        ...UTM_COLUMNS,
-      ]
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: 'Respostas!A1',
@@ -293,6 +331,12 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
     const metaEventsValue = Array.isArray(answers.meta_events)
       ? (answers.meta_events as unknown[]).map(formatAnswerValue).join(', ')
       : ''
+
+    // Coluna de identidade = header chamado nome/email/telefone que NÃO é título de pergunta
+    // DESTE formulário. Robusto a reordenação manual de colunas pelo cliente. Pergunta intitulada
+    // "email" continua sendo coluna de dados — a RESPOSTA vence o campo oculto.
+    const isIdentityHeader = (h: string) =>
+      (IDENTITY_COLUMNS as readonly string[]).includes(h) && !fieldLabels.includes(h)
 
     const row = finalHeaders.map((header) => {
       if (header === 'Data/Hora') return timestamp

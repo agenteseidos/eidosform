@@ -100,16 +100,30 @@ async function insertDlq(params: {
         ownerEmail: params.ownerEmail,
       })
     }
-  } catch {
-    // DLQ insert failure must never crash the response flow
+  } catch (err) {
+    // A gravação na fila morta NUNCA pode derrubar o fluxo da resposta — isso continua valendo.
+    // Mas engolir em silêncio apagava a ÚLTIMA evidência de que houve falha: com o banco
+    // instável, o webhook falhava, a DLQ não gravava e não sobrava rastro em lugar nenhum.
+    // Agora o log fica. (auditoria 2026-08, lote 3 · L3-2)
+    logError('[webhook-dispatcher] falha ao gravar na fila morta — evidência só neste log', err, {
+      formId: params.formId,
+      responseId: params.responseId,
+    })
   }
 }
 
 /**
  * Notify the form owner once per 24h when ≥3 webhook failures happened in the
  * past 7 days. Reads webhook_failures + writes webhook_failure_notifications.
+ *
+ * EXPORTADA só para teste (lote 3 · L3-1). A trava anti-rajada aqui dentro é a parte arriscada do
+ * lote — se ela falhar, o cliente recebe uma enxurrada de e-mails. Testá-la através de
+ * `dispatchWebhook` obrigaria a atravessar 4 tentativas de rede com backoff, e o arranjo de
+ * temporizadores falsos necessário para isso se mostrou INTERMITENTE (o disparo espera
+ * `crypto.subtle.sign` e `fetch`, que não são temporizadores). Teste que passa às vezes é pior
+ * que teste nenhum: ensina a ignorar o vermelho.
  */
-async function maybeNotifyOwnerOfWebhookFailures(params: {
+export async function maybeNotifyOwnerOfWebhookFailures(params: {
   formId: string
   ownerEmail: string
 }): Promise<void> {
@@ -126,15 +140,42 @@ async function maybeNotifyOwnerOfWebhookFailures(params: {
       .limit(10)
     if (failuresError || !failures || failures.length < 3) return
 
-    const { data: lastNotification } = await supabase
-      .from('webhook_failure_notifications')
-      .select('last_notified_at')
-      .eq('form_id', params.formId)
-      .maybeSingle()
+    // CLAIM ANTES DE ENVIAR — trava anti-rajada (auditoria 2026-08, lote 3 · L3-1).
+    //
+    // A forma antiga era LER `last_notified_at`, decidir, ENVIAR e só então gravar. Entre a
+    // leitura e a gravação cabia tudo: submissões concorrentes do mesmo formulário rodam em
+    // paralelo dentro do `after()`, todas liam "sem notificação recente", todas passavam no
+    // gate e todas enviavam. O cliente receberia uma RAJADA de e-mails de alerta em vez de um.
+    //
+    // Agora a vaga é RESERVADA antes do envio, e a reserva é atômica no banco:
+    //  1. UPDATE condicional — só vence quem encontrar a linha com a marca velha (>24h).
+    //  2. Se nenhuma linha foi atualizada, tenta INSERT — cobre a primeira notificação daquele
+    //     formulário. Conflito de chave (23505) significa que outra execução chegou primeiro.
+    // Em ambos os caminhos, perder a disputa é `return` silencioso: alguém já está enviando.
+    //
+    // Update-then-insert, e não `upsert`: o upsert sobrescreveria a marca de quem venceu,
+    // reabrindo a janela em vez de fechá-la.
+    const agora = new Date().toISOString()
+    const limite24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-    if (lastNotification?.last_notified_at) {
-      const ageMs = Date.now() - new Date(lastNotification.last_notified_at).getTime()
-      if (ageMs < 24 * 60 * 60 * 1000) return
+    const { data: claimed } = await supabase
+      .from('webhook_failure_notifications')
+      .update({ last_notified_at: agora, failure_count_window: failures.length })
+      .eq('form_id', params.formId)
+      .lt('last_notified_at', limite24h)
+      .select('form_id')
+
+    if (!claimed || claimed.length === 0) {
+      // Não venceu o UPDATE: ou a linha não existe (1ª vez), ou já foi notificado nas últimas
+      // 24h. O INSERT distingue os dois — conflito = já notificado.
+      const { error: insertErr } = await supabase
+        .from('webhook_failure_notifications')
+        .insert({
+          form_id: params.formId,
+          last_notified_at: agora,
+          failure_count_window: failures.length,
+        })
+      if (insertErr) return // linha já existia e está dentro da janela → outra execução cuida
     }
 
     const { data: form } = await supabase
@@ -154,13 +195,7 @@ async function maybeNotifyOwnerOfWebhookFailures(params: {
       })),
     })
 
-    await supabase
-      .from('webhook_failure_notifications')
-      .upsert({
-        form_id: params.formId,
-        last_notified_at: new Date().toISOString(),
-        failure_count_window: failures.length,
-      })
+    // A marca já foi gravada no claim acima — regravar aqui reabriria a janela de rajada.
   } catch (err) {
     logWarn('[webhook-dispatcher] Owner notification failed', { error: err instanceof Error ? err.message : String(err) })
   }
@@ -201,6 +236,18 @@ export async function dispatchWebhook(params: {
   const urlCheck = await validateWebhookUrlAsync(webhookUrl)
   if (!urlCheck.safe) {
     logError('[webhook-dispatcher] BLOCKED', { formId, reason: urlCheck.reason })
+    // Rejeição por SSRF também vai para a fila morta (auditoria 2026-08, lote 3 · L3-3c).
+    // Antes esse caminho retornava ANTES do `insertDlq`: o lead não chegava ao CRM do cliente e
+    // NÃO ficava registro nenhum no banco — só uma linha de log na Vercel. Com o aperto de
+    // `every`→`some` deste mesmo commit, mais URLs passam a cair aqui, então o rastro deixa de
+    // ser opcional: é como o dono vai descobrir que o endpoint dele foi recusado.
+    await insertDlq({
+      formId,
+      responseId,
+      webhookUrl,
+      error: `BLOCKED: ${urlCheck.reason ?? 'url recusada'}`,
+      ownerEmail,
+    })
     return { success: false, error: urlCheck.reason }
   }
 
@@ -232,8 +279,27 @@ export async function dispatchWebhook(params: {
   const retryDelays = [1000, 2000, 4000]
   let lastError: string | undefined
 
+  // ORÇAMENTO TOTAL (auditoria 2026-08, lote 3 · L3-2).
+  //
+  // O pior caso antes disto: 4 tentativas de até 10s + 7s de espera = ~47s. Este disparo roda em
+  // `after()`, depois de a resposta já ter ido para o lead; se a função serverless for encerrada
+  // antes do fim, o `insertDlq` do final NUNCA roda. Ou seja: justamente quando o webhook do
+  // cliente estava mais lento — o cenário que mais importa — a falha não era registrada e o aviso
+  // ao dono não saía. A falha ficava invisível por ser demorada demais.
+  //
+  // O teto abaixo só INTERROMPE tentativas; nunca acrescenta uma. Reduz o número de POSTs no pior
+  // caso e garante que sobre tempo para gravar a fila morta. Por isso não há risco de duplicata:
+  // deliberadamente NÃO mexemos no timeout de 10s por tentativa nem transformamos o disparo da v1
+  // em `after()` — as duas coisas multiplicariam POSTs num destino sem chave de idempotência.
+  const ORCAMENTO_MS = 25_000
+  const inicio = Date.now()
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
+      if (Date.now() - inicio >= ORCAMENTO_MS) {
+        lastError = `${lastError ?? 'unknown'} (orçamento de ${ORCAMENTO_MS}ms esgotado após ${attempt} tentativas)`
+        break
+      }
       await new Promise(r => setTimeout(r, retryDelays[attempt - 1]))
     }
 
@@ -249,6 +315,11 @@ export async function dispatchWebhook(params: {
           'X-EidosForm-Form-Id': formId,
           'X-EidosForm-Signature': `sha256=${signature}`,
           'X-EidosForm-Timestamp': fixedTimestamp,
+          // Estável entre as 4 tentativas: permite ao CRM do cliente descartar a repetição de um
+          // envio que ele já processou (lote 3 · L3-2). Sem este cabeçalho, um webhook que recebe
+          // e responde devagar processa o mesmo lead até 4 vezes — e era o que impedia qualquer
+          // aumento de tentativas. Receptor que ignora o cabeçalho não é afetado em nada.
+          'X-EidosForm-Delivery-Id': responseId,
         },
         body: bodyStr,
         signal: controller.signal,
@@ -265,7 +336,7 @@ export async function dispatchWebhook(params: {
     }
   }
 
-  logError('[webhook-dispatcher] FAILED after 3 retries (4 total attempts)', { formId, responseId, error: lastError })
+  logError('[webhook-dispatcher] FAILED — todas as tentativas esgotadas', { formId, responseId, error: lastError })
 
   // DLQ: persist failure for dead-letter queue processing
   await insertDlq({ formId, responseId, webhookUrl, error: lastError ?? 'unknown', ownerEmail })

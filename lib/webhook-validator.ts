@@ -51,7 +51,11 @@ function isPrivateIP(ip: string): boolean {
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
     (a === 169 && b === 254) ||
-    a === 100 // CGNAT
+    // CGNAT é 100.64.0.0/10, NÃO o 100.0.0.0/8 inteiro (auditoria 2026-08, lote 3 · L3-3).
+    // 100.0-63.x e 100.128-255.x são espaço PÚBLICO alocado pelo ARIN e usado por provedores
+    // reais. Marcá-los como privados, junto com o aperto de `every`→`some` abaixo, bloquearia
+    // webhook legítimo de cliente — a correção de segurança viraria perda de lead.
+    (a === 100 && b >= 64 && b <= 127)
   )
 }
 
@@ -146,7 +150,16 @@ export async function validateWebhookUrlAsync(urlString: string): Promise<{ safe
     return { safe: false, reason: 'Hostname could not be resolved — refusing for safety' }
   }
 
-  if (result.ips.every(ip => isPrivateIP(ip))) {
+  // `some`, não `every` (auditoria 2026-08, lote 3 · L3-3).
+  //
+  // Com `every`, bastava UM IP público entre os resolvidos para liberar a URL inteira. Um
+  // domínio com múltiplos registros A — um público e um apontando para 169.254.169.254
+  // (metadados da nuvem) ou para a rede interna — passava, e o POST com o lead do cliente
+  // podia sair para o alvo interno. Agora QUALQUER IP privado reprova o conjunto.
+  //
+  // ⚠️ A ordem importa: o range CGNAT acima precisou ser corrigido ANTES deste aperto. Com o
+  // `/8` antigo, apertar aqui reprovaria hosts em 100.0-63.x, que são públicos de verdade.
+  if (result.ips.some(ip => isPrivateIP(ip))) {
     return { safe: false, reason: 'Hostname resolves to private IP addresses' }
   }
 

@@ -46,6 +46,9 @@ function createIdempotencyStore(opts = {}) {
 
   /** key -> { ts, messageId? , promise? }  (promise presente = envio em voo) */
   const map = new Map();
+  // Serialização das gravações (auditoria 2026-08, lote 3 · L3-7). Ver comentário em save().
+  let saveQueue = Promise.resolve();
+  let saveSeq = 0;
 
   /** Carrega o disco. JSON corrompido é preservado como .corrupt e começa vazio. */
   function load() {
@@ -78,7 +81,28 @@ function createIdempotencyStore(opts = {}) {
     return v;
   }
 
-  /** Atômico (tmp+rename) e AWAITED — escrita interrompida corrompia o JSON. */
+  /**
+   * Atômico (tmp+rename), AWAITED e SERIALIZADO.
+   *
+   * ANTES (auditoria 2026-08, lote 3 · L3-7): o nome do temporário era fixo — `file + '.tmp'`.
+   * Dois saves concorrentes escreviam NO MESMO arquivo ao mesmo tempo e o `rename` publicava um
+   * JSON entrelaçado. No boot seguinte o `load()` falha ao parsear e DESCARTA a base de
+   * deduplicação inteira — e sem dedup, mensagem repetida vira notificação repetida ao cliente.
+   * Não exige cenário raro: basta a sobreposição de dois saves.
+   *
+   * Duas metades, ambas necessárias e por motivos diferentes:
+   *  · TMP EXCLUSIVO por save (pid + sequência) → mata a corrupção; cada gravação tem seu inode.
+   *  · FILA → garante a ORDEM. Só com tmp exclusivo, o rename do snapshot mais VELHO pode
+   *    aterrissar por último e o disco fica com um JSON válido porém desatualizado — o que
+   *    reenviaria uma notificação no próximo restart.
+   *
+   * O snapshot é serializado ANTES de entrar na fila: o que se enfileira é a gravação, não a
+   * leitura do mapa, então cada save publica o estado que existia quando foi chamado.
+   *
+   * `save()` NUNCA rejeita — o `.catch` está dentro da atribuição da fila. Isso é deliberado:
+   * o chamador (`run`/`remember`) não pode perder o envio por falha de persistência, e uma
+   * rejeição não tratada aqui derrubaria o processo.
+   */
   async function save() {
     if (!file) return;
     prune();
@@ -91,13 +115,18 @@ function createIdempotencyStore(opts = {}) {
       }
       if (v.fallback === true) serializavel[k].fallback = true;
     }
-    const tmp = file + '.tmp';
-    try {
-      await fsp.writeFile(tmp, JSON.stringify(serializavel), { mode: 0o600 });
-      await fsp.rename(tmp, file);
-    } catch (err) {
-      log(`[idemp] ERRO ao persistir sent-keys: ${err.message}`);
-    }
+    const snapshot = JSON.stringify(serializavel);
+    const tmp = `${file}.${process.pid}.${++saveSeq}.tmp`;
+    saveQueue = saveQueue
+      .then(async () => {
+        await fsp.writeFile(tmp, snapshot, { mode: 0o600 });
+        await fsp.rename(tmp, file);
+      })
+      .catch((err) => {
+        log(`[idemp] ERRO ao persistir sent-keys: ${err.message}`);
+        try { fs.rmSync(tmp, { force: true }); } catch {}
+      });
+    return saveQueue;
   }
 
   /**

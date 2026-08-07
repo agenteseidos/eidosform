@@ -59,7 +59,9 @@ export function sanitizeSubject(subject: string): string {
  * log de infraestrutura seria vazamento. O hash basta para correlacionar
  * tentativas do mesmo destinatário.
  */
-function maskRecipient(to: string): string {
+/** Hash curto + domínio. Exportado para o registro de entrega (lote 3 · L3-4) usar
+ *  EXATAMENTE a mesma regra — se as duas divergirem, o bounce não correlaciona. */
+export function maskRecipient(to: string): string {
   const digest = createHash('sha256').update(to.trim().toLowerCase()).digest('hex').slice(0, 8)
   const domain = to.includes('@') ? to.slice(to.lastIndexOf('@') + 1) : 'sem-dominio'
   return `${digest}@${domain}`
@@ -100,6 +102,13 @@ export async function sendBillingOpsAlert(params: {
   return sendEmailWithRetry({ to: ADMIN_ALERT_EMAIL, subject: `[EidosForm ALERTA] ${params.subject}`, html })
 }
 
+/**
+ * Entrega o payload à Resend com repetição em erro transitório.
+ *
+ * ⚠️ O `id` devolvido é comprovante de ACEITE, não de entrega (lote 3 · L3-4). Ele é a chave
+ * que liga este envio aos eventos posteriores (`delivered`, `bounced`, `complained`) que chegam
+ * pelo webhook. Não trate `{ id }` como sucesso do ponto de vista do destinatário.
+ */
 async function sendEmailWithRetry(payload: {
   to: string
   subject: string
@@ -151,8 +160,14 @@ async function sendEmailWithRetry(payload: {
       // Corpo pode não ser JSON (502/HTML de proxy) — não pode derrubar o envio.
       const data = await res.json().catch(() => ({} as Record<string, unknown>))
       if (res.ok) {
-        // Log SEM PII: nada de assunto (carrega o nome do lead) nem endereço em claro.
-        console.log('[resend] email sent', { id: (data as { id?: string }).id, from: fromEmail, to: maskedTo })
+        // ACEITO ≠ ENTREGUE (auditoria 2026-08, lote 3 · L3-4). O 200 da Resend significa apenas
+        // "recebi e vou tentar entregar". A recusa do servidor do destinatário (caixa cheia,
+        // endereço inexistente, bloqueio por reputação) acontece SEGUNDOS OU MINUTOS DEPOIS, num
+        // evento assíncrono. O log dizia "email sent", e era essa a única prova que existia:
+        // dono de formulário com e-mail errado no cadastro parava de receber lead e ninguém
+        // ficava sabendo — nem ele, nem nós. Por isso o verbo mudou para `accepted`.
+        // Quem transforma aceite em entrega é o webhook: `app/api/webhooks/resend/route.ts`.
+        console.log('[resend] email accepted', { id: (data as { id?: string }).id, from: fromEmail, to: maskedTo })
         return { id: (data as { id?: string }).id }
       }
 

@@ -429,14 +429,49 @@ fastify.post('/api/whatsapp/qr', { onRequest: requireAuth }, async (request, rep
 });
 
 fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, reply) => {
+  const { to, message, idempotencyKey } = request.body || {};
+  if (!to || !message) return reply.code(400).send({ error: 'Missing to or message' });
+
+  // PRÉ-CHECAGENS ANTES DO RATE LIMIT (auditoria 2026-08, lote 3 · L3-6).
+  //
+  // O rate limit rodava primeiro e o teto de 10/min é efetivamente GLOBAL: atrás do proxy
+  // reverso, todo request chega com o mesmo IP de origem, então os clientes somam no mesmo
+  // balde. Consequência: a 11ª notificação da janela levava 429, o app traduzia para erro e a
+  // notificação era PERDIDA — sem fila e sem retry.
+  //
+  // Pior: uma requisição que é apenas repetição de algo JÁ ENVIADO gastava orçamento e podia
+  // ser recusada, mesmo sem produzir envio nenhum. Agora as duas respostas que não consomem o
+  // transporte — "já está na fila" e "já foi enviado" — são resolvidas antes.
+  //
+  // ⚠️ NÃO ligar `trustProxy` aqui: a origem real não é o cliente final, é a função da Vercel,
+  // cujo IP de egresso varia por invocação. Cada IP ganharia um balde próprio e o limite viraria
+  // decoração. O caminho certo é orçamento por CLIENTE, não por IP — fica para o lote da Elen.
+  if (idempotencyKey) {
+    if (outbox.has(idempotencyKey)) {
+      log(`[send] ja esta na fila de reenvio key=${idempotencyKey} (pre-check)`);
+      return reply.code(202).send({ success: false, queued: true, error: 'Queued for retry' });
+    }
+    const jaEnviado = idemp.get(idempotencyKey);
+    if (jaEnviado && jaEnviado.messageId) {
+      // MESMO FORMATO do caminho de duplicata abaixo — `success: true` é obrigatório.
+      // O cron de lead abandonado valida `result.success === true && !queued && !blocked`
+      // (`abandoned-leads/route.ts:496`). Devolver `success:false` aqui faria o cron soltar o
+      // claim e reprocessar o MESMO lead a cada 15 min, para sempre.
+      log(`[send] duplicate suppressed key=${idempotencyKey} (pre-check)`);
+      return reply.send({
+        success: true,
+        messageId: jaEnviado.messageId,
+        duplicate: true,
+        transport: jaEnviado.transport || null,
+      });
+    }
+  }
+
   const clientIp = request.ip || request.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
   if (!rateLimitByIp(clientIp)) {
     log(`[send] rate limited ip=${hashValue(clientIp)}`);
     return reply.code(429).send({ error: 'Too many requests' });
   }
-
-  const { to, message, idempotencyKey } = request.body || {};
-  if (!to || !message) return reply.code(400).send({ error: 'Missing to or message' });
 
   if (idempotencyKey) {
     // Já está na fila de reenvio? Então NÃO tenta de novo agora. É isto que

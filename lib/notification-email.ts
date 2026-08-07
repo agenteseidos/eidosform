@@ -12,7 +12,8 @@
  */
 
 import { createHash } from 'crypto'
-import { sendLeadNotificationEmail } from './resend'
+import { sendLeadNotificationEmail, maskRecipient } from './resend'
+import { recordEmailAccepted } from './email-delivery'
 import { buildNewResponseEmail } from './notification-content'
 import type { NotificationModel } from './notification-model'
 
@@ -122,6 +123,19 @@ export async function sendNewResponseEmails(params: {
             email: recipient.email,
           }),
         })
+        // Comprovante de aceite (lote 3 · L3-4). Sem isto o `id` da Resend se perde e não há
+        // como ligar o bounce que chega depois a ESTE formulário/lead. Nunca lança e nunca
+        // bloqueia o resultado do envio — é telemetria.
+        if (result.id) {
+          await recordEmailAccepted({
+            resendId: result.id,
+            kind: 'new-response',
+            recipientMasked: maskRecipient(recipient.email),
+            formId: model.form.id,
+            responseId: model.response.id,
+            role: recipient.role,
+          })
+        }
         return { role: recipient.role, ...result }
       } catch (err) {
         return { role: recipient.role, error: err instanceof Error ? err.message : String(err) }

@@ -805,6 +805,11 @@ export async function POST(req: NextRequest) {
           lead,
           urlParams: effectiveUrlParams,
           utm: utmData,
+          // L3-1 (auditoria 2026-08, lote 3): a fila morta, o template de e-mail, a tabela e a RLS
+          // do aviso "seu webhook parou" já existiam — e NUNCA dispararam, porque nenhum chamador
+          // passava `ownerEmail`. Funcionalidade pronta e morta desde que foi escrita: o CRM do
+          // cliente caía e ele só descobria pela ausência de leads, dias depois.
+          ownerEmail: ownerProfile?.email ?? undefined,
         }).catch((err) => logError('Failed to dispatch webhook', err))
       )
     }

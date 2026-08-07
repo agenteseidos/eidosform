@@ -255,3 +255,43 @@ describe('TTL e poda', () => {
     expect(s.size()).toBeLessThanOrEqual(3)
   })
 })
+
+// ── L3-7 (auditoria 2026-08, lote 3): gravação concorrente não corrompe a base ──
+describe('persistência concorrente', () => {
+  it('saves simultâneos produzem JSON VÁLIDO — antes o tmp fixo entrelaçava as escritas', async () => {
+    const os = require('node:os')
+    const path = require('node:path')
+    const fs = require('node:fs')
+    const arquivo = path.join(os.tmpdir(), `idemp-conc-${process.pid}-${Date.now()}.json`)
+
+    const store = createIdempotencyStore({ file: arquivo })
+    // 30 chaves gravadas em rajada, sem esperar uma pela outra: é a disputa que corrompia.
+    const gravacoes = []
+    for (let i = 0; i < 30; i += 1) {
+      store.remember(`lead:${i}`, { messageId: `wamid.${i}`, transport: 'wacli' })
+      gravacoes.push(store.save())
+    }
+    await Promise.all(gravacoes)
+
+    const bruto = fs.readFileSync(arquivo, 'utf8')
+    expect(() => JSON.parse(bruto)).not.toThrow()
+
+    // E a ORDEM importa: o disco tem que terminar com a última chave, não com um snapshot velho.
+    const persistido = JSON.parse(bruto)
+    expect(persistido['lead:29']).toBeTruthy()
+
+    // Nenhum temporário deixado para trás.
+    const restos = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith(path.basename(arquivo)) && f.endsWith('.tmp'))
+    expect(restos).toEqual([])
+
+    fs.rmSync(arquivo, { force: true })
+  })
+
+  it('save() NUNCA rejeita, mesmo com caminho inválido — não pode derrubar o envio', async () => {
+    // O chamador (`run`/`remember`) não pode perder a notificação por falha de disco, e uma
+    // rejeição não tratada na fila derrubaria o processo.
+    const store = createIdempotencyStore({ file: '/caminho/que/nao/existe/x.json' })
+    store.remember('lead:1', { messageId: 'wamid.1' })
+    await expect(store.save()).resolves.not.toThrow()
+  })
+})

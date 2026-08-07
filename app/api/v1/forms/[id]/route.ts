@@ -249,7 +249,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const formQuestions = (form.questions ?? []) as import('@/lib/database.types').QuestionConfig[]
   const { data: ownerProfileForGate, error: ownerProfileError } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    // `email` entrou aqui para o aviso de webhook quebrado (lote 3 · L3-1) — a rota v1 é a GÊMEA
+    // de /api/responses e o padrão #5 da auditoria (corrigir uma e esquecer a outra) explicou 4
+    // dos 6 achados do lote 2. As duas ligam o alerta, ou nenhuma liga.
+    .select('plan, plan_expires_at, email')
     .eq('id', form.user_id)
     .single()
   if (ownerProfileError || !ownerProfileForGate) {
@@ -449,6 +452,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         formId: id,
         responseId,
         responseData: answersForPersist,
+        ownerEmail: ownerProfileForGate?.email ?? undefined,
       }).catch((err) => logError('Failed to dispatch webhook', err))
     }
   }

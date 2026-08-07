@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import os from 'node:os'
+import path from 'node:path'
 import { createTransportMetricsStore } from './transport-metrics.js'
 
 function relogio(inicio = Date.parse('2026-08-10T12:00:00Z')) {
@@ -96,7 +98,11 @@ describe('conteúdo dos alertas', () => {
       capturado.push(JSON.parse(opts.body))
       return { ok: true }
     })
-    const envFile = `/tmp/claude-0/-home/4cc049d7-7214-4c38-9920-899a6df05174/scratchpad/alert-env-${process.pid}`
+    // Mesmo defeito que estava em outbox.test.js: caminho ABSOLUTO para o scratchpad de uma
+    // sessão de agente antiga, que só existe na VPS de quem escreveu o teste. Em qualquer outro
+    // ambiente — incluindo a CI — o diretório não existe e o writeFileSync lança ENOENT.
+    // `os.tmpdir()` funciona em qualquer lugar. (auditoria 2026-08)
+    const envFile = path.join(os.tmpdir(), `alert-env-${process.pid}-${Date.now()}`)
     const fs = await import('node:fs')
     fs.writeFileSync(envFile, 'RESEND_API_KEY=chave\nADMIN_ALERT_EMAIL=a@b.com\n')
 

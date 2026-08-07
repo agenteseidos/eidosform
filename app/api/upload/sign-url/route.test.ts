@@ -4,6 +4,11 @@ const createSignedUploadUrl = vi.fn()
 const formSingle = vi.fn()
 
 vi.mock('@/lib/response-rate-limit', () => ({
+  // A rota deixou de gastar o balde do SUBMIT (`resp:${ip}`, 10/min) e passou a ter orçamento
+  // próprio: pré-filtro por IP antes do parse do corpo + teto por IP+form depois.
+  // (auditoria 2026-08, lote 2 · gêmea do L2-4)
+  checkUploadSignPreflightAsync: vi.fn(async () => ({ allowed: true, remaining: 39, resetIn: 0 })),
+  checkUploadSignRateLimitAsync: vi.fn(async () => ({ allowed: true, remaining: 19, resetIn: 0 })),
   checkResponseRateLimitAsync: vi.fn(async () => ({ allowed: true, remaining: 9, resetIn: 0 })),
 }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn() }))

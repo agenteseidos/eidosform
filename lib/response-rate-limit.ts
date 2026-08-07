@@ -113,6 +113,41 @@ export async function checkPartialRateLimitAsync(
   return perForm.remaining <= global.remaining ? perForm : global
 }
 
+// ── Orçamento próprio da ASSINATURA DE UPLOAD (auditoria 2026-08, lote 2) ──
+// Mesmo defeito que a correção de 08/07 acima resolveu para os parciais, na terceira rota
+// que ninguém tinha visto: `/api/upload/sign-url` também gastava `resp:${ip}` (10/min), o
+// balde do SUBMIT. Quem anexasse arquivos consumia o próprio envio final — e, por ser o
+// fluxo ANÔNIMO, o alcance é maior que o do autosave autenticado.
+//
+// Anexar arquivo é naturalmente mais raro que salvar progresso, então o teto é menor que o
+// dos parciais; e a rota é anônima, então o teto global por IP importa mais que o por form.
+const UPLOAD_MAX_PER_FORM = 20 // assinaturas por IP+form por minuto
+const UPLOAD_MAX_GLOBAL = 40 // teto por IP somando todos os forms
+
+export async function checkUploadSignRateLimitAsync(
+  ip: string,
+  formId: string
+): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
+  const [perForm, global] = await Promise.all([
+    checkLimitAsync(`upsign:${ip}:${formId}`, UPLOAD_MAX_PER_FORM),
+    checkLimitAsync(`upsigng:${ip}`, UPLOAD_MAX_GLOBAL),
+  ])
+  if (!perForm.allowed) return perForm
+  if (!global.allowed) return global
+  return perForm.remaining <= global.remaining ? perForm : global
+}
+
+/**
+ * Teto por IP aplicado ANTES de ler o corpo da requisição, onde o `formId` ainda não existe.
+ * Sem ele, mover o rate limit para depois do parse deixaria a rota aceitar corpo arbitrário
+ * sem custo. Generoso de propósito: é rede contra flood, não a régua de negócio.
+ */
+export async function checkUploadSignPreflightAsync(
+  ip: string
+): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
+  return checkLimitAsync(`upsignpre:${ip}`, UPLOAD_MAX_GLOBAL)
+}
+
 // Synchronous version kept for backward compat (uses memory only)
 export function checkResponseRateLimit(ip: string): { allowed: boolean; remaining: number; resetIn: number } {
   return checkMemoryFallback(`resp:${ip}`, MAX_REQUESTS)

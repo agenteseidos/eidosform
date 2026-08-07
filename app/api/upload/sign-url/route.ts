@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
-import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
+import { checkUploadSignRateLimitAsync, checkUploadSignPreflightAsync } from '@/lib/response-rate-limit'
 import { logError } from '@/lib/logger'
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
@@ -35,10 +35,12 @@ export async function OPTIONS() {
 export async function POST(request: NextRequest) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
 
-  // Rate limit by IP
-  const rateCheck = await checkResponseRateLimitAsync(ip)
-  if (!rateCheck.allowed) {
-    const retryAfter = Math.ceil(rateCheck.resetIn / 1000)
+  // PRÉ-FILTRO por IP, antes de ler o corpo (o `form_id` só existe depois do parse).
+  // Sem ele, mover o rate limit para depois do JSON deixaria a rota aceitar corpo arbitrário
+  // de graça. Teto generoso de propósito: é rede contra flood, não a régua de negócio.
+  const pre = await checkUploadSignPreflightAsync(ip)
+  if (!pre.allowed) {
+    const retryAfter = Math.ceil(pre.resetIn / 1000)
     return NextResponse.json(
       { error: 'Muitas requisições. Tente novamente mais tarde.' },
       { status: 429, headers: { ...CORS_HEADERS, 'Retry-After': String(retryAfter) } }
@@ -70,6 +72,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: `Tamanho inválido. Máximo: ${MAX_SIZE / 1024 / 1024}MB` },
         { status: 400, headers: CORS_HEADERS }
+      )
+    }
+
+    // Orçamento PRÓPRIO da assinatura de upload: 20/min por IP+form, teto global 40/min por IP.
+    //
+    // Antes esta rota gastava `resp:${ip}` — o balde do SUBMIT FINAL (10/min). Anexar arquivos
+    // consumia o orçamento do próprio envio da resposta, e como este é o fluxo ANÔNIMO o alcance
+    // era maior que o do autosave autenticado. Terceira rota do mesmo defeito; as outras duas
+    // são `/api/responses/partial` (corrigida em 08/07) e `/api/forms/[id]/partial-response`
+    // (corrigida junto com esta). (auditoria 2026-08, lote 2 · gêmea do L2-4)
+    const rateCheck = await checkUploadSignRateLimitAsync(ip, String(form_id))
+    if (!rateCheck.allowed) {
+      const retryAfter = Math.ceil(rateCheck.resetIn / 1000)
+      return NextResponse.json(
+        { error: 'Muitas requisições. Tente novamente mais tarde.' },
+        { status: 429, headers: { ...CORS_HEADERS, 'Retry-After': String(retryAfter) } }
       )
     }
 

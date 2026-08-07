@@ -8,7 +8,7 @@ import { pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
 import type { QuestionConfig } from '@/lib/database.types'
 import { sanitizeValue } from '@/lib/form-response-security'
 import { log, logError } from '@/lib/logger'
-import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
+import { checkPartialRateLimitAsync } from '@/lib/response-rate-limit'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -113,9 +113,21 @@ export async function PUT(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
   }
 
-  // P1-1: Rate limit partial response saves (30 req/min per IP)
+  // Orçamento PRÓPRIO dos parciais: 30/min por IP+form, mais teto global de 90/min por IP.
+  //
+  // NÃO usar `checkResponseRateLimitAsync`: aquele balde (`resp:${ip}`, 10/min) é do SUBMIT
+  // FINAL. Compartilhá-lo fazia o autosave gastar o orçamento do próprio envio: ~10 perguntas
+  // respondidas num ritmo normal esgotavam a janela e o `POST /api/responses` levava 429 — o
+  // player não tem retry, então a resposta ficava `completed=false` e o lead virava "abandono".
+  // Pior sob NAT (clínica, escola, evento, 4G): o autosave de um respondente derrubava o
+  // submit de outro no mesmo IP.
+  //
+  // A correção já existia desde 08/07 no helper e foi aplicada só na rota gêmea anônima
+  // (`/api/responses/partial`) — clássico drift entre irmãos. O comentário antigo aqui
+  // prometia "30 req/min" que o código nunca implementou, o que camuflou o defeito contra
+  // revisão. (auditoria 2026-08, lote 2 · L2-4)
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown'
-  const rateCheck = await checkResponseRateLimitAsync(ip)
+  const rateCheck = await checkPartialRateLimitAsync(ip, formId)
   if (!rateCheck.allowed) {
     return NextResponse.json(
       { error: 'Muitas requisições. Tente novamente mais tarde.' },

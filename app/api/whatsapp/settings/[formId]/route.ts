@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import { getWhatsAppSettings, updateWhatsAppSettings, deleteWhatsAppSettings } from '@/lib/whatsapp'
 import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
 import type { UpdateFormWhatsAppSettingsInput } from '@/lib/types/whatsapp'
+import { whatsAppDigits, isValidWhatsAppPhone } from '@/lib/phone'
 
 function getServiceClient() {
   return createServerClient(
@@ -89,7 +90,13 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     const updateData: UpdateFormWhatsAppSettingsInput = {}
     if (body.enabled !== undefined && typeof body.enabled === 'boolean') updateData.enabled = body.enabled
-    if (typeof body.owner_phone === 'string' && body.owner_phone.trim()) updateData.owner_phone = body.owner_phone.trim()
+    // Regra ÚNICA de telefone (lib/phone) — lote 2-bis · D4. Antes gravava o valor cru.
+    if (typeof body.owner_phone === 'string' && body.owner_phone.trim()) {
+      if (!isValidWhatsAppPhone(body.owner_phone)) {
+        return NextResponse.json({ error: 'Número de WhatsApp inválido. Use formato: 5511999999999' }, { status: 400 })
+      }
+      updateData.owner_phone = whatsAppDigits(body.owner_phone)
+    }
     if (typeof body.message_template === 'string') updateData.message_template = body.message_template
     if (typeof body.instance_name === 'string') updateData.instance_name = body.instance_name
     if (typeof body.rate_limit_per_hour === 'number') updateData.rate_limit_per_hour = body.rate_limit_per_hour

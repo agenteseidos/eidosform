@@ -16,6 +16,7 @@ import { emitirEventoElen } from '@/lib/elen-eventos'
 import { sendConfirmationTemplate, TELEFONE_ALTERADO_TEMPLATE } from '@/lib/whatsapp-confirmations'
 import { toWhatsAppDigits } from '@/lib/phone'
 import { log, logError, logWarn } from '@/lib/logger'
+import { checkRateLimitAsync } from '@/lib/rate-limit'
 
 function mask(phone: string | null | undefined): string {
   const d = toWhatsAppDigits(String(phone ?? '')) ?? String(phone ?? '')
@@ -27,6 +28,28 @@ export async function POST(req: NextRequest) {
   const { data: auth } = await supabase.auth.getUser()
   const userId = auth.user?.id
   if (!userId) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+  // Rate limit (auditoria 2026-08, lote 2-bis · D9).
+  //
+  // Cada POST com telefone alterado dispara CINCO efeitos externos: e-mail de segurança pelo
+  // Resend, `updateCustomer` no Asaas, dois eventos para a Elen e um template PAGO de WhatsApp
+  // para o número antigo. Era a única escrita desse porte sem teto — alternar telefone A→B→A em
+  // laço gerava e-mails, mensagens pagas e chamadas ao gateway sem limite, tudo na conta do
+  // EidosForm.
+  //
+  // As irmãs com efeito externo já tinham: `whatsapp/test` 5/15min, `forgot-password` 3/15min,
+  // `settings/api-key` 5/min, `domains` 5/min. Adotado o mesmo teto da api-key.
+  const rl = await checkRateLimitAsync(`billing-profile:${userId}`, {
+    maxAttempts: 5,
+    windowMs: 60 * 1000,
+  })
+  if (!rl.allowed) {
+    const retryAfter = Math.ceil(rl.resetIn / 1000)
+    return NextResponse.json(
+      { error: 'Muitas alterações seguidas. Tente novamente em instantes.', retryAfter },
+      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+    )
+  }
 
   let body: Record<string, unknown>
   try { body = await req.json() } catch { return NextResponse.json({ error: 'JSON inválido' }, { status: 400 }) }

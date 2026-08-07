@@ -5,6 +5,7 @@ import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 import { buildMessage, ABANDONED_LEAD_TEMPLATE } from '@/lib/whatsapp-template'
 import { toWhatsAppDigits } from '@/lib/phone'
 import { log, logError } from '@/lib/logger'
+import { isValidBearerSecret } from '@/lib/bearer-auth'
 
 /**
  * CRON — Alerta de LEAD ABANDONADO por WhatsApp.
@@ -213,7 +214,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const budgetLeft = () => ROUTE_BUDGET_MS - (Date.now() - routeStart)
 
   const secret = process.env.CRON_SECRET
-  if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) {
+  // D10 (lote 2-bis): comparação em tempo constante, via fonte única.
+  if (!isValidBearerSecret(req.headers.get('authorization'), secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

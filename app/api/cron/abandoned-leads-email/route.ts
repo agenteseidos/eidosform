@@ -16,6 +16,7 @@ import { scanForCandidates, parseThresholdMin, type ScanRow, type ClaimState } f
 // hash e o mesmo filtro de conteúdo que este cron — divergir os dois deixaria
 // acervo vazar ou lead legítimo calado. Re-exportadas para os testes daqui.
 import { hasAnsweredSomething, recipientHash } from '@/lib/notification-baseline'
+import { isValidBearerSecret } from '@/lib/bearer-auth'
 export { hasAnsweredSomething, recipientHash }
 
 /**
@@ -155,7 +156,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const budgetLeft = () => ROUTE_BUDGET_MS - (Date.now() - routeStart)
 
   const secret = process.env.CRON_SECRET
-  if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) {
+  // D10 (lote 2-bis): comparação em tempo constante, via fonte única.
+  if (!isValidBearerSecret(req.headers.get('authorization'), secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

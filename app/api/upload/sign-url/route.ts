@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient()
     const { data: form, error: formError } = await admin
       .from('forms')
-      .select('id, user_id, status, questions')
+      .select('id, user_id, status, is_closed, paused, questions')
       .eq('id', form_id)
       .eq('status', 'published')
       .single()
@@ -104,6 +104,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Formulário não encontrado ou não publicado' },
         { status: 404, headers: CORS_HEADERS }
+      )
+    }
+
+    // Formulário fechado ou pausado NÃO assina upload (auditoria 2026-08, lote 2-bis · D3).
+    // As QUATRO rotas que gravam resposta já bloqueiam; esta filtrava só `status='published'`.
+    // Sem isso, depois de o dono fechar o formulário um anônimo seguia obtendo URLs assinadas e
+    // gravando até 10 MB por arquivo no bucket DELE — arquivos órfãos (nenhuma resposta os
+    // referencia) e o custo de armazenamento é do dono.
+    if (form.is_closed || form.paused) {
+      return NextResponse.json(
+        { error: 'Formulário indisponível' },
+        { status: 403, headers: CORS_HEADERS }
       )
     }
 

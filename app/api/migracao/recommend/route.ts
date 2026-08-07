@@ -13,6 +13,8 @@ import {
   type Elegibilidade,
 } from '@/lib/migracao/decisao'
 import type { QuestionConfig } from '@/lib/database.types'
+import { isValidBearerSecret } from '@/lib/bearer-auth'
+import { createHmac } from 'node:crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,10 +30,8 @@ function getServiceClient() {
 
 // Auth server-to-server (mesmo padrão de /api/whatsapp/send).
 function isInternal(req: NextRequest): boolean {
-  const h = req.headers.get('authorization')
-  if (!h?.startsWith('Bearer ')) return false
-  const token = h.slice(7).trim()
-  return !!process.env.INTERNAL_API_SECRET && token === process.env.INTERNAL_API_SECRET
+  // D10 (lote 2-bis): comparação em tempo constante, via fonte única.
+  return isValidBearerSecret(req.headers.get('authorization'), process.env.INTERNAL_API_SECRET)
 }
 
 // Texto controlado pelo usuário (nome/opções) → tira caracteres de controle/quebras e limita
@@ -96,7 +96,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   //    o precheck (modo LOCALIZAR, sem e-mail) tinha o mesmo orçamento da jornada com e-mail e a
   //    somava — precheck + consulta + correção + reconsultas de pagamento estouravam 5/15min.
   //    LOCALIZAR tem chave própria; a jornada com e-mail ganhou folga (8/15min).
-  const rlKey = temEmail ? `migracao:${phone}` : `migracao-loc:${phone}`
+  // Telefone HASHEADO na chave, nunca em claro (auditoria 2026-08, lote 2-bis · D11).
+  //
+  // As duas rotas internas irmãs já faziam isso, com o comentário explícito: "HMAC, não hash
+  // simples: telefone tem espaço de busca pequeno. O valor cru nunca entra em log, chave de
+  // rate-limit, erro ou métrica". Esta gravava o telefone canônico LEGÍVEL como chave
+  // persistida na tabela de rate limit — PII fora do lugar, contra a política escrita ao lado.
+  //
+  // HMAC e não SHA puro: 11 dígitos é espaço pequeno o bastante para tabela arco-íris; a chave
+  // secreta é o que torna a reversão inviável.
+  const phoneKeyHash = createHmac('sha256', process.env.INTERNAL_API_SECRET ?? 'fallback')
+    .update(`phone:${phone}`)
+    .digest('hex')
+    .slice(0, 32)
+  const rlKey = temEmail ? `migracao:${phoneKeyHash}` : `migracao-loc:${phoneKeyHash}`
   const rlPhone = await checkRateLimitAsync(rlKey, { maxAttempts: 8, windowMs: 15 * 60 * 1000 })
   if (!rlPhone.allowed) {
     return NextResponse.json({ ok: false, reason: 'rate_limited' }, { status: 429, headers: NO_STORE })

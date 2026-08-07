@@ -9,6 +9,7 @@ import {
   deleteWhatsAppSettings,
 } from '@/lib/whatsapp'
 import type { UpdateFormWhatsAppSettingsInput } from '@/lib/types/whatsapp'
+import { whatsAppDigits, isValidWhatsAppPhone } from '@/lib/phone'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -191,7 +192,13 @@ export async function POST(
     const { owner_phone, enabled, message_template, instance_name, rate_limit_per_hour } = body
 
     // Validate owner_phone (non-empty and string)
-    if (typeof owner_phone !== 'string' || owner_phone.trim() === '') {
+    // Regra ÚNICA de telefone (lib/phone) — auditoria 2026-08, lote 2-bis · D4.
+    // O comentário de `lib/phone.ts:40-47` diz que painel, PUT e envio passariam todos a
+    // importar daqui — mas 3 das 4 rotas de escrita nunca migraram e seguiam gravando o valor
+    // CRU (com máscara, `+`, espaços) só checando "não vazio". Resultado: o dono salvava e
+    // HABILITAVA um número inválido, e o envio (`whatsapp/send:263`) recusava com 400 DEPOIS de
+    // já ter queimado o rate limit — notificação de lead falhando em silêncio.
+    if (typeof owner_phone !== 'string' || !isValidWhatsAppPhone(owner_phone)) {
       return NextResponse.json(
         { error: 'owner_phone is required and must be non-empty' },
         { status: 400 }
@@ -211,7 +218,7 @@ export async function POST(
     const settings = await createWhatsAppSettings(
       {
         form_id: id,
-        owner_phone: owner_phone.trim(),
+        owner_phone: whatsAppDigits(owner_phone),
         enabled: typeof enabled === 'boolean' ? enabled : false,
         message_template: typeof message_template === 'string' ? message_template : undefined,
         instance_name: typeof instance_name === 'string' ? instance_name : undefined,
@@ -331,7 +338,8 @@ export async function PATCH(
     const { enabled, owner_phone, message_template, instance_name, rate_limit_per_hour } = body
 
     // Validate owner_phone if provided (must be non-empty)
-    if (owner_phone !== undefined && (typeof owner_phone !== 'string' || owner_phone.trim() === '')) {
+    // Regra ÚNICA de telefone também no PATCH (lote 2-bis · D4).
+    if (owner_phone !== undefined && (typeof owner_phone !== 'string' || !isValidWhatsAppPhone(owner_phone))) {
       return NextResponse.json(
         { error: 'owner_phone must be non-empty if provided' },
         { status: 400 }
@@ -344,7 +352,7 @@ export async function PATCH(
       updateData.enabled = enabled
     }
     if (owner_phone !== undefined && typeof owner_phone === 'string') {
-      updateData.owner_phone = owner_phone.trim()
+      updateData.owner_phone = whatsAppDigits(owner_phone)
     }
     if (message_template !== undefined && typeof message_template === 'string') {
       updateData.message_template = message_template

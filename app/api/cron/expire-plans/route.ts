@@ -6,6 +6,7 @@ import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@
 import { computeProrationBasisDays } from '@/lib/proration'
 import { log, logError, logWarn } from '@/lib/logger'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
+import { isValidBearerSecret } from '@/lib/bearer-auth'
 
 /**
  * GET /api/cron/expire-plans — CRON diário (Vercel).
@@ -41,8 +42,8 @@ function diasDesde(dateStr: string | null): number | null {
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
-  const auth = req.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  // D10 (lote 2-bis): comparação em tempo constante, via fonte única.
+  if (!isValidBearerSecret(req.headers.get('authorization'), secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

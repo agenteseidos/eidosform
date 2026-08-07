@@ -6,6 +6,7 @@ import { runCardFallbackBackstop } from '@/lib/plan-switch'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
+import { isValidBearerSecret } from '@/lib/bearer-auth'
 
 /**
  * GET /api/cron/reconcile-checkouts — BACKSTOP de ativação (cron Vercel, ~a cada 10 min).
@@ -31,7 +32,8 @@ const MAX_ITEMS = 30
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
-  if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) {
+  // D10 (lote 2-bis): comparação em tempo constante, via fonte única.
+  if (!isValidBearerSecret(req.headers.get('authorization'), secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

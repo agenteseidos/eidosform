@@ -7,6 +7,7 @@ import { getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
 import { buildMessage } from '@/lib/whatsapp-template'
 import { isValidWhatsAppPhone } from '@/lib/phone'
 import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
+import { isValidBearerSecret } from '@/lib/bearer-auth'
 
 const MAX_SENDS_PER_HOUR = 100
 
@@ -136,10 +137,8 @@ async function sendViaVps(phone: string, message: string, idempotencyKey?: strin
  * Validate internal API key or user auth for server-to-server calls
  */
 function isInternalRequest(req: NextRequest): boolean {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return false
-  const token = authHeader.slice(7).trim()
-  return token === process.env.INTERNAL_API_SECRET && !!process.env.INTERNAL_API_SECRET
+  // D10 (lote 2-bis): comparação em tempo constante, via fonte única.
+  return isValidBearerSecret(req.headers.get('authorization'), process.env.INTERNAL_API_SECRET)
 }
 
 /**

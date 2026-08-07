@@ -57,9 +57,18 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   const userPlan = getEffectivePlan(profile) as PlanName
 
-  // P1-I: Rate limit export endpoint (10 requests per minute per user)
-  const rlKey = `export:${user.id}`
-  const { allowed: rlAllowed } = await checkRateLimitAsync(rlKey, { maxAttempts: 10, windowMs: 60_000 })
+  // BALDE COMPARTILHADO com /export-csv (auditoria 2026-08, lote 2-bis · D5).
+  //
+  // As duas rotas leem as mesmas colunas de `responses`, aplicam o mesmo gate `csvExport` e
+  // devolvem CSV equivalente — mas tinham tetos incompatíveis em baldes SEPARADOS: 5 por HORA
+  // lá, 10 por MINUTO (=600/h) aqui. O controle anti-exfiltração de 5/h era decorativo: quem
+  // tivesse a sessão (ou um XSS no painel) puxava a base 120× mais rápido por esta porta — que
+  // ainda expõe `format=json` com os dados crus.
+  //
+  // Agora as duas dividem `csv-export:${user.id}` com o teto apertado. Rajada legítima (baixar
+  // 2-3 formulários seguidos) continua passando; automação de exfiltração, não.
+  const rlKey = `csv-export:${user.id}`
+  const { allowed: rlAllowed } = await checkRateLimitAsync(rlKey, { maxAttempts: 5, windowMs: 3600_000 })
   if (!rlAllowed) {
     return NextResponse.json(
       { error: 'Muitas requisições de exportação. Tente novamente mais tarde.' },

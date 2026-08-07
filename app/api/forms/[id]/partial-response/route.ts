@@ -140,7 +140,7 @@ export async function PUT(
   // Verify form exists and is published
   const { data: form, error: formError } = await supabase
     .from('forms')
-    .select('id, user_id, status, is_closed, questions')
+    .select('id, user_id, status, is_closed, paused, questions')
     .eq('id', formId)
     .eq('status', 'published')
     .single()
@@ -149,8 +149,14 @@ export async function PUT(
     return NextResponse.json({ error: 'Formulário não encontrado' }, { status: 404, headers: CORS_HEADERS })
   }
 
-  if (form.is_closed) {
-    return NextResponse.json({ error: 'Formulário fechado' }, { status: 403, headers: CORS_HEADERS })
+  // `paused` também bloqueia (auditoria 2026-08, lote 2-bis · D2). As TRÊS rotas irmãs que
+  // gravam resposta já checavam; esta nem lia a coluna. E `paused` NÃO equivale a "plano
+  // expirou": `pauseFormsBeyondLimit` pausa os formulários EXCEDENTES num downgrade entre
+  // planos pagos — o dono continua Plus, o gate de plano abaixo passa, e o autosave seguia
+  // gravando num formulário que o painel anuncia como "não está recebendo novas respostas".
+  // Essas linhas alimentavam os crons de lead abandonado (e-mail pago + WhatsApp).
+  if (form.is_closed || form.paused) {
+    return NextResponse.json({ error: 'Formulário indisponível' }, { status: 403, headers: CORS_HEADERS })
   }
 
   // Check if form owner's plan supports partial responses

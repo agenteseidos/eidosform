@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { listStaleReceivedEvents, reprocessEvent, type ReprocessResult } from '@/lib/asaas-reprocess'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
+import { isValidBearerSecret } from '@/lib/bearer-auth'
 
 /**
  * GET /api/cron/sweep-received — recupera eventos de dinheiro presos em 'received' (P1, 2026-06-15).
@@ -20,7 +21,8 @@ export const maxDuration = 60
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
-  if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) {
+  // D10 (lote 2-bis): comparação em tempo constante, via fonte única.
+  if (!isValidBearerSecret(req.headers.get('authorization'), secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

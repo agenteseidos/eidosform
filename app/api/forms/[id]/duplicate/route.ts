@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { FormInsert } from '@/lib/database.types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestUser } from '@/lib/supabase/request-auth'
-import { checkFormLimit } from '@/lib/plan-limits'
-import { normalizePlan } from '@/lib/plans'
+import { checkFormLimit, PLANS } from '@/lib/plan-limits'
+import { normalizePlan, getEffectivePlan } from '@/lib/plans'
 import { logError } from '@/lib/logger'
 
 interface RouteParams {
@@ -57,8 +57,18 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     )
   }
 
-  const { id } = await params
+  // Plano do dono — para os gates que POST e PATCH já aplicam e a duplicação pulava.
+  // (auditoria 2026-08, lote 2-bis · D6)
   const supabase = createAdminClient()
+  const { data: dupProfile } = await supabase
+    .from('profiles')
+    .select('plan, plan_expires_at')
+    .eq('id', user.id)
+    .single()
+  const dupPlan = getEffectivePlan(dupProfile)
+  const dupPlanConfig = PLANS[dupPlan]
+
+  const { id } = await params
 
   // P2-02 FIX: Avoid select('*') — specify only needed columns for duplication
   const { data: sourceForm, error: sourceError } = await supabase
@@ -70,6 +80,19 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   if (sourceError || !sourceForm) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
+  }
+
+  // maxQuestions: POST (`forms/route.ts:107`) e PATCH (`forms/[id]/route.ts:139`) recusam 403
+  // acima do teto do plano; a duplicação copiava `questions` sem contar nada. Um dono que caiu
+  // para Free com um formulário legado de 200 perguntas gerava formulários NOVOS de 200 à
+  // vontade. (lote 2-bis · D6)
+  const srcQuestions = Array.isArray(sourceForm.questions) ? sourceForm.questions : []
+  const maxQuestions = dupPlanConfig?.maxQuestions ?? 25
+  if (srcQuestions.length > maxQuestions) {
+    return NextResponse.json(
+      { error: `Este formulário tem ${srcQuestions.length} perguntas e seu plano (${dupPlan}) permite ${maxQuestions}. Reduza as perguntas antes de duplicar.` },
+      { status: 403 }
+    )
   }
 
   const baseSlug = slugify(sourceForm.slug || sourceForm.title || 'form')
@@ -93,7 +116,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     thank_you_button_url: sourceForm.thank_you_button_url,
     pixels: null,
     plan: normalizePlan(sourceForm.plan),
-    redirect_url: sourceForm.redirect_url,
+    // redirect pós-envio é Starter+ — strip silencioso, igual ao POST (`forms/route.ts:166`)
+    // e ao `webhook_url`/`pixels` logo acima, que a duplicação já zerava. (lote 2-bis · D6)
+    redirect_url: dupPlanConfig?.redirect ? sourceForm.redirect_url : null,
     webhook_url: null,
     pixel_event_on_start: null,
     pixel_event_on_complete: null,

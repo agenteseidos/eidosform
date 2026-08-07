@@ -5,6 +5,7 @@ import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { resolverPlanoAtual } from '@/lib/migracao/decisao'
 import { normalizarEmail } from '@/lib/migracao/regua'
+import { isValidBearerSecret } from '@/lib/bearer-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,10 +20,8 @@ function getServiceClient() {
 }
 
 function isInternal(req: NextRequest): boolean {
-  const h = req.headers.get('authorization')
-  if (!h?.startsWith('Bearer ')) return false
-  const token = h.slice(7).trim()
-  return !!process.env.INTERNAL_API_SECRET && token === process.env.INTERNAL_API_SECRET
+  // D10 (lote 2-bis): comparação em tempo constante, via fonte única.
+  return isValidBearerSecret(req.headers.get('authorization'), process.env.INTERNAL_API_SECRET)
 }
 
 /**

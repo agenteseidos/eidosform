@@ -82,6 +82,18 @@ export async function POST(req: NextRequest) {
 
   const rawBody = await req.json()
 
+  // Teto de payload ANTES do Zod (auditoria 2026-08, lote 2-bis · D12).
+  //
+  // O irmão PATCH (`forms/[id]/route.ts:87`) já cortava em 500 KB antes de validar; aqui o Zod
+  // rodava primeiro. Como `QuestionsArraySchema` aceita 500 perguntas com `htmlContent` de 50 KB
+  // cada, um usuário logado mandava ~25 MB de corpo VÁLIDO pelo schema e o runtime parseava e
+  // validava tudo antes de chegar ao 413 que já existe mais abaixo. Não é vazamento — é consumo,
+  // e o controle certo já existia no irmão.
+  const rawBodyStr = JSON.stringify(rawBody)
+  if (rawBodyStr.length > 500 * 1024) {
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
+
   // Etapa 7 — Zod schema validation (defense-in-depth before business rules).
   const parsed = FormCreateSchema.safeParse(rawBody)
   if (!parsed.success) {

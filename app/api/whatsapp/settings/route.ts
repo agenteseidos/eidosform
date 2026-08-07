@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import { getWhatsAppSettings, createWhatsAppSettings } from '@/lib/whatsapp'
 import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
 import { logError } from '@/lib/logger'
+import { whatsAppDigits, isValidWhatsAppPhone } from '@/lib/phone'
 
 function getServiceClient() {
   return createServerClient(
@@ -98,8 +99,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'form_id is required' }, { status: 400 })
     }
 
-    if (!owner_phone || typeof owner_phone !== 'string' || !owner_phone.trim()) {
-      return NextResponse.json({ error: 'owner_phone is required' }, { status: 400 })
+    // Regra ÚNICA de telefone (lib/phone) — auditoria 2026-08, lote 2-bis · D4.
+    // O comentário de `lib/phone.ts:40-47` diz que painel, PUT e envio passariam todos a
+    // importar daqui — mas 3 das 4 rotas de escrita nunca migraram e seguiam gravando o valor
+    // CRU (com máscara, `+`, espaços) só checando "não vazio". Resultado: o dono salvava e
+    // HABILITAVA um número inválido, e o envio (`whatsapp/send:263`) recusava com 400 DEPOIS de
+    // já ter queimado o rate limit — notificação de lead falhando em silêncio.
+    if (!owner_phone || typeof owner_phone !== 'string' || !isValidWhatsAppPhone(owner_phone)) {
+      return NextResponse.json({ error: 'Número de WhatsApp inválido. Use formato: 5511999999999' }, { status: 400 })
     }
 
     // Form ownership check
@@ -122,7 +129,7 @@ export async function POST(req: NextRequest) {
     const settings = await createWhatsAppSettings(
       {
         form_id,
-        owner_phone: owner_phone.trim(),
+        owner_phone: whatsAppDigits(owner_phone),
         enabled: typeof enabled === 'boolean' ? enabled : false,
         message_template: typeof message_template === 'string' ? message_template : undefined,
         instance_name: typeof instance_name === 'string' ? instance_name : undefined,

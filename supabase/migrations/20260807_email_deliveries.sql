@@ -33,9 +33,12 @@ CREATE TABLE IF NOT EXISTS public.email_deliveries (
   response_id      uuid,
   role             text,
 
-  -- accepted | delivery_delayed | delivered | bounced | complained
+  -- accepted | delivery_delayed | delivered | failed | bounced | complained | suppressed
   -- A ordem de avanço é imposta pelo CÓDIGO (lib/email-delivery.ts), não por constraint: um
   -- evento fora de ordem tem que ser DESCARTADO em silêncio, não virar erro de banco.
+  -- Sem CHECK também por isto: a lista de status cresceu DEPOIS de a tabela existir em produção
+  -- (`failed` e `suppressed` entraram na revisão do próprio lote 3). Um CHECK teria exigido nova
+  -- migration só para acomodar um estado novo — coluna `text` livre absorve sem downtime.
   status           text NOT NULL DEFAULT 'accepted',
   reason           text,
 

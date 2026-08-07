@@ -20,8 +20,28 @@ import { logWarn } from '@/lib/logger'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-/** Janela de tolerância do carimbo de tempo. Fora dela, o evento é replay. */
-const TOLERANCIA_MS = 5 * 60 * 1000
+/**
+ * Janela de tolerância do carimbo de tempo.
+ *
+ * ⚠️ COMEÇOU EM 5 MINUTOS — o padrão das bibliotecas da Svix — e foi ALARGADA de propósito.
+ *
+ * A Resend repete um evento que não recebeu 200 **oito vezes**, com espera crescente: imediato,
+ * 5s, 5min, 30min, 2h, 5h, 10h, 10h — quase 28 horas no total. Se ela reenviar mantendo o
+ * carimbo de tempo ORIGINAL do evento, toda tentativa a partir da terceira cairia fora de uma
+ * janela de 5 minutos e voltaria 401. O efeito não seria só perder o evento: depois de falhas
+ * seguidas a Resend **desabilita o endpoint sozinha**. A resiliência inteira do desenho dependeria
+ * de uma premissa sobre o comportamento da Svix que não está documentada.
+ *
+ * A janela existe contra REPLAY — alguém capturar um evento assinado e reenviá-lo depois. Aqui
+ * esse ataque não compra quase nada: `applyResendEvent` só avança na escada de status, então
+ * reenviar um evento antigo é no-op (o status já está lá ou já passou dele), e o corpo é assinado,
+ * então o conteúdo não pode ser adulterado. Trocar um risco praticamente nulo por uma chance real
+ * de perder o aviso de que o e-mail do cliente não chegou é um mau negócio.
+ *
+ * 48 horas cobre a tabela de repetições inteira com folga, e ainda barra evento com carimbo
+ * absurdo ou ausente.
+ */
+const TOLERANCIA_MS = 48 * 60 * 60 * 1000
 
 /**
  * Verificação da assinatura Svix.

@@ -62,20 +62,44 @@ describe('applyResendEvent — escada de status', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  it('NÃO rebaixa complained (reclamação de spam é o topo da escada)', async () => {
-    linhaAtual = { status: 'complained' }
-    for (const t of ['email.delivered', 'email.bounced', 'email.sent', 'email.delivery_delayed']) {
+  it('NÃO rebaixa suppressed — é o topo da escada e o estado mais duradouro', async () => {
+    linhaAtual = { status: 'suppressed' }
+    for (const t of ['email.delivered', 'email.bounced', 'email.complained', 'email.delivery_delayed', 'email.failed']) {
       expect(await applyResendEvent({ type: t, resendId: 're_1' })).toBe(false)
     }
     expect(update).not.toHaveBeenCalled()
   })
 
-  it('bounce e reclamação viram log de ERRO — tabela sozinha ninguém olha', async () => {
-    await applyResendEvent({ type: 'email.bounced', resendId: 're_1', reason: 'mailbox full' })
-    expect(logError).toHaveBeenCalledWith(
-      expect.stringContaining('bounced'), undefined,
-      expect.objectContaining({ resendId: 're_1', reason: 'mailbox full' })
-    )
+  it('email.suppressed é registrado — o endereço parou de receber e ninguém saberia', async () => {
+    // A Resend suprime o endereço que já produziu bounce duro repetido e a partir daí NEM TENTA
+    // entregar. Sem este evento não chegaria bounce nem nada: silêncio absoluto.
+    linhaAtual = { status: 'bounced' }
+    expect(await applyResendEvent({ type: 'email.suppressed', resendId: 're_1' })).toBe(true)
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ status: 'suppressed' }))
+  })
+
+  it('email.sent é ignorado de propósito — a linha já nasce accepted', async () => {
+    expect(await applyResendEvent({ type: 'email.sent', resendId: 're_1' })).toBe(false)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('TODO desfecho de não-entrega vira log de ERRO — tabela sozinha ninguém olha', async () => {
+    for (const [evento, status] of [
+      ['email.bounced', 'bounced'], ['email.complained', 'complained'],
+      ['email.failed', 'failed'], ['email.suppressed', 'suppressed'],
+    ]) {
+      logError.mockClear(); linhaAtual = { status: 'accepted' }
+      await applyResendEvent({ type: evento, resendId: 're_1', reason: 'motivo' })
+      expect(logError, `${evento} não gritou no log`).toHaveBeenCalledWith(
+        expect.stringContaining(status), undefined,
+        expect.objectContaining({ resendId: 're_1', reason: 'motivo' })
+      )
+    }
+  })
+
+  it('entrega bem-sucedida NÃO polui o log de erro', async () => {
+    await applyResendEvent({ type: 'email.delivered', resendId: 're_1' })
+    expect(logError).not.toHaveBeenCalled()
   })
 
   it('ignora evento desconhecido e evento de envio que não registramos', async () => {

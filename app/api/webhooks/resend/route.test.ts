@@ -84,12 +84,27 @@ describe('POST /api/webhooks/resend', () => {
     expect(applyResendEvent).not.toHaveBeenCalled()
   })
 
-  it('recusa REPLAY: assinatura verdadeira, carimbo velho', async () => {
-    const velho = String(Math.floor((Date.now() - 10 * 60 * 1000) / 1000))
-    const res = await POST(req(EVENTO, {
-      'svix-id': 'msg_1', 'svix-timestamp': velho, 'svix-signature': assinar(EVENTO, 'msg_1', velho),
-    }))
-    expect(res.status).toBe(401)
+  it('ACEITA retentativa de até 28h — a Resend repete por quase 2 dias', async () => {
+    // A janela era de 5 min e teria rejeitado da 3ª retentativa em diante (5min, 30min, 2h, 5h,
+    // 10h, 10h). Além de perder o evento, falhas seguidas fazem a Resend DESABILITAR o endpoint.
+    for (const horas of [0, 1, 10, 28]) {
+      const ts = String(Math.floor((Date.now() - horas * 3600 * 1000) / 1000))
+      const res = await POST(req(EVENTO, {
+        'svix-id': `msg_${horas}`, 'svix-timestamp': ts, 'svix-signature': assinar(EVENTO, `msg_${horas}`, ts),
+      }))
+      expect(res.status, `retentativa de ${horas}h deveria ser aceita`).toBe(200)
+    }
+  })
+
+  it('recusa carimbo absurdo (fora de 48h) e carimbo que não é número', async () => {
+    const antigo = String(Math.floor((Date.now() - 72 * 3600 * 1000) / 1000))
+    expect((await POST(req(EVENTO, {
+      'svix-id': 'msg_x', 'svix-timestamp': antigo, 'svix-signature': assinar(EVENTO, 'msg_x', antigo),
+    }))).status).toBe(401)
+
+    expect((await POST(req(EVENTO, {
+      'svix-id': 'msg_y', 'svix-timestamp': 'abc', 'svix-signature': assinar(EVENTO, 'msg_y', 'abc'),
+    }))).status).toBe(401)
   })
 
   it('aceita quando UMA de várias assinaturas bate (rotação de segredo)', () => {

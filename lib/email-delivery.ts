@@ -39,31 +39,55 @@ export type EmailDeliveryStatus =
   | 'accepted'
   | 'delivered'
   | 'delivery_delayed'
+  | 'failed'
   | 'bounced'
   | 'complained'
+  | 'suppressed'
 
-/** Eventos da Resend que interessam, mapeados para o status persistido. */
+/**
+ * Eventos da Resend que interessam, mapeados para o status persistido.
+ *
+ * `email.sent` NÃO está aqui de propósito: a linha já nasce `accepted` (peso 0), então esse evento
+ * nunca avançaria nada — só geraria tráfego. Assiná-lo no painel da Resend é desperdício.
+ *
+ * `email.suppressed` é o mais importante da lista e quase ficou de fora. A Resend coloca na lista
+ * de supressão o endereço que já produziu bounce duro repetido — e a partir daí NEM TENTA entregar.
+ * É exatamente a forma final do problema que este módulo existe para resolver: o dono do formulário
+ * simplesmente para de receber lead, e sem este evento não chegaria nem bounce nem nada. Silêncio
+ * absoluto.
+ */
 const EVENTO_PARA_STATUS: Record<string, EmailDeliveryStatus> = {
-  'email.sent': 'accepted',
   'email.delivered': 'delivered',
   'email.delivery_delayed': 'delivery_delayed',
+  'email.failed': 'failed',
   'email.bounced': 'bounced',
   'email.complained': 'complained',
+  'email.suppressed': 'suppressed',
 }
 
 /**
- * Ordem de avanço. O webhook não garante ordem de chegada: `delivered` pode chegar depois de um
- * `bounced` de outra tentativa, e um `email.sent` atrasado chegaria depois de tudo. Sem esta
- * escada, um evento fora de ordem REBAIXARIA um bounce já registrado para "entregue" — que é
- * exatamente o silêncio que este módulo existe para acabar.
+ * Ordem de avanço. O webhook não garante ordem de chegada — a própria Resend documenta que a ordem
+ * NÃO é garantida e que a entrega é "at-least-once". Um `delivered` de uma tentativa pode chegar
+ * depois do `bounced` de outra. Sem esta escada, o evento atrasado REBAIXARIA um bounce já
+ * registrado para "entregue" — apagando exatamente o alarme que este módulo existe para acender.
+ *
+ * `suppressed` fica no topo: é o estado mais grave e o mais duradouro. Um endereço suprimido não
+ * recebe mais nada até ser removido da lista, então nenhum evento posterior deve mascará-lo.
  */
 const PESO: Record<EmailDeliveryStatus, number> = {
   accepted: 0,
   delivery_delayed: 1,
   delivered: 2,
-  bounced: 3,
-  complained: 4,
+  failed: 3,
+  bounced: 4,
+  complained: 5,
+  suppressed: 6,
 }
+
+/** Estados em que o e-mail NÃO chegou — os que precisam gritar no log, não só virar linha. */
+const NAO_ENTREGUES: ReadonlySet<EmailDeliveryStatus> = new Set<EmailDeliveryStatus>([
+  'failed', 'bounced', 'complained', 'suppressed',
+])
 
 /** Erros de "tabela/coluna não existe" — o banco ainda não recebeu a migration. */
 function tabelaAusente(err: { code?: string | null; message?: string | null } | null): boolean {
@@ -158,9 +182,9 @@ export async function applyResendEvent(params: {
       return false
     }
 
-    // Bounce e reclamação de spam são o motivo de este módulo existir: têm que aparecer no log
-    // de erro, não só numa tabela que ninguém consulta.
-    if (status === 'bounced' || status === 'complained') {
+    // Os desfechos de NÃO-entrega são o motivo de este módulo existir: têm que aparecer no log de
+    // erro, não só numa tabela que ninguém consulta.
+    if (NAO_ENTREGUES.has(status)) {
       logError(`[email-delivery] e-mail NÃO entregue (${status})`, undefined, {
         resendId: params.resendId,
         reason: params.reason ?? null,

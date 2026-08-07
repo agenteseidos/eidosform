@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import os from 'node:os'
+import path from 'node:path'
 import { createOutbox, backoffFor } from './outbox.js'
 import { createIdempotencyStore } from './idempotency.js'
 
@@ -96,7 +98,12 @@ describe('fila de reenvio', () => {
   })
 
   it('sobrevive ao restart do processo', async () => {
-    const arquivo = `/tmp/claude-0/-home/4cc049d7-7214-4c38-9920-899a6df05174/scratchpad/outbox-test-${process.pid}.json`
+    // Antes o caminho era ABSOLUTO e apontava para o scratchpad de uma sessão de agente
+    // específica (`/tmp/claude-0/-home/4cc049d7-.../scratchpad/`). Esse diretório existia por
+    // acaso na VPS de quem escreveu o teste; em qualquer outra máquina — inclusive na CI — ele
+    // não existe, a escrita falha em silêncio e o teste lê zero pendentes.
+    // `os.tmpdir()` funciona em qualquer ambiente. (auditoria 2026-08)
+    const arquivo = path.join(os.tmpdir(), `outbox-test-${process.pid}-${Date.now()}.json`)
     const a = createOutbox({ file: arquivo })
     await a.enqueue({ key: 'lead:1', to: '55', message: 'sobrevive' })
     await a.save()

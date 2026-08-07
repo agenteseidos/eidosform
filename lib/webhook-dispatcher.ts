@@ -122,6 +122,21 @@ async function insertDlq(params: {
  * temporizadores falsos necessário para isso se mostrou INTERMITENTE (o disparo espera
  * `crypto.subtle.sign` e `fetch`, que não são temporizadores). Teste que passa às vezes é pior
  * que teste nenhum: ensina a ignorar o vermelho.
+ *
+ * ⚠️ `notify_owner_enabled` NÃO é consultado aqui — e isso é DELIBERADO, não esquecimento.
+ *
+ * Aquele campo governa CONTEÚDO: "quero receber um e-mail a cada lead?". Este aviso é de SERVIÇO:
+ * "sua integração parou de funcionar". São coisas diferentes, e confundi-las produz o pior
+ * desfecho possível. Pergunte por que alguém desligaria a notificação por lead: a razão mais
+ * provável é "porque liguei o webhook para o meu CRM e não preciso mais do e-mail". Ou seja, quem
+ * desliga é justamente quem passa a depender SÓ do webhook — e respeitar o toggle deixaria essa
+ * pessoa sem lead e sem aviso ao mesmo tempo, cega dos dois lados.
+ *
+ * O envio já é limitado a 1 por formulário a cada 24h pela trava logo abaixo, então não há risco
+ * de virar incômodo.
+ *
+ * Se um dia a decisão mudar, o lugar é aqui: basta ler `notify_owner_enabled` do formulário e
+ * sair cedo. Mas mude o comentário junto — o silêncio é que faz isso parecer bug.
  */
 export async function maybeNotifyOwnerOfWebhookFailures(params: {
   formId: string

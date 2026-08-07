@@ -142,3 +142,42 @@ de remendo. A decisão registrada foi: **a linha em `email_deliveries` é COMPRO
 - critério de morte + alerta ao dono, reaproveitando o caminho de `webhook_failure_notifications`.
 
 **Precondição:** decidir a retenção do payload com PII antes de escrever qualquer linha.
+
+---
+
+## D-06 · ⏳ TESTE MANUAL PENDENTE — Calendly (fazer ANTES de abrir vendas)
+
+**Origem:** lote 5 da remediação, commit `1a59957` (07/08/2026).
+
+**Situação.** A correção do agendamento por Calendly está NO AR e **nunca foi validada em
+navegador**. Não existe um único teste de componente React neste repositório — a suíte verde
+(1.099 testes) não cobre nada disso. Foi ao ar porque a funcionalidade estava 100% quebrada e
+ZERO clientes a usam (as 2 perguntas do tipo `calendly` em produção são testes do Sidney, ambas
+sem URL configurada).
+
+**Por que tem prazo.** "Agendamento com Calendly" está na vitrine de planos
+(`lib/plan-marketing.ts:83`), vendido a partir do Starter. O dia em que o primeiro cliente ligar o
+recurso é o prazo final. Não é urgente hoje; é bloqueante para abrir vendas.
+
+**O que estava quebrado.** `scriptLoadedRef` guardava o OUVINTE de mensagens do Calendly além do
+script. Na primeira execução o ouvinte era registrado; em qualquer re-render (`onChange`/`onSubmit`
+são recriados a cada render do pai) o React removia o ouvinte e o efeito saía na primeira linha —
+o ouvinte nunca voltava. A pessoa agendava de verdade na agenda do cliente e o EidosForm não
+registrava nada; com a pergunta obrigatória, virava beco sem saída, e recarregar não resolvia.
+
+### Roteiro de validação (precisa de conta Calendly + conta Starter ou superior)
+
+1. Criar branch a partir da `main` e abrir o **preview da Vercel** desse branch.
+   ⚠️ **NÃO validar em `npm run dev`** — o StrictMode do React monta o componente duas vezes e
+   mascara exatamente esta classe de defeito. **NÃO validar direto na `main`** — aqui deploy é
+   `git push main`, então "testar em produção" significa já ter publicado.
+2. Criar formulário com uma pergunta do tipo Calendly, com URL real preenchida, **obrigatória**.
+3. Abrir o formulário publicado e agendar de verdade.
+4. **Critério de aceite:** aparece o cartão verde de confirmação, o formulário **avança sozinho**
+   em ~1s, e a resposta gravada contém `event_uri`.
+5. Repetir com a pergunta **não** obrigatória, e repetir voltando/avançando entre perguntas antes
+   de agendar (é o re-render que causava o defeito).
+
+**Se falhar:** a suspeita seguinte, ainda NÃO confirmada, é `Calendly.initInlineWidget` não ser
+rechamado no remount (a caixa do Calendly apareceria em branco). Não escrever código contra essa
+hipótese antes de ver o sintoma — este projeto já teve uma reversão por isso.

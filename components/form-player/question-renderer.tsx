@@ -464,10 +464,24 @@ interface CalendlyQuestionProps {
 const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value, onChange, theme, onSubmit }: CalendlyQuestionProps) {
   const calendlyUrl = question.calendlyUrl
   const containerRef = React.useRef<HTMLDivElement>(null)
-  const scriptLoadedRef = React.useRef(false)
+  // Guarda o temporizador do auto-avanço para poder cancelá-lo ao desmontar (lote 5).
+  const autoAvancoRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   React.useEffect(() => {
-    if (!calendlyUrl || scriptLoadedRef.current) return
+    // ⚠️ Havia um `|| scriptLoadedRef.current` nesta condição, e ele QUEBRAVA o Calendly inteiro
+    // (auditoria 2026-08, lote 5). O ref existia para não injetar o script duas vezes — mas a
+    // injeção logo abaixo JÁ tem trava própria e independente (`document.querySelector`). O que o
+    // ref de fato guardava era o OUVINTE de mensagens.
+    //
+    // O ciclo: na primeira execução o ouvinte é registrado e o ref vira `true`. Em qualquer
+    // re-render que mude as dependências — e `onChange`/`onSubmit` são recriados a cada render do
+    // pai — o React roda a limpeza, REMOVENDO o ouvinte, e reexecuta o efeito, que agora saía na
+    // primeira linha. O ouvinte era removido e nunca mais voltava.
+    //
+    // Para quem preenche: a pessoa agenda de verdade na agenda do cliente, o EidosForm não
+    // registra nada e, se a pergunta for obrigatória, ela fica num beco sem saída. Recarregar não
+    // resolve — o mesmo ciclo se repete.
+    if (!calendlyUrl) return
 
     // Listen for Calendly events to capture scheduled event.
     // SEGURANÇA (auditoria Codex 2026-07-23): valida a ORIGEM do postMessage —
@@ -482,7 +496,12 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
         const answer = { event_uri: eventUri, ...(inviteeUri ? { invitee_uri: inviteeUri } : {}) }
         onChange(answer)
         // Auto-advance after scheduling
-        setTimeout(() => onSubmit(true, answer as unknown as Json), 800)
+        // Guardado em ref para ser cancelado na limpeza. Sem isso, agora que o efeito volta a
+        // reexecutar (era esse o defeito), cresce a janela em que um temporizador antigo dispara
+        // um `onSubmit` depois do desmonte — envio duplicado. Trocar um bug por um pior seria
+        // péssimo negócio.
+        if (autoAvancoRef.current) clearTimeout(autoAvancoRef.current)
+        autoAvancoRef.current = setTimeout(() => onSubmit(true, answer as unknown as Json), 800)
       }
     }
     window.addEventListener('message', handleMessage)
@@ -495,10 +514,12 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
       script.async = true
       document.head.appendChild(script)
     }
-    scriptLoadedRef.current = true
-
     return () => {
       window.removeEventListener('message', handleMessage)
+      if (autoAvancoRef.current) {
+        clearTimeout(autoAvancoRef.current)
+        autoAvancoRef.current = null
+      }
     }
   }, [calendlyUrl, onChange, onSubmit])
 

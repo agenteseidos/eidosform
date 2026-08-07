@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Lint + Typecheck + Build
+    name: Lint + Typecheck + Testes + Build
     runs-on: ubuntu-latest
 
     steps:
@@ -29,6 +29,12 @@ jobs:
 
       - name: Typecheck
         run: npx tsc --noEmit
+
+      # Auditoria 2026-08: a CI rodava lint/typecheck/build e NÃO rodava a suíte — um PR que
+      # quebrasse os testes passava com CI verde. Vem ANTES do build de propósito: teste é mais
+      # rápido e falha mais cedo, e não faz sentido buildar código com teste quebrado.
+      - name: Testes
+        run: npm test
 
       - name: Build
         run: npm run build

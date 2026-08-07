@@ -106,3 +106,39 @@ de qualquer uma delas não seria detectado.
 
 **Cuidado ao ligar:** `elen/test/followup.test.js` dá **`FLUSHDB` incondicional** antes de cada um
 dos ~35 testes, com URL literal de Redis. Ligar a CI da Elen sem neutralizar isso é arriscado.
+
+---
+
+## D-05 · Fila de reenvio para e-mail (o "outbox" que ficou de fora do lote 3)
+
+**Origem:** lote 3 da remediação (item L3-4). O plano listava
+`lib/resend.ts:145 + lib/notification-email.ts:110 — receber webhook delivered/bounced; **outbox**`.
+A primeira metade foi feita e está no ar; **a fila de reenvio não**.
+
+**O que existe hoje.** `sendEmailWithRetry` tenta 3 vezes, com espera de 1s/5s/10s, dentro da mesma
+invocação. Se as três falharem, `lib/email-delivery.ts` **não chega a gravar nada** — a linha só
+nasce quando há `id` da Resend, isto é, quando houve aceite. O rastro que sobra é o `logError` do
+chamador (`app/api/responses/route.ts`, "Lead email rejected").
+
+**O buraco.** Falha do transporte que dure mais que ~16 segundos = notificação perdida em definitivo.
+Não há reenvio depois. O caso concreto: Resend fora do ar por alguns minutos, ou cota estourada —
+todo lead que chegar nessa janela não gera e-mail para o dono, e nunca vai gerar.
+
+Compare com o WhatsApp, que JÁ tem esse mecanismo: `services/whatsapp/outbox.js`, com `pending`,
+`dead`, tentativas espaçadas e alerta. O e-mail não tem equivalente.
+
+**Por que ficou de fora, e não é preguiça.** A análise de risco do lote foi explícita: gravar a
+intenção ANTES do envio (estado `pending`) cria estado fantasma — um `pending` órfão, deixado por um
+processo morto entre gravar e enviar, é indistinguível de um envio que nunca aconteceu. Uma fila só
+fica correta com um processo que a drena e um critério de morte; isso é trabalho de lote próprio, não
+de remendo. A decisão registrada foi: **a linha em `email_deliveries` é COMPROVANTE, nunca intenção.**
+
+**Desenho provável quando for feito:**
+- tabela própria (`email_outbox`) ou coluna de estado separada — **não** reaproveitar
+  `email_deliveries`, que hoje tem um contrato limpo ("existe ⇒ a Resend aceitou");
+- gravação só no caminho de falha das 3 tentativas, com o payload completo (assunto + HTML), o que
+  levanta questão de PII em repouso — o corpo do e-mail carrega os dados do lead;
+- drenagem por cron (há timers systemd na VPS e um cron diário na Vercel — vide `DEPLOY.md`);
+- critério de morte + alerta ao dono, reaproveitando o caminho de `webhook_failure_notifications`.
+
+**Precondição:** decidir a retenção do payload com PII antes de escrever qualquer linha.

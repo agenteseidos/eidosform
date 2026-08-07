@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import Image from 'next/image'
 import { QuestionConfig, QuestionType, Form } from '@/lib/database.types'
 import { questionTypes, getQuestionTypeInfo } from '@/lib/questions'
@@ -70,9 +70,19 @@ export function RightPanel({
 
   // Na aba Lógica o interesse é a lógica: recolhe Ações/Configurações e abre
   // o bloco de lógica; ao voltar para Editar, restaura tudo aberto.
-  useEffect(() => {
+  //
+  // AJUSTE DURANTE O RENDER, não em useEffect (auditoria 2026-08). O `useEffect` com
+  // `setCollapsed` disparava `react-hooks/set-state-in-effect` e QUEBRAVA O LINT — e, com ele,
+  // a CI inteira. Além do lint, o efeito renderizava o painel uma vez com o estado ERRADO e só
+  // então corrigia, causando um flicker visível ao alternar Editar↔Lógica.
+  // Este é o padrão recomendado pelo React para "ajustar estado quando uma prop muda":
+  // comparar com o valor anterior durante o render e re-renderizar imediatamente, sem passar
+  // pelo DOM. Ver https://react.dev/learn/you-might-not-need-an-effect
+  const [prevLogicFocus, setPrevLogicFocus] = useState(logicFocus)
+  if (prevLogicFocus !== logicFocus) {
+    setPrevLogicFocus(logicFocus)
     setCollapsed(logicFocus ? { actions: true, config: true, logic: false } : {})
-  }, [logicFocus])
+  }
 
   // B08: Welcome screen editor
   if (sidebarSection === 'welcome' && form && onUpdateForm) {

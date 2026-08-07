@@ -1,4 +1,5 @@
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
+import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import { buildQuestionPath } from '@/lib/form-logic-engine'
 
 const MAX_PAYLOAD_BYTES = 50 * 1024
@@ -39,7 +40,12 @@ export function isResponseComplete(
     answers,
   )
   const pathSet = path.length > 0 ? new Set(path) : null
-  const required = questions.filter((q) => q.required && q.type !== 'content_block')
+  // `html_block` entra junto com `content_block` (auditoria 2026-08, lote 5).
+  // Os dois são BLOCOS DE CONTEÚDO: não recebem resposta. Só `content_block` era excluído aqui, e
+  // por isso um `html_block` marcado como obrigatório tornava a resposta eternamente incompleta —
+  // e "incompleta" é o portão único de e-mail, WhatsApp, planilha, pixel e webhook. O formulário
+  // travava para sempre, e nem recarregar resolvia.
+  const required = questions.filter((q) => q.required && !(q.type && NON_ANSWER_QUESTION_TYPES.has(q.type)))
   if (required.length === 0) return true
   const requiredInPath = pathSet
     ? required.filter((q) => pathSet.has(q.id))

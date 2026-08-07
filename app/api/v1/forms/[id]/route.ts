@@ -78,12 +78,22 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       )
     }
 
-    const { data: responses, count, error } = await supabase
+    // `submitted_at`/`last_activity_at`, NÃO `created_at`/`updated_at` (auditoria 2026-08, lote 5).
+    //
+    // A tabela `responses` NUNCA teve `created_at` nem `updated_at` — confirmado no catálogo do
+    // banco, não nos arquivos .sql (Regra Nº 1 do CLAUDE.md). O PostgREST recusa a consulta
+    // inteira quando uma coluna do `select` não existe, então esta listagem devolvia **500 em
+    // 100% das chamadas** desde que foi escrita. O resto do repositório já acertava: `export`,
+    // `admin/responses` e `partial-response` usam `submitted_at`.
+    //
+    // `nullsFirst: false` porque resposta parcial pode ter `submitted_at` nulo — sem isso ela
+    // encabeçaria a lista. O mesmo cuidado já existe em `app/api/admin/responses/route.ts:28`.
+    const { data: responsesRaw, count, error } = await supabase
       .from('responses')
-      .select('id, answers, completed, last_question_answered, utm_source, utm_medium, utm_campaign, utm_term, utm_content, created_at, updated_at', { count: 'exact' })
+      .select('id, answers, completed, last_question_answered, utm_source, utm_medium, utm_campaign, utm_term, utm_content, submitted_at, last_activity_at', { count: 'exact' })
       .eq('form_id', id)
       .eq('completed', true)
-      .order('created_at', { ascending: false })
+      .order('submitted_at', { ascending: false, nullsFirst: false })
       .range(offset, offset + limit - 1)
 
     if (error) {
@@ -92,6 +102,15 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         { status: 500, headers: getCorsHeaders(req.headers.get("origin")) }
       )
     }
+
+    // O JSON público mantém os nomes `created_at`/`updated_at`: esta é uma API VERSIONADA, e
+    // renomear campo de saída quebraria integração de cliente sem ganho nenhum. O apelido custa
+    // uma linha e preserva a liberdade de um dia existir um `created_at` de verdade.
+    // Mesmo padrão de `app/api/admin/responses/route.ts:79`.
+    const responses = (responsesRaw ?? []).map((r) => {
+      const { submitted_at, last_activity_at, ...resto } = r as Record<string, unknown>
+      return { ...resto, created_at: submitted_at, updated_at: last_activity_at }
+    })
 
     return NextResponse.json(
       {

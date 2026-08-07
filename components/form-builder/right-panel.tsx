@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import Image from 'next/image'
 import { QuestionConfig, QuestionType, Form } from '@/lib/database.types'
 import { questionTypes, getQuestionTypeInfo } from '@/lib/questions'
@@ -383,8 +384,9 @@ export function RightPanel({
                   </select>
                 </div>
 
-                {/* Campo obrigatório */}
-                {selectedQuestion.type !== 'content_block' && (
+                {/* Campo obrigatório — escondido para os dois tipos de BLOCO (lote 5).
+                    Marcar um bloco como obrigatório travava o formulário para sempre. */}
+                {!NON_ANSWER_QUESTION_TYPES.has(selectedQuestion.type) && (
                   <div className="flex items-center justify-between py-1 w-full">
                     <div className="flex-1 min-w-0 mr-3">
                       <Label htmlFor="rp-required" className="text-xs font-medium text-slate-700">Campo obrigatório</Label>

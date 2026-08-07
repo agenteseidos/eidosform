@@ -958,16 +958,34 @@ async function logPossibleDuplicatePartial(
     const newIdentity = extractIdentity(questions, answers, urlParams)
     if (!newIdentity.email && !newIdentity.phone) return
 
+    // ⚠️ ESTE DETECTOR NUNCA MEDIU NADA (auditoria 2026-08, lote 5).
+    //
+    // A consulta pedia `created_at`, coluna que a tabela `responses` NÃO TEM — o PostgREST recusa
+    // a consulta inteira nesse caso. `data` vinha `null`, o `error` era descartado no destructuring
+    // e a função saía em silêncio no `if (!partials?.length) return`. Ou seja: desde que foi
+    // escrito, um instrumento de MEDIÇÃO vinha reportando "nenhuma duplicata" sem nunca ter olhado.
+    //
+    // Para uma resposta parcial `submitted_at` é nulo (ela não foi enviada), então a coluna certa
+    // aqui é `last_activity_at` — que é justamente o que se quer medir: "parcial ativa há pouco".
+    //
+    // 📌 A PRIMEIRA SEMANA DESTE LOG É LINHA DE BASE, NÃO ALARME. Ele vai começar a falar agora;
+    // um pico de `[reconcile-detector]` não significa que a duplicação piorou, significa que o
+    // detector acordou. Só compare janelas DEPOIS de 07/08/2026.
     const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
-    const { data: partials } = await supabase
+    const { data: partials, error: partialsErr } = await supabase
       .from('responses')
-      .select('id, answers, url_params, created_at')
+      .select('id, answers, url_params, last_activity_at')
       .eq('form_id', formId)
       .eq('completed', false)
-      .gte('created_at', cutoff)
+      .gte('last_activity_at', cutoff)
       .neq('id', newResponseId)
-      .order('created_at', { ascending: false })
-      .limit(25) as { data: { id: string; answers: Record<string, unknown> | null; url_params?: Record<string, string> | null; created_at: string }[] | null; error: unknown }
+      .order('last_activity_at', { ascending: false, nullsFirst: false })
+      .limit(25) as { data: { id: string; answers: Record<string, unknown> | null; url_params?: Record<string, string> | null; last_activity_at: string | null }[] | null; error: { message?: string } | null }
+    // O erro deixa de ser engolido: era ele que escondia a coluna inexistente.
+    if (partialsErr) {
+      console.warn('[reconcile-detector] consulta falhou — medição indisponível', { formId, erro: partialsErr.message })
+      return
+    }
     if (!partials?.length) return
 
     for (const p of partials) {
@@ -979,7 +997,9 @@ async function logPossibleDuplicatePartial(
           completedResponseId: newResponseId,
           partialResponseId: p.id,
           matchedOn: newIdentity.email && pIdentity.email === newIdentity.email ? 'email' : 'phone',
-          partialAgeMin: Math.round((Date.now() - new Date(p.created_at).getTime()) / 60000),
+          partialAgeMin: p.last_activity_at
+            ? Math.round((Date.now() - new Date(p.last_activity_at).getTime()) / 60000)
+            : null,
         })
         return // primeiro match basta pra medição
       }

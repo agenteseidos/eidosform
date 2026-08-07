@@ -9,7 +9,7 @@
  * divergir — é a única camada que pega isso, porque teste de rota só enxerga a rota que testa.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 const raiz = join(__dirname, '..')
@@ -123,6 +123,46 @@ describe('consistência entre rotas irmãs', () => {
       expect(src, `${r} usa telefone cru como chave`).not.toMatch(
         /checkRateLimitAsync\(\s*`[^`]*\$\{phone\}/
       )
+    }
+  })
+
+  it('L5: nenhuma rota consulta created_at/updated_at em `responses` — as colunas NÃO EXISTEM', () => {
+    // A listagem da API v1 pedia `created_at, updated_at` de `responses` e devolvia 500 em 100%
+    // das chamadas — o PostgREST recusa a consulta inteira quando uma coluna do `select` não
+    // existe. As colunas reais são `submitted_at` e `last_activity_at`; confirmado no CATÁLOGO do
+    // banco em 07/08/2026, não nos arquivos .sql (Regra Nº 1 do CLAUDE.md).
+    //
+    // Esta varredura vale mais que a correção: o erro é invisível em revisão de código (o nome
+    // parece óbvio demais para estar errado) e só aparece quando um cliente chama a API.
+    const rotas: string[] = []
+    const varrer = (dir: string) => {
+      for (const nome of readdirSync(join(raiz, dir), { withFileTypes: true })) {
+        const rel = `${dir}/${nome.name}`
+        if (nome.isDirectory()) varrer(rel)
+        else if (nome.name === 'route.ts') rotas.push(rel)
+      }
+    }
+    varrer('app/api')
+    expect(rotas.length, 'nenhuma rota encontrada — a varredura quebrou').toBeGreaterThan(20)
+
+    for (const r of rotas) {
+      const src = ler(r)
+      // Só interessa o trecho que consulta `responses`.
+      if (!/\.from\(\s*['"]responses['"]\s*\)/.test(src)) continue
+      for (const bloco of src.split(/\.from\(\s*['"]responses['"]\s*\)/).slice(1)) {
+        // ESCOPO da consulta = só a cadeia encadeada logo depois do `.from('responses')`.
+        // Recortar até o próximo `.from(` era demais: em `admin/forms/route.ts` a cadeia termina
+        // e o código seguinte fala de `forms`, que TEM `created_at` — dava falso positivo. A
+        // cadeia acaba na primeira linha em branco ou na primeira que não começa por `.`.
+        const linhas: string[] = []
+        for (const linha of bloco.split('\n')) {
+          if (linhas.length > 0 && !/^\s*\./.test(linha)) break
+          linhas.push(linha)
+        }
+        const consulta = linhas.join('\n')
+        expect(consulta, `${r}: consulta \`responses\` usando created_at/updated_at, que não existem`)
+          .not.toMatch(/['"][^'"]*\b(created_at|updated_at)\b/)
+      }
     }
   })
 

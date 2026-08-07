@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'lucide-react'
 import { QuestionRenderer } from './question-renderer'
+import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import { toast } from 'sonner'
 import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
@@ -249,7 +250,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
   const validateCurrentQuestion = useCallback((candidateAnswers?: Record<string, Json>) => {
     if (!currentQuestion) return true
-    if (currentQuestion.type === 'content_block') return true
+    // Bloco de conteúdo não tem resposta para validar — vale para os DOIS tipos (lote 5).
+    if (NON_ANSWER_QUESTION_TYPES.has(currentQuestion.type)) return true
 
     const answerSource = candidateAnswers ?? answers
     const answer = answerSource[currentQuestion.id]
@@ -629,7 +631,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     // respondente nunca viu — exigi-las travaria o envio injustamente.
     const pathIds = new Set(buildQuestionPath(questions, answerSource))
     for (const q of visibleQuestions) {
-      if (q.type === 'content_block') continue
+      if (NON_ANSWER_QUESTION_TYPES.has(q.type)) continue
       if (!pathIds.has(q.id)) continue
       if (q.required) {
         const val = answerSource[q.id]

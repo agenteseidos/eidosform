@@ -13,7 +13,7 @@ import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields
 import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
 import { computePlanChange, decidePlanChangeAttempt, type PlanChangeRecoveryRow } from '@/lib/plan-change'
 import { addDaysToTodayBRT } from '@/lib/proration'
-import { executePlanSwitch, nextDueDateAfterFullCycle } from '@/lib/plan-switch'
+import { executePlanSwitch, nextDueDateAfterFullCycle, recordPlanChangePaymentApplied } from '@/lib/plan-switch'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { checkLaunchScope, isCardFallbackEnabled } from '@/lib/billing-launch-guard'
 import { openCardFallbackCheckout, type CardFallbackResult } from '@/lib/card-fallback'
@@ -540,6 +540,13 @@ export async function POST(
         )
       }
 
+      // LEDGER DO AVULSO CONSUMIDO (auditoria 2026-08, lote 1D.3). A linha de recuperação acima é
+      // sobrescrita na PRÓXIMA troca deste cliente; sem este registro próprio, o webhook atrasado
+      // deste mesmo avulso seria julgado "de outra tentativa" e ESTORNADO — cliente ficaria com as
+      // duas trocas e com o dinheiro da primeira de volta.
+      await recordPlanChangePaymentApplied(sSupa, {
+        paymentId: payment.id, profileId: profile.profileId, plan, cycle, reason: 'checkout_sync',
+      })
       await sSupa.from('billing_checkouts').update({ status: 'paid', last_event: `PLAN_CHANGE_PAID:${payment.id}` }).eq('checkout_id', recoveryCheckoutId)
       log('[checkout] Mudança de plano PAGA concluída (avulso + cancelar/recriar via token)', {
         userId: profile.profileId, plan, cycle, paymentId: payment.id, newSub: result.newSubscriptionId, nextDueDate,

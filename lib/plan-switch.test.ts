@@ -68,16 +68,22 @@ import { acquireLock } from '@/lib/billing-lock'
 const state: {
   profileRow: Record<string, unknown> | null
   recoveryRow: Record<string, unknown> | null
+  /** Linha do ledger `planchange-applied-{paymentId}`: presente = avulso já consumido. (lote 1D.3) */
+  appliedLedgerRow: Record<string, unknown> | null
   updateRows: Array<{ id: string }>
   calls: Array<{ table: string; op: string; payload?: unknown }>
-} = { profileRow: null, recoveryRow: null, updateRows: [], calls: [] }
+} = { profileRow: null, recoveryRow: null, appliedLedgerRow: null, updateRows: [], calls: [] }
 
 function makeDb() {
   return {
     from(table: string) {
-      const b: Record<string, unknown> & { _op: string; _payload?: unknown } = { _op: 'select' }
+      // `_eqs` guarda os filtros aplicados: sem isso o mock devolvia a MESMA linha para qualquer
+      // select em billing_checkouts, e não dava para distinguir a linha de recuperação
+      // (`planchange-pay-*`) do ledger de avulso consumido (`planchange-applied-*`). (lote 1D.3)
+      const b: Record<string, unknown> & { _op: string; _payload?: unknown; _eqs: Record<string, unknown> } = { _op: 'select', _eqs: {} }
       const chain = () => b
-      b.select = chain; b.eq = chain; b.is = chain; b.single = chain; b.maybeSingle = chain
+      b.select = chain; b.is = chain; b.single = chain; b.maybeSingle = chain
+      b.eq = (col: string, val: unknown) => { b._eqs[col] = val; return b }
       b.update = (p: unknown) => { b._op = 'update'; b._payload = p; return b }
       b.upsert = (p: unknown) => { b._op = 'upsert'; b._payload = p; return b }
       b.then = (resolve: (r: unknown) => unknown) => {
@@ -86,7 +92,12 @@ function makeDb() {
         if (table === 'profiles' && b._op === 'select') res = { data: state.profileRow, error: null }
         if (table === 'profiles' && b._op === 'update') res = { data: state.updateRows, error: null }
         if (b._op === 'upsert') res = { error: null }
-        if (table === 'billing_checkouts' && b._op === 'select') res = { data: state.recoveryRow, error: null }
+        if (table === 'billing_checkouts' && b._op === 'select') {
+          const cid = String(b._eqs.checkout_id ?? '')
+          res = cid.startsWith('planchange-applied-')
+            ? { data: state.appliedLedgerRow, error: null }   // ledger de avulso consumido
+            : { data: state.recoveryRow, error: null }        // linha de recuperação da tentativa
+        }
         if (table === 'billing_checkouts' && b._op === 'update') res = { error: null }
         return Promise.resolve(res).then(resolve)
       }
@@ -114,6 +125,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.profileRow = { asaas_subscription_id: 'sub_old' }
   state.recoveryRow = { planchange_attempt_id: 'att_default', status: 'recovering' }
+  state.appliedLedgerRow = null   // por padrão o avulso NÃO consta como consumido
   state.updateRows = [{ id: PROFILE_ID }]
   state.calls = []
 })
@@ -320,6 +332,57 @@ describe('runPlanChangeBackstop', () => {
     expect(asaasMocks.refundPayment).toHaveBeenCalled() // superseded → estorna automaticamente
     const { sendBillingOpsAlert } = await import('@/lib/resend')
     expect(vi.mocked(sendBillingOpsAlert)).toHaveBeenCalled()
+  })
+
+  it('LEDGER (lote 1D.3): avulso JÁ APLICADO cujo webhook chega após outra tentativa → NÃO estorna', async () => {
+    // O bug que isto fecha, em sequência natural (não corrida rara):
+    //   1. cliente troca de plano → avulso pay_1 cobrado, troca aplicada, linha marcada com att_1
+    //   2. cliente troca DE NOVO → a linha `planchange-pay-{profileId}` é SOBRESCRITA com att_2
+    //   3. o webhook de pay_1 chega atrasado → attempt att_1 ≠ att_2 → era julgado "superseded"
+    //      e ESTORNADO. O cliente ficava com as DUAS trocas E com o dinheiro da primeira de volta.
+    // O ledger `planchange-applied-{paymentId}` não é sobrescrito por outra tentativa, então
+    // responde com precisão que aquele dinheiro específico já foi consumido.
+    state.profileRow = { plan: 'starter', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_old', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
+    state.recoveryRow = { planchange_attempt_id: 'att_2', status: 'recovering' }
+    state.appliedLedgerRow = { checkout_id: 'planchange-applied-pay_1' }   // pay_1 já foi consumido
+
+    const r = await runPlanChangeBackstop(makeDb(), {
+      profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_1', attempt: 'att_1', source: 'webhook',
+    })
+
+    expect(r).toBe('already_applied')
+    expect(asaasMocks.refundPayment).not.toHaveBeenCalled()          // o essencial: dinheiro NÃO volta
+    expect(asaasMocks.createSubscriptionWithToken).not.toHaveBeenCalled()  // nem re-aplica a troca
+  })
+
+  it('LEDGER (lote 1D.3): avulso órfão de verdade (sem registro no ledger) CONTINUA sendo estornado', async () => {
+    // Contraprova do teste acima: o guard não pode virar "nunca estornar". Avulso de uma tentativa
+    // abandonada, que nunca foi consumido por troca alguma, segue devolvido ao cliente.
+    state.profileRow = { plan: 'starter', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_old', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
+    state.recoveryRow = { planchange_attempt_id: 'att_2', status: 'recovering' }
+    state.appliedLedgerRow = null   // nunca aplicado
+
+    const r = await runPlanChangeBackstop(makeDb(), {
+      profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_orfao', attempt: 'att_1', source: 'webhook',
+    })
+
+    expect(r).toBe('superseded')
+    expect(asaasMocks.refundPayment).toHaveBeenCalled()
+  })
+
+  it('LEDGER (lote 1D.3): troca concluída pelo backstop grava o avulso no ledger', async () => {
+    // Sem esta gravação o guard nunca teria o que consultar num reprocessamento futuro.
+    state.profileRow = { plan: 'starter', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_old', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
+    state.recoveryRow = { planchange_attempt_id: 'att_X', status: 'recovering' }
+
+    await runPlanChangeBackstop(makeDb(), {
+      profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_X', attempt: 'att_X', source: 'webhook',
+    })
+
+    const ledger = state.calls.find(c =>
+      c.table === 'billing_checkouts' && c.op === 'upsert' &&
+      (c.payload as { checkout_id?: string })?.checkout_id === 'planchange-applied-pay_X')
+    expect(ledger).toBeTruthy()
   })
 
   it('REGRESSÃO Codex: POST síncrono concluiu (linha paid, profile NO alvo) + webhook do MESMO avulso → already_applied, NÃO estorna (I1/I3)', async () => {

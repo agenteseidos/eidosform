@@ -360,6 +360,80 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
  * com sub vinculada → noop. Falha transitória → throw (o chamador marca failed/retry).
  */
 /**
+ * LEDGER DE AVULSO CONSUMIDO (auditoria 2026-08, lote 1D.3).
+ *
+ * PROBLEMA QUE RESOLVE: a linha de controle da troca é `planchange-pay-{profileId}` — UMA por
+ * cliente, SOBRESCRITA a cada nova tentativa. Sequência real, não corrida rara:
+ *   1. troca A1 → cobra o avulso P1, aplica a troca, linha marcada 'paid' com attempt A1
+ *   2. cliente faz uma 2ª troca → a linha é sobrescrita com o attempt A2
+ *   3. webhook de P1 chega atrasado → o backstop compara A1 com A2, não casa, e ESTORNA P1
+ * Resultado: o cliente fica com as DUAS trocas **e** recebe de volta o dinheiro da primeira.
+ * A identidade por attempt não basta porque ela mora justamente no registro que é sobrescrito.
+ *
+ * SOLUÇÃO: uma linha PRÓPRIA por pagamento consumido — `planchange-applied-{paymentId}` —, que
+ * nunca é sobrescrita por outra tentativa. Antes de estornar como superseded, o backstop pergunta
+ * a este ledger se aquele dinheiro já foi usado.
+ *
+ * Reaproveita `billing_checkouts` de propósito: sem migration, sem tabela nova (e o projeto NÃO tem
+ * rastreamento de migrations — ver REGRA Nº 1 no CLAUDE.md).
+ */
+export function appliedPaymentLedgerId(paymentId: string): string {
+  return `planchange-applied-${paymentId}`
+}
+
+/**
+ * Marca um avulso como CONSUMIDO por uma troca aplicada. Idempotente e best-effort: se a gravação
+ * falhar, o fluxo NÃO é abortado — a troca já aconteceu e o cliente não pode ser penalizado por uma
+ * falha de auditoria. O custo de perder este registro é voltar ao comportamento antigo (risco de
+ * estorno indevido), nunca quebrar a troca.
+ */
+export async function recordPlanChangePaymentApplied(db: SupabaseClient, ctx: {
+  paymentId: string; profileId: string; plan: string; cycle: string; reason: string
+}): Promise<void> {
+  const { paymentId, profileId, plan, cycle, reason } = ctx
+  try {
+    await (db as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<{ error?: unknown }> } })
+      .from('billing_checkouts')
+      .upsert({
+        checkout_id: appliedPaymentLedgerId(paymentId),
+        profile_id: profileId,
+        status: 'paid',
+        plan,
+        cycle,
+        asaas_payment_id: paymentId,
+        last_event: `PLAN_CHANGE_APPLIED:${reason}`,
+      }, { onConflict: 'checkout_id' })
+  } catch (err) {
+    logError('[plan-switch] falha ao registrar avulso consumido (não bloqueia a troca)', err, { paymentId, profileId })
+  }
+}
+
+/**
+ * Este avulso já foi consumido por alguma troca aplicada?
+ *
+ * ⚠️ FAIL-SAFE ASSIMÉTRICO: se a consulta falhar, devolve `true` (= "já aplicado"). O erro caro aqui
+ * é estornar dinheiro legítimo; deixar de estornar um avulso realmente órfão é recuperável (a linha
+ * fica visível e o valor pode ser devolvido manualmente). Na dúvida, NÃO devolver dinheiro.
+ */
+export async function wasPlanChangePaymentApplied(db: SupabaseClient, paymentId: string): Promise<boolean> {
+  try {
+    const { data, error } = await db
+      .from('billing_checkouts')
+      .select('checkout_id')
+      .eq('checkout_id', appliedPaymentLedgerId(paymentId))
+      .maybeSingle()
+    if (error) {
+      logError('[plan-switch] consulta ao ledger de avulso falhou — assume APLICADO (não estorna)', error, { paymentId })
+      return true
+    }
+    return !!data
+  } catch (err) {
+    logError('[plan-switch] consulta ao ledger de avulso lançou — assume APLICADO (não estorna)', err, { paymentId })
+    return true
+  }
+}
+
+/**
  * Estorna um avulso de troca SUPERSEDED (tentativa abandonada/fora de ordem) e registra DLQ durável.
  * O avulso foi cobrado mas NÃO tem troca correspondente → estornar é sempre seguro (nunca derruba
  * plano vigente). Estorno falho → upsert PLANCHANGE_SUPERSEDED (status 'dead', visível p/ admin) + alerta.
@@ -464,6 +538,19 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
 
     // Avulso de OUTRA tentativa (superseded/abandonada): cobrado sem troca correspondente → ESTORNA.
     if (!attemptMine) {
+      // GUARD DO LEDGER (auditoria 2026-08, lote 1D.3) — ANTES de devolver qualquer dinheiro.
+      // `attemptMine` compara o attempt do avulso com o da linha `planchange-pay-{profileId}`, que é
+      // SOBRESCRITA a cada nova tentativa. Um avulso legítimo, já aplicado, cujo webhook chega depois
+      // de o cliente iniciar outra troca, aparece aqui como "de outra tentativa" e era estornado —
+      // o cliente ficava com as duas trocas E com o dinheiro da primeira de volta.
+      // O ledger `planchange-applied-{paymentId}` nunca é sobrescrito, então responde com precisão
+      // se aquele dinheiro específico já foi consumido.
+      if (await wasPlanChangePaymentApplied(db, paymentId)) {
+        log(`${tag}: avulso parece de outra tentativa, mas o ledger diz que JÁ FOI APLICADO — noop (sem estorno)`, {
+          profileId, plan, cycle, paymentId, attempt: attempt ?? null, rowAttempt,
+        })
+        return 'already_applied'
+      }
       await refundAndFlagSuperseded(db, { paymentId, profileId, plan, cycle, attempt: attempt ?? null, rowAttempt, rowStatus: rec?.status ?? null, customerId: p.asaas_customer_id ?? null, source, tag })
       return 'superseded'
     }
@@ -472,6 +559,10 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
     // noop SEM estorno (o webhook normal do avulso legítimo NÃO pode devolver a diferença paga).
     const onTarget = p.plan === plan && (p.plan_cycle ?? 'MONTHLY') === cycle && !!p.asaas_subscription_id
     if (onTarget) {
+      // Ledger: o dinheiro DESTE avulso já foi consumido pela troca que o fluxo síncrono aplicou.
+      // Registrar aqui cobre o caso em que o síncrono concluiu antes da gravação do ledger existir
+      // (deploys anteriores) e torna o guard eficaz já no primeiro webhook. (lote 1D.3)
+      await recordPlanChangePaymentApplied(db, { paymentId, profileId, plan, cycle, reason: 'already_on_target' })
       if (inFlight) {
         await db.from('billing_checkouts').update({ status: 'paid', last_event: `PLAN_CHANGE_ALREADY:${paymentId}` }).eq('checkout_id', recoveryCheckoutId)
       }
@@ -514,6 +605,9 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
     if (!result.ok) {
       throw new Error(`${tag} executePlanSwitch falhou (${result.code}): ${result.error} — retry`)
     }
+    // Ledger do avulso consumido — mesma razão do fluxo síncrono (lote 1D.3): a linha de
+    // recuperação abaixo é sobrescrita na próxima tentativa deste cliente.
+    await recordPlanChangePaymentApplied(db, { paymentId, profileId, plan, cycle, reason: 'backstop' })
     await db
       .from('billing_checkouts')
       .update({ status: 'paid', last_event: `PLAN_CHANGE_PAID_BACKSTOP:${paymentId}` })

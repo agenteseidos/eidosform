@@ -84,24 +84,28 @@ describe('POST /api/webhooks/resend', () => {
     expect(applyResendEvent).not.toHaveBeenCalled()
   })
 
-  it('ACEITA retentativa de até 28h — a Resend repete por quase 2 dias', async () => {
-    // A janela era de 5 min e teria rejeitado da 3ª retentativa em diante (5min, 30min, 2h, 5h,
-    // 10h, 10h). Além de perder o evento, falhas seguidas fazem a Resend DESABILITAR o endpoint.
-    for (const horas of [0, 1, 10, 28]) {
-      const ts = String(Math.floor((Date.now() - horas * 3600 * 1000) / 1000))
+  it('recusa REPLAY: assinatura verdadeira, carimbo velho', async () => {
+    // A retentativa legítima NÃO cai aqui: a Svix reassina cada tentativa com carimbo novo
+    // (verificado no servidor open-source dela e na spec Standard Webhooks). O evento de 10h
+    // atrás chega com carimbo de segundos. Carimbo velho de verdade só existe em replay.
+    const velho = String(Math.floor((Date.now() - 10 * 60 * 1000) / 1000))
+    const res = await POST(req(EVENTO, {
+      'svix-id': 'msg_1', 'svix-timestamp': velho, 'svix-signature': assinar(EVENTO, 'msg_1', velho),
+    }))
+    expect(res.status).toBe(401)
+  })
+
+  it('aceita carimbo dentro da janela, nos dois sentidos (relógio adiantado também)', async () => {
+    for (const desloc of [-4 * 60, 0, 4 * 60]) {
+      const ts = String(Math.floor(Date.now() / 1000) + desloc)
       const res = await POST(req(EVENTO, {
-        'svix-id': `msg_${horas}`, 'svix-timestamp': ts, 'svix-signature': assinar(EVENTO, `msg_${horas}`, ts),
+        'svix-id': `msg_${desloc}`, 'svix-timestamp': ts, 'svix-signature': assinar(EVENTO, `msg_${desloc}`, ts),
       }))
-      expect(res.status, `retentativa de ${horas}h deveria ser aceita`).toBe(200)
+      expect(res.status, `deslocamento de ${desloc}s deveria passar`).toBe(200)
     }
   })
 
-  it('recusa carimbo absurdo (fora de 48h) e carimbo que não é número', async () => {
-    const antigo = String(Math.floor((Date.now() - 72 * 3600 * 1000) / 1000))
-    expect((await POST(req(EVENTO, {
-      'svix-id': 'msg_x', 'svix-timestamp': antigo, 'svix-signature': assinar(EVENTO, 'msg_x', antigo),
-    }))).status).toBe(401)
-
+  it('recusa carimbo que não é número', async () => {
     expect((await POST(req(EVENTO, {
       'svix-id': 'msg_y', 'svix-timestamp': 'abc', 'svix-signature': assinar(EVENTO, 'msg_y', 'abc'),
     }))).status).toBe(401)

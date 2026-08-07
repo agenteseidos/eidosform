@@ -21,27 +21,36 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Janela de tolerância do carimbo de tempo.
+ * Janela de tolerância do carimbo de tempo — 5 minutos, o mesmo valor das bibliotecas oficiais
+ * (`svix`, `standardwebhooks`, e o SDK da própria Resend).
  *
- * ⚠️ COMEÇOU EM 5 MINUTOS — o padrão das bibliotecas da Svix — e foi ALARGADA de propósito.
+ * ⚠️ NÃO ALARGUE ISTO. A dúvida já foi levantada e resolvida em 07/08/2026, e a resposta é
+ * contraintuitiva o bastante para valer o registro:
  *
- * A Resend repete um evento que não recebeu 200 **oito vezes**, com espera crescente: imediato,
- * 5s, 5min, 30min, 2h, 5h, 10h, 10h — quase 28 horas no total. Se ela reenviar mantendo o
- * carimbo de tempo ORIGINAL do evento, toda tentativa a partir da terceira cairia fora de uma
- * janela de 5 minutos e voltaria 401. O efeito não seria só perder o evento: depois de falhas
- * seguidas a Resend **desabilita o endpoint sozinha**. A resiliência inteira do desenho dependeria
- * de uma premissa sobre o comportamento da Svix que não está documentada.
+ * A preocupação era que a Resend repete um evento não confirmado OITO vezes ao longo de ~28h
+ * (5s, 5min, 30min, 2h, 5h, 10h, 10h). Se ela reenviasse mantendo o carimbo ORIGINAL, tudo a
+ * partir da terceira tentativa cairia fora de 5 minutos e voltaria 401 — e falhas seguidas fazem
+ * a Resend desabilitar o endpoint sozinha.
  *
- * A janela existe contra REPLAY — alguém capturar um evento assinado e reenviá-lo depois. Aqui
- * esse ataque não compra quase nada: `applyResendEvent` só avança na escada de status, então
- * reenviar um evento antigo é no-op (o status já está lá ou já passou dele), e o corpo é assinado,
- * então o conteúdo não pode ser adulterado. Trocar um risco praticamente nulo por uma chance real
- * de perder o aviso de que o e-mail do cliente não chegou é um mau negócio.
+ * **Não é o que acontece.** A Svix REASSINA cada tentativa com carimbo novo. Verificado em três
+ * fontes independentes:
+ *  · o servidor open-source dela (`svix-server/src/worker.rs`) chama `Utc::now()` dentro de
+ *    `prepare_dispatch`, que é o caminho comum da 1ª tentativa e das retentativas;
+ *  · a especificação Standard Webhooks: "every time an attempt is retried the timestamp of the
+ *    attempt is updated, while the timestamp of the original event remains the same";
+ *  · o fundador da Svix, em resposta pública: "You should generate a new signature when you
+ *    retry (Svix already does it)".
  *
- * 48 horas cobre a tabela de repetições inteira com folga, e ainda barra evento com carimbo
- * absurdo ou ausente.
+ * O que NÃO muda entre tentativas é o `svix-id` — por isso a Resend recomenda usá-lo para
+ * deduplicar. Aqui não é preciso: `applyResendEvent` só avança na escada de status, então
+ * reprocessar o mesmo evento é no-op por construção.
+ *
+ * Ou seja: a retentativa de 10 horas chega com carimbo de poucos segundos. Alargar a janela não
+ * resolveria problema nenhum e só enfraqueceria a proteção contra replay. Se algum dia aparecer
+ * 401 por "carimbo velho" em produção, a causa é relógio do servidor fora de sincronia (NTP) —
+ * não é retentativa.
  */
-const TOLERANCIA_MS = 48 * 60 * 60 * 1000
+const TOLERANCIA_MS = 5 * 60 * 1000
 
 /**
  * Verificação da assinatura Svix.

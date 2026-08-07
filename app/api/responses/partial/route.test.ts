@@ -62,6 +62,10 @@ vi.mock('@/lib/supabase/admin', () => ({
 vi.mock('@/lib/response-rate-limit', () => ({
   checkResponseRateLimitAsync: vi.fn(async () => ({ allowed: true, remaining: 9, resetIn: 0 })),
   checkPartialRateLimitAsync: vi.fn(async () => ({ allowed: true, remaining: 29, resetIn: 0 })),
+  // Orçamento SEPARADO para CRIAR parcial (auditoria 2026-08, lote 2 · L2-5): sessão legítima
+  // cria UMA linha e depois só atualiza; o loop de um atacante criava ~43 mil/dia, e cada linha
+  // virava "lead abandonado" disparando e-mail pago ao dono.
+  checkPartialCreateLimitAsync: vi.fn(async () => ({ allowed: true, remaining: 4, resetIn: 0 })),
 }))
 vi.mock('@/lib/google-sheets', () => ({ upsertSubmission: vi.fn(async () => ({ rowIndex: null })) }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn(), logWarn: vi.fn(), log: vi.fn() }))

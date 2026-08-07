@@ -148,6 +148,24 @@ export async function checkUploadSignPreflightAsync(
   return checkLimitAsync(`upsignpre:${ip}`, UPLOAD_MAX_GLOBAL)
 }
 
+// ── Orçamento de CRIAÇÃO de parcial (auditoria 2026-08, lote 2 · L2-5) ──
+// O teto de 30/min acima cobre o TRÁFEGO de parciais, mas não distingue criar de atualizar.
+// Uma sessão legítima cria UMA linha e depois só atualiza — enquanto um atacante em loop cria
+// 30 linhas novas por minuto, ~43 mil por dia num único formulário. O efeito não é o banco: é
+// que cada linha vira "lead abandonado" 30 min depois e o cron dispara e-mail PAGO ao dono,
+// afogando os abandonos reais no meio do lixo.
+//
+// 5 criações por minuto por IP+form não encosta em tráfego real (a criação é o primeiro POST
+// da sessão) e corta o flood por um fator de 6. Atualizações seguem com o teto de 30.
+const PARTIAL_MAX_NEW_PER_FORM = 5
+
+export async function checkPartialCreateLimitAsync(
+  ip: string,
+  formId: string
+): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
+  return checkLimitAsync(`partialnew:${ip}:${formId}`, PARTIAL_MAX_NEW_PER_FORM)
+}
+
 // Synchronous version kept for backward compat (uses memory only)
 export function checkResponseRateLimit(ip: string): { allowed: boolean; remaining: number; resetIn: number } {
   return checkMemoryFallback(`resp:${ip}`, MAX_REQUESTS)

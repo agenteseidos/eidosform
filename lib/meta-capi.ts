@@ -67,6 +67,14 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
     return false
   }
 
+  // Defesa em profundidade (auditoria 2026-08, lote 2 · L2-6). O teto de fan-out vive na
+  // ENTRADA (`/api/responses`), que é onde ele resolve banco e CAPI de uma vez. Este guard
+  // existe para o caso de um chamador FUTURO esquecer de limitar: nome de evento do Meta não
+  // passa de 64 caracteres, então string maior é lixo ou payload de abuso — não vale um POST.
+  if (!options.eventId || options.eventId.length > 64) {
+    return false
+  }
+
   try {
     // Build hashed user_data (snake_case keys per Meta CAPI spec)
     const userData: MetaCAPIPayload['user_data'] = {}

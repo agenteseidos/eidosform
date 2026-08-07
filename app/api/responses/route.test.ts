@@ -182,7 +182,14 @@ describe('POST /api/responses — upgrade parcial→final (A1)', () => {
     expect(state.calls.some(c => c.table === 'responses' && c.op === 'update')).toBe(false)
   })
 
-  it('row AUTENTICADA com respondent_id divergente → 403 (não degrada)', async () => {
+  // L2-3 (auditoria 2026-08): a identidade passou a vir do TOKEN, nunca do corpo. Antes, mandar
+  // o UUID da vítima em `respondent_id` bastava para ser tratado como dono da linha — e finalizar
+  // resposta alheia disparava e-mail, WhatsApp, Sheets, webhook e CAPI com dados adulterados.
+  //
+  // O teste antigo exigia 403. Agora DEGRADA para resposta nova, de propósito: o player não tem
+  // retry, e 403 no envio faz o respondente PERDER tudo que preencheu. Degradar é igualmente
+  // seguro (a linha da vítima continua intocada) e não custa o lead.
+  it('L2-3: sem token válido NÃO atualiza linha alheia — degrada para resposta nova', async () => {
     state.existingResponse = {
       data: { id: RESP_ID, respondent_id: 'dono-real', completed: false, sheets_row_index: null },
       error: null,
@@ -193,13 +200,34 @@ describe('POST /api/responses — upgrade parcial→final (A1)', () => {
         { 'x-response-id': RESP_ID }
       )
     )
-    expect(res.status).toBe(403)
-    expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
+    // O que importa para a segurança: a linha da vítima NÃO foi tocada.
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'update')).toBe(false)
+    // E o que importa para o negócio: a resposta de quem preencheu não se perdeu.
+    expect(res.status).toBe(201)
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(true)
   })
 
-  it('row autenticada com respondent_id correto atualiza sem precisar de token', async () => {
+  // L2-3: o UPDATE de linha autenticada agora exige PROVA (Bearer), não o uid no corpo.
+  it('L2-3: com token do dono, atualiza a própria linha normalmente', async () => {
+    const { getRequestUser } = await import('@/lib/supabase/request-auth')
+    vi.mocked(getRequestUser).mockResolvedValueOnce({ id: 'dono-real' } as never)
     state.existingResponse = {
       data: { id: RESP_ID, respondent_id: 'dono-real', completed: false, sheets_row_index: null },
+      error: null,
+    }
+    const res = await POST(
+      makeReq({ form_id: FORM_ID, answers: { q1: 'x' } }, { 'x-response-id': RESP_ID })
+    )
+    expect(res.status).toBe(200)
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'update')).toBe(true)
+  })
+
+  // Bundle ANTIGO em cache: sem header, mas com o uid certo no corpo, e a linha JÁ completa.
+  // Não pode virar resposta duplicada — isso geraria lead, e-mail e linha de Sheets em dobro.
+  // Escrever exige token; este curto-circuito não escreve nada, então aceita o sinal legado.
+  it('L2-3: reenvio de bundle antigo em linha já completa responde already_completed, sem duplicar', async () => {
+    state.existingResponse = {
+      data: { id: RESP_ID, respondent_id: 'dono-real', completed: true, sheets_row_index: null },
       error: null,
     }
     const res = await POST(
@@ -209,6 +237,8 @@ describe('POST /api/responses — upgrade parcial→final (A1)', () => {
       )
     )
     expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ already_completed: true })
+    expect(state.calls.some(c => c.table === 'responses' && c.op === 'insert')).toBe(false)
   })
 
   it('x-response-id inexistente → 404', async () => {

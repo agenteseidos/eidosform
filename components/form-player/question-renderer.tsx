@@ -543,7 +543,19 @@ const HtmlBlockQuestion = React.memo(function HtmlBlockQuestion({ question, them
   // forms antigos salvos antes do fix e qualquer caminho que pule a escrita.
   const html = sanitizeEmbedHtml(question.htmlContent?.trim() ?? '')
   const note = question.htmlBlockNote?.trim()
-  const noteHtml = note ? renderTiptapHtml(note, renderContentBlockHtml) : ''
+  // SANITIZA a nota antes de injetar (auditoria 2026-08, lote 2 · gêmea do L2-1).
+  //
+  // Este era o único ponto que mandava HTML para `dangerouslySetInnerHTML` sem passar por
+  // sanitizador nenhum, enquanto a rota irmã do builder (`form-preview.tsx:729`) já embrulhava
+  // o MESMO valor em `DOMPurify.sanitize`. Clássico drift entre irmãos — e o comentário em
+  // `lib/html-server.ts:182-184` afirmava que a nota "é sanitizada no render", o que era falso
+  // justamente aqui, no player público.
+  //
+  // Não era explorável: o `generateHTML` do Tiptap zera href `javascript:`/`data:`, descarta
+  // atributo fora do schema e escapa texto puro; e node desconhecido faz o catch cair em
+  // `renderContentBlockHtml`, que escapa. Mas isso torna a segurança dependente de "o Tiptap
+  // continuar seguro para sempre" — uma dependência que não precisa existir.
+  const noteHtml = note ? sanitizeRichHtml(renderTiptapHtml(note, renderContentBlockHtml)) : ''
 
   if (!html) {
     return (

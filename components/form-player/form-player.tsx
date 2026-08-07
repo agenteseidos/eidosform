@@ -727,13 +727,26 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
 
       const utms = getUtms()
 
-      // Get respondent_id if authenticated
+      // Identidade do respondente logado.
+      //
+      // Manda o TOKEN no header, não só o uid no corpo (auditoria 2026-08, lote 2 · L2-3):
+      // o servidor passa a derivar a identidade do token e a ignorar o `respondent_id` do
+      // corpo, que qualquer um podia forjar. O `respondent_id` continua sendo enviado por
+      // compatibilidade — bundles antigos em cache seguem funcionando, e o servidor degrada
+      // para "resposta nova" em vez de recusar.
+      //
+      // Este é o mesmo padrão que as chamadas de PARCIAL deste arquivo já usam (`:110`, `:603`)
+      // — e header viaja cross-origin, ao contrário do cookie, o que importa porque o player
+      // roda embedado em iframe de terceiro e em domínio próprio de cliente.
       let respondentId: string | null = null
       if (isAuthenticatedRef.current) {
         try {
           const supabase = createClient()
           const { data: { session } } = await supabase.auth.getSession()
           respondentId = session?.user?.id ?? null
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
         } catch { /* ignore */ }
       }
 

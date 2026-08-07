@@ -88,7 +88,33 @@ export function sanitizeHtmlServer(dirty: unknown, opts?: { allowIframe?: boolea
       .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '')
   }
 
-  // Replace all tags — keep allowed, strip others
+  // ITERA ATÉ PONTO FIXO (auditoria 2026-08, lote 2 · L2-1).
+  //
+  // A substituição abaixo é de PASSE ÚNICO, e remover uma tag pode CRIAR outra:
+  // `<<x>img src=x onerror=...>` — o `<x>` é removido e o `<` órfão que sobra se funde com
+  // `img ...>`, produzindo `<img onerror>` intacto. Um fuzz de 3.849 variações produziu 992
+  // nós com handler `on*` executável com UMA passada, e ZERO com duas.
+  //
+  // Hoje o html_block é sanitizado na escrita E no render, e essa composição já anulava o
+  // ataque por acidente — mais a CSP com nonce do player, que impede handler inline de
+  // disparar. Mas o caminho de passada única É alcançável (linha legada anterior a `ba9a464`,
+  // ou escrita direta no PostgREST pelo dono), e depender de "duas passadas em lugares
+  // diferentes" é defesa frágil: basta alguém remover uma delas achando que é redundante.
+  //
+  // Iterar até estabilizar torna a função idempotente POR CONSTRUÇÃO. Teto de 5 voltas contra
+  // patológico; na prática estabiliza em 2. Corrige de uma vez `sanitizeEmbedHtml`,
+  // `sanitizeRichHtmlServer` e `sanitizeContentBlocksServer`, que compartilham esta função.
+  let out = stripTagsOnce(input, opts)
+  for (let i = 0; i < 5; i += 1) {
+    const next = stripTagsOnce(out, opts)
+    if (next === out) break
+    out = next
+  }
+  return out
+}
+
+/** Uma passada de remoção/filtragem de tags. Não use direto: veja o laço acima. */
+function stripTagsOnce(input: string, opts?: { allowIframe?: boolean; allowSafeStyle?: boolean }): string {
   return input.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
     const tag = tagName.toLowerCase()
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { checkPartialRateLimitAsync } from '@/lib/response-rate-limit'
+import { checkPartialRateLimitAsync, checkPartialCreateLimitAsync } from '@/lib/response-rate-limit'
 import { upsertSubmission } from '@/lib/google-sheets'
 import { logError } from '@/lib/logger'
 import { pruneOrphanAnswers, pruneOffPathAnswers, validateAllAnswers } from '@/lib/field-validators'
@@ -260,6 +260,21 @@ export async function POST(req: NextRequest) {
   }
 
   // 3) Criação (com hash quando houver; corrida de INSERT resolve por 23505)
+  //
+  // Orçamento SEPARADO para CRIAR (auditoria 2026-08, lote 2 · L2-5). O teto geral de 30/min
+  // cobre o tráfego de parciais mas não distingue criar de atualizar — e uma sessão legítima
+  // cria UMA linha e depois só atualiza. Em loop, um atacante criava ~43 mil linhas/dia num
+  // formulário; o estrago não é o banco, é que cada linha vira "lead abandonado" em 30 min e
+  // dispara e-mail PAGO ao dono, afogando os abandonos reais. Aplicado só aqui: o POST que é
+  // atualização (caminhos 1 e 2 acima) não gasta este orçamento.
+  const createCheck = await checkPartialCreateLimitAsync(ip, form_id)
+  if (!createCheck.allowed) {
+    return NextResponse.json(
+      { error: 'Muitas requisições. Tente novamente mais tarde.' },
+      { status: 429, headers: CORS_HEADERS }
+    )
+  }
+
   return await createPartialResponse({
     supabase, form, ownerPlan, answers: valid, utmData, urlParams,
     lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions,

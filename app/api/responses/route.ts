@@ -6,6 +6,7 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkAndIncrementResponseCount, sendNearLimitAlert, PLANS } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
+import { isRecordableMetaEvent } from '@/lib/pixel-events'
 import { extractLead } from '@/lib/lead-extraction'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
@@ -13,7 +14,7 @@ import { isResponseComplete } from '@/lib/form-response-security'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 import { upsertSubmission } from '@/lib/google-sheets'
-import { logError } from '@/lib/logger'
+import { logError, logWarn } from '@/lib/logger'
 import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
@@ -135,8 +136,37 @@ export async function POST(req: NextRequest) {
   }
 
   const { form_id, last_question_answered, respondent_id } = body
+
+  // Identidade do respondente vem do TOKEN, nunca do corpo (auditoria 2026-08, lote 2 · L2-3).
+  // `respondent_id` do corpo é aceito e IGNORADO — bundle antigo em cache não quebra.
+  const authUser = await getRequestUser(req)
+  const trustedRespondentId = authUser?.id ?? null
+  // TETO DO FAN-OUT DE EVENTOS (auditoria 2026-08, lote 2 · L2-6).
+  //
+  // Este array era aceito sem teto de quantidade, sem teto de tamanho, sem dedup e sem
+  // whitelist — e mais abaixo (`:698-717`) vira UM `sendMetaCAPIEvent` por elemento, todos
+  // disparados no mesmo tick. Como `/api/responses` é anônimo, tem CORS `*` por desenho e é
+  // isento do check de Origin no middleware, um único POST podia gerar milhares de chamadas
+  // concorrentes à Meta — com o token e o pixel GLOBAIS da plataforma, não os do cliente.
+  //
+  // O filtro certo (`isRecordableMetaEvent`) já existia, mas rodava só no NAVEGADOR
+  // (form-player.tsx:760-761) — ou seja, protegia o usuário honesto e ninguém mais.
+  //
+  // Máximo legítimo: 1 evento de conclusão + até 10 answerSets (`sanitizeAnswerSetEvents`
+  // limita a 10 por formulário) + folga para o fbq. 25 cobre com margem.
+  // O formato da coluna `meta_events` NÃO muda — dado já gravado (Sheets, CSV, PDF, e-mail)
+  // depende dele.
+  const MAX_META_EVENTS = 25
+  const MAX_META_EVENT_LEN = 64 // nome de evento do Meta nunca passa disso
   const metaEvents = Array.isArray(body.meta_events)
-    ? body.meta_events.filter((e): e is string => typeof e === 'string')
+    ? Array.from(
+        new Set(
+          body.meta_events
+            .filter((e): e is string => typeof e === 'string')
+            .map((e) => e.trim().slice(0, MAX_META_EVENT_LEN))
+            .filter(isRecordableMetaEvent)
+        )
+      ).slice(0, MAX_META_EVENTS)
     : []
   const utmData = {
     utm_source: typeof body.utm_source === 'string' ? body.utm_source : null,
@@ -321,14 +351,37 @@ export async function POST(req: NextRequest) {
     //      sem respondent_id (anônima), ainda não foi finalizada E o cliente
     //      apresenta o partial_token emitido na criação (A1). O id sozinho
     //      não autoriza mais — UUIDs podem vazar via logs/Sheets/webhooks.
-    const bodyRespondentId = typeof respondent_id === 'string' ? respondent_id : null
+    // IDENTIDADE VEM DO TOKEN, NUNCA DO CORPO (auditoria 2026-08, lote 2 · L2-3).
+    //
+    // Antes: `bodyRespondentId = body.respondent_id` — um anônimo mandava no corpo o UUID de
+    // outro usuário e passava como "dono" da linha, finalizando resposta alheia e disparando
+    // e-mail, WhatsApp, Sheets, webhook e CAPI com dados adulterados. O UUID do dono, aliás,
+    // vaza no path do upload assinado.
+    //
+    // Agora a prova é o Bearer no header — que o player já envia (`form-player.tsx`) e que
+    // viaja cross-origin, ao contrário do cookie (o player roda embedado e em domínio de
+    // cliente). O `respondent_id` do corpo é IGNORADO, não rejeitado: bundle antigo em cache
+    // continua enviando e não quebra.
     const isAnonymousPartialUpgrade =
       fetched.respondent_id === null &&
       fetched.completed === false &&
       verifyPartialToken(partialToken, existingResponseId)
     const isAuthenticatedOwner =
-      !!fetched.respondent_id && fetched.respondent_id === bodyRespondentId
-    if (isAuthenticatedOwner && fetched.completed === true) {
+      !!fetched.respondent_id && fetched.respondent_id === trustedRespondentId
+
+    // Curto-circuito de IDEMPOTÊNCIA — critério deliberadamente mais FROUXO que o de escrita.
+    //
+    // Escrever exige prova (token). Mas este ramo não escreve nada: só responde "já concluída"
+    // e evita repetir e-mail/Sheets/CAPI/webhook. Aceitar aqui o `respondent_id` do corpo como
+    // sinal legado é seguro (nenhum efeito colateral, e quem chama já conhecia o id da linha) e
+    // evita um problema pior: sem ele, um bundle ANTIGO em cache que reenviasse cairia na
+    // degradação abaixo e criaria uma SEGUNDA resposta completa — lead duplicado, e-mail
+    // duplicado, linha duplicada no Sheets do cliente. (auditoria 2026-08, lote 2 · L2-3)
+    const legacyBodyOwnerMatch =
+      !!fetched.respondent_id &&
+      typeof respondent_id === 'string' &&
+      fetched.respondent_id === respondent_id
+    if ((isAuthenticatedOwner || legacyBodyOwnerMatch) && fetched.completed === true) {
       // P1-4 (auditoria Codex 2026-07-23): resubmissão AUTENTICADA de resposta
       // já finalizada repetia e-mail/Sheets/CAPI/webhook a cada replay. Mesmo
       // tratamento idempotente do caminho anônimo: 200 already_completed, sem
@@ -358,7 +411,20 @@ export async function POST(req: NextRequest) {
       // legítimo e não permite corromper a resposta de terceiros.
       existingResponseId = null
     } else {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 403, headers: CORS_HEADERS })
+      // DEGRADA em vez de recusar (auditoria 2026-08, lote 2 · L2-3).
+      //
+      // Chega aqui quem aponta para uma linha que não conseguiu provar ser sua. Antes era 403,
+      // e o player NÃO tem retry: o respondente perdia o envio inteiro. Com a identidade agora
+      // vindo do token, um bundle ANTIGO em cache (que manda só o uid no corpo, sem header)
+      // cairia exatamente aqui — ou seja, endurecer sem degradar transformaria a correção de
+      // segurança em perda de lead legítimo.
+      //
+      // Criar resposta nova é seguro nos dois sentidos: não sobrescreve linha de terceiro e
+      // não descarta o que a pessoa preencheu.
+      logWarn('[responses] posse da linha não comprovada — criando resposta nova', {
+        formId: form_id, responseId: existingResponseId, autenticado: !!trustedRespondentId,
+      })
+      existingResponseId = null
     }
   }
 
@@ -418,7 +484,7 @@ export async function POST(req: NextRequest) {
       // adotar a row do outro — o banco garante a convergência.
       // Mesmo um submit completo nasce como parcial. A promoção para completed
       // só acontece depois da reserva idempotente de cota.
-      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed: false, last_question_answered: lastQuestionAnswered, respondent_id: typeof respondent_id === 'string' ? respondent_id : null, ...utmData, url_params: urlParams, ...(sessionHash ? { partial_session_hash: sessionHash } : {}) } as ResponseInsert)
+      .insert({ form_id: form_id as string, answers: answers as Record<string, import('@/lib/database.types').Json>, meta_events: metaEvents, completed: false, last_question_answered: lastQuestionAnswered, respondent_id: trustedRespondentId, ...utmData, url_params: urlParams, ...(sessionHash ? { partial_session_hash: sessionHash } : {}) } as ResponseInsert)
       // submitted_at volta do INSERT porque é o horário PERSISTIDO do lead — o
       // e-mail mostra ele, nunca o relógio do envio (numa retentativa, o aviso
       // apresentaria a hora do aviso como se fosse a hora do lead).
@@ -476,7 +542,7 @@ export async function POST(req: NextRequest) {
           error: 'Não foi possível validar a cota agora. Tente novamente.',
           response_id: responseId,
           retryable: true,
-          ...(!existingResponseId && typeof respondent_id !== 'string'
+          ...(!existingResponseId && !trustedRespondentId
             ? { partial_token: signPartialToken(responseId) }
             : {}),
         },
@@ -771,7 +837,7 @@ export async function POST(req: NextRequest) {
 
   // Resposta anônima incompleta: devolve a prova de posse (A1) para o cliente
   // poder completar via upsert depois — o response_id sozinho não autoriza mais.
-  const issuePartialToken = !completed && typeof respondent_id !== 'string'
+  const issuePartialToken = !completed && !trustedRespondentId
   return NextResponse.json(
     {
       response_id: responseId,

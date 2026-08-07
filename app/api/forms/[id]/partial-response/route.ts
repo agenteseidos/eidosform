@@ -4,7 +4,7 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS, PlanName } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
 import { filterQuestionsByPlan } from '@/lib/questions'
-import { pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
+import { pruneOrphanAnswers, pruneOffPathAnswers, validateAllAnswers } from '@/lib/field-validators'
 import type { QuestionConfig } from '@/lib/database.types'
 import { sanitizeValue } from '@/lib/form-response-security'
 import { log, logError } from '@/lib/logger'
@@ -197,10 +197,36 @@ export async function PUT(
     effectiveQuestions,
     knownAnswers
   )
-  if (orphanKeys.length > 0 || offPathKeys.length > 0) {
-    console.warn('[forms/partial-response] answer keys discarded', { formId, orphanKeys, offPathKeys })
+  // Validação POR VALOR — a defesa que faltava (auditoria 2026-08, lote 2 · L2-2).
+  //
+  // As duas podas acima filtram CHAVE (pergunta órfã, resposta fora do caminho da lógica);
+  // nenhuma olha o VALOR. As três rotas irmãs (`/api/responses`, `/api/responses/partial` e
+  // `/api/v1/forms/[id]`) chamam `validateAllAnswers`; esta nunca chamou — mais um caso do
+  // padrão sistêmico #5 (a correção foi aplicada nas irmãs e esta ficou para trás).
+  //
+  // O que isso abria: `validateFileUpload` (field-validators.ts:348-366) exige que a URL do
+  // anexo comece com o prefixo público do bucket `form-uploads`. Sem passar por aqui, bastava
+  // uma CONTA GRÁTIS para gravar um "anexo" apontando para o domínio do atacante no formulário
+  // de outro cliente. O painel do dono renderiza o chip com botão "Baixar"
+  // (responses-dashboard.tsx:299) — o DONO clica e vai parar no site do atacante. Phishing com
+  // a marca do EidosForm contra o próprio cliente.
+  //
+  // DESCARTA a chave inválida e segue 200, como a irmã anônima — NÃO devolve 422: o autosave é
+  // silencioso (form-player.tsx:585-620) e um 422 viraria "Falha ao salvar progresso" no meio
+  // do preenchimento. O log abaixo torna o descarte observável.
+  const valueErrors = validateAllAnswers(effectiveQuestions, sanitizedAnswers)
+  const invalidIds = new Set(valueErrors.map((e) => e.questionId))
+  const validAnswers: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(sanitizedAnswers)) {
+    if (!invalidIds.has(k)) validAnswers[k] = v
   }
-  if (Object.keys(sanitizedAnswers).length === 0) {
+
+  if (orphanKeys.length > 0 || offPathKeys.length > 0 || invalidIds.size > 0) {
+    console.warn('[forms/partial-response] answer keys discarded', {
+      formId, orphanKeys, offPathKeys, invalidKeys: [...invalidIds],
+    })
+  }
+  if (Object.keys(validAnswers).length === 0) {
     // Nada válido pra salvar — não cria/atualiza linha com objeto vazio.
     return NextResponse.json({ skipped: true }, { status: 200, headers: CORS_HEADERS })
   }
@@ -232,7 +258,7 @@ export async function PUT(
     const { data: updated, error: updateError } = await supabase
       .from('responses')
       .update({
-        answers: sanitizedAnswers as Record<string, import('@/lib/database.types').Json>,
+        answers: validAnswers as Record<string, import('@/lib/database.types').Json>,
         last_question_answered: lastQuestionOk,
         // Idem: relógio de atividade pro cron de lead abandonado.
         last_activity_at: new Date().toISOString(),
@@ -262,7 +288,7 @@ export async function PUT(
       .insert({
         form_id: formId,
         respondent_id: user.id,
-        answers: sanitizedAnswers as Record<string, import('@/lib/database.types').Json>,
+        answers: validAnswers as Record<string, import('@/lib/database.types').Json>,
         completed: false,
         last_question_answered: lastQuestionOk,
         last_activity_at: new Date().toISOString(),

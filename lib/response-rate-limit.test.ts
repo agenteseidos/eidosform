@@ -114,3 +114,24 @@ describe('isolamento dos orçamentos de rate limit', () => {
     expect(r.allowed).toBe(false)
   })
 })
+
+describe('orçamento de CRIAÇÃO de parcial (lote 2 · L2-5)', () => {
+  it('usa chave própria `partialnew:` com teto de 5 — não a de tráfego geral nem a do submit', async () => {
+    const { checkPartialCreateLimitAsync } = await import('./response-rate-limit')
+    await checkPartialCreateLimitAsync(IP, FORM)
+    expect(chamadas()).toEqual([{ key: `partialnew:${IP}:${FORM}`, max: 5 }])
+  })
+
+  it('REGRESSÃO: esgotar as CRIAÇÕES não bloqueia as ATUALIZAÇÕES da sessão em curso', async () => {
+    // A distinção é o ponto do achado: quem já criou a linha continua salvando progresso
+    // normalmente; só a criação em loop é barrada.
+    rpc.mockImplementation(async (_fn: unknown, args: unknown) => {
+      const key = (args as { p_key: string }).p_key
+      return key.startsWith('partialnew:') ? negado() : permitido()
+    })
+    const { checkPartialCreateLimitAsync } = await import('./response-rate-limit')
+
+    expect((await checkPartialCreateLimitAsync(IP, FORM)).allowed).toBe(false)
+    expect((await checkPartialRateLimitAsync(IP, FORM)).allowed).toBe(true)
+  })
+})

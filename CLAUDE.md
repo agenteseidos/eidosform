@@ -19,7 +19,7 @@ pelo **SQL Editor do painel Supabase**.
 > service-role) **não executa DDL/GRANT**. Toda mudança de permissão ou estrutura passa pelo SQL
 > Editor, com o Sidney rodando. Planeje isso ao propor correções de banco.
 
-### Quatro casos reais, todos em 06/08/2026 — e os quatro invisíveis à leitura de código
+### Cinco casos reais (06 e 07/08/2026) — e todos invisíveis à leitura de código
 
 | # | O que o repositório dizia | O que o banco tinha |
 |---|---|---|

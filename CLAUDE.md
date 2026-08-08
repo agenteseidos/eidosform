@@ -27,6 +27,7 @@ pelo **SQL Editor do painel Supabase**.
 | 2 | `REVOKE EXECUTE ... FROM PUBLIC` nas funções `SECURITY DEFINER` | **Não estava em vigor.** `anon` executava as 8 — travar cadastro e queimar cota alheia, sem login |
 | 3 | `check_and_increment_response(uuid)` | Assinatura real tem **2 parâmetros** — SQL montado pelo arquivo falhou com `42883` |
 | 4 | (nada — invisível no código) | `GRANT` amplo ao `anon` em **14 tabelas + a view `published_forms`**, que é auto-atualizável e roda com `security_invoker=false`: havia caminho para **alterar/apagar formulário publicado de qualquer cliente sem login** |
+| 5 | `get_response_counts_by_forms` = `COUNT(*)` puro (migration `20260428`) | Tem uma **guarda de propriedade** que o arquivo não tem (`auth.uid() IS NULL OR EXISTS(... f.user_id = auth.uid())`). Confirmado em 07/08/2026 lendo `pg_proc.prosrc`. Não muda o resultado para quem chama com service-role, mas prova de novo que o `.sql` é a versão de ontem |
 
 **O caso 4 é o que mais importa como lição.** Uma auditoria de 30 lotes e 85 mil linhas, com dois
 modelos e passe duplo adversarial, **não o encontrou** — porque ele não existe em lugar nenhum do

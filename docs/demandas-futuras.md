@@ -145,15 +145,44 @@ de remendo. A decisão registrada foi: **a linha em `email_deliveries` é COMPRO
 
 ---
 
-## D-06 · ⏳ TESTE MANUAL PENDENTE — Calendly (fazer ANTES de abrir vendas)
+## D-06 · ✅ VALIDADO EM NAVEGADOR — Calendly (10/08/2026)
 
 **Origem:** lote 5 da remediação, commit `1a59957` (07/08/2026).
+**Fechamento:** teste manual do Sidney em produção, contra `aa903e1`, em 10/08/2026.
 
-**Situação.** A correção do agendamento por Calendly está NO AR e **nunca foi validada em
-navegador**. Não existe um único teste de componente React neste repositório — a suíte verde
-(1.099 testes) não cobre nada disso. Foi ao ar porque a funcionalidade estava 100% quebrada e
-ZERO clientes a usam (as 2 perguntas do tipo `calendly` em produção são testes do Sidney, ambas
-sem URL configurada).
+### O que foi validado de verdade
+
+| Cenário | Resultado |
+|---|---|
+| Calendly como ÚLTIMA pergunta, agendamento real | ✅ avançou sozinho para a tela de obrigado |
+| Calendly com uma pergunta DEPOIS dele | ✅ avançou sozinho para a pergunta seguinte |
+| Prazo do avanço | ✅ 3 segundos (`AUTO_AVANCO_MS`) |
+| Velocidade de abertura da grade | ✅ melhorou com o `preconnect` de `be50114` |
+
+### O que NÃO foi coberto pelo navegador (verificado só por leitura de código)
+
+- pergunta do tipo Calendly **não obrigatória**;
+- ir e voltar entre perguntas **antes** de agendar (era o re-render que causava o defeito original);
+- voltar à pergunta do Calendly **depois** de agendar. Pela leitura: mostra o cartão de confirmado
+  (`question-renderer.tsx`, ramo `if (value)`), a resposta em objeto passa na regra de obrigatório
+  (`form-player.tsx:259-268`), e o botão normal segue em frente. **Não há como reagendar** — é
+  comportamento de produto, nunca decidido, não defeito.
+
+### O que esta demanda ensinou (custou 2 testes manuais do Sidney)
+
+1. **O avanço automático foi quebrado DUAS vezes por refatoração**, e nas duas o único detector foi
+   o teste manual. Segue sem teste de componente React no repositório — a suíte de 1.166 testes não
+   toca nada disso. Enquanto for assim, **toda mexida em `CalendlyQuestion` exige teste manual**.
+2. **O deploy da Vercel pode simplesmente não acontecer.** O commit `be50114` teve CI verde e a
+   Vercel nunca criou o build; o Sidney testou o código antigo duas vezes e reportou defeito que já
+   estava corrigido. Conferir `GET /api/health` (devolve o commit servido) **antes** de pedir teste.
+
+### Situação anterior (histórico)
+
+A correção estava NO AR e **nunca havia sido validada em navegador**. Não existe um único teste de
+componente React neste repositório — a suíte verde não cobre nada disso. Foi ao ar porque a
+funcionalidade estava 100% quebrada e ZERO clientes a usam (as perguntas do tipo `calendly` em
+produção são testes do Sidney).
 
 **Por que tem prazo.** "Agendamento com Calendly" está na vitrine de planos
 (`lib/plan-marketing.ts:83`), vendido a partir do Starter. O dia em que o primeiro cliente ligar o

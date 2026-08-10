@@ -201,6 +201,30 @@ describe('GET /api/cron/reconcile-checkouts (backstop)', () => {
     expect(body.alerted).toBe(0)
   })
 
+  it('🛡️ a consulta de pagamento leva o CORTE de data do checkout — não vale pagar "algum dia"', async () => {
+    // O DEFEITO que este teste tranca: sem o corte, `hasConfirmedPaymentForSubscription` responde
+    // "sim, pagou" por um pagamento de QUALQUER época. No Asaas o status da ASSINATURA é
+    // independente do status da COBRANÇA — cartão recusado mantém a sub `ACTIVE` emitindo faturas
+    // vencidas. Então quem pagou em janeiro e parou em março tem sub `ACTIVE` + pagamento no
+    // histórico, e um checkout pendente esquecido liberava o plano de graça.
+    //
+    // O próprio lote 1 diagnosticou este helper ao escrever o 1D.2 ("assinante veterano
+    // inadimplente passaria"), criou um helper novo para o expire-plans e deixou ESTE chamador
+    // com a versão sem recorte. Achado na varredura de 10/08/2026.
+    //
+    // Verificar o ARGUMENTO, e não só o resultado, é o que impede a regressão silenciosa: apagar
+    // o segundo parâmetro passa em todos os outros testes deste arquivo.
+    const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
+    setupHappyPath(mods)
+
+    await mods.GET(REQ)
+
+    const chamada = vi.mocked(mods.asaas.hasConfirmedPaymentForSubscription).mock.calls[0]
+    expect(chamada[0]).toBe('sub_1')
+    // created_at do checkout (2026-06-09T10:00:00Z) menos a tolerância de 1 dia.
+    expect(chamada[1]).toBe('2026-06-08T10:00:00.000Z')
+  })
+
   it('profile em canceling → alerta e não ativa', async () => {
     const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
     setupHappyPath(mods)

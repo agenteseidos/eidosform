@@ -8,7 +8,7 @@
  * pagamento de outro cliente (o backstop estornaria uma renovação legítima).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createDetachedCheckout, getPaymentWithCard, findPaymentByCheckoutSession } from './asaas'
+import { createDetachedCheckout, getPaymentWithCard, findPaymentByCheckoutSession, hasConfirmedPaymentForSubscription } from './asaas'
 
 function stubFetch(status: number, body: unknown) {
   const fn = vi.fn().mockResolvedValue({
@@ -172,5 +172,67 @@ describe('findPaymentByCheckoutSession (backstop do cron)', () => {
     const r = await findPaymentByCheckoutSession('chk_1')
     expect(r.ok).toBe(false)
     expect(r.payment).toBeNull()
+  })
+})
+
+/**
+ * hasConfirmedPaymentForSubscription — o recorte de data que faltava.
+ *
+ * O PROBLEMA, diagnosticado pelo próprio lote 1 e nunca aplicado aqui: sem recorte, a função
+ * responde "sim, pagou" por um pagamento de QUALQUER época. No Asaas o status da ASSINATURA é
+ * independente do status da COBRANÇA — um cartão recusado mantém a assinatura `ACTIVE` emitindo
+ * faturas vencidas. Então quem pagou em janeiro e parou em março continua com assinatura `ACTIVE`
+ * e um pagamento confirmado no histórico, e isso bastava para o cron liberar o plano hoje.
+ */
+describe('hasConfirmedPaymentForSubscription — recorte de data', () => {
+  const JANEIRO = { status: 'CONFIRMED', dateCreated: '2026-01-10', confirmedDate: '2026-01-10' }
+  const HOJE = { status: 'CONFIRMED', dateCreated: '2026-06-09', confirmedDate: '2026-06-09' }
+  const CORTE = '2026-06-01T00:00:00.000Z'
+
+  it('sem corte, mantém o comportamento antigo (qualquer época conta)', async () => {
+    // O painel administrativo pergunta "esta pessoa já pagou alguma vez?" — lá isto está certo.
+    stubFetch(200, { data: [JANEIRO] })
+    expect(await hasConfirmedPaymentForSubscription('sub_1')).toEqual({ confirmed: true, ok: true })
+  })
+
+  it('COM corte, o veterano inadimplente NÃO passa', async () => {
+    // Este é o teste que impede um plano pago de ser liberado de graça.
+    stubFetch(200, { data: [JANEIRO] })
+    expect(await hasConfirmedPaymentForSubscription('sub_1', CORTE)).toEqual({ confirmed: false, ok: true })
+  })
+
+  it('COM corte, pagamento recente passa normalmente', async () => {
+    stubFetch(200, { data: [HOJE] })
+    expect(await hasConfirmedPaymentForSubscription('sub_1', CORTE)).toEqual({ confirmed: true, ok: true })
+  })
+
+  it('histórico misto: o recente é que decide', async () => {
+    stubFetch(200, { data: [JANEIRO, HOJE] })
+    expect((await hasConfirmedPaymentForSubscription('sub_1', CORTE)).confirmed).toBe(true)
+  })
+
+  it('pagamento confirmado SEM data nenhuma não conta quando há corte', async () => {
+    // Sem prova de recência não se ativa plano. Falhar fechado aqui custa um caso manual;
+    // falhar aberto custa um plano pago entregue de graça.
+    stubFetch(200, { data: [{ status: 'CONFIRMED' }] })
+    expect((await hasConfirmedPaymentForSubscription('sub_1', CORTE)).confirmed).toBe(false)
+  })
+
+  it('pagamento vencido/pendente nunca conta, com ou sem corte', async () => {
+    stubFetch(200, { data: [{ status: 'OVERDUE', dateCreated: '2026-06-09' }] })
+    expect((await hasConfirmedPaymentForSubscription('sub_1', CORTE)).confirmed).toBe(false)
+    stubFetch(200, { data: [{ status: 'PENDING', dateCreated: '2026-06-09' }] })
+    expect((await hasConfirmedPaymentForSubscription('sub_1')).confirmed).toBe(false)
+  })
+
+  it('corte inválido devolve ok:false — nunca afrouxa para "qualquer época"', async () => {
+    // Um erro de quem chama não pode reabrir o defeito em silêncio.
+    stubFetch(200, { data: [JANEIRO] })
+    expect(await hasConfirmedPaymentForSubscription('sub_1', 'não-é-data')).toEqual({ confirmed: false, ok: false })
+  })
+
+  it('consulta que falha devolve ok:false (o chamador não ativa nada)', async () => {
+    stubFetch(500, {})
+    expect(await hasConfirmedPaymentForSubscription('sub_1', CORTE)).toEqual({ confirmed: false, ok: false })
   })
 })

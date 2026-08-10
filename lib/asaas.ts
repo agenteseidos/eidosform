@@ -605,11 +605,51 @@ export async function findPaymentByCheckoutSession(checkoutSessionId: string): P
  * que o dinheiro entrou ANTES de ativar (não basta a sub estar ACTIVE). `ok:false` = consulta
  * falhou (o backstop deve ser conservador e NÃO ativar nesse tick).
  */
-export async function hasConfirmedPaymentForSubscription(subscriptionId: string): Promise<{ confirmed: boolean; ok: boolean }> {
+/**
+ * Existe pagamento confirmado nesta assinatura?
+ *
+ * ⚠️ `desdeISO` NÃO é enfeite. Sem ele, esta função responde "sim" por um pagamento de QUALQUER
+ * época — o próprio lote 1 diagnosticou isso ao escrever o 1D.2 ("assinante veterano inadimplente
+ * passaria") e criou um helper separado para o `expire-plans`, mas deixou os outros chamadores com
+ * a versão sem recorte. O caso concreto: alguém pagou em janeiro, parou em março, a assinatura
+ * segue `ACTIVE` no Asaas (lá o status da assinatura é independente do status da cobrança) e um
+ * checkout abandonado libera o plano hoje por causa do pagamento de janeiro.
+ *
+ * Quem decide "posso ativar ESTE checkout?" deve passar a data do checkout: só um pagamento feito
+ * a partir dali justifica a ativação. Sem o parâmetro o comportamento antigo é preservado, para
+ * não mudar em silêncio o chamador do painel administrativo, onde a pergunta é outra ("esta pessoa
+ * já pagou alguma vez?").
+ */
+export async function hasConfirmedPaymentForSubscription(
+  subscriptionId: string,
+  desdeISO?: string,
+): Promise<{ confirmed: boolean; ok: boolean }> {
   try {
     const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&limit=20`)
-    const pays: Array<{ status?: string }> = data?.data ?? []
-    const confirmed = pays.some((p) => p.status === 'CONFIRMED' || p.status === 'RECEIVED' || p.status === 'RECEIVED_IN_CASH')
+    const pays: Array<{ status?: string; dateCreated?: string; confirmedDate?: string; paymentDate?: string }> = data?.data ?? []
+    const pago = (p: { status?: string }) =>
+      p.status === 'CONFIRMED' || p.status === 'RECEIVED' || p.status === 'RECEIVED_IN_CASH'
+
+    if (!desdeISO) return { confirmed: pays.some(pago), ok: true }
+
+    const corte = new Date(desdeISO).getTime()
+    if (Number.isNaN(corte)) {
+      // Data de corte inválida: NÃO afrouxar para "qualquer época" — seria voltar ao defeito por
+      // um erro de quem chamou. Trata como consulta inconclusiva; o chamador não ativa nada.
+      logError('[asaas] hasConfirmedPaymentForSubscription: desdeISO inválido (ok=false)', undefined, { subscriptionId, desdeISO })
+      return { confirmed: false, ok: false }
+    }
+
+    const confirmed = pays.some((p) => {
+      if (!pago(p)) return false
+      // Qualquer uma das datas serve como prova de recência; o Asaas não preenche todas sempre.
+      const datas = [p.confirmedDate, p.paymentDate, p.dateCreated]
+        .map((d) => (d ? new Date(d).getTime() : NaN))
+        .filter((t) => !Number.isNaN(t))
+      // Pagamento confirmado SEM data nenhuma não conta: sem prova de recência, não ativa.
+      if (datas.length === 0) return false
+      return Math.max(...datas) >= corte
+    })
     return { confirmed, ok: true }
   } catch (err) {
     logError('[asaas] hasConfirmedPaymentForSubscription: consulta falhou (ok=false)', err, { subscriptionId })

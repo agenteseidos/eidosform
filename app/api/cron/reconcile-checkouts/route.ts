@@ -96,8 +96,15 @@ export async function GET(req: NextRequest) {
         continue
       }
 
-      // confirma pagamento (não basta ACTIVE)
-      const pay = await hasConfirmedPaymentForSubscription(target.id)
+      // Confirma pagamento — não basta a sub estar ACTIVE, e não basta ter pago ALGUM DIA.
+      // A data do checkout é o corte: só um pagamento feito a partir daqui justifica ativar ESTE
+      // checkout. Sem o corte, um veterano inadimplente (pagou em janeiro, parou em março, sub
+      // ainda ACTIVE) reativava o plano por causa do pagamento antigo. Tolerância de 1 dia para
+      // trás porque o pagamento pode ser registrado no Asaas um instante antes de a nossa linha
+      // ser gravada. Falhar aqui é conservador: o checkout fica pendente e o webhook — que é o
+      // caminho principal — continua ativando normalmente.
+      const corteISO = new Date(new Date(ck.created_at).getTime() - 86_400_000).toISOString()
+      const pay = await hasConfirmedPaymentForSubscription(target.id, corteISO)
       if (!pay.ok) { alerts.push(`checkout ${ck.id}: consulta de pagamento FALHOU (sub ${target.id}) — não ativei`); results.alerted++; continue }
       if (!pay.confirmed) { results.skipped++; continue } // não pago ainda
 

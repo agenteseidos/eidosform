@@ -12,7 +12,7 @@ import { QuestionRenderer } from './question-renderer'
 import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import { toast } from 'sonner'
 import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent, buildGoogleAdsSendTo, fireGoogleAdsConversion } from '@/lib/pixel-events'
-import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
+import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath, getAdvanceControls } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { captureUrlParams, getUrlParams, clearUrlParams } from '@/lib/url-params'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
@@ -215,6 +215,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   }, [currentQuestion, currentQuestionId])
 
   const isContentStep = currentQuestion?.type === 'content_block'
+
+  // Calendly sem agendamento: os controles genéricos de avanço (botão, setinha do rodapé, Enter
+  // e seta ↓) somem, porque a pessoa clicava neles achando que estava confirmando o horário.
+  // A regra inteira, com o porquê, mora em `getAdvanceControls` — lá ela tem teste.
+  const { pending: calendlyPendente, locked: calendlyTravado, canSkip: calendlyPodePular } =
+    getAdvanceControls(currentQuestion, answers, currentQuestion?.id)
 
   useEffect(() => {
     if (currentQuestion?.id && errors[currentQuestion.id] && errorRef.current) {
@@ -906,6 +912,16 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isSubmitted || isSubmitting) return
 
+      // Calendly sem agendamento: Enter e ↓ não avançam (ver `calendlyPendente`). O teclado é a
+      // terceira porta pela qual se sai da pergunta sem agendar — fechá-la junto com os botões é
+      // o que torna a trava completa. Digitar dentro da caixa do Calendly não passa por aqui: o
+      // iframe é de outro domínio e os eventos de teclado dele não chegam a esta janela.
+      if (calendlyPendente && (e.key === 'Enter' || e.key === 'ArrowDown')) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+
       if (e.key === 'Enter' && !e.shiftKey) {
         // stopPropagation na captura impede o Enter de descer até os botões
         // de opção — senão o framer-motion marca/desmarca a opção em foco.
@@ -963,7 +979,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     // ao handler global em telas de checkboxes e o formulário não avançava.
     window.addEventListener('keydown', handleKeyDown, true)
     return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [currentQuestion, goToNext, goToPrevious, isSubmitted, isSubmitting])
+  }, [currentQuestion, goToNext, goToPrevious, isSubmitted, isSubmitting, calendlyPendente])
 
   // Wheel navigation removido — navegação apenas via botões ou resposta
 
@@ -1420,7 +1436,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                 )}
               </AnimatePresence>
 
-              {!isContentStep && (
+              {!isContentStep && !calendlyTravado && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -1430,9 +1446,18 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                   <Button
                     onClick={() => goToNext()}
                     disabled={isSubmitting}
-                    className="h-12 px-7 text-base font-semibold rounded-xl transition-transform active:scale-95 w-full sm:w-auto"
-                    style={{ backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
-                    aria-label={isLastQuestion ? 'Enviar resposta' : 'Confirmar e avançar'}
+                    // O "Pular" é DE PROPÓSITO discreto: um botão colorido do nosso lado ao lado
+                    // do "Agendar Evento" do Calendly recria exatamente a competição de botões
+                    // que esta mudança existe para eliminar.
+                    className={calendlyPodePular
+                      ? 'h-11 px-6 text-sm font-medium rounded-xl transition-transform active:scale-95 w-full sm:w-auto'
+                      : 'h-12 px-7 text-base font-semibold rounded-xl transition-transform active:scale-95 w-full sm:w-auto'}
+                    style={calendlyPodePular
+                      ? { backgroundColor: 'transparent', color: theme.textColor, border: `1px solid ${theme.textColor}33` }
+                      : { backgroundColor: theme.primaryColor, color: theme.backgroundColor }}
+                    aria-label={calendlyPodePular
+                      ? 'Pular o agendamento e seguir'
+                      : isLastQuestion ? 'Enviar resposta' : 'Confirmar e avançar'}
                   >
                     {isSubmitting ? (
                       <span className="flex items-center gap-2">
@@ -1443,6 +1468,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                         />
                         Enviando…
                       </span>
+                    ) : calendlyPodePular ? (
+                      <span className="flex items-center gap-2 opacity-70">Pular por agora</span>
                     ) : isLastQuestion ? (
                       <span className="flex items-center gap-2">Enviar <Check className="w-4 h-4" /></span>
                     ) : (
@@ -1450,11 +1477,15 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
                     )}
                   </Button>
 
-                  <span className="hidden sm:inline text-sm opacity-40" style={{ color: theme.textColor }}>
-                    {currentQuestion?.type === 'long_text'
-                      ? <>Pressione <kbd className="font-mono font-semibold">Ctrl+Enter ↵</kbd></>
-                      : <>Pressione <kbd className="font-mono font-semibold">Enter ↵</kbd></>}
-                  </span>
+                  {/* A dica de teclado some no Calendly pendente: lá o Enter está bloqueado, e
+                      prometer um atalho que não funciona é pior que não prometer nada. */}
+                  {!calendlyPendente && (
+                    <span className="hidden sm:inline text-sm opacity-40" style={{ color: theme.textColor }}>
+                      {currentQuestion?.type === 'long_text'
+                        ? <>Pressione <kbd className="font-mono font-semibold">Ctrl+Enter ↵</kbd></>
+                        : <>Pressione <kbd className="font-mono font-semibold">Enter ↵</kbd></>}
+                    </span>
+                  )}
                 </motion.div>
               )}
             </motion.div>
@@ -1476,7 +1507,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           >
             <ChevronUp className="w-5 h-5" />
           </Button>
-          {!isContentStep && (
+          {/* A setinha some no Calendly pendente — inclusive quando a pergunta é opcional. É um
+              ícone sem rótulo no rodapé: o toque acidental nela é indistinguível da intenção de
+              pular, e quem quer mesmo pular tem o botão nomeado logo acima. */}
+          {!isContentStep && !calendlyPendente && (
             <Button
               variant="ghost"
               size="sm"

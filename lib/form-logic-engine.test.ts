@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { getVisibleQuestions, getNextQuestionId, buildQuestionPath, evaluateJumpRules, isQuestionVisible, normalizeConditional } from './form-logic-engine'
-import type { QuestionConfig, ConditionalGroup } from './database.types'
+import { getVisibleQuestions, getNextQuestionId, buildQuestionPath, evaluateJumpRules, isQuestionVisible, normalizeConditional, getAdvanceControls } from './form-logic-engine'
+import type { QuestionConfig, ConditionalGroup, QuestionType } from './database.types'
 
 // Cenário: pergunta-alvo de um salto só fica visível por causa da resposta
 // recém-dada (bug do salto que caía na lista de visíveis defasada).
@@ -225,3 +225,85 @@ describe('normalizeConditional (T8/T15)', () => {
     expect(normalizeConditional(bad).conjunction).toBe('and')
   })
 })
+
+/**
+ * getAdvanceControls — quem manda avançar na pergunta do Calendly.
+ *
+ * POR QUE ISTO EXISTE, em uma frase: a caixa do Calendly tem rolagem própria e o botão
+ * "Agendar Evento" DELE nasce fora da área visível no celular; o nosso "OK", não. A pessoa
+ * preenche nome e e-mail dentro do Calendly e clica no NOSSO botão.
+ *
+ * O caso que mais dói é o da pergunta OPCIONAL: ela avança, conclui o formulário, e o dono
+ * recebe um lead impecável no painel sem reunião nenhuma na agenda. Silencioso até o dia em que
+ * a pessoa não aparece.
+ *
+ * Este bloco é a primeira cobertura automática que essa pergunta já teve. O avanço do Calendly
+ * quebrou TRÊS vezes por refatoração e todas as três foram achadas por teste manual do Sidney.
+ */
+describe('getAdvanceControls — o Calendly toma conta do próprio avanço', () => {
+  const calendly = (required: boolean) => ({ type: 'calendly' as const, required })
+  const AGENDADO = { q1: { event_uri: 'https://api.calendly.com/scheduled_events/abc' } }
+
+  it('obrigatório e sem agendamento: nenhum controle nosso avança', () => {
+    expect(getAdvanceControls(calendly(true), {}, 'q1'))
+      .toEqual({ pending: true, locked: true, canSkip: false })
+  })
+
+  it('opcional e sem agendamento: vira "Pular", não some', () => {
+    // Sumir o botão numa pergunta opcional deixaria a pessoa sem saída se ela não quiser agendar.
+    expect(getAdvanceControls(calendly(false), {}, 'q1'))
+      .toEqual({ pending: true, locked: false, canSkip: true })
+  })
+
+  it('DEPOIS de agendar, tudo volta ao normal', () => {
+    // Esta é a saída manual caso o avanço automático de 3s falhe. Manter travado aqui recriaria
+    // o beco sem saída que foi o defeito ORIGINAL desta pergunta.
+    expect(getAdvanceControls(calendly(true), AGENDADO, 'q1'))
+      .toEqual({ pending: false, locked: false, canSkip: false })
+  })
+
+  it('aceita a resposta em formato legado (string)', () => {
+    expect(getAdvanceControls(calendly(true), { q1: 'scheduled' }, 'q1').pending).toBe(false)
+  })
+
+  it('resposta vazia NÃO conta como agendamento', () => {
+    for (const vazio of ['', null, undefined]) {
+      expect(getAdvanceControls(calendly(true), { q1: vazio }, 'q1').pending).toBe(true)
+    }
+  })
+
+  it('resposta de OUTRA pergunta não destrava esta', () => {
+    expect(getAdvanceControls(calendly(true), { q2: AGENDADO.q1 }, 'q1').pending).toBe(true)
+  })
+})
+
+describe('getAdvanceControls — nunca trava quem não é Calendly', () => {
+  it('NENHUM outro tipo é afetado — os 19, obrigatórios e vazios', () => {
+    // A trava é cirúrgica: se vazar para texto curto, e-mail ou telefone, o formulário inteiro
+    // fica sem botão de avançar e NADA mais é preenchível. É o pior estrago possível daqui, então
+    // a lista é o union INTEIRO de QuestionType menos 'calendly' — não uma amostra.
+    const todosMenosCalendly: QuestionType[] = [
+      'short_text', 'long_text', 'dropdown', 'select', 'checkboxes', 'email', 'phone', 'number',
+      'date', 'rating', 'opinion_scale', 'yes_no', 'file_upload', 'nps', 'url', 'address', 'cpf',
+      'html_block', 'content_block',
+    ]
+    for (const type of todosMenosCalendly) {
+      expect(getAdvanceControls({ type, required: true }, {}, 'q1'))
+        .toEqual({ pending: false, locked: false, canSkip: false })
+    }
+  })
+
+  it('sem pergunta atual não trava nada', () => {
+    expect(getAdvanceControls(null, {}, 'q1').locked).toBe(false)
+    expect(getAdvanceControls(undefined, {}, 'q1').locked).toBe(false)
+  })
+
+  it('sem id da pergunta, falha ABERTO — nunca em beco sem saída', () => {
+    // Não dá para saber se agendou. Travar seria pior que o defeito que esta função corrige:
+    // formulário sem saída, nem recarregando.
+    expect(getAdvanceControls(calendlyObrigatorio, {}, undefined))
+      .toEqual({ pending: false, locked: false, canSkip: false })
+  })
+})
+
+const calendlyObrigatorio = { type: 'calendly' as const, required: true }

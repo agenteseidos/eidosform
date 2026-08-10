@@ -468,9 +468,22 @@ interface CalendlyQuestionProps {
  */
 const AUTO_AVANCO_MS = 3000
 
+/** O pedaço da API do widget.js que usamos, tipado à mão (o script é externo, sem tipos). */
+type JanelaComCalendly = Window & {
+  Calendly?: {
+    initInlineWidget?: (opcoes: {
+      parentElement: HTMLElement
+      url: string
+      resize?: boolean
+      inlineStyles?: boolean
+    }) => void
+  }
+}
+
 const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value, onChange, theme, onSubmit }: CalendlyQuestionProps) {
   const calendlyUrl = question.calendlyUrl
   const containerRef = React.useRef<HTMLDivElement>(null)
+  const widgetRef = React.useRef<HTMLDivElement>(null)
   // Guarda o temporizador do auto-avanço para poder cancelá-lo ao desmontar (lote 5).
   const autoAvancoRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   // Trava de uma vez só: reagendamento na mesma sessão não deve empilhar dois envios.
@@ -542,14 +555,6 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
     }
     window.addEventListener('message', handleMessage)
 
-    // Load Calendly widget script
-    const existing = document.querySelector('script[src*="calendly.com/assets/external/widget.js"]')
-    if (!existing) {
-      const script = document.createElement('script')
-      script.src = 'https://assets.calendly.com/assets/external/widget.js'
-      script.async = true
-      document.head.appendChild(script)
-    }
     return () => {
       window.removeEventListener('message', handleMessage)
     }
@@ -562,6 +567,63 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
   React.useEffect(() => () => {
     if (autoAvancoRef.current) clearTimeout(autoAvancoRef.current)
   }, [])
+
+  // ── Inicialização EXPLÍCITA do widget ────────────────────────────────────────────────────────
+  //
+  // 🐞 DEFEITO QUE ISTO CORRIGE, confirmado lendo o fonte do próprio Calendly (widget.js,
+  // 10/08/2026): o script varre `.calendly-inline-widget` UMA ÚNICA VEZ, no momento em que é
+  // avaliado — não existe `MutationObserver` no arquivo inteiro (zero ocorrências). Como nós só
+  // injetamos o script se ele ainda não estiver na página, a segunda montagem deste componente
+  // não dispara varredura nenhuma: **quem volta para a pergunta do Calendly encontra a caixa
+  // VAZIA**, e a única saída é recarregar a página.
+  //
+  // Isso passava despercebido porque o botão "OK" do EidosForm ainda estava ali para tirar a
+  // pessoa dali. Agora que ele some enquanto não há agendamento, consertar deixou de ser opcional.
+  //
+  // `data-auto-load="false"` desliga a varredura automática para esta div (o script checa esse
+  // atributo antes de inicializar), então quem inicializa é sempre este efeito — na primeira
+  // montagem e em todas as seguintes, sem risco de inicializar duas vezes.
+  React.useEffect(() => {
+    if (!calendlyUrl) return
+    let cancelado = false
+    let tentativa: ReturnType<typeof setTimeout> | null = null
+
+    const iniciar = () => {
+      if (cancelado) return
+      const alvo = widgetRef.current
+      if (!alvo) return
+      const { Calendly } = window as JanelaComCalendly
+      if (!Calendly?.initInlineWidget) {
+        // O script pode estar na página e ainda carregando. Tenta de novo até ele existir.
+        tentativa = setTimeout(iniciar, 150)
+        return
+      }
+      alvo.replaceChildren()
+      Calendly.initInlineWidget({
+        parentElement: alvo,
+        url: calendlyUrl,
+        // `resize` faz o Calendly medir a própria altura a cada etapa e gravá-la nesta div —
+        // é o que elimina a rolagem interna que escondia o botão "Agendar Evento".
+        resize: true,
+        // Mesmos estilos que a varredura automática aplicaria; sem isso o embed perde o
+        // posicionamento que o próprio Calendly espera.
+        inlineStyles: true,
+      })
+    }
+
+    if (!document.querySelector('script[src*="calendly.com/assets/external/widget.js"]')) {
+      const script = document.createElement('script')
+      script.src = 'https://assets.calendly.com/assets/external/widget.js'
+      script.async = true
+      document.head.appendChild(script)
+    }
+    iniciar()
+
+    return () => {
+      cancelado = true
+      if (tentativa) clearTimeout(tentativa)
+    }
+  }, [calendlyUrl])
 
   if (!calendlyUrl) {
     return (
@@ -583,10 +645,29 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
 
   return (
     <div ref={containerRef} className="rounded-xl overflow-hidden border" style={{ borderColor: `${theme.textColor}20` }}>
+      {/*
+        ALTURA CONTROLADA PELO CALENDLY, não por nós.
+
+        Antes: height 'clamp(400px, 60vh, 630px)' — altura FIXA, no máximo 630px. A segunda etapa
+        do Calendly (nome, e-mail, campos personalizados e o botão "Agendar Evento") é mais alta
+        que isso, então nascia uma barra de rolagem DENTRO da caixa e o botão de confirmar ficava
+        fora da área visível. No celular era sistemático: 60vh dá ~450px. O efeito estava no print
+        do Sidney (10/08/2026) — ele preencheu os campos do Calendly e o único botão à vista era o
+        NOSSO.
+
+        ⚠️ Tem de ser `height`, NUNCA `min-height`. O widget.js cria o iframe com height="100%", e
+        porcentagem contra um pai de altura indefinida vira `auto` — o iframe colapsaria para os
+        ~150px padrão. Verificado no fonte do widget.js, não deduzido.
+
+        Os 700px são só o valor INICIAL, o mesmo que a documentação do Calendly usa: assim que
+        `resize` reporta a primeira medida, o script sobrescreve esta altura a cada etapa. Se a
+        medida nunca chegar, 700px é a rede de segurança — ainda melhor que os 630px de antes.
+      */}
       <div
-        className="calendly-inline-widget"
-        data-url={calendlyUrl}
-        style={{ minWidth: '280px', height: 'clamp(400px, 60vh, 630px)' }}
+        ref={widgetRef}
+        className="calendly-inline-widget [&_iframe]:block"
+        data-auto-load="false"
+        style={{ minWidth: '280px', height: '700px' }}
       />
     </div>
   )

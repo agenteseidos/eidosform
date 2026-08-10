@@ -99,7 +99,10 @@ Three tables with Row Level Security (RLS):
 The form player (`form-player.tsx`) implements TypeForm's signature experience:
 
 1. **One question at a time** - Full-screen focus with animated transitions
-2. **Keyboard navigation** - Enter to advance, Arrow keys/scroll wheel to navigate
+2. **Keyboard navigation** - Enter to advance, Arrow keys to navigate. **Não há navegação por roda
+   do mouse** — foi removida (`form-player.tsx`, comentário "Wheel navigation removido"). Esta
+   linha dizia que havia e fez uma auditoria caçar guarda de scroll que não existe.
+   Exceção: na pergunta `calendly` sem agendamento, Enter e ↓ NÃO avançam (ver `getAdvanceControls`)
 3. **Progress indicator** - Top bar showing completion percentage
 4. **Themed experience** - Dynamic CSS variables from theme config
 5. **Validation** - Per-question with type-specific rules (email, URL, phone patterns)

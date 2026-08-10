@@ -157,3 +157,56 @@ export function buildQuestionPath(
 export function evaluateConditionalRule(rule: ConditionalRule, answers: LogicAnswersMap): boolean {
   return evaluateLogicRule(rule, answers)
 }
+
+/** Estado dos controles genéricos de avanço (botão, setinha do rodapé, Enter e seta ↓). */
+export type AdvanceControls = {
+  /** Pergunta cujo avanço pertence ao próprio componente, e ainda sem resposta. */
+  pending: boolean
+  /** Nenhum controle nosso avança: só o botão de dentro da pergunta. */
+  locked: boolean
+  /** O botão principal vira um "Pular" discreto, em vez de sumir. */
+  canSkip: boolean
+}
+
+/**
+ * Quem manda avançar na pergunta atual — nós ou a própria pergunta.
+ *
+ * HOJE SÓ O CALENDLY ENTRA AQUI, e o motivo é concreto (visto no celular do Sidney em
+ * 10/08/2026): a caixa do Calendly tem rolagem própria e o botão "Agendar Evento" DELE nasce
+ * fora da área visível; o nosso "OK", não. A pessoa preenche nome e e-mail dentro do Calendly e
+ * clica no NOSSO botão.
+ *
+ * Obrigatória, ela leva "Este campo é obrigatório" tendo acabado de preencher os campos — parece
+ * defeito, e parte das pessoas desiste. **Opcional é pior:** ela avança, termina o formulário, e
+ * o dono recebe um lead impecável no painel SEM reunião nenhuma na agenda. Ninguém descobre até
+ * o dia em que a pessoa não aparece.
+ *
+ * ⚠️ A trava vale só ENQUANTO não há resposta. Depois de agendar, tudo volta ao normal — isso é
+ * a saída manual caso o avanço automático de 3 segundos falhe. Sem ela, uma falha lá viraria beco
+ * sem saída, que foi exatamente o defeito original desta pergunta.
+ *
+ * Esta função existe separada do componente porque o avanço do Calendly já foi quebrado TRÊS
+ * vezes por refatoração e não existe teste de componente React neste repositório. Aqui a regra
+ * fica coberta por teste de verdade.
+ */
+export function getAdvanceControls(
+  question: Pick<QuestionConfig, 'type' | 'required'> | null | undefined,
+  answers: LogicAnswersMap,
+  questionId?: string,
+): AdvanceControls {
+  const PARADO = { pending: false, locked: false, canSkip: false }
+  if (!question || question.type !== 'calendly') return PARADO
+
+  // Sem id não dá para saber se já agendou — e travar quem não se sabe é o pior dos dois erros:
+  // vira formulário sem saída, nem recarregando. Deixar os controles normais é, no máximo, voltar
+  // ao comportamento de antes desta mudança. Caminho inalcançável na prática (a pergunta atual
+  // sempre tem id); a escolha está escrita porque a direção da falha importa.
+  if (!questionId) return PARADO
+
+  const answer = answers?.[questionId]
+  // Resposta do Calendly é objeto (`{ event_uri }`) ou string legada. Qualquer valor com conteúdo
+  // conta como agendado; `''`/`null`/`undefined` não.
+  if (answer !== undefined && answer !== null && answer !== '') return PARADO
+
+  return { pending: true, locked: !!question.required, canSkip: !question.required }
+}

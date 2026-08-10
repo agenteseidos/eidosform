@@ -184,10 +184,16 @@ describe('consistência entre rotas irmãs', () => {
       expect(ler(r), `${r} redefine sanitizeValue — importe de @/lib/form-response-security`)
         .not.toMatch(/function\s+sanitizeValue\s*\(/)
     }
-    // E a fonte única não pode voltar à regra frouxa que apagava `<joao@empresa.com>`.
+    // E a REGRA PRINCIPAL não pode voltar a ser a frouxa, que apagava `<joao@empresa.com>`.
+    //
+    // A checagem é pela PRESENÇA da regra apertada, não pela ausência da frouxa: a frouxa existe
+    // de propósito no caminho de emergência (falha fechada quando o aninhamento não converge), e
+    // proibi-la por texto fez esta própria trava disparar contra a correção certa.
     const fonte = ler('lib/form-response-security.ts')
-    expect(fonte, 'a fonte única voltou a usar a regra frouxa `<[^>]*>`')
-      .not.toMatch(/replace\(\s*\/<\[\^>\]\*>\/g/)
+    expect(fonte, 'a regra apertada de nome de tag sumiu da fonte única')
+      .toMatch(/const HTML_TAG = \/<\\\/\?\[a-zA-Z\]/)
+    expect(fonte, 'o terminador [\\s/] sumiu — sem ele `<img/src=x/onerror=…>` passa inteiro')
+      .toContain('[\\s/][^>]*')
   })
 
   it('D12: as duas rotas de escrita de formulário cortam payload antes do Zod', () => {

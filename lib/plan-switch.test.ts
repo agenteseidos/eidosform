@@ -239,6 +239,44 @@ describe('executePlanSwitch', () => {
     const { sendBillingOpsAlert } = await import('@/lib/resend')
     expect(vi.mocked(sendBillingOpsAlert)).toHaveBeenCalled()
   })
+
+  // ── A sub FANTASMA: os dois lados da mesma moeda agora têm a mesma rede ────────────────────
+  //
+  // Quando o CAS de commit falha, a sub recém-criada tem de morrer — senão ela cobra todo mês
+  // alguém que NÃO recebeu plano nenhum. Esse cancelamento tinha só um `.catch(logError)`,
+  // enquanto o cancelamento da sub ANTIGA (logo acima) sempre teve retry + DLQ + alerta. Mesmo
+  // risco de dinheiro, duas redes diferentes — e o lado sem rede era justamente o que cobra sem
+  // entregar. Achado do relatório executivo, nunca atribuído a lote, corrigido em 10/08/2026.
+
+  it('cancel da sub FANTASMA falha 2x → DLQ CANCEL_GHOSTSUB + alerta (cobra sem entregar plano)', async () => {
+    state.updateRows = []            // CAS de commit perde a corrida
+    asaasMocks.cancelSubscription
+      .mockRejectedValueOnce(new Error('asaas 500'))
+      .mockRejectedValueOnce(new Error('asaas 500'))
+
+    const r = await executePlanSwitch({ db: makeDb(), ...baseParams })
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('CAS_COMMIT')
+    const dlq = state.calls.find(c => c.table === 'asaas_webhook_events' && c.op === 'upsert')
+    expect(dlq).toBeTruthy()
+    expect((dlq!.payload as { event: string }).event).toBe('CANCEL_GHOSTSUB')
+    expect((dlq!.payload as { subscription_id: string }).subscription_id).toBe('sub_new')
+    const { sendBillingOpsAlert } = await import('@/lib/resend')
+    expect(vi.mocked(sendBillingOpsAlert)).toHaveBeenCalled()
+  })
+
+  it('cancel da sub fantasma falha 1x e funciona na 2ª → SEM DLQ e SEM alerta', async () => {
+    // Retry não pode virar alarme falso: uma falha transitória do Asaas não deve acordar ninguém.
+    state.updateRows = []
+    asaasMocks.cancelSubscription.mockRejectedValueOnce(new Error('asaas 500 transitório'))
+
+    await executePlanSwitch({ db: makeDb(), ...baseParams })
+
+    expect(state.calls.find(c => c.table === 'asaas_webhook_events' && c.op === 'upsert')).toBeFalsy()
+    const { sendBillingOpsAlert } = await import('@/lib/resend')
+    expect(vi.mocked(sendBillingOpsAlert)).not.toHaveBeenCalled()
+  })
 })
 
 // ── Commit B (2026-07-03): a sub NOVA criada por nós grava proration_basis_days ──

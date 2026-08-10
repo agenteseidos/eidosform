@@ -220,9 +220,54 @@ export async function executePlanSwitch(params: PlanSwitchParams): Promise<PlanS
     logError(`${tag}: CAS falhou/profile não persistiu — cancelando a sub nova p/ não cobrar fantasma`, upErr, {
       profileId, newSub: newSub.id, rows: rows?.length ?? 0,
     })
-    await cancelSubscription(newSub.id).catch((e) => {
-      logError(`${tag}: CRÍTICO — não conseguiu cancelar a sub fantasma (cancelar MANUALMENTE no Asaas)`, e, { profileId, newSub: newSub.id })
-    })
+    // ⚠️ ASSIMETRIA CORRIGIDA EM 10/08/2026 (achado do relatório executivo que nunca entrou em
+    // lote nenhum). Este cancelamento tinha só um `.catch(logError)`: se ele falhasse, a sub
+    // recém-criada ficava ATIVA no Asaas cobrando todo mês uma pessoa que não recebeu plano
+    // nenhum — e o único vestígio era uma linha de log pedindo "cancelar MANUALMENTE", que
+    // depende de alguém estar lendo log. O caminho irmão logo abaixo (cancelar a sub ANTIGA) já
+    // tinha retry + DLQ + alerta desde sempre. Mesmo risco, duas redes de segurança diferentes.
+    //
+    // Agora os dois lados se comportam igual: tenta duas vezes e, se não conseguir, grava na fila
+    // de erro e manda alerta operacional. Dinheiro nunca falha em silêncio.
+    let fantasmaCancelada = false
+    for (let tentativa = 1; !fantasmaCancelada && tentativa <= 2; tentativa++) {
+      try {
+        await cancelSubscription(newSub.id)
+        fantasmaCancelada = true
+        log(`${tag}: sub fantasma cancelada`, { profileId, newSub: newSub.id, tentativa })
+      } catch (e) {
+        logError(`${tag}: falha ao cancelar a sub fantasma (tentativa ${tentativa}/2)`, e, { profileId, newSub: newSub.id })
+      }
+    }
+    if (!fantasmaCancelada) {
+      try {
+        await (db as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+          .from('asaas_webhook_events')
+          .upsert({
+            event_id: `cancel-ghostsub:${newSub.id}`,
+            event: 'CANCEL_GHOSTSUB',
+            status: 'failed',
+            error: 'sub nova não cancelada após CAS falhar — cobra sem entregar plano',
+            attempts: 0,
+            subscription_id: newSub.id,
+            customer_id: customerId,
+            last_attempt_at: new Date().toISOString(),
+          }, { onConflict: 'event_id' })
+      } catch { /* best-effort */ }
+      await sendBillingOpsAlert({
+        subject: '🔴 Assinatura FANTASMA ativa no Asaas — cobra sem plano entregue (DLQ CANCEL_GHOSTSUB)',
+        lines: {
+          '🔴 O QUE ACONTECEU': 'A troca de plano falhou no último passo e a assinatura nova NÃO conseguiu ser cancelada.',
+          'RISCO': 'Ela vai cobrar o cliente todo mês sem que ele tenha recebido o plano.',
+          'AÇÃO': 'Cancelar esta assinatura no painel do Asaas.',
+          profileId,
+          assinaturaFantasma: newSub.id,
+          customerId,
+          plano: plan,
+          ciclo: cycle,
+        },
+      }).catch(() => {})
+    }
     return { ok: false, status: 409, error: 'Não foi possível concluir agora. Recarregue e tente novamente.', code: 'CAS_COMMIT' }
   }
 

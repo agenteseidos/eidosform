@@ -461,6 +461,13 @@ interface CalendlyQuestionProps {
   onSubmit: (skipValidation?: boolean, valueOverride?: Json) => void
 }
 
+/**
+ * Quanto o cartão "Agendamento confirmado!" fica na tela antes de o formulário seguir sozinho.
+ * Decisão do Sidney (10/08/2026): 3 segundos. Tempo de ler a confirmação, curto o bastante para
+ * ninguém achar que travou — e o Calendly nem sempre é a última pergunta.
+ */
+const AUTO_AVANCO_MS = 3000
+
 const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value, onChange, theme, onSubmit }: CalendlyQuestionProps) {
   const calendlyUrl = question.calendlyUrl
   const containerRef = React.useRef<HTMLDivElement>(null)
@@ -468,6 +475,11 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
   const autoAvancoRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   // Trava de uma vez só: reagendamento na mesma sessão não deve empilhar dois envios.
   const agendadoRef = React.useRef(false)
+  // Espelho SEMPRE atual do avanço. O temporizador de 3s vive fora do ciclo de render: sem este
+  // espelho ele chamaria a versão de `onSubmit` capturada no instante do agendamento, e três
+  // segundos são tempo de sobra para o pai redesenhar várias vezes (salvamento parcial, pixel).
+  const onSubmitRef = React.useRef(onSubmit)
+  React.useEffect(() => { onSubmitRef.current = onSubmit })
 
   React.useEffect(() => {
     // ⚠️ Havia um `|| scriptLoadedRef.current` nesta condição, e ele QUEBRAVA o Calendly inteiro
@@ -507,7 +519,7 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
         //   1. `onChange(answer)` grava a resposta → o pai redesenha;
         //   2. `onChange`/`onSubmit` são recriados a cada render → as dependências mudam;
         //   3. o React roda a limpeza do efeito ANTES de reexecutá-lo → `clearTimeout` mata o
-        //      temporizador de 800ms que acabou de ser criado.
+        //      temporizador que acabou de ser criado.
         //
         // Resultado: o cartão "Agendamento confirmado!" aparecia e o formulário ficava parado,
         // esperando a pessoa clicar em "Enviar". Quem agendou e fechou a aba não virava lead.
@@ -516,9 +528,16 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
         // VAZIA — assim ela só roda no desmonte de verdade, nunca a cada redesenho. O
         // `agendadoRef` garante que um segundo aviso do Calendly (reagendamento na mesma sessão)
         // não empilhe dois envios.
+        //
+        // ⚠️ Quem avança é `onSubmit`, e ele NÃO significa "enviar o formulário": no pai ele cai
+        // em `goToNext`, que respeita regras de salto e vai para a PRÓXIMA pergunta. Só envia de
+        // fato quando o Calendly é a última — que não é o caso geral.
         if (agendadoRef.current) return
         agendadoRef.current = true
-        autoAvancoRef.current = setTimeout(() => onSubmit(true, answer as unknown as Json), 800)
+        autoAvancoRef.current = setTimeout(
+          () => onSubmitRef.current(true, answer as unknown as Json),
+          AUTO_AVANCO_MS,
+        )
       }
     }
     window.addEventListener('message', handleMessage)
@@ -534,7 +553,9 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
     return () => {
       window.removeEventListener('message', handleMessage)
     }
-  }, [calendlyUrl, onChange, onSubmit])
+    // `onSubmit` saiu daqui de propósito: quem o chama é `onSubmitRef`. Mantê-lo na lista faria o
+    // ouvinte ser removido e recolocado a cada redesenho do pai, sem ganho nenhum.
+  }, [calendlyUrl, onChange])
 
   // Limpeza do temporizador SÓ no desmonte — lista de dependências vazia de propósito.
   // Junto com o efeito acima ela cancelaria o avanço a cada redesenho (ver comentário lá).

@@ -159,10 +159,46 @@ de remendo. A decisão registrada foi: **a linha em `email_deliveries` é COMPRO
 | Prazo do avanço | ✅ 3 segundos (`AUTO_AVANCO_MS`) |
 | Velocidade de abertura da grade | ✅ melhorou com o `preconnect` de `be50114` |
 
+### Segunda rodada, mesmo dia — o embed inteiro e o avanço só pelo Calendly (`c3f706f`)
+
+O print do Sidney no celular mostrou o problema seguinte: a caixa do Calendly tinha altura fixa
+(máx. 630px) e rolagem interna, então o botão "Agendar Evento" **dele** nascia fora da área
+visível — enquanto o nosso "OK" ficava logo abaixo, grande e colorido.
+
+| Cenário | Resultado |
+|---|---|
+| Embed ocupa a altura toda, sem rolagem interna (celular e desktop) | ✅ validado |
+| Botão "OK" e setinha ▾ somem enquanto não há agendamento | ✅ validado |
+| Agendamento real → avanço em 3s | ✅ segue funcionando |
+
+Fechadas **quatro** portas, não uma: botão, setinha ▾ do rodapé, tecla Enter e seta ↓. Pergunta
+opcional ganha um "Pular por agora" discreto — sem ele, quem não quisesse agendar ficaria sem saída.
+
+**Defeito pré-existente corrigido junto:** o `widget.js` varre `.calendly-inline-widget` uma única
+vez, quando é avaliado (zero `MutationObserver` no arquivo). Como o script só era injetado se
+ainda não estivesse na página, a SEGUNDA montagem do componente não disparava varredura nenhuma —
+quem voltava para a pergunta do Calendly encontrava a caixa **vazia**. Provado em Chromium
+headless com o widget.js real: código antigo → vazio nas montagens 1 e 2; código novo → iframe nas
+montagens 1, 2 e 3. Agora a inicialização é explícita (`initInlineWidget` com `resize` e
+`inlineStyles`) e `data-auto-load="false"` desliga a varredura.
+
+⚠️ A altura tem de ser `height`, **nunca** `min-height`: o mesmo experimento confirmou que o
+iframe nasce com `height="100%"`, e porcentagem contra pai de altura indefinida vira `auto` — a
+caixa colapsaria para ~150px.
+
+**Primeira cobertura automática que esta pergunta já teve:** a regra virou `getAdvanceControls` em
+`lib/form-logic-engine.ts`, com 9 testes. As duas sabotagens (trava que não liga; trava que vaza
+para os outros 19 tipos) foram provadas pegas.
+
+**Decidido NÃO fazer:** contingência para o embed não carregar (bloqueador/firewall). Risco nunca
+medido, e o Calendly não entra nas listas padrão de bloqueio. Se um dia o sintoma aparecer,
+instrumentar antes de construir.
+
 ### O que NÃO foi coberto pelo navegador (verificado só por leitura de código)
 
-- pergunta do tipo Calendly **não obrigatória**;
-- ir e voltar entre perguntas **antes** de agendar (era o re-render que causava o defeito original);
+- pergunta do tipo Calendly **não obrigatória**, e o botão "Pular por agora";
+- ir e voltar entre perguntas **antes** de agendar — o remount foi provado em Chromium com o
+  widget.js real, mas não dentro do app React;
 - voltar à pergunta do Calendly **depois** de agendar. Pela leitura: mostra o cartão de confirmado
   (`question-renderer.tsx`, ramo `if (value)`), a resposta em objeto passa na regra de obrigatório
   (`form-player.tsx:259-268`), e o botão normal segue em frente. **Não há como reagendar** — é

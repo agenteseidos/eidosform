@@ -226,8 +226,28 @@ export default async function FormPage({ params }: FormPageProps) {
     )
   }
 
+  // Formulário com agendamento: adianta a conexão com os servidores do Calendly.
+  //
+  // Sem isto, a negociação de DNS/TLS com `assets.calendly.com` e `calendly.com` só começa quando
+  // o respondente CHEGA na pergunta — e aí ele fica olhando um quadro em branco enquanto o script
+  // baixa e o iframe sobe. Foi a queixa do teste manual de 10/08: "demorou muito carregando",
+  // tanto para abrir a grade quanto para confirmar.
+  //
+  // `preconnect` resolve DNS, abre TCP e faz o handshake TLS ANTES, em paralelo com o resto da
+  // página. Não baixa nada — custo perto de zero, e só é emitido quando o formulário de fato tem
+  // uma pergunta de Calendly.
+  const temCalendly = Array.isArray(form.questions) &&
+    (form.questions as Array<{ type?: string }>).some((q) => q?.type === 'calendly')
+
   return (
     <>
+      {temCalendly && (
+        <>
+          <link rel="preconnect" href="https://assets.calendly.com" />
+          <link rel="preconnect" href="https://calendly.com" crossOrigin="anonymous" />
+          <link rel="dns-prefetch" href="https://assets.calendly.com" />
+        </>
+      )}
       {/* Meta Pixel — injected server-side in <head> for reliable E2E detection */}
       {canShowPixels && metaPixelId && (
         <Script

@@ -466,6 +466,8 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
   const containerRef = React.useRef<HTMLDivElement>(null)
   // Guarda o temporizador do auto-avanço para poder cancelá-lo ao desmontar (lote 5).
   const autoAvancoRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Trava de uma vez só: reagendamento na mesma sessão não deve empilhar dois envios.
+  const agendadoRef = React.useRef(false)
 
   React.useEffect(() => {
     // ⚠️ Havia um `|| scriptLoadedRef.current` nesta condição, e ele QUEBRAVA o Calendly inteiro
@@ -495,12 +497,27 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
         // API depois). O formatter e o export tratam string legada E objeto.
         const answer = { event_uri: eventUri, ...(inviteeUri ? { invitee_uri: inviteeUri } : {}) }
         onChange(answer)
-        // Auto-advance after scheduling
-        // Guardado em ref para ser cancelado na limpeza. Sem isso, agora que o efeito volta a
-        // reexecutar (era esse o defeito), cresce a janela em que um temporizador antigo dispara
-        // um `onSubmit` depois do desmonte — envio duplicado. Trocar um bug por um pior seria
-        // péssimo negócio.
-        if (autoAvancoRef.current) clearTimeout(autoAvancoRef.current)
+
+        // ── AVANÇO AUTOMÁTICO ────────────────────────────────────────────────────────────────
+        //
+        // 🐞 REGRESSÃO PEGA EM TESTE MANUAL (10/08/2026), introduzida pela correção do dia
+        // anterior. O `clearTimeout` daqui e o da limpeza do efeito cancelavam o avanço do
+        // PRÓPRIO usuário:
+        //
+        //   1. `onChange(answer)` grava a resposta → o pai redesenha;
+        //   2. `onChange`/`onSubmit` são recriados a cada render → as dependências mudam;
+        //   3. o React roda a limpeza do efeito ANTES de reexecutá-lo → `clearTimeout` mata o
+        //      temporizador de 800ms que acabou de ser criado.
+        //
+        // Resultado: o cartão "Agendamento confirmado!" aparecia e o formulário ficava parado,
+        // esperando a pessoa clicar em "Enviar". Quem agendou e fechou a aba não virava lead.
+        //
+        // A limpeza do temporizador mudou para um efeito próprio, com lista de dependências
+        // VAZIA — assim ela só roda no desmonte de verdade, nunca a cada redesenho. O
+        // `agendadoRef` garante que um segundo aviso do Calendly (reagendamento na mesma sessão)
+        // não empilhe dois envios.
+        if (agendadoRef.current) return
+        agendadoRef.current = true
         autoAvancoRef.current = setTimeout(() => onSubmit(true, answer as unknown as Json), 800)
       }
     }
@@ -516,12 +533,14 @@ const CalendlyQuestion = React.memo(function CalendlyQuestion({ question, value,
     }
     return () => {
       window.removeEventListener('message', handleMessage)
-      if (autoAvancoRef.current) {
-        clearTimeout(autoAvancoRef.current)
-        autoAvancoRef.current = null
-      }
     }
   }, [calendlyUrl, onChange, onSubmit])
+
+  // Limpeza do temporizador SÓ no desmonte — lista de dependências vazia de propósito.
+  // Junto com o efeito acima ela cancelaria o avanço a cada redesenho (ver comentário lá).
+  React.useEffect(() => () => {
+    if (autoAvancoRef.current) clearTimeout(autoAvancoRef.current)
+  }, [])
 
   if (!calendlyUrl) {
     return (

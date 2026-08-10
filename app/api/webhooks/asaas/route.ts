@@ -878,11 +878,20 @@ export async function POST(req: NextRequest) {
           externalReference: payment?.externalReference ?? null,
         })
         if (!user) {
-          logWarn('[asaas-webhook] User not found for overdue payment context', {
-            customerId,
-            subscriptionId: payment?.subscription ?? null,
-          })
-          break
+          // EVENTO DE DINHEIRO não morre como 'processed' — mesma regra do PAYMENT_CONFIRMED,
+          // que ganhou este tratamento em 2026-06-09 e nunca foi estendido aos ramos irmãos
+          // (achado da varredura de 10/08/2026, a pedido do Sidney).
+          //
+          // O `break` levava o evento ao fim do handler, que o promove a 'processed': o aviso de
+          // que ALGUÉM PAROU DE PAGAR sumia para sempre, e a pessoa seguia no plano pago sem
+          // pagar. O Asaas não reenvia — o handler devolve 200 de propósito (anti retry-storm),
+          // então não havia segunda chance.
+          //
+          // Lançar manda para o DLQ, onde o reprocessador re-resolve por customer/subscription.
+          // Ruído conhecido e aceito: quem apaga a conta tem a assinatura cancelada antes de o
+          // perfil sumir (app/api/account/delete), então o evento correspondente cai aqui sem
+          // dono. Ruído VISÍVEL numa fila é melhor que perda silenciosa de evento de dinheiro.
+          throw new Error(`PAYMENT_OVERDUE sem profile resolvido (customer ${customerId}, sub ${payment?.subscription ?? 'n/a'}) — DLQ/retry`)
         }
 
         // Guard: compare payment.subscription with profile's active subscription BEFORE downgrade
@@ -978,11 +987,10 @@ export async function POST(req: NextRequest) {
           externalReference: subscription?.externalReference ?? null,
         })
         if (!user) {
-          logWarn('[asaas-webhook] User not found for deleted subscription context', {
-            customerId,
-            subscriptionId: subscription?.id ?? null,
-          })
-          break
+          // Mesmo motivo do PAYMENT_OVERDUE acima: sem isto, o cancelamento de assinatura de um
+          // usuário que o handler não conseguiu resolver era promovido a 'processed' e o plano
+          // pago continuava valendo depois de a assinatura ter morrido no Asaas.
+          throw new Error(`SUBSCRIPTION_DELETED sem profile resolvido (customer ${customerId}, sub ${subscription?.id ?? 'n/a'}) — DLQ/retry`)
         }
 
         // Guard: only apply downgrade if the deleted subscription is the profile's active one
@@ -1101,8 +1109,9 @@ export async function POST(req: NextRequest) {
           externalReference: payment?.externalReference ?? subscription?.externalReference ?? null,
         })
         if (!user) {
-          logWarn('[asaas-webhook] User not found for refund/chargeback context', { customerId, subscriptionId, event })
-          break
+          // Mesmo motivo do PAYMENT_OVERDUE acima. Aqui o que se perdia era o aviso de ESTORNO ou
+          // CHARGEBACK: dinheiro saindo da conta sem que ninguém ficasse sabendo.
+          throw new Error(`REFUND/CHARGEBACK sem profile resolvido (customer ${customerId}, sub ${subscriptionId ?? 'n/a'}, evento ${event}) — DLQ/retry`)
         }
 
         // Guard: only act if event is for the user's active subscription

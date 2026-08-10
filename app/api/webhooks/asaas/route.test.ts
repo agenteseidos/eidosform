@@ -559,3 +559,85 @@ describe('POST /api/webhooks/asaas — ganchos de NFS-e', () => {
     expect(mockCancelarNotas).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * Evento de dinheiro com usuário não resolvido — os TRÊS ramos irmãos do PAYMENT_CONFIRMED.
+ *
+ * O DEFEITO (achado na varredura de 10/08/2026, a pedido do Sidney: "fechamos do lote zero ao 5
+ * já? tem certeza?"). Em 2026-06-09 o ramo PAYMENT_CONFIRMED trocou `break` por `throw` justamente
+ * porque "evento de dinheiro não pode morrer como processed". A correção nunca chegou aos irmãos:
+ * PAYMENT_OVERDUE, SUBSCRIPTION_DELETED e REFUND/CHARGEBACK continuaram com `break`.
+ *
+ * Por que `break` é perda DEFINITIVA e não um adiamento: o fim do handler promove o evento a
+ * 'processed', e o handler devolve 200 ao Asaas de propósito (anti retry-storm, depois do incidente
+ * de 05-11/05/2026). Não existe segunda entrega. O aviso de que alguém parou de pagar, cancelou a
+ * assinatura ou pediu estorno simplesmente evaporava — e a pessoa seguia no plano pago.
+ *
+ * É o mesmo padrão de "rotas gêmeas" do lote 2: a correção certa aplicada em um lugar e não nos
+ * irmãos. Estes testes existem para que a próxima cópia não fique para trás.
+ */
+describe('POST /api/webhooks/asaas — evento de dinheiro sem dono vai para o DLQ, nunca some', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  /** profile ausente (ou erro transitório de DB) → resolveBillingContext devolve user null. */
+  function semDono() {
+    const results = baseResults()
+    results.profiles = [{ data: null, error: null }]
+    results.billing_checkouts = [
+      { data: { ...CK_ROW, profile_id: 'user-1' }, error: null },
+      { data: null, error: null },
+    ]
+    return makeRecordingDb(results)
+  }
+
+  const foiParaDLQ = (calls: Array<{ table: string; method: string; args: unknown[] }>) =>
+    calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'failed')
+
+  it('PAYMENT_OVERDUE sem dono → DLQ (failed), não processed', async () => {
+    // Sem isto: o aviso de "parou de pagar" some e a pessoa continua no plano pago de graça.
+    const { db, calls } = semDono()
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_ov_sem_dono', event: 'PAYMENT_OVERDUE', payment: { customer: 'cus_1', value: 49, subscription: 'sub_1' } }
+    const res = await POST(makeReq(body))
+
+    expect((await res.json() as { processed?: boolean }).processed).toBe(false)
+    expect(foiParaDLQ(calls)).toBeTruthy()
+  })
+
+  it('SUBSCRIPTION_DELETED sem dono → DLQ (failed), não processed', async () => {
+    // Sem isto: a assinatura morre no Asaas e o plano pago continua valendo aqui dentro.
+    const { db, calls } = semDono()
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_del_sem_dono', event: 'SUBSCRIPTION_DELETED', subscription: { id: 'sub_1', customer: 'cus_1' } }
+    const res = await POST(makeReq(body))
+
+    expect((await res.json() as { processed?: boolean }).processed).toBe(false)
+    expect(foiParaDLQ(calls)).toBeTruthy()
+  })
+
+  it('PAYMENT_REFUNDED sem dono → DLQ (failed), não processed', async () => {
+    // Sem isto: dinheiro sai da conta e ninguém fica sabendo.
+    const { db, calls } = semDono()
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_ref_sem_dono', event: 'PAYMENT_REFUNDED', payment: { customer: 'cus_1', value: 49, subscription: 'sub_1' } }
+    const res = await POST(makeReq(body))
+
+    expect((await res.json() as { processed?: boolean }).processed).toBe(false)
+    expect(foiParaDLQ(calls)).toBeTruthy()
+  })
+
+  it('PAYMENT_CHARGEBACK_REQUESTED sem dono → DLQ (failed), não processed', async () => {
+    const { db, calls } = semDono()
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_cb_sem_dono', event: 'PAYMENT_CHARGEBACK_REQUESTED', payment: { customer: 'cus_1', value: 49, subscription: 'sub_1' } }
+    const res = await POST(makeReq(body))
+
+    expect((await res.json() as { processed?: boolean }).processed).toBe(false)
+    expect(foiParaDLQ(calls)).toBeTruthy()
+  })
+})

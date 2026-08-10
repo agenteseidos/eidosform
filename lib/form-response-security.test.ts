@@ -266,3 +266,30 @@ describe('sanitizeValue — aninhamento profundo falha FECHADO', () => {
     }
   })
 })
+
+/**
+ * Entidade numérica de outro caractere (ataque adversarial, 07/08/2026).
+ *
+ * O `;?` opcional comia o prefixo de qualquer entidade que COMEÇASSE com 60/62: `&#600;` virava
+ * `<0;`. Varredura de `&#1;` a `&#70000;` encontrou 2.220 entidades corrompidas.
+ *
+ * A saída é inerte — não é falha de segurança. Mas INSERE um `<` em texto legítimo de lead, que é
+ * exatamente a classe de bug que esta função existe para consertar.
+ */
+describe('sanitizeValue — entidade numérica vizinha não é corrompida', () => {
+  it('&#600; e &#620; ficam intactos; &#60; e &#62; continuam sendo decodificados', () => {
+    expect(limpar('char 600 = &#600;')).toBe('char 600 = &#600;')
+    expect(limpar('preco &#620; euros')).toBe('preco &#620; euros')
+    expect(limpar('&#6000;')).toBe('&#6000;')
+    // e o que importa para a segurança continua valendo
+    expect(limpar('&#60;script&#62;alert(1)&#60;/script&#62;')).toBe('alert(1)')
+    expect(limpar('&#060;script&#062;alert(1)&#060;/script&#062;')).toBe('alert(1)')
+  })
+
+  it('varredura: nenhuma entidade de 3+ dígitos começando com 60/62 é tocada', () => {
+    for (let n = 600; n <= 629; n++) {
+      const t = `x &#${n}; y`
+      expect(limpar(t), `&#${n}; foi corrompida`).toBe(t)
+    }
+  })
+})

@@ -34,8 +34,13 @@ const HTML_TAG = /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:[\s/][^>]*)?>/g
 function decodeAngleEntities(s: string): string {
   return s
     .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-    .replace(/&#0*60;?/g, '<').replace(/&#x0*3c;?/gi, '<')
-    .replace(/&#0*62;?/g, '>').replace(/&#x0*3e;?/gi, '>')
+    // `(?![0-9])` NÃO é firula (ataque adversarial, 07/08/2026). Sem ele, o `;?` opcional comia o
+    // prefixo de QUALQUER entidade que começasse com 60/62: `&#600;` virava `<0;` e `&#620;`
+    // virava `>0;`. Varredura de `&#1;` a `&#70000;`: 2.220 entidades corrompidas — e o pior é
+    // que isso INSERE um `<` em texto legítimo de lead, que é exatamente a classe de bug que
+    // este arquivo existe para consertar.
+    .replace(/&#0*60(?![0-9]);?/g, '<').replace(/&#x0*3c(?![0-9a-f]);?/gi, '<')
+    .replace(/&#0*62(?![0-9]);?/g, '>').replace(/&#x0*3e(?![0-9a-f]);?/gi, '>')
 }
 
 /**

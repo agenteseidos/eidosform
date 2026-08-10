@@ -227,3 +227,42 @@ describe('sanitizeValue — estrutura', () => {
     expect(sanitizeValue(undefined)).toBe(undefined)
   })
 })
+
+/**
+ * FALHA FECHADA no aninhamento profundo (regressão pega em ataque adversarial, 07/08/2026).
+ *
+ * O laço de limpeza descasca UMA camada de aninhamento por passada. Com 6+ camadas ele estourava
+ * o teto de 5 e devolvia o texto PARCIALMENTE limpo — com TAG VIVA. Confirmado executando a saída
+ * num Chromium headless: `<svg/onload=…>` disparava.
+ *
+ * A regra ANTIGA devolvia texto inerte no mesmo caso. Ou seja: consertar a perda de lead tinha
+ * aberto uma regressão de segurança. Aumentar o teto não resolve — sempre cabe mais uma camada.
+ */
+describe('sanitizeValue — aninhamento profundo falha FECHADO', () => {
+  const temTagViva = (s: string) => /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:[\s/][^>]*)?>/.test(s)
+
+  it('o payload exato que executava no navegador não deixa tag viva', () => {
+    const p = '<sv<sv<sv<sv<sv<svg/onload=alert(1)>g/onload=alert(1)>g/onload=alert(1)>'
+      + 'g/onload=alert(1)>g/onload=alert(1)>g/onload=alert(1)>'
+    expect(temTagViva(limpar(p)), 'voltou a devolver tag viva').toBe(false)
+  })
+
+  it('de 2 a 30 camadas de aninhamento — nenhuma deixa tag viva', () => {
+    for (let n = 2; n <= 30; n++) {
+      const s = '<sv'.repeat(n) + 'g/onload=alert(1)>' + 'g/onload=alert(1)>'.repeat(n - 1)
+      expect(temTagViva(limpar(s)), `${n} camadas deixaram tag viva`).toBe(false)
+    }
+    for (let n = 2; n <= 30; n++) {
+      const s = '<scr'.repeat(n) + 'ipt>alert(1)' + '</script>'.repeat(n)
+      expect(temTagViva(limpar(s)), `${n} camadas de script deixaram tag viva`).toBe(false)
+    }
+  })
+
+  it('resposta LEGÍTIMA nunca cai no caminho agressivo — converge de primeira', () => {
+    // A rede de segurança não pode voltar a apagar o lead: texto de verdade estabiliza em 1 ou 2
+    // passadas e nunca chega no laço de emergência.
+    for (const t of ['<joao@empresa.com>', 'ganho < 5k e gasto > 2k', '1 <> 2', '<3', '5 < x < 10']) {
+      expect(limpar(t), `"${t}" foi para o caminho agressivo`).toBe(t)
+    }
+  })
+})

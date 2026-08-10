@@ -50,6 +50,31 @@ function sanitizeString(input: string): string {
   for (let i = 0; i < 5; i++) {
     const prev = out
     out = decodeAngleEntities(out).replace(HTML_TAG, '')
+    if (out === prev) return out
+  }
+
+  // ── FALHA FECHADA (regressão pega em ataque adversarial, 2026-08-07) ─────────────────────────
+  //
+  // O laço acima descasca UMA camada de aninhamento por passada. Com 6 ou mais camadas ele estoura
+  // o teto e — na primeira versão desta correção — devolvia o texto PARCIALMENTE limpo. Resultado
+  // medido com Chromium de verdade: a entrada
+  //
+  //   <sv<sv<sv<sv<sv<svg/onload=alert(1)>g/onload=alert(1)>…
+  //
+  // saía como `<svg/onload=alert(1)>` — uma tag VIVA, que EXECUTA. A regra antiga (`<[^>]*>`)
+  // devolvia texto inerte no mesmo caso. Ou seja: consertar a perda de lead tinha aberto uma
+  // regressão de segurança em entrada patológica.
+  //
+  // Aumentar o teto só moveria a trave — é sempre possível aninhar uma camada a mais. A saída
+  // correta é falhar fechado: quando não converge, cai na regra ANTIGA (agressiva) até o ponto
+  // fixo. Ela sempre converge, porque cada passada encurta a string.
+  //
+  // Isso NÃO reintroduz o bug do lead: resposta legítima converge em 1 ou 2 passadas e nunca
+  // chega aqui. Só entrada construída para não convergir cai neste caminho — e para essa, apagar
+  // demais é o comportamento certo.
+  for (let i = 0; i < 20; i++) {
+    const prev = out
+    out = out.replace(/<[^>]*>/g, '')
     if (out === prev) break
   }
   return out

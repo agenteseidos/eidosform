@@ -146,140 +146,146 @@ export async function checkFormLimit(userId: string): Promise<{ allowed: boolean
  * Tie-breaking: random among forms with equal response counts.
  * Uses service role client to bypass RLS during webhook processing.
  */
+/**
+ * Seleciona quais formulários ficam ATIVOS quando a conta está num plano com teto (free/starter).
+ * Função PURA — testável sem banco.
+ *
+ * Regra (alinhamento Free, decisões 1/2/4 de 2026-08):
+ *  1. Os formulários competem pelas `formLimit` vagas por VOLUME de respostas — sobrevivem os
+ *     MENOS usados (decisão do Sidney: os mais usados caem primeiro). NÃO existe mais a "peneira
+ *     dos 100+" (formulário com 100+ respostas na vida era pausado para sempre) — ela comparava
+ *     total histórico com cota mensal, coisas diferentes, e podia zerar a conta inteira.
+ *  2. Um formulário que GANHOU vaga mas tem mais perguntas que o teto do plano fica PAUSADO — sem
+ *     liberar a vaga para outro. O dono reduz as perguntas e ele reativa (a edição continua
+ *     permitida; ver PATCH). Assim o rebaixado alcança exatamente o mesmo estado de quem sempre
+ *     foi Free.
+ *
+ * Empate de contagem: ordem aleatória justa (rng injetável só para teste).
+ */
+export type FormSelectionMeta = { id: string; responseCount: number; questionCount: number }
+
+export function selectActiveForms(
+  forms: FormSelectionMeta[],
+  formLimit: number,
+  maxQuestions: number,
+  rng: () => number = () => {
+    const buf = new Uint32Array(1)
+    crypto.getRandomValues(buf)
+    return buf[0] / 2 ** 32
+  }
+): { activeIds: string[]; pausedIds: string[] } {
+  // Plano ilimitado (Plus/Professional, maxForms=-1): nada é pausado.
+  if (formLimit < 0) {
+    return { activeIds: forms.map((f) => f.id), pausedIds: [] }
+  }
+
+  // Chave aleatória estável por formulário desempata sem depender da ordem de chegada.
+  const ordered = forms
+    .map((f) => ({ f, key: rng() }))
+    .sort((a, b) => a.f.responseCount - b.f.responseCount || a.key - b.key)
+    .map((x) => x.f)
+
+  const slotWinners = ordered.slice(0, formLimit)
+  const activeIds: string[] = []
+  const pausedIds: string[] = []
+
+  const winnerSet = new Set(slotWinners.map((f) => f.id))
+  for (const f of ordered) {
+    // Ativo = ganhou vaga E cabe no teto de perguntas. O resto pausa.
+    if (winnerSet.has(f.id) && f.questionCount <= maxQuestions) activeIds.push(f.id)
+    else pausedIds.push(f.id)
+  }
+  return { activeIds, pausedIds }
+}
+
+/**
+ * Reavalia e persiste o estado `paused` de TODOS os formulários publicados do dono, nos dois
+ * sentidos (despausa quem passou a caber, pausa quem não cabe mais).
+ *
+ * Chamado no downgrade (estado inicial), ao APAGAR formulário (libera vaga — decisão 4) e ao
+ * SALVAR formulário (reduzir perguntas reativa — decisão 2). Idempotente.
+ *
+ * ⚠️ Carrega `questions` dos formulários publicados para contar o tamanho. É O(formulários) em
+ * memória, mas só roda para planos com teto (free/starter), cujos donos têm poucos formulários, e
+ * fora do caminho quente de resposta. Se algum dia um Starter com 100 formulários pesar aqui, o
+ * caminho certo é uma RPC de contagem de perguntas (como já existe para respostas).
+ */
+export async function recomputeActiveForms(
+  serviceRoleKey: string,
+  userId: string,
+  targetPlan: PlanName
+): Promise<{ pausedCount: number }> {
+  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey)
+  const formLimit = PLANS[targetPlan]?.maxForms ?? PLANS.free.maxForms
+  const maxQuestions = PLANS[targetPlan]?.maxQuestions ?? PLANS.free.maxQuestions
+
+  // Plano ilimitado: garante que nada fique preso pausado e sai.
+  if (formLimit < 0) {
+    const { error } = await supabase.from('forms').update({ paused: false }).eq('user_id', userId).eq('paused', true)
+    if (error) throw new Error(`recomputeActiveForms: falha ao despausar (plano ilimitado): ${error.message}`)
+    return { pausedCount: 0 }
+  }
+
+  const { data: published, error: pubErr } = await supabase
+    .from('forms')
+    .select('id, questions')
+    .eq('user_id', userId)
+    .eq('status', 'published')
+  if (pubErr) throw new Error(`recomputeActiveForms: falha ao listar publicados: ${pubErr.message}`)
+  if (!published || published.length === 0) return { pausedCount: 0 }
+
+  const formIds = published.map((f: { id: string }) => f.id)
+  const { data: responseCounts, error: rpcErr } = await supabase
+    .rpc('get_response_counts_by_forms', { p_form_ids: formIds }) as { data: Array<{ form_id: string; response_count: number }> | null; error: { message?: string } | null }
+  if (rpcErr) throw new Error(`recomputeActiveForms: falha na RPC de contagem: ${rpcErr.message ?? 'erro'}`)
+
+  const countMap = new Map<string, number>(formIds.map((id: string) => [id, 0]))
+  for (const r of responseCounts ?? []) countMap.set(r.form_id, r.response_count)
+
+  const meta: FormSelectionMeta[] = published.map((f: { id: string; questions?: unknown }) => ({
+    id: f.id,
+    responseCount: countMap.get(f.id) ?? 0,
+    questionCount: Array.isArray(f.questions) ? f.questions.length : 0,
+  }))
+
+  const { activeIds, pausedIds } = selectActiveForms(meta, formLimit, maxQuestions)
+
+  // Aplica nos dois sentidos, cada um só onde muda de estado.
+  if (activeIds.length > 0) {
+    const { error } = await supabase.from('forms').update({ paused: false }).in('id', activeIds).eq('paused', true)
+    if (error) throw new Error(`recomputeActiveForms: falha ao despausar ativos: ${error.message}`)
+  }
+  if (pausedIds.length > 0) {
+    const { error } = await supabase.from('forms').update({ paused: true }).in('id', pausedIds).eq('paused', false)
+    if (error) {
+      logError('[recomputeActiveForms] Failed to pause forms', error)
+      throw new Error(`recomputeActiveForms: falha ao pausar: ${error.message ?? String(error)}`)
+    }
+  }
+  return { pausedCount: pausedIds.length }
+}
+
 export async function handleDowngrade(
   userId: string,
   serviceRoleKey: string,
   // TARGET-AWARE (P1, audit Codex 2026-06-08): o limite de forms é o do PLANO-ALVO, não fixo em
-  // free(3). Plus/Professional são ilimitados (-1) → não pausa nada; Starter(100); free(3). O
-  // threshold "100+ respostas sempre pausado" é específico do FREE (cota total de 100 resp).
+  // free(3). Plus/Professional são ilimitados (-1) → não pausa nada; Starter(100); free(3).
   targetPlan: PlanName = 'free'
 ): Promise<{ pausedCount: number }> {
-  const supabase = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    serviceRoleKey
-  )
-
-  const formLimit = PLANS[targetPlan]?.maxForms ?? PLANS.free.maxForms
-  const responseThreshold = targetPlan === 'free' ? 100 : Number.MAX_SAFE_INTEGER
-
-  // Step 1: Unpause all forms for this user
-  // #1 (audit 2026-06-08): CHECA erro em TODAS as queries críticas e LANÇA. Antes, se o
-  // select de forms falhasse, publishedForms vinha null → retornava {pausedCount:0} e o
-  // chamador marcava free SEM pausar — "free mas forms nunca pausados". Agora o erro propaga.
-  const { error: unpauseErr } = await supabase
-    .from('forms')
-    .update({ paused: false })
-    .eq('user_id', userId)
-  if (unpauseErr) throw new Error(`handleDowngrade: falha no unpause inicial: ${unpauseErr.message}`)
-
-  // Plano-alvo com forms ILIMITADOS (Plus/Professional, maxForms=-1): nada a pausar — os forms
-  // já foram despausados acima. Evita pausar indevidamente num downgrade Professional→Plus.
-  if (formLimit < 0) {
-    return { pausedCount: 0 }
-  }
-
-  // Step 2: Get all published forms for this user
-  const { data: publishedForms, error: pubErr } = await supabase
-    .from('forms')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('status', 'published')
-  if (pubErr) throw new Error(`handleDowngrade: falha ao listar forms publicados: ${pubErr.message}`)
-
-  if (!publishedForms || publishedForms.length === 0) {
-    return { pausedCount: 0 }
-  }
-
-  // P2-F: Use RPC aggregate instead of loading all responses into memory
-  const formIds = publishedForms.map((f: { id: string }) => f.id)
-  const { data: responseCounts, error: rpcErr } = await supabase
-    .rpc('get_response_counts_by_forms', { p_form_ids: formIds }) as { data: Array<{ form_id: string; response_count: number }> | null; error: { message?: string } | null }
-  if (rpcErr) throw new Error(`handleDowngrade: falha na RPC de contagem de respostas: ${rpcErr.message ?? 'erro'}`)
-
-  // Build response count map
-  const countMap = new Map<string, number>()
-  for (const f of formIds) {
-    countMap.set(f, 0)
-  }
-  if (responseCounts) {
-    for (const r of responseCounts) {
-      countMap.set(r.form_id, r.response_count)
-    }
-  }
-
-  // Step 4: Separate eligible (< 100 responses) from always-paused (100+ responses)
-  type FormWithCount = { id: string; responseCount: number }
-  const eligible: FormWithCount[] = []
-  const alwaysPaused: string[] = []
-
-  for (const [id, count] of countMap.entries()) {
-    if (count >= responseThreshold) {
-      alwaysPaused.push(id)
-    } else {
-      eligible.push({ id, responseCount: count })
-    }
-  }
-
-  // Step 5: Sort eligible by response count ascending (fewest first)
-  // Randomize among ties using Fisher-Yates on groups with same count
-  eligible.sort((a, b) => a.responseCount - b.responseCount)
-
-  // Apply stable random tie-breaking within groups of equal response count
-  // Shuffle groups of equal counts to randomize which forms survive when ties exist
-  let i = 0
-  while (i < eligible.length) {
-    let j = i + 1
-    while (j < eligible.length && eligible[j].responseCount === eligible[i].responseCount) {
-      j++
-    }
-    // Shuffle the group [i, j) using Fisher-Yates with crypto randomness
-    if (j - i > 1) {
-      for (let k = j - 1; k > i; k--) {
-        const range = k - i + 1
-        const buf = new Uint32Array(1)
-        crypto.getRandomValues(buf)
-        const swapIdx = i + (buf[0] % range)
-        ;[eligible[k], eligible[swapIdx]] = [eligible[swapIdx], eligible[k]]
-      }
-    }
-    i = j
-  }
-
-  // Step 6: Keep the first `formLimit` eligible forms active, pause the rest
-  const toKeepActive = eligible.slice(0, formLimit).map((f) => f.id)
-  const toPauseFromEligible = eligible.slice(formLimit).map((f) => f.id)
-
-  // Combine: always-paused (100+ responses) + eligible beyond limit
-  const idsToPause = [...alwaysPaused, ...toPauseFromEligible]
-
-  // Safety: also pause any that ended up not in toKeepActive
-  // (ensures forms active ≤ freeLimit)
-  const activeSet = new Set(toKeepActive)
-  for (const f of publishedForms) {
-    if (!activeSet.has((f as { id: string }).id) && !idsToPause.includes((f as { id: string }).id)) {
-      idsToPause.push((f as { id: string }).id)
-    }
-  }
-
-  if (idsToPause.length === 0) {
-    return { pausedCount: 0 }
-  }
-
-  const { error } = await supabase
-    .from('forms')
-    .update({ paused: true })
-    .in('id', idsToPause)
-
-  if (error) {
-    // LANÇA (#1, audit 2026-06-08): pausar os forms é o efeito crítico do downgrade. Antes
-    // o erro era só logado e a função retornava "sucesso" aparente — o chamador (cron,
-    // plan-features, webhook) achava que pausou e nunca retentava. Agora o erro propaga:
-    // cron/plan-features NÃO marcam free (retentam no próximo tick); webhook→DLQ; reprocess retenta.
-    logError('[handleDowngrade] Failed to pause forms', error)
-    throw new Error(`handleDowngrade: falha ao pausar forms: ${error.message ?? String(error)}`)
-  }
-
-  return { pausedCount: idsToPause.length }
+  // Delega ao motor único (alinhamento Free, 2026-08). Antes esta função tinha a seleção inteira
+  // embutida e mais ninguém sabia recalcular — por isso apagar formulário nunca devolvia a vaga.
+  //
+  // O QUE MUDOU AQUI, e por quê:
+  //  · A "peneira dos 100+" SUMIU. Ela pausava para sempre qualquer formulário com 100+ respostas
+  //    na VIDA, comparando um total histórico com a cota MENSAL da conta — grandezas diferentes.
+  //    Quem sempre foi Free nunca passa por ela (só roda em quem MUDA de plano) e pode acumular
+  //    milhares de respostas com o formulário no ar. Pior: se todos os formulários do dono
+  //    passassem de 100, ele ficava com ZERO ativos, e não havia ação nenhuma capaz de reverter.
+  //  · O teto de PERGUNTAS passou a valer: formulário com mais perguntas que o plano permite fica
+  //    pausado (o dono reduz e ele volta — a edição continua liberada no PATCH).
+  //  · Some o "unpause de tudo primeiro". Ele deixava TODOS os formulários no ar por um instante
+  //    entre as duas escritas; agora cada um só é tocado se de fato mudar de estado.
+  return recomputeActiveForms(serviceRoleKey, userId, targetPlan)
 }
 
 /**

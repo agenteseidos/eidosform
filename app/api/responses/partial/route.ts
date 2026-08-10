@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { sanitizeValue } from '@/lib/form-response-security'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkPartialRateLimitAsync, checkPartialCreateLimitAsync } from '@/lib/response-rate-limit'
 import { upsertSubmission } from '@/lib/google-sheets'
@@ -50,16 +51,6 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-function sanitizeValue(val: unknown): unknown {
-  if (typeof val === 'string') return val.replace(/<[^>]*>/g, '')
-  if (Array.isArray(val)) return val.map(sanitizeValue)
-  if (val && typeof val === 'object') {
-    return Object.fromEntries(
-      Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, sanitizeValue(v)])
-    )
-  }
-  return val
-}
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown'

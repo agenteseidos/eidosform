@@ -166,6 +166,30 @@ describe('consistência entre rotas irmãs', () => {
     }
   })
 
+  it('L5: `sanitizeValue` tem UMA definição só — cópia divergente é como o bug nasceu', () => {
+    // Existiam TRÊS versões da mesma função em quatro rotas, com segurança DESIGUAL:
+    // `&lt;script&gt;alert(1)&lt;/script&gt;` era neutralizado por uma e passava INTACTO pelas
+    // outras duas. O mesmo formulário se protegia de um jeito ou de outro conforme o endpoint que
+    // recebeu a resposta — e ninguém tinha como saber, porque as três "pareciam" fazer o mesmo.
+    const rotas: string[] = []
+    const varrer = (dir: string) => {
+      for (const nome of readdirSync(join(raiz, dir), { withFileTypes: true })) {
+        const rel = `${dir}/${nome.name}`
+        if (nome.isDirectory()) varrer(rel)
+        else if (nome.name.endsWith('.ts') && !nome.name.endsWith('.test.ts')) rotas.push(rel)
+      }
+    }
+    varrer('app/api')
+    for (const r of rotas) {
+      expect(ler(r), `${r} redefine sanitizeValue — importe de @/lib/form-response-security`)
+        .not.toMatch(/function\s+sanitizeValue\s*\(/)
+    }
+    // E a fonte única não pode voltar à regra frouxa que apagava `<joao@empresa.com>`.
+    const fonte = ler('lib/form-response-security.ts')
+    expect(fonte, 'a fonte única voltou a usar a regra frouxa `<[^>]*>`')
+      .not.toMatch(/replace\(\s*\/<\[\^>\]\*>\/g/)
+  })
+
   it('D12: as duas rotas de escrita de formulário cortam payload antes do Zod', () => {
     for (const r of ['app/api/forms/route.ts', 'app/api/forms/[id]/route.ts']) {
       const src = ler(r)

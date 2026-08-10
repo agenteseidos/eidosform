@@ -10,7 +10,7 @@ import { isRecordableMetaEvent } from '@/lib/pixel-events'
 import { extractLead } from '@/lib/lead-extraction'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
-import { isResponseComplete } from '@/lib/form-response-security'
+import { isResponseComplete, sanitizeValue } from '@/lib/form-response-security'
 import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 import { upsertSubmission } from '@/lib/google-sheets'
@@ -60,19 +60,6 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-// Sanitize string: remove HTML tags to prevent stored XSS
-function sanitizeValue(val: unknown): unknown {
-  if (typeof val === 'string') {
-    return val.replace(/<[^>]*>/g, '')
-  }
-  if (Array.isArray(val)) return val.map(sanitizeValue)
-  if (val && typeof val === 'object') {
-    return Object.fromEntries(
-      Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, sanitizeValue(v)])
-    )
-  }
-  return val
-}
 
 // Serializa valor de resposta para answer_items (coluna text)
 // Tipos complexos (objeto, array) são serializados como JSON
@@ -189,6 +176,27 @@ export async function POST(req: NextRequest) {
 
   // Bug #9: Sanitize answers
   let answers = sanitizeValue(body.answers) as Record<string, unknown> | undefined
+
+  // OBSERVABILIDADE da limpeza (auditoria 2026-08, lote 5).
+  //
+  // Até aqui a destruição era 100% invisível: nenhum log, nenhum erro, nenhuma métrica. Foi por
+  // isso que `<joao@empresa.com>` virando string vazia sobreviveu tanto tempo — não havia como
+  // saber que estava acontecendo. Agora fica um sinal, SEM o conteúdo (é resposta de lead: PII).
+  //
+  // Amostrado a ~5% de propósito: com a regra apertada a alteração legítima passou a ser rara,
+  // mas um formulário que colete HTML de verdade geraria uma linha por resposta, e log que vira
+  // ruído deixa de ser lido.
+  if (answers && Math.random() < 0.05) {
+    try {
+      const antes = JSON.stringify(body.answers ?? {}).length
+      const depois = JSON.stringify(answers).length
+      if (antes !== depois) {
+        console.warn('[sanitize] valor alterado na limpeza (amostra 5%)', {
+          formId: body.form_id, bytesAntes: antes, bytesDepois: depois,
+        })
+      }
+    } catch { /* medição nunca pode derrubar o submit */ }
+  }
 
   if (!form_id) {
     return NextResponse.json({ error: 'ID do formulário é obrigatório' }, { status: 400, headers: CORS_HEADERS })

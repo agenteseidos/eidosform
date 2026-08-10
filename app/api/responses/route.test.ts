@@ -436,3 +436,48 @@ describe('POST /api/responses — notificação por e-mail (resposta completa)',
     expect(await outroEnvio()).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * A CASCATA do `sanitizeValue` (auditoria 2026-08, lote 5).
+ *
+ * O teste de unidade em `lib/form-response-security.test.ts` prova que a função parou de destruir
+ * `<joao@empresa.com>`. Ele NÃO prova o que importa para o negócio: que a resposta volta a contar
+ * como COMPLETA. E `completed` é o portão único de e-mail ao dono, WhatsApp, Google Sheets, pixel
+ * da Meta e webhook do cliente — com ele em `false`, nada dispara e o lead deixa de existir.
+ *
+ * Por isso a asserção é sobre o CORPO DA RESPOSTA HTTP, e não sobre espião de mock: espião prova
+ * que uma função foi chamada; o corpo prova o que o sistema realmente decidiu. Já houve registro
+ * interno de mock desta cadeia dando "falso conforto"
+ * (`docs/briefing-auditoria-pre-venda-2026-07-29.md`, A-5).
+ */
+describe('POST /api/responses — cascata do sanitizeValue (lote 5)', () => {
+  it('e-mail entre <> em campo OBRIGATÓRIO mantém a resposta COMPLETA', async () => {
+    // Antes: `<joao@empresa.com>` virava '' → obrigatória vazia → completed=false → nenhum
+    // disparo → o dono nunca soube do lead, e o respondente viu tela de sucesso.
+    const res = await POST(makeReq({
+      form_id: FORM_ID,
+      answers: { q1: 'João', 'q-req': '<joao@empresa.com>' },
+    }))
+    const body = await res.json()
+    expect(res.status).toBeLessThan(300)
+    expect(body.completed, 'a resposta voltou a ser marcada como incompleta').toBe(true)
+  })
+
+  it('comparação numérica em campo obrigatório também sobrevive', async () => {
+    const res = await POST(makeReq({
+      form_id: FORM_ID,
+      answers: { q1: 'João', 'q-req': 'ganho < 5k e gasto > 2k' },
+    }))
+    expect((await res.json()).completed).toBe(true)
+  })
+
+  it('REGRESSÃO: tag de verdade continua sendo removida, e aí a obrigatória fica vazia', async () => {
+    // O outro lado da moeda: apertar a regra não pode passar a aceitar `<script>` como resposta
+    // válida. Aqui a limpeza esvazia o campo — e a resposta corretamente NÃO completa.
+    const res = await POST(makeReq({
+      form_id: FORM_ID,
+      answers: { q1: 'João', 'q-req': '<img src=x onerror=alert(1)>' },
+    }))
+    expect((await res.json()).completed).toBe(false)
+  })
+})

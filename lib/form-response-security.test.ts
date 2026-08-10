@@ -92,3 +92,138 @@ describe('isResponseComplete × bloco de conteúdo obrigatório (lote 5)', () =>
     expect(isResponseComplete({}, questions)).toBe(true)
   })
 })
+
+/**
+ * `sanitizeValue` — a limpeza destrutiva (auditoria 2026-08, lote 5).
+ *
+ * ESTA FUNÇÃO NÃO TINHA UM ÚNICO TESTE, e é ela que passa em TODA resposta de TODO formulário.
+ *
+ * O defeito: a regra `<[^>]*>` apagava qualquer coisa entre `<` e `>`. Então
+ * `<joao@empresa.com>` — o formato que Outlook e Gmail colam — virava string VAZIA. E vazio não
+ * dispara erro: a validação trata campo vazio como "ok, obrigatoriedade é checada em outro lugar",
+ * a resposta é marcada como INCOMPLETA, e `completed` é o portão ÚNICO de e-mail, WhatsApp,
+ * Google Sheets, pixel e webhook. O lead deixava de existir para o dono, e o respondente via a
+ * tela de sucesso.
+ *
+ * Agravante: a resposta fica `completed=false` no banco, então o cron de abandono manda ao dono,
+ * meia hora depois, um alerta de "lead abandonou o formulário" com o campo em branco. Ele não fica
+ * só sem o lead — fica com um sinal ERRADO sobre o próprio funil.
+ *
+ * Os três blocos abaixo têm papéis diferentes e nenhum é decorativo:
+ *  · REGRESSÃO — falham no código antigo. São o motivo do lote.
+ *  · NÃO-REGRESSÃO — passavam antes e precisam continuar passando.
+ *  · SEGURANÇA — o que a limpeza existe para barrar. Apertar a regra sem estes vira brecha.
+ */
+import { sanitizeValue } from './form-response-security'
+
+const limpar = (s: string) => sanitizeValue(s) as string
+
+describe('sanitizeValue — texto legítimo do lead (o defeito do lote 5)', () => {
+  it('e-mail entre sinais de menor/maior SOBREVIVE — era o caso que apagava o lead', () => {
+    expect(limpar('<joao@empresa.com>')).toBe('<joao@empresa.com>')
+    expect(limpar('João Silva <joao@empresa.com>')).toBe('João Silva <joao@empresa.com>')
+  })
+
+  it('comparações numéricas sobrevivem', () => {
+    for (const t of [
+      'ganho < 5k e gasto > 2k',
+      'orçamento < R$1.000 > não serve',
+      'x<3 e y>4',
+      '1 <> 2',
+      'preço < 100',
+      'a > b',
+      '5 < x < 10',
+      '<3',
+    ]) {
+      expect(limpar(t), `"${t}" foi corrompido`).toBe(t)
+    }
+  })
+
+  it('sinais soltos e acentuação não são tocados', () => {
+    expect(limpar('<<>>')).toBe('<<>>')
+    expect(limpar('<>')).toBe('<>')
+    expect(limpar('São João nº 12 — Aparecida/PB')).toBe('São João nº 12 — Aparecida/PB')
+  })
+
+  it('`&amp;` NÃO é mais decodificado — decodificar mutava texto literal sem ganho', () => {
+    // A versão antiga da cópia de `lib/` transformava isto em "R$ 100 & R$ 200". Nenhum destino
+    // faz parsing depois da limpeza, então decodificar `&amp;`/`&quot;` só alterava o dado do
+    // lead — e era a fonte da não-idempotência.
+    expect(limpar('R$ 100 &amp; R$ 200')).toBe('R$ 100 &amp; R$ 200')
+    expect(limpar('ele disse &quot;oi&quot;')).toBe('ele disse &quot;oi&quot;')
+  })
+
+  it('é IDEMPOTENTE — aplicar duas vezes dá o mesmo que aplicar uma', () => {
+    // A cópia de `lib/` não era: `&amp;lt;3` dava `&lt;3` na 1ª passada e `<3` na 2ª. Como a
+    // limpeza roda em rotas diferentes sobre o mesmo dado (autosave parcial e submit final),
+    // isso significava resultado dependente do caminho.
+    for (const t of ['<joao@empresa.com>', '&amp;lt;3', '<script>alert(1)</script>', 'a<b>c', '5 < x']) {
+      expect(limpar(limpar(t)), `"${t}" não é ponto fixo`).toBe(limpar(t))
+    }
+  })
+})
+
+describe('sanitizeValue — segurança (o que a limpeza existe para barrar)', () => {
+  it('tags de script e handlers são removidos', () => {
+    expect(limpar('<script>alert(1)</script>')).toBe('alert(1)')
+    expect(limpar('<SCRIPT>alert(1)</SCRIPT>')).toBe('alert(1)')
+    expect(limpar('<img src=x onerror=alert(1)>')).toBe('')
+    expect(limpar('<img\nsrc=x\nonerror=alert(1)>')).toBe('')
+    expect(limpar('<iframe src=javascript:alert(1)>')).toBe('')
+    expect(limpar('<a href="javascript:alert(1)">x</a>')).toBe('x')
+    expect(limpar('<body onload=alert(1)>')).toBe('')
+    expect(limpar('<input onfocus=alert(1) autofocus>')).toBe('')
+    expect(limpar('<x-custom-el onclick=alert(1)>')).toBe('')
+  })
+
+  it('BARRA A BARRA como fim do nome da tag — o furo da primeira proposta', () => {
+    // O tokenizer do HTML5 aceita `/` como separador, igual a espaço. Uma regra que só aceitasse
+    // `\s` deixaria estes DOIS passarem inteiros — seria abrir uma brecha ao consertar o e-mail.
+    expect(limpar('<img/src=x/onerror=alert(1)>')).toBe('')
+    expect(limpar('<svg/onload=alert(1)>')).toBe('')
+    expect(limpar('<script/xss>alert(1)</script>')).toBe('alert(1)')
+  })
+
+  it('ANINHAMENTO não reconstitui tag — o segundo furo', () => {
+    // Numa passada só, `<scr<script>ipt>` vira `<script>`: uma tag VIVA que não existia na
+    // entrada. Só o laço até ponto fixo fecha isso.
+    expect(limpar('<scr<script>ipt>alert(1)</script>')).toBe('alert(1)')
+  })
+
+  it('mXSS via math/svg é removido', () => {
+    expect(limpar('<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>')).toBe('')
+  })
+
+  it('entidade HTML nomeada E numérica é decodificada antes de limpar', () => {
+    // `&#60;script&#62;` passava INTACTO nas quatro rotas — o trecho que deveria tratar entidade
+    // numérica estava dentro de um callback que nunca a capturava. Código morto desde sempre.
+    expect(limpar('&lt;script&gt;alert(1)&lt;/script&gt;')).toBe('alert(1)')
+    expect(limpar('&#60;script&#62;alert(1)&#60;/script&#62;')).toBe('alert(1)')
+    expect(limpar('&#x3c;script&#x3e;alert(1)&#x3c;/script&#x3e;')).toBe('alert(1)')
+  })
+
+  it('INVARIANTE: nenhuma saída contém tag viva, para nenhuma entrada da suíte', () => {
+    const entradas = [
+      '<script>x</script>', '<img/src=x/onerror=y>', '<scr<script>ipt>x</script>',
+      '&lt;script&gt;x&lt;/script&gt;', '&#60;img src=x onerror=y&#62;',
+      '<joao@empresa.com>', 'a<b>c', '<<script>>', '<svg/onload=x>',
+    ]
+    for (const t of entradas) {
+      // Nome de tag de verdade = "<" colado numa letra, terminado por espaço, "/" ou ">".
+      expect(limpar(t), `"${t}" deixou tag viva`).not.toMatch(/<\/?[a-zA-Z][a-zA-Z0-9-]*(?:[\s/][^>]*)?>/)
+    }
+  })
+})
+
+describe('sanitizeValue — estrutura', () => {
+  it('percorre array e objeto aninhados sem mudar o formato', () => {
+    expect(sanitizeValue({ a: ['<b>x</b>', { c: '<i>y</i>' }] })).toEqual({ a: ['x', { c: 'y' }] })
+  })
+
+  it('não mexe em número, booleano, nulo e indefinido', () => {
+    expect(sanitizeValue(42)).toBe(42)
+    expect(sanitizeValue(true)).toBe(true)
+    expect(sanitizeValue(null)).toBe(null)
+    expect(sanitizeValue(undefined)).toBe(undefined)
+  })
+})

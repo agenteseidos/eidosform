@@ -90,7 +90,7 @@ import { RightPanel } from './right-panel'
 import { WhatsAppPanel } from './whatsapp-panel'
 import { getContentBlockPreview } from '@/lib/content-block'
 import { AnswerSetEventsEditor } from './answer-set-events-editor'
-import { sanitizeAnswerSetEvents } from '@/lib/pixel-events'
+import { sanitizeAnswerSetEvents, buildGoogleAdsSendTo } from '@/lib/pixel-events'
 
 // B03: Mapeamento de tipo de campo → ícone + cor para sidebar
 const questionTypeVisuals: Record<string, { icon: LucideIcon; color: string }> = {
@@ -1577,6 +1577,43 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                           placeholder="AbCdEfGhIj"
                         />
                       </div>
+
+                      {/* VALIDAÇÃO VISÍVEL (2026-08).
+                          Sem isto, toda configuração errada vira `send_to` nulo e a conversão
+                          simplesmente não dispara — sem erro, sem log, sem nada no painel do
+                          Google. Seria trocar "campo preenchido que não dispara" por "campo quase
+                          certo que não dispara", que é o mesmo defeito com outra roupa.
+                          Todo caso que produz nulo tem uma frase na tela dizendo por quê. */}
+                      {(() => {
+                        const id = (pixels.googleAdsId || '').trim()
+                        const label = (pixels.googleAdsLabel || '').trim()
+                        const gtm = (pixels.gtmId || '').trim()
+                        if (!id && !label) return null
+
+                        const avisos: string[] = []
+                        if (id && !label) avisos.push('Falta o rótulo de conversão — sem ele nada é enviado ao Google Ads.')
+                        if (label && !id) avisos.push('Falta o ID do Google Ads (AW-…) — sem ele o rótulo sozinho não faz nada.')
+                        if (id && !/^AW-\d+$/.test(id)) avisos.push('O ID precisa ter o formato AW- seguido só de números. Copie do painel do Google Ads.')
+                        if (label && id && /^AW-\d+$/.test(id) && !buildGoogleAdsSendTo(id, label)) {
+                          avisos.push('O rótulo tem caracteres que o Google não usa. Ele costuma ser algo como AbC-D_efGhIj (letras, números, hífen e sublinhado).')
+                        }
+
+                        return (
+                          <>
+                            {avisos.map((a, i) => (
+                              <p key={i} className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                                {a}
+                              </p>
+                            ))}
+                            {gtm && buildGoogleAdsSendTo(id, label) && (
+                              <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-1.5">
+                                Se você já tem uma tag de conversão do Google Ads dentro do seu Tag Manager,
+                                as duas vão contar — use uma ou outra.
+                              </p>
+                            )}
+                          </>
+                        )
+                      })()}
                     </div>
                     <div>
                       <Label htmlFor="tiktok_pixel" className="text-sm font-medium text-slate-700">TikTok Pixel ID</Label>

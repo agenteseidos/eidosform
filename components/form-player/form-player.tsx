@@ -11,7 +11,7 @@ import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'l
 import { QuestionRenderer } from './question-renderer'
 import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import { toast } from 'sonner'
-import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent } from '@/lib/pixel-events'
+import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent, buildGoogleAdsSendTo, fireGoogleAdsConversion } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { captureUrlParams, getUrlParams, clearUrlParams } from '@/lib/url-params'
@@ -820,6 +820,26 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       // os nomes já foram enviados em meta_events no payload acima. Com
       // redirect_url, o delay padrão de 2800ms dá janela pro retry do fbq/ttq.
       for (const name of pendingEventNames) fireNamedPixelEvent(name)
+
+      // ── CONVERSÃO DO GOOGLE ADS (2026-08) ────────────────────────────────────────────────
+      //
+      // O campo "Rótulo de conversão" existia no construtor desde sempre, o cliente preenchia, e
+      // NADA nunca disparava: não havia um único `gtag('event','conversion')` no projeto. A
+      // página injeta `gtag('config','AW-XXX')`, que registra uma VISITA, não uma conversão.
+      //
+      // Aqui e não antes, pelo mesmo motivo dos outros pixels: envio que o servidor recusou não
+      // pode virar conversão. E FORA do laço de `pendingEventNames` — a conversão é uma só por
+      // envio, não uma por evento de conclusão configurado.
+      //
+      // Os DOIS aliases são lidos porque `page.tsx` lê o ID assim (`px.googleAdsId ||
+      // px.google_ads_id`) e o schema de `pixels` é `.passthrough()`: um formulário com chaves
+      // snake_case injeta o script e devolveria rótulo nulo, disparo silencioso a menos.
+      const px = (form.pixels ?? {}) as Record<string, unknown>
+      fireGoogleAdsConversion(buildGoogleAdsSendTo(
+        px.googleAdsId ?? px.google_ads_id,
+        px.googleAdsLabel ?? px.google_ads_label,
+      ))
+
       // Limpa as credenciais do partial público — submit final consumou a row.
       // A session key TAMBÉM: ela identifica UMA tentativa; preenchimento novo
       // na mesma aba/navegador nasce com key nova (o índice único no servidor

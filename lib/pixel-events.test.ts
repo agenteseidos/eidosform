@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { matchesCondition, evaluateAnswerSetEvents, sanitizeAnswerSetEvents, isRecordableMetaEvent } from './pixel-events'
+import { describe, it, expect, vi } from 'vitest'
+import { matchesCondition, evaluateAnswerSetEvents, sanitizeAnswerSetEvents, isRecordableMetaEvent, buildGoogleAdsSendTo, fireGoogleAdsConversion } from './pixel-events'
 import type { AnswerSetEvent, PixelEventCondition } from '@/types/pixel-events'
 
 const cond = (operator: PixelEventCondition['operator'], value = ''): PixelEventCondition =>
@@ -202,5 +202,98 @@ describe('isRecordableMetaEvent (carimbo em responses.meta_events)', () => {
     expect(isRecordableMetaEvent('QualquerNome')).toBe(true)
     expect(isRecordableMetaEvent('')).toBe(false)
     expect(isRecordableMetaEvent('  ')).toBe(false)
+  })
+})
+
+/**
+ * Conversão do Google Ads (2026-08).
+ *
+ * O campo "Rótulo de conversão" existia no construtor, o cliente preenchia, e NADA nunca disparou:
+ * não havia um único `gtag('event','conversion')` no projeto inteiro. A página injeta
+ * `gtag('config','AW-XXX')`, que registra uma VISITA — nunca uma conversão. Dado morto de ponta a
+ * ponta, com a documentação interna afirmando que estava "✅ Completo".
+ *
+ * As regexes aqui são de CORREÇÃO, não de contenção: o rótulo viaja como ARGUMENTO de função
+ * (`gtag('event','conversion',{send_to})`), que é dado e não código-fonte. O risco real de um
+ * `send_to` malformado é a conversão falhar CALADA no Google — o mesmo tipo de silêncio que este
+ * código veio consertar.
+ */
+describe('buildGoogleAdsSendTo', () => {
+  it('monta o send_to quando ID e rótulo são válidos', () => {
+    expect(buildGoogleAdsSendTo('AW-123456789', 'AbC-D_efGhIj')).toBe('AW-123456789/AbC-D_efGhIj')
+  })
+
+  it('rótulo de UM caractere é válido — não existe mínimo documentado', () => {
+    // Exigir 6+ caracteres transformaria um rótulo curto e legítimo em `null` silencioso, que é
+    // exatamente o defeito original.
+    expect(buildGoogleAdsSendTo('AW-1', 'X')).toBe('AW-1/X')
+  })
+
+  it('aceita o send_to inteiro colado no campo do rótulo', () => {
+    // É o erro mais comum de quem copia do painel do Google. Recusar isso seria trocar
+    // "campo preenchido que não dispara" por "campo quase certo que não dispara".
+    expect(buildGoogleAdsSendTo('AW-123', 'AW-123/AbC-D_efG')).toBe('AW-123/AbC-D_efG')
+  })
+
+  it('só um dos dois campos preenchido não dispara nada', () => {
+    expect(buildGoogleAdsSendTo('AW-123456789', '')).toBeNull()
+    expect(buildGoogleAdsSendTo('', 'AbC-D_efG')).toBeNull()
+    expect(buildGoogleAdsSendTo(null, null)).toBeNull()
+    expect(buildGoogleAdsSendTo(undefined, undefined)).toBeNull()
+  })
+
+  it('ID fora do formato AW- é recusado', () => {
+    expect(buildGoogleAdsSendTo('GTM-NPDJG7S6', 'AbC')).toBeNull()
+    expect(buildGoogleAdsSendTo('AW-', 'AbC')).toBeNull()
+    expect(buildGoogleAdsSendTo('123456789', 'AbC')).toBeNull()
+  })
+
+  it('rótulo com caractere perigoso é recusado', () => {
+    // Aqui não há XSS — o valor é argumento de função, não código. Mas um rótulo assim é
+    // certamente errado, e falhar cedo é melhor que mandar lixo ao Google.
+    for (const ruim of [
+      "Lbl'",
+      "x'});alert(document.cookie);({'z':'",
+      '</script><img src=x onerror=alert(1)>',
+      'com espaço',
+      'a;b',
+      'a<b',
+    ]) {
+      expect(buildGoogleAdsSendTo('AW-123', ruim), `"${ruim}" deveria ser recusado`).toBeNull()
+    }
+  })
+
+  it('rótulo longo demais é recusado', () => {
+    expect(buildGoogleAdsSendTo('AW-123', 'a'.repeat(64))).toBe(`AW-123/${'a'.repeat(64)}`)
+    expect(buildGoogleAdsSendTo('AW-123', 'a'.repeat(65))).toBeNull()
+  })
+
+  it('espaços em volta são tolerados', () => {
+    expect(buildGoogleAdsSendTo('  AW-123  ', '  AbC  ')).toBe('AW-123/AbC')
+  })
+})
+
+describe('fireGoogleAdsConversion', () => {
+  it('chama o gtag com o evento de conversão', () => {
+    const gtag = vi.fn()
+    vi.stubGlobal('window', { gtag })
+    fireGoogleAdsConversion('AW-123/AbC')
+    expect(gtag).toHaveBeenCalledWith('event', 'conversion', { send_to: 'AW-123/AbC' })
+    vi.unstubAllGlobals()
+  })
+
+  it('send_to nulo não dispara nada', () => {
+    const gtag = vi.fn()
+    vi.stubGlobal('window', { gtag })
+    fireGoogleAdsConversion(null)
+    expect(gtag).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('sem gtag na página não lança — apenas reagenda', () => {
+    // Formulário sem `AW-` configurado nunca injeta o snippet, então `window.gtag` não existe.
+    vi.stubGlobal('window', {})
+    expect(() => fireGoogleAdsConversion('AW-123/AbC', 0)).not.toThrow()
+    vi.unstubAllGlobals()
   })
 })

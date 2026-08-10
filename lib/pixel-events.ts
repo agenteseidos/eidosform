@@ -11,6 +11,7 @@ declare global {
     ttq?: { track: (event: string, params?: Record<string, unknown>) => void }
     __eidosCapturedFbqEvents?: string[]
     dataLayer?: unknown[]
+    gtag?: (...args: unknown[]) => void
   }
 }
 
@@ -123,6 +124,86 @@ function fireTtqEvent(name: string, params?: Record<string, unknown>, retries = 
     return
   }
   ttq.track(name, params)
+}
+
+/**
+ * Formato de um ID de conversão do Google Ads. Mesmo padrão que `app/f/[slug]/page.tsx` usa antes
+ * de interpolar o ID no script inline — só dígitos, sem aspa, sem `<`, sem `)`.
+ */
+const GOOGLE_ADS_ID_RE = /^AW-\d+$/
+
+/**
+ * Formato de um RÓTULO de conversão. O Google gera algo como `AbC-D_efGhIjk`: letras, dígitos,
+ * hífen e sublinhado.
+ *
+ * `{1,64}` de propósito — não existe mínimo documentado, e exigir 6+ caracteres transformaria um
+ * rótulo curto e legítimo em `null` silencioso, que é exatamente o defeito que este código veio
+ * consertar.
+ */
+const GOOGLE_ADS_LABEL_RE = /^[A-Za-z0-9_-]{1,64}$/
+
+/**
+ * Monta o `send_to` da conversão do Google Ads, ou `null` se a configuração não servir.
+ *
+ * ── POR QUE ISTO EXISTE ───────────────────────────────────────────────────────────────────────
+ * O campo "Rótulo de conversão" existe no construtor desde sempre, o cliente preenche, e NADA
+ * nunca disparou: não havia um único `gtag('event','conversion')` no projeto. A página injeta
+ * `gtag('config','AW-XXX')`, que registra uma visita — nunca uma conversão. Dado morto de ponta a
+ * ponta, com o `docs/audit-venda-conversao.md` afirmando que estava "✅ Completo".
+ *
+ * ── SEGURANÇA ─────────────────────────────────────────────────────────────────────────────────
+ * ⚠️ O rótulo é digitado pelo DONO e roda no navegador de TODO lead. Aqui ele viaja como ARGUMENTO
+ * de função (`gtag('event','conversion',{send_to})`) — é dado, não código-fonte, então não há
+ * como quebrar literal nem fechar `</script>`.
+ *
+ * 🛑 Se um dia alguém levar o rótulo para um `dangerouslySetInnerHTML` (o padrão que os 4 pixels
+ * usam em `page.tsx`), a regex vira OBRIGATÓRIA antes da interpolação — sem ela,
+ * `x'});alert(document.cookie);({'z':'` quebra o literal e executa. A CSP com nonce NÃO protege
+ * desse caso, porque o código roda dentro do mesmo script já autorizado.
+ *
+ * As regexes aqui são de CORREÇÃO, não de contenção: `send_to` malformado faz a conversão falhar
+ * calada no Google, que é o mesmo tipo de silêncio que se está consertando.
+ */
+export function buildGoogleAdsSendTo(
+  adsId: unknown,
+  label: unknown
+): string | null {
+  const id = String(adsId ?? '').trim()
+  const lbl = String(label ?? '').trim()
+  if (!id || !lbl) return null
+  if (!GOOGLE_ADS_ID_RE.test(id)) return null
+
+  // Tolerância deliberada: é comum colar do painel do Google o `send_to` inteiro
+  // (`AW-123/AbC-D_efG`) dentro do campo de rótulo. Aceitar isso evita transformar um erro
+  // compreensível de quem não é técnico num campo que não funciona e não diz por quê.
+  const soLabel = lbl.includes('/') ? lbl.slice(lbl.lastIndexOf('/') + 1) : lbl
+  if (!GOOGLE_ADS_LABEL_RE.test(soLabel)) return null
+
+  return `${id}/${soLabel}`
+}
+
+/**
+ * Dispara a conversão do Google Ads.
+ *
+ * O snippet injetado em `page.tsx` declara `function gtag(){dataLayer.push(arguments)}` — uma
+ * função de topo em script clássico, então `window.gtag` existe SINCRONAMENTE assim que o inline
+ * roda, e o corpo é fila pura. Chamar antes de `gtag/js` terminar de baixar é seguro: o comando
+ * fica enfileirado. E o `gtag('config',...)` do mesmo inline já está na frente na fila, então a
+ * conversão nunca chega antes do destino estar registrado.
+ *
+ * O retry cobre só o caso do `<Script strategy="afterInteractive">` ainda não ter executado —
+ * mesmo molde do `fbq` e do `ttq`, por consistência.
+ */
+export function fireGoogleAdsConversion(sendTo: string | null, retries = 10) {
+  if (!sendTo || typeof window === 'undefined') return
+  const { gtag } = window
+  if (!gtag) {
+    if (retries > 0) {
+      setTimeout(() => fireGoogleAdsConversion(sendTo, retries - 1), 300)
+    }
+    return
+  }
+  gtag('event', 'conversion', { send_to: sendTo })
 }
 
 function fireFbqEvent(event: PixelEventConfig, retries = 10) {

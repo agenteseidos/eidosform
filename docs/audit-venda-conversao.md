@@ -19,7 +19,7 @@ O EidosForm tem uma base sólida de features técnicas (pixels, webhooks, billin
 | Feature | Status | Detalhe |
 |---------|--------|---------|
 | Meta Pixel | ✅ Completo | Server-side init, client events, 18 eventos padrão |
-| Google Ads (gtag) | ✅ Completo | Conversão via `send_to` |
+| Google Ads (gtag) | ✅ Completo | `gtag('config')` na página + conversão via `send_to` no envio (ligada em 2026-08 — até então o rótulo era gravado e NUNCA disparava; esta linha dizia "Completo" e é provavelmente por isso que o defeito durou tanto) |
 | TikTok Pixel | ✅ Completo | ViewContent + SubmitForm |
 | Google Tag Manager | ✅ Completo | dataLayer push |
 | UTM Tracking | ✅ Completo | Captura + persistência (30 dias) + salva com resposta |

@@ -8,7 +8,7 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { sendLimitAlert } from '@/lib/resend'
 import { logError } from '@/lib/logger'
-import { getEffectivePlan, planAtLeast } from '@/lib/plans'
+import { getEffectivePlan } from '@/lib/plans'
 import {
   getPlanLimits,
   PLAN_LIMITS,
@@ -37,9 +37,22 @@ export async function sendNearLimitAlert(
   limit: number,
   plan: PlanName
 ): Promise<void> {
-  // Gate: alerta de 80% é benefício Plus+ (decisão 0.2b, 2026-07-28). Para
-  // free/starter a RPC consome a flag mas nenhum email é enviado.
-  if (!planAtLeast(plan, 'plus')) return
+  // ── O ALERTA VALE PARA TODOS OS PLANOS (alinhamento Free, item 6) ─────────────────────────
+  //
+  // Era restrito a Plus+. Duas razões para abrir:
+  //
+  // 1. QUEM MAIS PRECISA É QUEM MENOS TEM. O Free tem 100 respostas/mês — bate no teto muito mais
+  //    rápido que um Plus com 5.000. E hoje ele descobre pelo pior caminho possível: um cliente
+  //    reclamando que o formulário deu erro.
+  // 2. É O E-MAIL DE VENDA MAIS BEM CRONOMETRADO QUE EXISTE. Chega exatamente quando a pessoa
+  //    está tendo resultado e quase esbarrando no limite. Não é custo, é o gatilho de upgrade.
+  //
+  // 🐞 E fecha um bug feio junto: a RPC marca `limit_alert_sent = true` ao cruzar os 80%
+  // INDEPENDENTEMENTE de o e-mail ter saído. Com o gate aqui, free/starter queimavam a marca sem
+  // receber nada — e quem fizesse upgrade no meio do período também perdia o aviso, porque a marca
+  // já estava consumida. Sem gate, a marca e o envio voltam a andar juntos.
+  //
+  // A marca é zerada na virada do período pela própria RPC, então o aviso volta todo mês.
 
   const supabase = createServiceRoleClient()
   const { data: userData } = await supabase

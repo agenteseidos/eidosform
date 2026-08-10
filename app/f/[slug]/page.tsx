@@ -5,6 +5,7 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { FormPlayer } from '@/components/form-player/form-player'
 import { Form } from '@/lib/database.types'
 import { getEffectivePlan } from '@/lib/plans'
+import { isOverResponseQuota } from '@/lib/response-quota'
 import { PLANS, type PlanName } from '@/lib/plan-definitions'
 import { filterQuestionsByPlan } from '@/lib/questions'
 
@@ -18,19 +19,35 @@ interface FormPageProps {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 async function fetchOwnerPlan(supabase: ReturnType<typeof createServiceRoleClient>, formId: string): Promise<string> {
+  return (await fetchOwnerState(supabase, formId)).plan
+}
+
+/**
+ * Plano efetivo do dono + se a conta está sem cota AGORA (alinhamento Free, item 3).
+ *
+ * As duas coisas saem da mesma linha de `profiles`, então vão juntas para não custar uma consulta
+ * a mais no caminho quente de abrir formulário.
+ */
+async function fetchOwnerState(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  formId: string
+): Promise<{ plan: string; semCota: boolean }> {
   const { data: form } = await supabase
     .from('forms')
     .select('user_id')
     .eq('id', formId)
     .single()
-  if (!form?.user_id) return 'free'
+  if (!form?.user_id) return { plan: 'free', semCota: false }
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, responses_used, responses_limit, response_period_end_at')
     .eq('id', form.user_id)
     .single()
-  // Considera expiração: plano pago vencido conta como free (P1-3).
-  return getEffectivePlan(profile)
+  return {
+    // Considera expiração: plano pago vencido conta como free (P1-3).
+    plan: getEffectivePlan(profile),
+    semCota: isOverResponseQuota(profile),
+  }
 }
 
 async function fetchPublishedForm(supabase: ReturnType<typeof createServiceRoleClient>, slugOrId: string) {
@@ -173,21 +190,36 @@ export default async function FormPage({ params }: FormPageProps) {
   // so we pass the info to the client component for enforcement
   const canEmbed = ownerPlan === 'plus' || ownerPlan === 'professional'
 
-  // Paused form (downgrade) — show paused message instead of form
-  if ((form as { paused?: boolean }).paused) {
+  // ── FORMULÁRIO INDISPONÍVEL — UMA mensagem para os TRÊS casos ────────────────────────────
+  //
+  // Casos: plano do dono caiu (formulário pausado), formulário com mais perguntas que o plano
+  // permite (também pausado), e conta sem cota de respostas no mês.
+  //
+  // O texto NUNCA revela que o dono não pagou. Antes dizia "O criador do formulário precisa
+  // atualizar seu plano para reativá-lo" — quem lia isso era o CLIENTE DO CLIENTE. A paciente
+  // descobria que o dentista dela estava com a conta atrasada. Decisão do Sidney: isso não pode
+  // acontecer em hipótese nenhuma.
+  //
+  // Sem cota entra AQUI, ao abrir, e não como erro no fim: antes o lead preenchia 12 perguntas,
+  // clicava em enviar e levava um erro vermelho citando o plano. Agora ele não perde tempo.
+  //
+  // ⚠️ E o formulário NÃO é pausado por cota — ver `isOverResponseQuota`: pausar criaria um
+  // travamento permanente, porque quem vira o mês é a chegada de uma resposta.
+  const semCotaAgora = (await fetchOwnerState(supabase, form.id)).semCota
+  if ((form as { paused?: boolean }).paused || semCotaAgora) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-b from-slate-50 to-white">
         <div className="text-center max-w-md">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-100 flex items-center justify-center">
-            <svg className="w-10 h-10 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-slate-100 flex items-center justify-center">
+            <svg className="w-10 h-10 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 mb-3">
-            Formulário pausado
+            Formulário indisponível
           </h1>
           <p className="text-slate-600">
-            Este formulário está temporariamente indisponível. O criador do formulário precisa atualizar seu plano para reativá-lo.
+            Este formulário não está aceitando respostas no momento.
           </p>
         </div>
       </div>

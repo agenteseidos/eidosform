@@ -560,7 +560,14 @@ export async function POST(req: NextRequest) {
     if (!limitCheck.allowed) {
       return NextResponse.json(
         {
-          error: 'Limite de respostas atingido para o plano atual',
+          // Texto NEUTRO (alinhamento Free, itens 3 e 8): quem lê isto é o LEAD, não o dono.
+          // Antes dizia "Limite de respostas atingido para o plano atual" — a paciente descobria
+          // que o dentista dela estava com a conta atrasada. O caminho normal nem chega aqui (a
+          // página já mostra a tela de indisponível ao abrir); isto cobre envio direto e a corrida
+          // de quem estava com o formulário aberto quando a cota virou.
+          error: 'Este formulário não está aceitando respostas no momento.',
+          // `plan`/`limit` continuam no corpo para o painel e a telemetria — o player mostra só
+          // o `error`, e nenhum dos dois aparece na tela do lead.
           plan: limitCheck.plan,
           limit: limitCheck.limit,
           response_id: responseId,

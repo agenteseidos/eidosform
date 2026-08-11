@@ -6,9 +6,12 @@ An open-source TypeForm clone built with Next.js 16, Supabase, and Tailwind CSS.
 
 ## 🛑 REGRA Nº 1 — O REPOSITÓRIO NÃO DESCREVE O BANCO
 
-**Não existe `supabase_migrations.schema_migrations` neste projeto.** Migrations foram e são aplicadas
-manualmente, sem registro do que rodou. Consequência comprovada: **os arquivos `.sql` divergem do banco
-real.**
+**A tabela `supabase_migrations.schema_migrations` EXISTE desde 11/08/2026** (criada na sessão
+D-03, com RLS e revoke) — mas cobre SOMENTE o que foi registrado dali em diante. Todo o histórico
+ANTERIOR segue sem registro: migrations foram aplicadas manualmente por meses, sem rastro.
+Consequência comprovada: **os arquivos `.sql` divergem do banco real.** ⚠️ REGRA OPERACIONAL: toda
+mudança pelo SQL Editor leva o `insert` de registro NA MESMA execução (receita na ficha D-03 de
+`docs/demandas-futuras.md`) — mudança sem registro recria o problema que esta regra existe para matar.
 
 **NUNCA afirme nada sobre o estado do banco lendo `supabase/migrations/*.sql`, `schema.sql` ou
 `schema_eidosform.sql`. SEMPRE consulte o catálogo** (`pg_proc`, `pg_policies`, `pg_indexes`,

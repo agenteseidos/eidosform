@@ -76,20 +76,33 @@ _Detalhe completo: `plano-remediacao.md` §1B._
 
 ---
 
-## D-03 · Rastreamento de migrations (`supabase_migrations`)
+## D-03 · ✅ FEITO — Rastreamento de migrations (`supabase_migrations`)
 
 **Origem:** achado do Lote 0 da auditoria; cobrou o preço 4 vezes no mesmo dia.
+**Fechamento:** 11/08/2026 — o Sidney criou `supabase_migrations.schema_migrations` pelo SQL
+Editor (com RLS habilitado + revoke de anon/authenticated) e o `select` de verificação devolveu
+tabela vazia, como esperado.
 
-**O problema.** Não existe registro de quais migrations rodaram. O repositório **não descreve o
-banco** — e isso já causou: um achado de auditoria falso (migration que "abortava" e não abortou),
-um `REVOKE` que está no arquivo e não no banco, uma assinatura de função errada que quebrou um
-comando, e o achado mais grave de todos (grants amplos ao `anon`), que é invisível no código.
+**A regra operacional daqui em diante:** toda mudança de banco pelo SQL Editor leva DUAS
+instruções na MESMA execução — a mudança e o `insert` de registro:
 
-**O que fazer:** adotar o rastreamento do Supabase CLI, ou uma tabela própria de controle, e uma
-rotina que compare o esperado com o real. Enquanto não existir, toda afirmação sobre o banco tem que
-sair de consulta ao catálogo.
+```sql
+insert into supabase_migrations.schema_migrations (version, name, statements)
+values ('AAAAMMDD_nome', 'o que esta mudança faz', array['SQL aplicado;']);
+```
 
-_Regra ativa no `CLAUDE.md`, seção "🛑 REGRA Nº 1"._
+**Decidido NÃO fazer backfill:** os arquivos de `supabase/migrations/` divergem do banco real
+(REGRA Nº 1) — registrar que rodaram institucionalizaria a mentira. O histórico anterior a
+11/08/2026 permanece "desconhecido, consultar o catálogo"; o rastreamento cobre do primeiro
+registro em diante.
+
+### Situação anterior (histórico)
+
+Não existia registro de quais migrations rodaram. Isso causou: um achado de auditoria falso,
+um `REVOKE` que está no arquivo e não no banco, uma assinatura de função errada, e o achado mais
+grave de todos (grants amplos ao `anon`), invisível no código.
+
+_Regra ativa no `CLAUDE.md`, seção "🛑 REGRA Nº 1" — atualizada com a existência da tabela._
 
 ---
 

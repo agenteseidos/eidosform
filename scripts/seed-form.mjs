@@ -57,9 +57,22 @@ if (existing) {
     console.error(`JÁ EXISTE form slug="${spec.slug}" (id ${existing.id}, status ${existing.status}). Use --replace p/ substituir.`)
     process.exit(1)
   }
-  const { count } = await supabase
+  // FALHA FECHADO: o `error` desta contagem era descartado. Numa queda transitória do banco
+  // (rede, RLS, timeout) o `count` volta nulo, o `if (count && ...)` não segurava nada e o
+  // --replace seguia direto pro delete abaixo — apagando um formulário CHEIO de respostas de
+  // leads, que não têm backup nem como voltar. Não conseguir LER a contagem nunca é prova de
+  // que o formulário está vazio: sem número confiável, o script aborta e não apaga nada.
+  const { count, error: countErr } = await supabase
     .from('responses').select('id', { count: 'exact', head: true }).eq('form_id', existing.id)
-  if (count && count > 0) {
+  if (countErr || typeof count !== 'number') {
+    console.error(
+      `NÃO consegui contar as respostas do form "${spec.slug}" (id ${existing.id}): ` +
+      `${countErr?.message || 'a consulta não devolveu contagem'}. ` +
+      `Abortando ANTES de apagar — pode haver respostas de leads aí dentro. Rode de novo quando o banco responder.`
+    )
+    process.exit(1)
+  }
+  if (count > 0) {
     console.error(`Form "${spec.slug}" tem ${count} resposta(s) — NÃO vou apagar (perda de dados). Aborte.`)
     process.exit(1)
   }

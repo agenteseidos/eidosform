@@ -226,6 +226,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // GUARDA ANTI-MISTURA UNIVERSAL (varredura 11/08/2026 — achado da fronteira, ALTA nos dois
+  // passes). A checagem de identidade vivia só dentro do `if (doTelefone.length > 1)` — ou seja,
+  // NÃO rodava no caso mais comum, uma submissão única. Quem informasse no chat o e-mail de um
+  // cliente pagante (sabendo só o e-mail) recebia o cruzamento do USO da própria submissão com a
+  // CONTA do outro: plano anual vigente → "manter_plano" → equipe acionada para migrar de graça
+  // quem não pagou. O mesmo valia com várias submissões todas do MESMO e-mail ≠ chat.
+  //
+  // Regra agora: submissão escolhida tem e-mail e ele DIVERGE do e-mail confirmado no chat →
+  // identidades diferentes → humano decide (requer_analise), sem expor plano nem uso. O caso
+  // legítimo de "corrigi meu e-mail" passa pelo mesmo funil — a equipe confere identidade antes
+  // de executar, que é exatamente o contrato desta rota. Submissão SEM e-mail segue como antes
+  // (não há evidência de divergência).
+  {
+    const emailDaSubmissao = emailDoForm(match)
+    if (emailDaSubmissao && emailDaSubmissao !== email) {
+      console.warn('[migracao] e-mail da submissão diverge do confirmado no chat → requer_analise (anti-mistura)')
+      return NextResponse.json(
+        { ok: true, motivo: 'requer_analise', flags: ['identidade_divergente'] },
+        { status: 200, headers: NO_STORE }
+      )
+    }
+  }
+
   const a = answersDe(match)
   const jaTemConta = String(a[q.jaConta] ?? '').trim().toLowerCase() === 'sim'
 

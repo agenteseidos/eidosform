@@ -1,5 +1,45 @@
--- EidosForm Database Schema
--- Based on OpenForm — adapted for EidosForm SaaS
+-- ============================================================================
+-- ⛔ ARQUIVO APOSENTADO — NÃO EXECUTE ESTE ARQUIVO. NUNCA.
+-- ============================================================================
+--
+-- Este é um RETRATO HISTÓRICO do schema. Ele NÃO descreve o banco de dados real
+-- do EidosForm e sabidamente DIVERGE dele. Ver a REGRA Nº 1 do CLAUDE.md
+-- ("O REPOSITÓRIO NÃO DESCREVE O BANCO"): as migrations sempre foram aplicadas
+-- à mão, sem registro do que rodou, então o estado verdadeiro só existe no
+-- catálogo do Postgres (pg_policies, pg_proc, pg_indexes, pg_views,
+-- information_schema.role_table_grants), consultado pelo SQL Editor do Supabase.
+--
+-- POR QUE EXECUTAR ISTO MACHUCA QUEM USA O PRODUTO: mais abaixo este arquivo
+-- ainda cria a policy "Anyone can view published forms" (e a de INSERT anônimo
+-- em responses). Essa permissão foi REMOVIDA da produção em 29/07/2026 pela
+-- migration supabase/migrations/20260729_02_close_legacy_anon_rls.sql, porque
+-- deixava QUALQUER visitante, sem login, ler a linha inteira de um formulário
+-- publicado de qualquer cliente — inclusive webhook_url, notify_email, telefone
+-- de notificação e google_sheets_id — e, somada aos GRANTs amplos ao papel anon,
+-- abria caminho para ALTERAR e APAGAR formulário publicado alheio. Rodar este
+-- arquivo numa instalação REABRE esse buraco: o dono do formulário perde os
+-- dados de contato dos leads dele para qualquer um com o link.
+--
+-- Pior aqui do que no irmão schema.sql: cada bloco engole o erro com
+-- "EXCEPTION WHEN duplicate_object THEN NULL", então a execução NÃO reclama —
+-- ela recria o que der e segue em silêncio.
+--
+-- As policies antigas ficam aqui de propósito, como registro do que já existiu.
+-- NÃO "conserte" este SQL para bater com produção: não há como saber o que está
+-- em produção sem ler o catálogo, e fingir que sabe é exatamente o erro que a
+-- Regra Nº 1 existe para impedir.
+--
+-- Precisa subir um ambiente novo? Peça ao dono do projeto o dump do banco vivo.
+-- ============================================================================
+
+-- Trava: aborta a execução inteira antes de qualquer DDL, para o caso de alguém
+-- colar este arquivo no SQL Editor sem ler o aviso acima. Fica FORA de qualquer
+-- bloco com EXCEPTION para que nada engula a exceção.
+DO $$
+BEGIN
+  RAISE EXCEPTION 'ARQUIVO APOSENTADO: supabase/schema_eidosform.sql nao deve ser executado'
+    USING HINT = 'Retrato historico que diverge do banco real e recria a policy anonima "Anyone can view published forms". Ver REGRA No 1 do CLAUDE.md e a migration 20260729_02_close_legacy_anon_rls.sql.';
+END $$;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

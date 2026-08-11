@@ -49,12 +49,16 @@ export function validateFieldValue(
       return validateUrl(value)
 
     case 'rating': {
-      const min = question.minValue ?? 1
-      const max = question.maxValue ?? 5
-      if (min >= max) {
-        return { valid: false, error: 'Configuração inválida: mínimo deve ser menor que máximo' }
-      }
-      return validateRange(value, min, max, 'Avaliação')
+      // VALIDA O QUE O PLAYER PRODUZ, não o que a config sonha (suspenso E06-L3, triado no
+      // D-07 em 11/08/2026). O player renderiza estrelas de 1 até maxValue e IGNORA minValue
+      // (question-renderer, starValue = index + 1). A versão antiga rejeitava min >= max como
+      // "configuração inválida" NO ENVIO: o dono errava um número no editor e todo lead
+      // preenchia o formulário inteiro para morrer num 422 sem saída no fim — a mesma família
+      // do html_block obrigatório (lote 5). Configuração ruim se corrige no builder; no envio,
+      // vale o intervalo que o lead consegue de fato clicar: 1..max.
+      const maxBruto = Number(question.maxValue)
+      const max = Number.isFinite(maxBruto) && maxBruto >= 1 ? maxBruto : 5
+      return validateRange(value, 1, max, 'Avaliação')
     }
 
     case 'opinion_scale': {
@@ -302,8 +306,11 @@ function validateYesNo(value: unknown): FieldValidationResult {
 }
 
 function validateDropdown(value: unknown, options: string[], allowOther: boolean): FieldValidationResult {
-  if (options.length < 2) {
-    return { valid: false, error: 'Dropdown deve ter ao menos 2 opções configuradas' }
+  // 1 opção é legítimo (ex.: "aceito os termos") — e o builder PERMITE chegar a 1, então
+  // rejeitar aqui derrubava todo envio com 422 permanente (suspenso E06-L3, triado no D-07).
+  // Só lista VAZIA é config inválida; a resposta continua conferida contra as opções abaixo.
+  if (options.length < 1) {
+    return { valid: false, error: 'Dropdown sem opções configuradas' }
   }
   if (typeof value !== 'string') {
     return { valid: false, error: 'Seleção deve ser texto' }
@@ -322,8 +329,9 @@ function validateDropdown(value: unknown, options: string[], allowOther: boolean
 }
 
 function validateCheckboxes(value: unknown, options: string[], allowOther: boolean): FieldValidationResult {
-  if (options.length < 2) {
-    return { valid: false, error: 'Checkboxes deve ter ao menos 2 opções configuradas' }
+  // Mesmo caso do dropdown acima: 1 checkbox é uso real; só vazio é inválido.
+  if (options.length < 1) {
+    return { valid: false, error: 'Checkboxes sem opções configuradas' }
   }
   if (!Array.isArray(value)) {
     return { valid: false, error: 'Seleções devem ser uma lista' }

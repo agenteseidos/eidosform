@@ -55,8 +55,14 @@ describe('number / ranges', () => {
     expect(validateFieldValue(rating, 6).valid).toBe(false)
     expect(validateFieldValue(rating, 0).valid).toBe(false)
   })
-  it('rating com config invertida (min >= max) é rejeitado', () => {
-    expect(validateFieldValue(q('rating', { minValue: 5, maxValue: 1 }), 3).valid).toBe(false)
+  it('rating com config invertida (min >= max) NÃO pune o lead — vale 1..max do player', () => {
+    // Suspenso E06-L3 (triado no D-07): a rejeição por config invertida acontecia NO ENVIO —
+    // o dono errava um número e todo lead morria num 422 no fim do formulário. O player só
+    // produz 1..max (ignora minValue), então é isso que o envio aceita.
+    expect(validateFieldValue(q('rating', { minValue: 5, maxValue: 1 }), 3).valid).toBe(false) // 3 > max(1)
+    expect(validateFieldValue(q('rating', { minValue: 5, maxValue: 1 }), 1).valid).toBe(true)  // dentro de 1..1
+    expect(validateFieldValue(q('rating', { minValue: 3, maxValue: 5 }), 1).valid).toBe(true)  // player permite 1
+    expect(validateFieldValue(q('rating', { minValue: 3, maxValue: 5 }), 6).valid).toBe(false)
   })
   it('nps é fixo 0–10', () => {
     expect(validateFieldValue(q('nps'), 0).valid).toBe(true)
@@ -322,5 +328,23 @@ describe('validateCalendly — string legada E objeto novo (P0-2 auditoria Codex
     expect(validateFieldValue(cal(), { invitee_uri: 'https://api.calendly.com/i/1' }).valid).toBe(false)
     expect(validateFieldValue(cal(), 42).valid).toBe(false)
     expect(validateFieldValue(cal(), ['https://api.calendly.com/e/1']).valid).toBe(false)
+  })
+})
+
+describe('suspenso E06-L3 (triado no D-07): config permitida pelo builder não pode virar 422 no envio', () => {
+  it('dropdown com UMA opção aceita a resposta — "aceito os termos" é uso real', () => {
+    const dd = q('dropdown', { options: ['Aceito os termos'] })
+    expect(validateFieldValue(dd, 'Aceito os termos').valid).toBe(true)
+    expect(validateFieldValue(dd, 'outra coisa').valid).toBe(false) // resposta segue conferida
+  })
+
+  it('checkboxes com UMA opção aceita a resposta', () => {
+    const cb = q('checkboxes', { options: ['Li e concordo'] })
+    expect(validateFieldValue(cb, ['Li e concordo']).valid).toBe(true)
+  })
+
+  it('lista VAZIA continua sendo config inválida (o caso que era de verdade)', () => {
+    expect(validateFieldValue(q('dropdown', { options: [] }), 'x').valid).toBe(false)
+    expect(validateFieldValue(q('checkboxes', { options: [] }), ['x']).valid).toBe(false)
   })
 })

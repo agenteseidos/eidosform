@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
-import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
+import { getSubscription, getCustomerSubscriptions, hasConfirmedPaymentForSubscription } from '@/lib/asaas'
 import { handleUpgrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { sendBillingOpsAlert } from '@/lib/resend'
-import { log, logError } from '@/lib/logger'
+import { log, logError, logWarn } from '@/lib/logger'
 
 /**
  * GET /api/checkout/status
@@ -49,7 +49,7 @@ export async function GET() {
       .single(),
     supabase
       .from('billing_checkouts')
-      .select('id, status, last_event, updated_at, asaas_subscription_id, asaas_customer_id, plan, cycle, payment_method')
+      .select('id, status, last_event, created_at, updated_at, asaas_subscription_id, asaas_customer_id, plan, cycle, payment_method')
       .eq('profile_id', user.id)
       // Ignora linhas internas de recuperação do Caminho D (status='recovering'): elas
       // existem numa janela antes do PUT no Asaas e não devem guiar o polling. (P2 round 4.)
@@ -149,6 +149,36 @@ export async function GET() {
       }
     } catch (e) {
       logError('[checkout/status] GUARD preço-cheio: falha ao ler sub — não ativa neste tick (conservador)', e, { subscriptionId })
+      return false
+    }
+
+    // PROVA DE PAGAMENTO (E03-S0-001, fechado em 11/08/2026 — o último dos três lugares).
+    // No Asaas o status da ASSINATURA é independente do status da COBRANÇA: uma sub pode estar
+    // ACTIVE com a primeira cobrança ainda pendente ou recusada. Este polling tratava ACTIVE
+    // como "pagou" e entregava o plano — o cron irmão (reconcile-checkouts) e o expire-plans já
+    // exigiam prova de dinheiro desde o lote 1; o polling era a porta que faltava.
+    //
+    // O corte é a data do checkout (menos 1 dia de tolerância de relógio, como no reconcile):
+    // pagamento de época nenhuma serve — só o que nasceu DESTE checkout.
+    //
+    // `!confirmed` NÃO é erro: é o estado normal "aguardando a cobrança compensar" — devolve
+    // false e o overlay continua pollando, que é exatamente a semântica desta rota. Consulta
+    // falha → false também (conservador; nunca decidir dinheiro sem dado).
+    try {
+      const corteISO = checkout?.created_at
+        ? new Date(new Date(checkout.created_at as string).getTime() - 86_400_000).toISOString()
+        : undefined
+      const pagamento = await hasConfirmedPaymentForSubscription(subscriptionId, corteISO)
+      if (!pagamento.ok) {
+        logWarn('[checkout/status] consulta de pagamento falhou — não ativa neste tick (conservador)', { subscriptionId })
+        return false
+      }
+      if (!pagamento.confirmed) {
+        log('[checkout/status] sub ACTIVE mas cobrança ainda não confirmada — segue pending', { subscriptionId })
+        return false
+      }
+    } catch (e) {
+      logError('[checkout/status] prova de pagamento: exceção — não ativa neste tick', e, { subscriptionId })
       return false
     }
 

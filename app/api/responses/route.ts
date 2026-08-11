@@ -23,6 +23,7 @@ import { extractIdentity, identitiesMatch } from '@/lib/identity-match'
 import { sanitizeUrlParams } from '@/lib/url-params'
 import { buildNotificationModel } from '@/lib/notification-model'
 import { resolveEmailRecipients, sendNewResponseEmails } from '@/lib/notification-email'
+import { enfileirarReenvio } from '@/lib/email-retry-queue'
 import { filterQuestionsByPlan } from '@/lib/questions'
 
 // Teto do payload: 50 KB (P2-3/P3-2 da auditoria de maio: o comentário dizia 1MB
@@ -684,12 +685,22 @@ export async function POST(req: NextRequest) {
         })
         postSubmitTasks.push(
           sendNewResponseEmails({ model: emailModel, recipients: emailRecipients })
-            .then((outcomes) => {
+            .then(async (outcomes) => {
               for (const outcome of outcomes) {
                 if (outcome.error) {
                   logError('Lead email rejected', undefined, {
                     formId: form_id, responseId, ownerPlan, role: outcome.role, error: outcome.error,
                   })
+                  // D-05: falha do transporte deixa de ser perda definitiva. Enfileira REFERÊNCIA
+                  // (form/resposta/papel) — o e-mail é remontado do banco no reenvio, então não
+                  // há dado do lead duplicado aqui. Nunca bloqueia o pós-submit.
+                  await enfileirarReenvio({
+                    kind: 'new-response',
+                    formId: form_id as string,
+                    responseId,
+                    role: outcome.role as 'owner' | 'form_email',
+                    erro: outcome.error,
+                  }).catch(() => {})
                 }
               }
             })

@@ -130,7 +130,30 @@ um `revert` acidental de qualquer uma delas não seria detectado.
 
 ---
 
-## D-05 · Fila de reenvio para e-mail (o "outbox" que ficou de fora do lote 3)
+## D-05 · ✅ FEITO — Fila de reenvio para e-mail (o "outbox" que ficou de fora do lote 3)
+
+**Fechamento:** 11/08/2026. O que destravou foi a mudança de desenho decidida pelo Sidney: a
+fila guarda **REFERÊNCIA** (form_id, response_id, papel do destinatário), **nunca conteúdo** — o
+e-mail é remontado do banco a cada tentativa. Isso responde a objeção que adiou a demanda no lote
+3 (duplicar dado pessoal em repouso) e ainda compra três garantias de graça, cada uma com teste:
+resposta apagada → reenvio pulado (exclusão respeitada sem rotina de expurgo); e-mail de
+notificação trocado → reenvio vai para o endereço novo; destinatário desligado → reenvio pulado.
+
+**Janela: 48h** (decisão do Sidney). "Chegou um lead" é informação de hora, não de semana, e o
+lead nunca se perde — está no painel. Esgotada a janela, o item vira `dead` e o dono é avisado
+**por WhatsApp**, que é o canal que funciona quando o e-mail não funciona. A mensagem leva só
+referência, sem dado do lead.
+
+Peças: `supabase/migrations/20260811_email_retry_queue.sql` · `lib/email-retry-queue.ts` ·
+`app/api/cron/email-retry/route.ts` · gancho em `app/api/responses/route.ts`. 16 testes;
+sabotagem provada nas três garantias — e ela pegou **dois testes cegos meus** antes do commit
+(fixtures em que outra guarda satisfazia a asserção) e **um erro de desenho**: os degraus de
+espera somavam 44,6h contra uma janela de 48h, então os itens morriam por esgotar tentativas e a
+janela virava enfeite.
+
+⏳ **Falta rodar a migration** (SQL Editor, D-03) e **ligar o timer** — receita em
+`docs/D-05-ativacao.md`. Enquanto não rodar, tudo é no-op silencioso: o código tolera a ausência
+da tabela, igual ao `email_deliveries` do lote 3.
 
 **Origem:** lote 3 da remediação (item L3-4). O plano listava
 `lib/resend.ts:145 + lib/notification-email.ts:110 — receber webhook delivered/bounced; **outbox**`.

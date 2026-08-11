@@ -317,7 +317,36 @@ function createWacliTransport({
       const hasStored = Object.hasOwn(data, 'messages_stored') || Object.hasOwn(result, 'messages_stored');
       const success = hasStored ? stored > 0 : result.success === true;
       const messageId = data.id ?? result.id ?? result.messageId ?? null;
-      if (success && messageId) {
+      if (success) {
+        // ENVIO ACEITO SEM IDENTIFICADOR — sucesso, nunca falha reenviável.
+        //
+        // Antes o retorno de sucesso exigia `success && messageId`. Quando o
+        // wacli ACEITAVA o envio mas devolvia o JSON sem `id` (o campo é
+        // `omitempty`: some do JSON quando vem vazio; e o ramo do
+        // `messages_stored` nem promete `id`), esta função devolvia FALHA
+        // IN_FLIGHT. A mensagem JÁ tinha saído — e a fila de reenvio, que trata
+        // IN_FLIGHT como "tenta de novo", pedia o mesmo envio até esgotar as 24
+        // tentativas. Como o wacli não aceita um Id nosso (diferente do wuzapi,
+        // que manda `Id` derivado da chave de idempotência e faz o aparelho do
+        // destinatário deduplicar), cada tentativa nascia com um id novo: o dono
+        // do formulário recebia a MESMA notificação de lead até 25 vezes, ao
+        // longo de ~20h, e ainda levava e-mail de carta morta dizendo que o lead
+        // não tinha sido avisado.
+        //
+        // Sucesso (e não falha terminal) porque a aceitação do wacli é a única
+        // evidência de entrega que temos: tratar como falha calaria a
+        // notificação e acionaria o alarme de falhas consecutivas à toa.
+        // As camadas de cima já toleram sucesso sem id (idempotency.js e
+        // server.js sintetizam um `vps-...`), então só o transporte destoava.
+        //
+        // Preço aceito: sem id real não dá para casar um retry receipt com este
+        // envio (`rememberSend` fica de fora de propósito — id sintético ali só
+        // sujaria o cache). O id `wacli-sem-id-*` vai para o log e para a chave
+        // de idempotência justamente para o caso ficar visível em auditoria.
+        if (!messageId) {
+          log('[send:wacli] aceito SEM id de mensagem — entregue, porém sem rastreio (nao reenviar)');
+          return { success: true, messageId: `wacli-sem-id-${Date.now()}`, error: null, errorClass: null };
+        }
         rememberSend(messageId, target, cleanMessage);
         return { success: true, messageId, error: null, errorClass: null };
       }

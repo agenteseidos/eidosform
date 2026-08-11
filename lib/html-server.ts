@@ -145,10 +145,15 @@ function stripTagsOnce(input: string, opts?: { allowIframe?: boolean; allowSafeS
 
       let attrValue = attrMatch[0].trim()
 
-      // Sanitize href
+      // Sanitize href — nas DUAS formas de aspas (E14-S1-002, fechado na triagem do D-07).
+      // O regex de atributos aceita "..." E '...', mas esta checagem só olhava aspas duplas:
+      // href='javascript:alert(1)' passava INTACTO até o dangerouslySetInnerHTML do player
+      // público — XSS armazenado, sobrevivente da saga do sanitizador (que atacou outra camada).
       if (attrName === 'href') {
-        const hrefMatch = attrValue.match(/="([^"]*)"/)
-        if (hrefMatch && !isSafeUrl(hrefMatch[1])) {
+        const hrefMatch = attrValue.match(/=(?:"([^"]*)"|'([^']*)')/)
+        const hrefValor = hrefMatch ? (hrefMatch[1] ?? hrefMatch[2] ?? '') : ''
+        if (!hrefMatch || !isSafeUrl(hrefValor)) {
+          // Sem match = forma que não entendemos → neutraliza (fail closed), nunca deixa passar.
           attrValue = ' href="#"'
         }
       }

@@ -92,3 +92,34 @@ describe('sanitizador de HTML — idempotência', () => {
     expect(saida).not.toContain('onerror')
   })
 })
+
+/**
+ * E14-S1-002 (fechado na triagem do D-07, 11/08/2026): o regex de atributos aceita aspas
+ * simples E duplas, mas a checagem do href só olhava as duplas — href='javascript:...' passava
+ * intacto até o dangerouslySetInnerHTML do player público. XSS armazenado que sobreviveu à saga
+ * do sanitizador porque mora em OUTRA camada (atributo, não estrutura de tag).
+ */
+describe('href com aspas SIMPLES não escapa do isSafeUrl', () => {
+  it('javascript: em aspas simples é neutralizado', () => {
+    const out = sanitizeEmbedHtml(`<a href='javascript:alert(1)'>clique</a>`)
+    expect(out).not.toContain('javascript:')
+    expect(out).toContain('href="#"')
+  })
+
+  it('javascript: em aspas duplas continua neutralizado (o caso que já funcionava)', () => {
+    const out = sanitizeEmbedHtml(`<a href="javascript:alert(1)">clique</a>`)
+    expect(out).not.toContain('javascript:')
+  })
+
+  it('URL legítima em aspas simples continua passando', () => {
+    const out = sanitizeEmbedHtml(`<a href='https://eidosform.com.br'>site</a>`)
+    expect(out).toContain('https://eidosform.com.br')
+  })
+
+  it('data: e vbscript: em aspas simples também caem', () => {
+    for (const ruim of [`data:text/html,<script>1</script>`, `vbscript:x`]) {
+      const out = sanitizeEmbedHtml(`<a href='${ruim}'>x</a>`)
+      expect(out).not.toContain(ruim.slice(0, 8))
+    }
+  })
+})

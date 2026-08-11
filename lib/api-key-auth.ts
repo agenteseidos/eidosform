@@ -4,6 +4,7 @@
 import { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
+import { createHmac } from 'node:crypto'
 import { getEffectivePlan } from '@/lib/plans'
 import { PLANS } from '@/lib/plan-definitions'
 
@@ -74,7 +75,17 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
   }
 
   // Rate limit check (100 req/min per API key)
-  const limit = await checkRateLimitAsync(apiKey)
+  //
+  // A chave é HMAC da API key, nunca a key CRUA (E01-S1-002, fechado na triagem do D-07).
+  // A tabela de rate limit persiste a chave como texto legível: usar a API key direto a
+  // reintroduzia em claro no banco — o mesmo segredo que o resto do arquivo só trata hasheado.
+  // Mesma técnica do D8/D11: HMAC com segredo do servidor, porque o espaço de busca de uma key
+  // vazada em backup é pequeno demais para hash puro.
+  const apiKeyRef = createHmac('sha256', process.env.INTERNAL_API_SECRET ?? 'fallback')
+    .update(`apikey:${apiKey}`)
+    .digest('hex')
+    .slice(0, 32)
+  const limit = await checkRateLimitAsync(`apikey:${apiKeyRef}`)
   if (!limit.allowed) {
     return {
       ok: false,

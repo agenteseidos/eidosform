@@ -5,6 +5,7 @@
 
 import { escapeHtml } from '@/lib/html'
 import { logWarn, logError } from '@/lib/logger'
+import { notifyBillingOpsWhatsApp } from '@/lib/billing-ops-whatsapp'
 import { createHash } from 'crypto'
 
 // Lidas por chamada (não no import): além de permitir teste sem recarregar o
@@ -95,6 +96,14 @@ export async function sendBillingOpsAlert(params: {
     <table style="border-collapse:collapse;border:1px solid #eee">${rows}</table>
     <p style="color:#888;font-size:12px">EidosForm · alerta automático do webhook Asaas</p>
   `
+  // Espelho no WhatsApp do dono (decisão Sidney 11/08/2026): o e-mail continua sendo o canal
+  // de registro; o WhatsApp é o que ele lê na hora. Melhor esforço — nunca segura o e-mail.
+  const linhasTexto = Object.entries(params.lines)
+    .map(([k, v]) => `${k}: ${v ?? '—'}`)
+    .join('\n')
+    .slice(0, 800)
+  await notifyBillingOpsWhatsApp(`⚠️ EidosForm ALERTA\n${params.subject}\n\n${linhasTexto}`).catch(() => {})
+
   if (!ADMIN_ALERT_EMAIL) {
     logError('[resend] Alerta de billing DESCARTADO — ADMIN_ALERT_EMAIL ausente', undefined, { subject: params.subject })
     return { error: 'ADMIN_ALERT_EMAIL not configured' }

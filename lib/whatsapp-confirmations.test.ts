@@ -33,6 +33,9 @@ beforeEach(() => {
   process.env.WHATSAPP_CLOUD_TOKEN = 'token-teste'
   process.env.WHATSAPP_CLOUD_PHONE_ID = '111222333'
   delete process.env.ELEN_OPTOUT_CHECK_URL
+  // O espelho ao dono fica DESLIGADO por padrão nos testes antigos — eles contam chamadas de
+  // fetch e o ping extra mudaria a contagem. O bloco próprio liga a env de propósito.
+  delete process.env.ADMIN_ALERT_WHATSAPP
 })
 
 afterEach(() => {
@@ -147,5 +150,77 @@ describe('saudação institucional (lote 05/08)', () => {
     expect(firstName('Agência Grilo')).toBe('tudo bem')
     expect(firstName('')).toBe('tudo bem')
     expect(firstName(null)).toBe('tudo bem')
+  })
+})
+
+/**
+ * Espelho de billing no WHATSAPP DO DONO (decisão Sidney 11/08/2026).
+ *
+ * "Quero receber uma mensagem sempre que houver alguma alteração de pagamento — compra,
+ * upgrade, downgrade, cancelamento." O aviso sai pelo serviço da VPS (o mesmo canal dos avisos
+ * de lead), ANTES da confirmação ao cliente — e o teste central é exatamente este: cliente sem
+ * telefone, em opt-out ou com template pendente na Meta NÃO PODE calar o aviso do dono.
+ */
+describe('espelho de billing ao dono (ADMIN_ALERT_WHATSAPP)', () => {
+  beforeEach(() => {
+    process.env.ADMIN_ALERT_WHATSAPP = '5583999999999'
+    process.env.WHATSAPP_API_KEY = 'chave-vps-teste'
+  })
+  afterEach(() => {
+    delete process.env.ADMIN_ALERT_WHATSAPP
+    delete process.env.WHATSAPP_API_KEY
+  })
+
+  const chamadaVps = () =>
+    fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/whatsapp/send'))
+
+  it('cliente SEM telefone não cala o aviso do dono', async () => {
+    mockProfile({ phone: null, full_name: 'Julia', email: 'julia@x.com', plan: 'plus', plan_cycle: 'MONTHLY', plan_expires_at: '2026-09-10T12:00:00.000Z' })
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) })
+
+    const r = await notifyPlanoAtivado('p1')
+
+    expect(r.skipped).toBe('no_phone') // a confirmação ao CLIENTE pulou…
+    const vps = chamadaVps()          // …mas o DONO recebeu
+    expect(vps).toBeTruthy()
+    const body = JSON.parse((vps![1] as RequestInit).body as string)
+    expect(body.to).toBe('5583999999999')
+    expect(body.message).toContain('julia@x.com')
+    expect(body.message).toContain('ATIVADO')
+    expect(body.idempotencyKey).toContain('ops-billing:ativado:p1')
+  })
+
+  it('cancelamento também pinga o dono, com plano e data de acesso', async () => {
+    mockProfile({ phone: null, full_name: 'Caio', email: 'caio@x.com', plan: 'starter', plan_cycle: 'MONTHLY', plan_expires_at: '2026-09-01T12:00:00.000Z' })
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) })
+
+    await notifyAssinaturaCancelada('p2', { planLabel: 'Starter Mensal' })
+
+    const body = JSON.parse((chamadaVps()![1] as RequestInit).body as string)
+    expect(body.message).toContain('CANCELADA')
+    expect(body.message).toContain('caio@x.com')
+    expect(body.message).toContain('Starter Mensal')
+  })
+
+  it('sem a env, o espelho pula em silêncio e a confirmação ao cliente segue normal', async () => {
+    delete process.env.ADMIN_ALERT_WHATSAPP
+    mockProfile({ phone: '5583911112222', full_name: 'Ana', email: 'ana@x.com', plan: 'plus', plan_cycle: 'MONTHLY', plan_expires_at: '2026-09-10T12:00:00.000Z' })
+    graphOk()
+
+    const r = await notifyPlanoAtivado('p3')
+
+    expect(r.sent).toBe(true)
+    expect(chamadaVps()).toBeFalsy() // nenhuma chamada à VPS
+  })
+
+  it('VPS fora do ar NUNCA derruba a confirmação ao cliente', async () => {
+    mockProfile({ phone: '5583911112222', full_name: 'Ana', email: 'ana@x.com', plan: 'plus', plan_cycle: 'MONTHLY', plan_expires_at: '2026-09-10T12:00:00.000Z' })
+    fetchMock
+      .mockRejectedValueOnce(new Error('VPS caiu'))                                 // ops ping
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ messages: [{ id: 'wamid.OK' }] }) }) // Graph
+
+    const r = await notifyPlanoAtivado('p4')
+
+    expect(r.sent).toBe(true)
   })
 })

@@ -27,6 +27,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { emitirEventoElen, type ElenEventoTipo } from '@/lib/elen-eventos'
 import { toWhatsAppDigits } from '@/lib/phone'
 import { log, logError, logWarn } from '@/lib/logger'
+import { notifyBillingOpsWhatsApp } from '@/lib/billing-ops-whatsapp'
 
 // _v2 = versões com botão de URL (4× "Acessar minha conta"→/login; cancelada:
 // "Gerenciar assinatura"→/billing). APROVADAS na Meta em 08/2026; contagem de
@@ -177,6 +178,7 @@ export async function sendConfirmationTemplate(params: {
 type ProfileLite = {
   phone: string | null
   full_name: string | null
+  email: string | null
   plan: string | null
   plan_cycle: string | null
   plan_expires_at: string | null
@@ -187,13 +189,18 @@ async function fetchProfile(profileId: string): Promise<ProfileLite | null> {
     const db = createAdminClient()
     const { data } = await db
       .from('profiles')
-      .select('phone, full_name, plan, plan_cycle, plan_expires_at')
+      .select('phone, full_name, email, plan, plan_cycle, plan_expires_at')
       .eq('id', profileId)
       .single<ProfileLite>()
     return data ?? null
   } catch {
     return null
   }
+}
+
+/** Identificador do cliente no aviso ao DONO: e-mail resolve ambiguidade que nome não resolve. */
+function quemEh(p: ProfileLite): string {
+  return p.email ?? p.full_name ?? '(sem identificação)'
 }
 
 // Conta com nome INSTITUCIONAL (ex.: "Instituto Eidos") não pode virar
@@ -225,6 +232,13 @@ export async function notifyPlanoAtivado(profileId: string, opts?: { chargeInfo?
   const p = await fetchProfile(profileId)
   if (!p) return { sent: false, skipped: 'no_profile' }
   const charge = opts?.chargeInfo ?? brDate(p.plan_expires_at) ?? 'a confirmar'
+  // Espelho ao DONO (decisão Sidney 11/08/2026): toda movimentação de pagamento pinga no
+  // WhatsApp dele. ANTES do envio ao cliente, de propósito — cliente sem telefone ou em
+  // opt-out não pode calar o aviso do dono. Nunca lança; nunca bloqueia a confirmação.
+  await notifyBillingOpsWhatsApp(
+    `💰 EidosForm: plano ATIVADO\n${quemEh(p)} → ${planLabel(p.plan, p.plan_cycle)}\nPróxima cobrança: ${charge}`,
+    `ativado:${profileId}:${p.plan}:${p.plan_expires_at}`,
+  )
   return sendConfirmationTemplate({
     toPhone: p.phone,
     template: CONFIRMATION_TEMPLATES.planoAtivado,
@@ -239,6 +253,11 @@ export async function notifyPlanoAlterado(profileId: string, opts: { fromLabel: 
   const p = await fetchProfile(profileId)
   if (!p) return { sent: false, skipped: 'no_profile' }
   const charge = opts.chargeInfo ?? brDate(p.plan_expires_at) ?? 'a confirmar'
+  // Espelho ao dono — upgrade E downgrade passam por aqui (ver notifyPlanoAtivado).
+  await notifyBillingOpsWhatsApp(
+    `🔄 EidosForm: troca de plano\n${quemEh(p)}: ${opts.fromLabel} → ${planLabel(p.plan, p.plan_cycle)}\nPróxima cobrança: ${charge}`,
+    `alterado:${profileId}:${opts.fromLabel}:${p.plan}:${p.plan_cycle}`,
+  )
   return sendConfirmationTemplate({
     toPhone: p.phone,
     template: CONFIRMATION_TEMPLATES.planoAlterado,
@@ -253,6 +272,12 @@ export async function notifyAssinaturaCancelada(profileId: string, opts: { planL
   const p = await fetchProfile(profileId)
   if (!p) return { sent: false, skipped: 'no_profile' }
   const until = opts.accessUntil ?? brDate(p.plan_expires_at) ?? 'o fim do período pago'
+  // Espelho ao dono — cobre TODOS os caminhos de cancelamento (auto-cancelamento do cliente,
+  // webhook, admin, reprocessador), porque todos desembocam nesta função.
+  await notifyBillingOpsWhatsApp(
+    `🚫 EidosForm: assinatura CANCELADA\n${quemEh(p)} — plano ${opts.planLabel}\nAcesso até: ${until}`,
+    `cancelada:${profileId}:${until}`,
+  )
   return sendConfirmationTemplate({
     toPhone: p.phone,
     template: CONFIRMATION_TEMPLATES.assinaturaCancelada,
@@ -267,6 +292,11 @@ export async function notifyAcessoAtualizado(profileId: string, opts?: { validUn
   const p = await fetchProfile(profileId)
   if (!p) return { sent: false, skipped: 'no_profile' }
   const until = opts?.validUntil ?? brDate(p.plan_expires_at) ?? 'a data informada'
+  // Espelho ao dono — ajuste manual de acesso é movimentação de billing também.
+  await notifyBillingOpsWhatsApp(
+    `🛠️ EidosForm: acesso AJUSTADO (admin)\n${quemEh(p)} — ${planLabel(p.plan, p.plan_cycle)} até ${until}`,
+    `acesso:${profileId}:${until}`,
+  )
   return sendConfirmationTemplate({
     toPhone: p.phone,
     template: CONFIRMATION_TEMPLATES.acessoAtualizado,

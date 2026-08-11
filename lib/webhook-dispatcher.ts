@@ -5,6 +5,7 @@
  */
 
 import { validateWebhookUrlAsync } from './webhook-validator'
+import { criarDispatcherComPino } from './webhook-fetch-pinned'
 import { logError, logWarn } from '@/lib/logger'
 import { createClient } from '@supabase/supabase-js'
 import { sendWebhookFailureAlert } from '@/lib/resend'
@@ -308,6 +309,8 @@ export async function dispatchWebhook(params: {
   // em `after()` — as duas coisas multiplicariam POSTs num destino sem chave de idempotência.
   const ORCAMENTO_MS = 25_000
   const inicio = Date.now()
+  // Um por disparo (barato) e não por tentativa — as 4 tentativas usam a mesma regra de conexão.
+  const dispatcherComPino = criarDispatcherComPino()
 
   // Custo máximo de uma tentativa: o timeout do POST. Usado na PREVISÃO abaixo.
   const CUSTO_TENTATIVA_MS = 10_000
@@ -336,6 +339,11 @@ export async function dispatchWebhook(params: {
 
     try {
       const res = await fetch(webhookUrl, {
+        // Pino de IP (E08-S1-008): a validação prévia resolve o DNS, mas o fetch resolve de
+        // novo — e entre as duas cabe um rebinding para a rede interna. O dispatcher confere o
+        // endereço no INSTANTE da conexão. `undefined` no runtime sem undici mantém o
+        // comportamento anterior; webhook é recurso pago e não pode cair por endurecimento.
+        ...(dispatcherComPino ? { dispatcher: dispatcherComPino } : {}),
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

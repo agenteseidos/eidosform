@@ -40,7 +40,7 @@ async function resolveHostname(hostname: string): Promise<DnsResult> {
   }
 }
 
-function isPrivateIP(ip: string): boolean {
+export function isPrivateIP(ip: string): boolean {
   const match = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
   if (!match) return false
   const [, a, b] = match.map(Number)

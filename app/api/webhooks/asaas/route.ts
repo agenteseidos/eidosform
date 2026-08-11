@@ -1130,11 +1130,48 @@ export async function POST(req: NextRequest) {
         // antiga/fantasma (cancelada num upgrade — ex.: SUBSCRIPTION_INACTIVATED) ou
         // profile sem sub (null) → não derruba o usuário.
         if (!subscriptionId || refundProfile?.asaas_subscription_id !== subscriptionId) {
+          // ── Estorno de cobrança AVULSA: avisar sempre, agir nunca (decisão Sidney 11/08/2026) ──
+          //
+          // Cobrança avulsa (a diferença prorateada de um upgrade, ex.: R$78 do Starter→Plus) não
+          // tem assinatura — então TODO estorno/chargeback dela caía nesta peneira e morria em
+          // silêncio: o dinheiro voltava para o cliente, ele seguia no plano maior, e o Sidney só
+          // descobria olhando o extrato do Asaas. O estorno de MENSALIDADE sempre alertou (bloco
+          // logo abaixo); o de avulso, nunca. Mesma situação, dois tratamentos.
+          //
+          // Por que só alertar, e não desfazer o upgrade sozinho: (1) estorno pode ser cortesia,
+          // parcial ou correção de cobrança duplicada — o payload não distingue, e rebaixar nesses
+          // casos pune cliente inocente (mesma razão da decisão de 08/06 para mensalidades);
+          // (2) desfazer upgrade no meio do ciclo é a família de cálculo de proração que já
+          // clipou 78 dias pagos → 30 em produção. Humano decide em 30s com contexto; automação
+          // aqui erra caro.
+          //
+          // Só o AVULSO alerta (payment presente e sem assinatura). O outro caso desta peneira —
+          // evento de sub antiga desativada num upgrade — acontece em toda troca de plano e
+          // viraria ruído que ensina a ignorar alertas.
+          const ehAvulso = !subscriptionId && Boolean(payment?.id)
+          if (ehAvulso && event !== 'SUBSCRIPTION_INACTIVATED') {
+            const valorFmt = `R$${Number(payment?.value ?? 0).toFixed(2)}`
+            await sendBillingOpsAlert({
+              subject: `⚠️ Estorno de ${valorFmt} em cobrança AVULSA (upgrade) — nada foi alterado, revisar`,
+              lines: {
+                'O QUE ACONTECEU': 'Um pagamento avulso de troca de plano foi estornado/contestado. O plano do cliente NÃO foi alterado.',
+                'AÇÃO se foi contestação indevida': 'Rebaixar o plano manualmente pelo painel admin (o cliente ficou com o upgrade sem pagar a diferença).',
+                'AÇÃO se foi cortesia ou correção de cobrança': 'Não fazer nada — o cliente segue no plano atual.',
+                cliente: user.email,
+                planoAtual: refundProfile?.plan ?? null,
+                valorEstornado: valorFmt,
+                paymentId: payment?.id ?? null,
+                evento: event,
+                customerId,
+              },
+            }).catch(() => {})
+          }
           log('[asaas-webhook] Refund/chargeback/inactivated ignorado — não é a assinatura ativa do profile', {
             userId: user.id,
             eventSubscriptionId: subscriptionId,
             activeSubscriptionId: refundProfile?.asaas_subscription_id ?? null,
             event,
+            avulsoAlertado: ehAvulso,
           })
           break
         }

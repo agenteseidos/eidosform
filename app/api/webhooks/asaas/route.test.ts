@@ -561,6 +561,81 @@ describe('POST /api/webhooks/asaas — ganchos de NFS-e', () => {
 })
 
 /**
+ * Estorno de cobrança AVULSA — avisar sempre, agir nunca (decisão Sidney 11/08/2026).
+ *
+ * Cobrança avulsa (a diferença prorateada de um upgrade) não tem assinatura, então todo
+ * estorno/chargeback dela caía na peneira do "match estrito" e morria em silêncio: o dinheiro
+ * voltava, o cliente ficava com o plano maior, e o dono só descobria no extrato do Asaas.
+ * O estorno de MENSALIDADE sempre alertou; o de avulso, nunca.
+ *
+ * A decisão foi alertar SEM agir: estorno pode ser cortesia, parcial ou correção de cobrança
+ * duplicada — rebaixar sozinho puniria cliente inocente (mesma razão da decisão de 08/06), e
+ * desfazer upgrade no meio do ciclo é a família de cálculo que já clipou 78 dias pagos → 30.
+ */
+describe('POST /api/webhooks/asaas — estorno de AVULSO alerta, nunca age', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  /** payment sem subscription = avulso. Usuário resolvido pelo fallback por customer. */
+  function dbAvulso() {
+    return makeRecordingDb({
+      asaas_webhook_events: [{ error: null }],
+      billing_checkouts: [{ data: [], error: null }],           // resolve: sem checkout ativo
+      profiles: [
+        { data: USER_ROW, error: null },                         // fallback por asaas_customer_id
+        { data: { asaas_subscription_id: 'sub_1', plan: 'plus' }, error: null }, // refundProfile
+      ],
+    })
+  }
+
+  it('PAYMENT_REFUNDED de avulso → alerta operacional, plano intacto, evento processado', async () => {
+    const { db, calls } = dbAvulso()
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_av1', event: 'PAYMENT_REFUNDED', payment: { id: 'pay_av', customer: 'cus_1', value: 78 } }
+    const res = await POST(makeReq(body))
+
+    expect(mockOpsAlert).toHaveBeenCalledTimes(1)
+    expect(mockOpsAlert.mock.calls[0][0].subject).toContain('AVULSA')
+    // agir nunca: nenhuma escrita em profiles (o plano do cliente não muda)
+    expect(calls.some((c) => c.table === 'profiles' && c.method === 'update')).toBe(false)
+    // e o evento não vai para DLQ — foi tratado, o humano decide o resto
+    expect((await res.json() as { received?: boolean }).received).toBe(true)
+    expect(calls.some((c) => c.table === 'asaas_webhook_events' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'failed')).toBe(false)
+  })
+
+  it('PAYMENT_CHARGEBACK_REQUESTED de avulso também alerta', async () => {
+    const { db } = dbAvulso()
+    mockCreateClient.mockReturnValue(db as never)
+
+    await POST(makeReq({ id: 'evt_av2', event: 'PAYMENT_CHARGEBACK_REQUESTED', payment: { id: 'pay_av', customer: 'cus_1', value: 78 } }))
+
+    expect(mockOpsAlert).toHaveBeenCalledTimes(1)
+  })
+
+  it('SUBSCRIPTION_INACTIVATED de sub antiga (todo upgrade gera um) NÃO alerta — seria ruído', async () => {
+    // Alerta que dispara em toda troca de plano ensina a ignorar alertas. A peneira continua
+    // silenciosa para o caso da sub antiga; só o avulso (payment sem subscription) avisa.
+    const { db } = makeRecordingDb({
+      asaas_webhook_events: [{ error: null }],
+      billing_checkouts: [
+        { data: null, error: null },                             // resolve por subscription: nada
+        { data: [], error: null },                               // fallback por customer: nada
+      ],
+      profiles: [
+        { data: USER_ROW, error: null },
+        { data: { asaas_subscription_id: 'sub_1', plan: 'plus' }, error: null },
+      ],
+    })
+    mockCreateClient.mockReturnValue(db as never)
+
+    await POST(makeReq({ id: 'evt_av3', event: 'SUBSCRIPTION_INACTIVATED', subscription: { id: 'sub_old', customer: 'cus_1' } }))
+
+    expect(mockOpsAlert).not.toHaveBeenCalled()
+  })
+})
+
+/**
  * Evento de dinheiro com usuário não resolvido — os TRÊS ramos irmãos do PAYMENT_CONFIRMED.
  *
  * O DEFEITO (achado na varredura de 10/08/2026, a pedido do Sidney: "fechamos do lote zero ao 5

@@ -96,6 +96,44 @@ describe('consistência entre rotas irmãs', () => {
     }
   })
 
+  it('D8: rate limit de auth por e-mail — chave hasheada + teto por IP', () => {
+    // Ter rate limit (D7) não basta se a chave é SÓ o e-mail em claro. Era o caso das três:
+    // cada e-mail carregava seu próprio orçamento, então quem varria senhas ou despejava
+    // e-mail de recuperação só precisava trocar o endereço para zerar o contador; e, na mão
+    // inversa, dava para gastar de fora as tentativas de uma pessoa e deixá-la sem login e sem
+    // conseguir pedir recuperação de senha. De quebra, o e-mail virava linha LEGÍVEL na tabela
+    // de rate limit — a mesma PII que o D11 já tinha tirado da rota de migração.
+    //
+    // `signup` entra na lista porque já nascia certa: é dela a forma (identificador hasheado +
+    // balde por IP) que as outras três passaram a seguir.
+    const rotas = [
+      'app/api/auth/login/route.ts',
+      'app/api/auth/forgot-password/route.ts',
+      'app/api/auth/resend-verification/route.ts',
+      'app/api/auth/signup/route.ts',
+    ]
+    for (const r of rotas) {
+      const src = ler(r)
+      expect(src, `${r} não encontrada`).not.toBe('')
+      // 1) o identificador vira HASH antes de virar chave persistida.
+      expect(src, `${r}: e-mail deveria ser hasheado antes de virar chave de rate limit`).toMatch(
+        /create(Hmac|Hash)\(\s*'sha256'/
+      )
+      // 2) segunda dimensão: balde por IP — é ele que barra o ataque espalhado por muitos
+      //    e-mails, que nenhum teto por conta consegue enxergar.
+      expect(src, `${r}: sem teto por IP — basta trocar de e-mail para ter orçamento novo`).toMatch(
+        /checkRateLimitAsync\(\s*`[^`]*ip:\$\{/
+      )
+      expect(src, `${r}: não obtém o IP do request`).toMatch(/getClientIp\(|x-forwarded-for/)
+      // 3) e a assinatura EXATA do defeito, do mesmo jeito que o D11 travou o telefone: o
+      //    identificador em claro interpolado na chave. `${emailKeyHash}` não casa (o `\b`
+      //    exige que o nome termine ali), então a forma CERTA passa.
+      expect(src, `${r}: usa o e-mail em claro como chave de rate limit`).not.toMatch(
+        /checkRateLimitAsync\(\s*`[^`]*\$\{\s*(?:normalizedEmail|email)\b/
+      )
+    }
+  })
+
   it('D9: rotas com efeito externo (e-mail/WhatsApp/gateway) têm rate limit', () => {
     const rotas = [
       'app/api/settings/billing-profile/route.ts',

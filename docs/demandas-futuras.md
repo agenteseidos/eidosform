@@ -254,3 +254,41 @@ registrava nada; com a pergunta obrigatória, virava beco sem saída, e recarreg
 **Se falhar:** a suspeita seguinte, ainda NÃO confirmada, é `Calendly.initInlineWidget` não ser
 rechamado no remount (a caixa do Calendly apareceria em branco). Não escrever código contra essa
 hipótese antes de ver o sintoma — este projeto já teve uma reversão por isso.
+
+---
+
+## D-07 · Fechamento id-a-id do registro-geral + triagem dos achados em suspenso
+
+**Origem:** varredura de 11/08/2026 ("fechamos do lote zero ao 5? tem certeza?").
+
+**O problema que já foi resolvido pela metade.** O `registro-geral.csv` (881 linhas) ficou 100%
+ABERTO durante a remediação inteira — nenhum artefato respondia "o que já fechou", e foi assim que
+documentos de lote disseram "concluído" sem lastro. A reconciliação de 11/08
+(`auditoria-geral-2026-08/scripts/reconciliar-registro.py`, regras conservadoras) baixou o que
+tinha decisão documentada: **670 → DIVIDA-ASSUMIDA** (plano §7), **15 → REFUTADO-TRIAGEM**.
+
+**O que resta.** (a) **79 ids S0/S1 ainda ABERTOS** — a maioria FOI corrigida pelos lotes 1-6,
+mas sob outros nomes (1A, L2-3, D8, "achado 2 da Elen"); a ponte id-do-CSV ↔ item-de-lote precisa
+ser feita id-a-id, com evidência, nunca em massa. Lista pronta em
+`achados/RECONCILIACAO-2026-08-11.md`. (b) Os **"achados em suspenso"** dos 4 lotes auditados via
+chat (E06-L3, E06-L4, E09-L1, E11-L1 — 682 KB em `99-sintese/pendencias-gpt/`), que o plano §7
+mandava reavaliar "em ~1 semana" (06/08) e ninguém reabriu. Inclui os 3 REFUTADOS **por
+indisponibilidade de evidência** do E11, que o 1º auditor sustenta — um deles toca consentimento
+de envio.
+
+**Esforço:** 1 sessão de triagem. Sem código.
+
+## D-08 · Meta CAPI por cliente (pixel global aposentado)
+
+**Origem:** §0.8 do lote 0 — o ÚNICO dos 8 achados da investigação que nunca entrou em lote nem
+em demanda (varredura 11/08/2026).
+
+**O problema.** `lib/meta-capi.ts` usa `META_PIXEL_ID`/token GLOBAIS da plataforma e
+`event_name: 'Lead'` fixo. Os pixels dos clientes são POR FORMULÁRIO: o CAPI server-side hoje
+mistura eventos de todos os clientes num pixel só, sem dedup real com o browser. Por isso o CAPI
+está **fora da vitrine** ("NÃO ANUNCIAR", auditoria LP 2026-07-28).
+
+**O que é.** Funcionalidade, não conserto: config de pixel+token CAPI por cliente/formulário,
+`event_id` real para dedup, e só então anunciar. Pré-requisito para vender CAPI como recurso.
+
+**Esforço:** 1-2 sessões. Bloqueia apenas o ANÚNCIO do recurso, não as vendas.

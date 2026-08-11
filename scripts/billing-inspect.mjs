@@ -136,17 +136,29 @@ async function snapshot() {
     console.log(`  ${'─'.repeat(70)}`)
     // Sem asaas_customer_id, não há o que consultar no Asaas → sem cliente = sem subs/pagamentos = limpo.
     const noCustomer = !profile.asaas_customer_id
+    // TRÊS ESTADOS, não dois (E14-S1-005, fechado em 11/08/2026). Antes as checagens do Asaas
+    // eram booleanas: consulta que FALHOU virava `false`, exatamente igual a "existe assinatura
+    // ativa sobrando". Quem lia o relatório via 🔴 em "0 subs ACTIVE" e ia caçar uma assinatura
+    // que talvez nem existisse — ou pior, concluía que a limpeza tinha dado errado. O ramo
+    // `⚠️ (sem dado)` já existia no display e era CÓDIGO MORTO, porque nada produzia null.
+    // Agora `null` = "não sei", e não-sei nunca vira PASS.
+    const asaasOk = (valor, alvo) => (noCustomer ? true : valor === null ? null : valor === alvo)
     const checks = [
       ['profile.plan = free', profile.plan === 'free'],
       ['profile.asaas_subscription_id = null', profile.asaas_subscription_id == null],
-      ['Asaas: 0 subs ACTIVE', asaasSubsActive === 0 || noCustomer],
-      ['Asaas: 0 pagamentos PENDING/OVERDUE', asaasPendingCount === 0 || noCustomer],
+      ['Asaas: 0 subs ACTIVE', asaasOk(asaasSubsActive, 0)],
+      ['Asaas: 0 pagamentos PENDING/OVERDUE', asaasOk(asaasPendingCount, 0)],
       ['0 eventos DLQ (failed)', failed.length === 0],
       ['0 locks ativos', locks.length === 0],
     ]
     const allPass = checks.every(([, ok]) => ok === true)
-    console.log(`  🧹 VEREDITO DE LIMPEZA: ${allPass ? '✅ PASS — tudo limpo' : '🔴 FAIL — revisar abaixo'}`)
-    for (const [label, ok] of checks) console.log(`     ${ok === true ? '✅' : ok === null ? '⚠️ (sem dado)' : '🔴'} ${label}`)
+    const temIndeterminado = checks.some(([, ok]) => ok === null)
+    console.log(`  🧹 VEREDITO DE LIMPEZA: ${
+      allPass ? '✅ PASS — tudo limpo'
+      : temIndeterminado ? '⚠️ INDETERMINADO — uma consulta falhou; NÃO é prova de limpeza (nem de sujeira)'
+      : '🔴 FAIL — revisar abaixo'
+    }`)
+    for (const [label, ok] of checks) console.log(`     ${ok === true ? '✅' : ok === null ? '⚠️ (sem dado — consulta falhou)' : '🔴'} ${label}`)
   }
 }
 

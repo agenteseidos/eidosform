@@ -309,10 +309,23 @@ export async function dispatchWebhook(params: {
   const ORCAMENTO_MS = 25_000
   const inicio = Date.now()
 
+  // Custo máximo de uma tentativa: o timeout do POST. Usado na PREVISÃO abaixo.
+  const CUSTO_TENTATIVA_MS = 10_000
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      if (Date.now() - inicio >= ORCAMENTO_MS) {
-        lastError = `${lastError ?? 'unknown'} (orçamento de ${ORCAMENTO_MS}ms esgotado após ${attempt} tentativas)`
+      // PREVISÃO, não retrovisor (L3-2b, fechado na varredura de 11/08/2026). A checagem antiga
+      // era `agora - inicio >= orçamento`: olhava só o tempo JÁ gasto. Aos 21s ela passava
+      // (21 < 25), dormia 2s e disparava um POST de até 10s — terminando aos 33s, além do
+      // orçamento que existe precisamente para sobrar tempo de gravar a fila morta antes de a
+      // função serverless ser encerrada. O teto virava decoração no pior caso, que é o único
+      // caso em que ele importa.
+      //
+      // Agora a pergunta é "a PRÓXIMA tentativa consegue TERMINAR dentro do orçamento?" —
+      // espera + POST inteiro. Se não cabe, para agora, com folga garantida para o insertDlq.
+      const custoProximaTentativa = retryDelays[attempt - 1] + CUSTO_TENTATIVA_MS
+      if (Date.now() - inicio + custoProximaTentativa >= ORCAMENTO_MS) {
+        lastError = `${lastError ?? 'unknown'} (orçamento de ${ORCAMENTO_MS}ms não comporta a tentativa ${attempt + 1} — parando com folga p/ DLQ)`
         break
       }
       await new Promise(r => setTimeout(r, retryDelays[attempt - 1]))

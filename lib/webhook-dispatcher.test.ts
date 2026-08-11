@@ -179,3 +179,56 @@ describe('dispatchWebhook — decisões anteriores ao laço de repetição', () 
     expect(sendWebhookFailureAlert).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * L3-2b — o orçamento de 25s é PREVISÃO, não retrovisor (fechado na varredura de 11/08/2026).
+ *
+ * A checagem antiga olhava só o tempo JÁ gasto: aos 21s ela deixava passar (21 < 25), dormia 2s
+ * e disparava um POST de até 10s — terminando aos 33s, além do orçamento que existe justamente
+ * para sobrar tempo de gravar a fila morta antes de a função serverless morrer. O teto virava
+ * decoração exatamente no pior caso, o único em que ele importa.
+ *
+ * O relógio aqui é um espião no Date.now — a lição do lote 3 (harness de fake-timers descartado
+ * por flakiness com fetch/crypto) foi não fingir timers, só a LEITURA do tempo.
+ */
+describe('L3-2b — orçamento total com previsão de custo da próxima tentativa', () => {
+  it('🛡️ 1ª tentativa comeu 16s → a 2ª NÃO cabe (16+1+10 ≥ 25): para com folga p/ a fila morta', async () => {
+    // fetch falha instantâneo; o "tempo gasto" é simulado pelo espião.
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('destino lento caiu') }))
+    const spy = vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(0)        // inicio
+      .mockReturnValue(16_000)       // todas as leituras seguintes: 16s decorridos
+
+    const r = await dispatchWebhook({
+      webhookUrl: 'https://crm.cliente.com/hook', formId: 'f1', responseId: 'r1',
+      responseData: {}, ownerEmail: 'dono@cliente.com',
+    })
+    spy.mockRestore()
+
+    expect(r.success).toBe(false)
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1) // NÃO tentou a 2ª — não cabia
+    const dlq = estado.inserts.find((i) => i.tabela === 'webhook_failures')
+    expect(dlq, 'a fila morta é o motivo de o orçamento existir').toBeTruthy()
+    expect(String(dlq!.linha.last_error)).toMatch(/não comporta/i)
+  })
+
+  it('tempo de sobra → a previsão NÃO bloqueia o retry legítimo (2ª tentativa acontece)', async () => {
+    // 1ª falha rápida (1s decorrido): 1+1+10 < 25 → retry roda e é atendido.
+    vi.stubGlobal('fetch', vi.fn()
+      .mockRejectedValueOnce(new Error('blip'))
+      .mockResolvedValue(new Response('ok', { status: 200 })))
+    const spy = vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(0)
+      .mockReturnValue(1_000)
+
+    const r = await dispatchWebhook({
+      webhookUrl: 'https://crm.cliente.com/hook', formId: 'f1', responseId: 'r1',
+      responseData: {}, ownerEmail: 'dono@cliente.com',
+    })
+    spy.mockRestore()
+
+    expect(r.success).toBe(true)
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2)
+    expect(estado.inserts.find((i) => i.tabela === 'webhook_failures')).toBeFalsy()
+  }, 15_000)
+})

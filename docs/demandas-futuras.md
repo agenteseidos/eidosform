@@ -270,7 +270,7 @@ hipótese antes de ver o sintoma — este projeto já teve uma reversão por iss
 
 ---
 
-## D-07 · Fechamento id-a-id do registro-geral + triagem dos achados em suspenso
+## D-07 · ✅ FEITO — Fechamento id-a-id do registro-geral + triagem dos suspensos
 
 **Origem:** varredura de 11/08/2026 ("fechamos do lote zero ao 5? tem certeza?").
 
@@ -289,7 +289,17 @@ mandava reavaliar "em ~1 semana" (06/08) e ninguém reabriu. Inclui os 3 REFUTAD
 indisponibilidade de evidência** do E11, que o 1º auditor sustenta — um deles toca consentimento
 de envio.
 
-**Esforço:** 1 sessão de triagem. Sem código.
+**EXECUTADO em 11/08/2026 — e "sem código" estava errado: a triagem achou 5 defeitos REAIS.**
+
+Ponte id-a-id: os 79 ids conferidos um a um contra o código (mapa curado em
+`auditoria-geral-2026-08/scripts/ponte-id-a-id.py`; baixa só com evidência). Placar final:
+115 FECHADO · 19 REFUTADO · 16 DECISAO-REGISTRADA · 702 DIVIDA-ASSUMIDA · **29 linhas (12 ids)
+ABERTOS de verdade**, cada um com nota do que falta (`achados/RECONCILIACAO-2026-08-11.md`).
+
+Suspensos: os 4 lotes sem contraditório foram triados — nenhum S0/S1 restou sem destino.
+Os 5 defeitos reais achados e corrigidos no ato: consentimento não reconferido no disparo
+(elen b14fd7c) · XSS por href em aspas simples (f3cc98f) · API key crua no rate limit (f3cc98f) ·
+dropdown/checkbox de 1 opção = 422 permanente (0df8500) · rating min≥max inenviável (0df8500).
 
 ## D-08 · Meta CAPI por cliente (pixel global aposentado)
 

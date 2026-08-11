@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getSubscription, hasOverduePaymentForSubscription } from '@/lib/asaas'
-import { PLANS, handleDowngrade } from '@/lib/plan-limits'
+import { PLANS, handleDowngrade, recomputeActiveForms, type PlanName } from '@/lib/plan-limits'
 import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
 import { computeProrationBasisDays } from '@/lib/proration'
 import { log, logError, logWarn } from '@/lib/logger'
@@ -137,9 +137,21 @@ export async function GET(req: NextRequest) {
             upd.proration_basis_days = basisRenew
             upd.billing_period_end_on = sub?.nextDueDate ?? null
           }
-          const { error: extErr } = await admin.from('profiles').update(upd).eq('id', p.id)
+          // ESCRITA CONDICIONAL (CAS — achado da varredura 10/08/2026): entre a foto do começo
+          // e esta linha passaram-se chamadas de rede ao Asaas — num lote de 500, MINUTOS. Se o
+          // webhook processou um upgrade nesse meio-tempo, `plan_expires_at` mudou; estender por
+          // cima esmagaria a expiração do plano NOVO com a data da assinatura VELHA. Os `.eq`
+          // extras dizem: só grave se o estado ainda for exatamente o que eu li.
+          const { data: extRows, error: extErr } = await admin.from('profiles').update(upd)
+            .eq('id', p.id)
+            .eq('plan', p.plan)
+            .eq('plan_expires_at', p.plan_expires_at)
+            .select('id')
           if (extErr) logError('[cron/expire-plans] falha ao estender', extErr, { profileId: p.id })
-          else extended++
+          else if (!extRows || extRows.length === 0) {
+            skipped++
+            logWarn('[cron/expire-plans] extensão PERDEU A CORRIDA (estado mudou sob o cron) — não gravei', { profileId: p.id })
+          } else extended++
           shouldRevert = false
           }
         }
@@ -162,7 +174,13 @@ export async function GET(req: NextRequest) {
         // Se o downgrade falhar, NÃO marca free → o profile segue 'pago/expirado' e o próximo
         // tick do cron retenta (não some da query). Evita "free mas forms nunca pausados".
         await handleDowngrade(p.id, key)
-        const { error: revErr } = await admin
+        // ESCRITA CONDICIONAL (CAS — o gêmeo mais perigoso do da extensão acima): o cenário que
+        // este `.eq` extra mata é o cliente PAGANDO no meio da execução do cron. A foto do
+        // começo o lista como expirado; o webhook ativa o plano; e esta linha, sem a guarda,
+        // escreveria `free` por cima da ativação — cliente pagou e foi rebaixado segundos
+        // depois, sem aviso. Com a guarda, qualquer pagamento/upgrade muda `plan_expires_at`
+        // e a reversão erra o alvo de propósito (0 linhas).
+        const { data: revRows, error: revErr } = await admin
           .from('profiles')
           .update({
             plan: 'free',
@@ -181,8 +199,25 @@ export async function GET(req: NextRequest) {
             ...buildResponseQuotaPeriodReset(),
           })
           .eq('id', p.id)
+          .eq('plan', p.plan)
+          .eq('plan_expires_at', p.plan_expires_at)
+          .select('id')
         if (revErr) {
           logError('[cron/expire-plans] forms pausados mas falha ao marcar free (retenta no próximo tick)', revErr, { profileId: p.id })
+        } else if (!revRows || revRows.length === 0) {
+          // Perdeu a corrida DEPOIS de pausar os formulários — o handleDowngrade acima já os
+          // pausou pelas regras do free, mas o dono acabou de pagar. CURA: relê o plano atual e
+          // recompõe o que fica no ar pelas regras do plano VERDADEIRO. Sem isto, o cliente
+          // pagaria e ficaria com os formulários pausados até alguém notar.
+          skipped++
+          logWarn('[cron/expire-plans] reversão PERDEU A CORRIDA (provável pagamento durante o cron) — curando os formulários', { profileId: p.id })
+          try {
+            const { data: atual } = await admin.from('profiles').select('plan').eq('id', p.id).single()
+            const planoAtual = ((atual as { plan?: string | null } | null)?.plan ?? 'free') as PlanName
+            await recomputeActiveForms(key, p.id, planoAtual)
+          } catch (healErr) {
+            logError('[cron/expire-plans] cura pós-corrida falhou — formulários podem estar pausados indevidamente', healErr, { profileId: p.id })
+          }
         } else {
           reverted++
         }

@@ -93,19 +93,27 @@ _Regra ativa no `CLAUDE.md`, seção "🛑 REGRA Nº 1"._
 
 ---
 
-## D-04 · CI que roda os testes (EidosForm e Elen)
+## D-04 · ✅ FEITO — CI que roda os testes (EidosForm e Elen)
 
 **Origem:** auditoria geral 2026-08 (E13), agravado pelo Lote 0.
+**Fechamento:** lote 6, em 09/08/2026. Esta ficha ficou marcada como pendente por engano até
+10/08 — achada varrendo a lista a pedido do Sidney ("fechamos do lote zero ao 5 já? tem certeza?").
 
-**O problema.** A CI do EidosForm roda `lint`, `tsc` e `build` — **não roda `npm test`**. E a Elen,
-que é repositório separado (`agenteseidos/eidos-atendente-wpp`), **não tem CI nenhuma**. As ~986 +
-21 suítes nunca rodam automaticamente. Um PR que quebre os testes de durabilidade passa com CI verde.
+- **EidosForm:** `.github/workflows/ci.yml` roda `npm test` (`a1ad92c` → `5f5cb56` → `d8f0dad`).
+- **Elen** (`agenteseidos/eidos-atendente-wpp`): CI criada do zero, roda `npm test`
+  (`6fdb418` → `268a616` → `7e8a85e`). Precisa de Node 22+ — a 20 não expande o glob dos testes.
+- Ambas obrigatórias em `push` e `pull request` na `main`.
+- O **`FLUSHDB` incondicional** que tornava perigoso ligar a CI da Elen foi neutralizado
+  (`070e959`): `test/_redis-guard.js` recusa portas de instâncias reais e usa `redis://127.0.0.1:6399/9`.
 
-**Por que importa agora:** as correções da auditoria estão entrando sem rede. Um `revert` acidental
-de qualquer uma delas não seria detectado.
+**O que a CI da Elen achou no primeiro dia:** 7 dos 147 testes só passavam porque liam o `.env`
+**desta VPS**, que é configuração de produção. Passavam na máquina do Sidney e em lugar nenhum mais.
 
-**Cuidado ao ligar:** `elen/test/followup.test.js` dá **`FLUSHDB` incondicional** antes de cada um
-dos ~35 testes, com URL literal de Redis. Ligar a CI da Elen sem neutralizar isso é arriscado.
+### Situação anterior (histórico)
+
+A CI do EidosForm rodava `lint`, `tsc` e `build` — **não** `npm test`. A Elen não tinha CI nenhuma.
+As suítes nunca rodavam automaticamente, então as correções da auditoria estavam entrando sem rede:
+um `revert` acidental de qualquer uma delas não seria detectado.
 
 ---
 

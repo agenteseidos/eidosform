@@ -4,7 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import Image from 'next/image'
 import { QuestionConfig, QuestionType, Form } from '@/lib/database.types'
-import { questionTypes, getQuestionTypeInfo } from '@/lib/questions'
+import { questionTypes, getQuestionTypeInfo, buildTypeChangeUpdates } from '@/lib/questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -323,16 +323,10 @@ export function RightPanel({
   }
 
   const handleTypeChange = (newType: QuestionType) => {
-    const newTypeInfo = getQuestionTypeInfo(newType)
-    const updates: Partial<QuestionConfig> = {
-      type: newType,
-      ...newTypeInfo?.defaultConfig,
-    }
-    // Preserve common fields
-    if (newType !== 'dropdown' && newType !== 'select' && newType !== 'checkboxes') {
-      updates.options = undefined
-    }
-    onUpdateQuestion(selectedQuestion.id, updates)
+    // A regra mora em `buildTypeChangeUpdates` (lib/questions.ts), com teste: entre tipos de
+    // escolha as opções escritas pelo dono SOBREVIVEM. Aqui elas eram apagadas pelo
+    // defaultConfig do tipo novo — trabalho perdido sem aviso e sem desfazer (E06-S1-002).
+    onUpdateQuestion(selectedQuestion.id, buildTypeChangeUpdates(selectedQuestion, newType))
   }
 
   return (

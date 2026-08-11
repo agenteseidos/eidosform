@@ -12,7 +12,7 @@ import { QuestionRenderer } from './question-renderer'
 import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import { toast } from 'sonner'
 import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent, buildGoogleAdsSendTo, fireGoogleAdsConversion } from '@/lib/pixel-events'
-import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath, getAdvanceControls } from '@/lib/form-logic-engine'
+import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath, getAdvanceControls, resolveSubmitFieldError } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { captureUrlParams, getUrlParams, clearUrlParams } from '@/lib/url-params'
 import { useMetaEventsCapture } from '@/hooks/use-meta-events-capture'
@@ -800,17 +800,32 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       if (!res.ok) {
         let errorMsg = 'Falha ao enviar resposta'
         let detail = ''
+        // LEVA O LEAD ATÉ A PERGUNTA QUE ERROU (E06-S1-003). O servidor sempre mandou o id em
+        // `field_errors`; o player só mostrava o texto num aviso flutuante e deixava a pessoa
+        // parada na última tela, sem saber onde consertar — depois de preencher tudo. Quem não
+        // descobre, desiste no fim do funil, e o dono nunca fica sabendo que existiu.
+        let alvo: { questionId: string; error: string } | null = null
         try {
           const data = await res.json()
           errorMsg = data.error ?? errorMsg
           if (Array.isArray(data.field_errors) && data.field_errors.length) {
             console.error('[EidosForm] Submit field errors:', data.field_errors)
+            alvo = resolveSubmitFieldError(data.field_errors, visibleQuestions)
             const first = data.field_errors[0]
             if (first?.error) detail = first.error
           }
         } catch { /* response body not JSON */ }
         console.error('[EidosForm] Submit failed:', res.status, errorMsg)
-        toast.error(errorMsg, detail ? { description: detail } : undefined)
+        if (alvo) {
+          // Erro embaixo do campo certo + navegação até ele. Sem `skipNextValidation`: a
+          // validação local roda normalmente quando a pessoa tentar avançar de novo.
+          setErrors(prev => ({ ...prev, [alvo!.questionId]: alvo!.error }))
+          setDirection(-1)
+          setCurrentQuestionId(alvo.questionId)
+          toast.error('Confira esta resposta', { description: alvo.error })
+        } else {
+          toast.error(errorMsg, detail ? { description: detail } : undefined)
+        }
         setIsSubmitting(false)
         isSubmittedRef.current = false
         isSubmittingRef.current = false

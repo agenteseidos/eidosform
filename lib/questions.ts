@@ -270,3 +270,43 @@ export function createDefaultQuestion(type: QuestionType): QuestionConfig {
     ...typeInfo?.defaultConfig,
   }
 }
+
+/** Tipos cuja resposta é escolha entre opções — os únicos que carregam `options`. */
+export const CHOICE_TYPES: ReadonlySet<QuestionType> = new Set(['dropdown', 'select', 'checkboxes'])
+
+/**
+ * O que muda numa pergunta quando o dono TROCA O TIPO no construtor.
+ *
+ * 🐞 O DEFEITO (E06-S1-002, aberto desde a auditoria; fechado em 11/08/2026): `handleTypeChange`
+ * espalhava o `defaultConfig` do tipo novo por cima da pergunta — e o defaultConfig dos tipos de
+ * escolha traz `options: ['Opção 1', 'Opção 2', 'Opção 3']`. Trocar "múltipla escolha" por
+ * "seleção" APAGAVA as opções escritas à mão e devolvia as genéricas. Numa pergunta com 20
+ * alternativas, é trabalho perdido sem aviso e sem desfazer.
+ *
+ * A regra certa: entre tipos de ESCOLHA, as opções são do dono e sobrevivem. Saindo de escolha
+ * para qualquer outra coisa, `options` é limpo (não faz sentido em texto/data/nota). Entrando em
+ * escolha vindo de fora, o default é o ponto de partida — aí não há nada do dono a preservar.
+ *
+ * Função pura de propósito: não existe teste de componente React neste repositório, e a regra
+ * some de vista se ficar solta dentro do painel (foi assim que ela passou meses errada).
+ */
+export function buildTypeChangeUpdates(
+  atual: Pick<QuestionConfig, 'type' | 'options'>,
+  novoTipo: QuestionType,
+): Partial<QuestionConfig> {
+  const info = getQuestionTypeInfo(novoTipo)
+  const updates: Partial<QuestionConfig> = { type: novoTipo, ...info?.defaultConfig }
+
+  const eraEscolha = CHOICE_TYPES.has(atual.type)
+  const viraEscolha = CHOICE_TYPES.has(novoTipo)
+
+  if (!viraEscolha) {
+    updates.options = undefined
+    return updates
+  }
+  // Escolha → escolha: preserva o que o dono escreveu (só cai no default se não houver nada).
+  if (eraEscolha && Array.isArray(atual.options) && atual.options.length > 0) {
+    updates.options = [...atual.options]
+  }
+  return updates
+}

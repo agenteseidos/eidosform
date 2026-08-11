@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getVisibleQuestions, getNextQuestionId, buildQuestionPath, evaluateJumpRules, isQuestionVisible, normalizeConditional, getAdvanceControls } from './form-logic-engine'
+import { getVisibleQuestions, getNextQuestionId, buildQuestionPath, evaluateJumpRules, isQuestionVisible, normalizeConditional, getAdvanceControls, resolveSubmitFieldError } from './form-logic-engine'
 import type { QuestionConfig, ConditionalGroup, QuestionType } from './database.types'
 
 // Cenário: pergunta-alvo de um salto só fica visível por causa da resposta
@@ -307,3 +307,42 @@ describe('getAdvanceControls — nunca trava quem não é Calendly', () => {
 })
 
 const calendlyObrigatorio = { type: 'calendly' as const, required: true }
+
+/**
+ * E06-S1-003 — o 422 tem de levar o lead ATÉ a pergunta que errou.
+ *
+ * O servidor sempre devolveu `field_errors` com o id; o player só mostrava o texto num aviso
+ * flutuante e deixava a pessoa parada na última tela, depois de preencher o formulário inteiro.
+ * É o fim do funil: quem não descobre onde consertar, desiste — e o dono nunca sabe que existiu.
+ */
+describe('resolveSubmitFieldError — para onde voltar quando o servidor recusa', () => {
+  const visiveis = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }]
+
+  it('devolve a pergunta do primeiro erro visível', () => {
+    const r = resolveSubmitFieldError([{ questionId: 'q2', error: 'E-mail inválido' }], visiveis)
+    expect(r).toEqual({ questionId: 'q2', error: 'E-mail inválido' })
+  })
+
+  it('pula erro de pergunta INVISÍVEL e usa o próximo que dá para mostrar', () => {
+    // Mandar o lead para um ramo condicional fechado seria pior que o aviso genérico.
+    const r = resolveSubmitFieldError(
+      [{ questionId: 'oculta', error: 'x' }, { questionId: 'q3', error: 'Telefone inválido' }],
+      visiveis,
+    )
+    expect(r?.questionId).toBe('q3')
+  })
+
+  it('só erros invisíveis → null (o chamador cai no aviso genérico)', () => {
+    expect(resolveSubmitFieldError([{ questionId: 'oculta', error: 'x' }], visiveis)).toBeNull()
+  })
+
+  it('formato inesperado do servidor nunca quebra o player', () => {
+    for (const lixo of [null, undefined, 'texto', 42, {}, [{}], [{ questionId: 'q1' }], [{ error: 'só msg' }]]) {
+      expect(resolveSubmitFieldError(lixo, visiveis)).toBeNull()
+    }
+  })
+
+  it('lista vazia de erros → null', () => {
+    expect(resolveSubmitFieldError([], visiveis)).toBeNull()
+  })
+})

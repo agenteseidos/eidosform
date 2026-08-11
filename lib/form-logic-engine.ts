@@ -210,3 +210,32 @@ export function getAdvanceControls(
 
   return { pending: true, locked: !!question.required, canSkip: !question.required }
 }
+
+/** Erro de campo devolvido pelo servidor no 422 do submit. */
+export type FieldErrorDoServidor = { questionId?: string; error?: string }
+
+/**
+ * Para qual pergunta o player deve VOLTAR quando o servidor recusa o envio (422).
+ *
+ * 🐞 O DEFEITO (E06-S1-003, aberto desde a auditoria; fechado em 11/08/2026): o servidor sempre
+ * devolveu `field_errors` com o id da pergunta, e o player só mostrava o texto do erro num aviso
+ * flutuante — deixando o lead parado na ÚLTIMA tela, sem saber onde consertar. Depois de
+ * preencher o formulário inteiro. É o fim do funil: quem não descobre, desiste, e o dono nunca
+ * sabe que existiu.
+ *
+ * Devolve o PRIMEIRO erro que aponta para uma pergunta ainda visível — invisível não adianta
+ * (ramo condicional fechado), e nesse caso o aviso genérico continua sendo o melhor disponível.
+ */
+export function resolveSubmitFieldError(
+  fieldErrors: unknown,
+  visibleQuestions: Array<{ id: string }>,
+): { questionId: string; error: string } | null {
+  if (!Array.isArray(fieldErrors)) return null
+  const visiveis = new Set(visibleQuestions.map((q) => q.id))
+  for (const bruto of fieldErrors as FieldErrorDoServidor[]) {
+    const id = typeof bruto?.questionId === 'string' ? bruto.questionId : ''
+    const msg = typeof bruto?.error === 'string' ? bruto.error : ''
+    if (id && msg && visiveis.has(id)) return { questionId: id, error: msg }
+  }
+  return null
+}

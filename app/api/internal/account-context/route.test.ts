@@ -28,8 +28,22 @@ function makeReq(body: unknown, token: string | null = SECRET) {
 }
 
 function mockProfiles(rows: Record<string, unknown>[]) {
+  // O mock emula o comportamento REAL da cadeia nova: `.not('email_confirmed_at','is',null)`
+  // filtra no "banco" e `.limit(n)` corta DEPOIS do filtro. E ele só expõe essa cadeia — se
+  // alguém reverter a rota para o `.limit(3)` sem filtro (o defeito da varredura 11/08/2026),
+  // a chamada quebra e os testes de ficha entregue caem. É a trava anti-regressão.
   mockAdmin.mockReturnValue({
-    from: () => ({ select: () => ({ eq: () => ({ limit: async () => ({ data: rows, error: null }) }) }) }),
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          not: (col: string, op: string) => {
+            if (col !== 'email_confirmed_at' || op !== 'is') throw new Error(`filtro inesperado: ${col} ${op}`)
+            const confirmadas = rows.filter((r) => r.email_confirmed_at != null)
+            return { limit: async (n: number) => ({ data: confirmadas.slice(0, n), error: null }) }
+          },
+        }),
+      }),
+    }),
   } as never)
 }
 
@@ -100,6 +114,18 @@ describe('ficha — match único entre CONFIRMADOS', () => {
     mockProfiles([{ ...CONFIRMADO, full_name: 'Atacante', email_confirmed_at: null }, CONFIRMADO])
     const body = await (await POST(makeReq({ phone: '83999376704' }))).json()
     expect(body.ficha?.nome).toBe('Sidney Crystian')
+  })
+
+  it('🛡️ 2 confirmados + fantasmas ALÉM da janela antiga → ficha nula (o corte não esconde mais ninguém)', async () => {
+    // O defeito exato da varredura 11/08: com o limit(3) ANTES do filtro, este cenário podia
+    // devolver "1 confirmado" (os fantasmas ocupavam a janela e escondiam o 2º confirmado) — e
+    // a ficha de UMA das duas pessoas vazava para a conversa. Com o filtro no banco, os
+    // fantasmas nem entram na conta: 2 confirmados → ambiguidade → nula, sempre.
+    const fantasma = { ...CONFIRMADO, full_name: 'Fantasma', email_confirmed_at: null }
+    mockProfiles([fantasma, { ...fantasma }, CONFIRMADO, { ...CONFIRMADO, full_name: 'Outra Pessoa' }])
+    const res = await POST(makeReq({ phone: '5583999376704' }, SECRET))
+    const body = await res.json() as { ficha: unknown }
+    expect(body.ficha).toBeNull()
   })
 
   it('telefone inválido → 400', async () => {

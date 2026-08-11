@@ -134,12 +134,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const db = createAdminClient()
-    // limite 3: só precisamos distinguir 0, 1 e "mais de 1".
+    // O filtro de confirmados roda NO BANCO, antes de qualquer corte (varredura 11/08/2026 —
+    // o padrão já existia em conversion/check e esta rota ficou para trás). A versão antiga
+    // fazia `.limit(3)` ANTES de filtrar: com 4+ cadastros no mesmo telefone, o corte podia
+    // esconder um confirmado — a checagem de unicidade aprovava "1 confirmado" com um SEGUNDO
+    // confirmado fora da janela, e a ficha de uma das duas pessoas vazava para a conversa.
+    // limit(2) basta: só se distingue 0, 1 e "mais de 1" ENTRE CONFIRMADOS.
     const { data, error } = await db
       .from('profiles')
       .select('full_name, plan, plan_status, plan_cycle, plan_expires_at, email_confirmed_at')
       .eq('phone_match_key_br', phoneKey)
-      .limit(3)
+      .not('email_confirmed_at', 'is', null)
+      .limit(2)
 
     if (error) {
       return NextResponse.json({ ok: true, ficha: null }, { status: 200, headers: NO_STORE })
@@ -148,7 +154,7 @@ export async function POST(req: NextRequest) {
     // Match único ENTRE CONFIRMADOS: cadastro sem e-mail confirmado não conta
     // (mitiga cadastro-fantasma do P1-3; a posse REAL do telefone só virá com
     // OTP — até lá a ficha é contexto fraco por contrato).
-    const confirmados = (data ?? []).filter((p) => p.email_confirmed_at) as ProfileRow[]
+    const confirmados = (data ?? []) as ProfileRow[]
     if (confirmados.length !== 1) {
       return NextResponse.json({ ok: true, ficha: null }, { status: 200, headers: NO_STORE })
     }

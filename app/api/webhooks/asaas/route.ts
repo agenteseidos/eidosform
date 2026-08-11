@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPlanActivated, sendPlanCancelled, sendBillingOpsAlert } from '@/lib/resend'
+import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { notifyPlanoAtivado, notifyAssinaturaCancelada, planLabel } from '@/lib/whatsapp-confirmations'
 import { PLANS, PlanName, handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { PLAN_PRICES, getSubscription, parseExternalReference, cancelSubscription } from '@/lib/asaas'
@@ -466,6 +467,15 @@ export async function POST(req: NextRequest) {
   log('[asaas-webhook] Event received', { event, eventId })
   await logWebhookEvent({ event, status: 'received', profile_id: undefined })
 
+  // Posse do lock de ativação (varredura 10/08/2026): o mesmo `activation:{profileId}` que os
+  // crons de reconcile já seguram. Sem ele, webhook e cron podiam ativar o MESMO perfil ao
+  // mesmo tempo — cada um passando pelos próprios re-checks com uma foto diferente do banco.
+  // Guardado numa variável (e não em try/finally local) porque o ramo de ativação tem `break`
+  // e `throw` no meio; a soltura acontece nos DOIS pontos únicos de saída: o catch externo e o
+  // final feliz. Se o processo morrer antes, o lock fica stale e o acquire seguinte o toma
+  // atomicamente após 2min (comportamento já existente do billing-lock).
+  let activationLockHeld: string | null = null
+
   try {
     switch (event) {
       case 'PAYMENT_CONFIRMED':
@@ -742,6 +752,16 @@ export async function POST(req: NextRequest) {
         // CORRENTE tem dueDate > (expiração − 1 ciclo); pagamento do ciclo anterior fica
         // atrás dessa linha. Sem dueDate/expiry legíveis → assume renovação (comportamento
         // anterior, conservador p/ não quebrar a virada de ciclo).
+        // TRAVA DE ATIVAÇÃO — quinto e último caminho a respeitá-la (os crons já seguravam;
+        // faltavam webhook, polling e reprocessador). Ocupada = outro caminho está ativando
+        // ESTE perfil agora → lançar manda o evento ao DLQ e o reprocessador retenta depois
+        // que o outro terminar. Nada se perde; nada roda em dupla.
+        const activationLockKey = `activation:${user.id}`
+        if (!(await acquireLock(supabase, activationLockKey))) {
+          throw new Error(`lock de ativação ocupado p/ profile ${user.id} — DLQ/retry (outro caminho ativando)`)
+        }
+        activationLockHeld = activationLockKey
+
         const alreadyActiveSamePlan =
           previousProfile?.plan === plan &&
           previousProfile?.plan_status === 'active' &&
@@ -1258,6 +1278,9 @@ export async function POST(req: NextRequest) {
         break
     }
   } catch (err) {
+    // Solta o lock de ativação se este caminho o segurava — sem isto, o DLQ/retry deste mesmo
+    // evento esperaria os 2min do stale-takeover à toa.
+    if (activationLockHeld) { await releaseLock(supabase, activationLockHeld); activationLockHeld = null }
     // Retornamos 200 (não 500) intencionalmente: o evento já passou idempotency e
     // foi gravado em asaas_webhook_events. Retornar 5xx fazia o Asaas retentar o
     // evento dezenas/centenas de vezes, gerando retry storm (consumiu 30k requisições
@@ -1294,6 +1317,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true, processed: false, error: 'Logged for manual reprocess' })
   }
+
+  // Final feliz: solta o lock de ativação (o outro ponto de soltura é o catch acima).
+  if (activationLockHeld) { await releaseLock(supabase, activationLockHeld); activationLockHeld = null }
 
   // Promove o registro de idempotência 'received' → 'processed' (só o desta rota; o filtro
   // por status evita clobber de markers/locks e do 'failed' setado no catch). Best-effort:

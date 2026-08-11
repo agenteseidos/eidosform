@@ -23,6 +23,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription, parseExternalReference, hasOverduePaymentForSubscription } from '@/lib/asaas'
+import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart, type BillingCycle } from '@/lib/billing-activation'
 import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
@@ -298,51 +299,64 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
       throw new Error(`sub ${subscriptionId} prorateada (R$${subVal} != preço cheio ${plan}/${cycle}) — NÃO ativa automaticamente; revisar manual`)
     }
 
-    const { data: actRows, error: actErr } = await supabase
-      .from('profiles')
-      .update(buildActivePlanUpdate({ plan, cycle, customerId, subscriptionId }))
-      .eq('id', profile.id)
-      .select('id')
-    if (actErr || !actRows || actRows.length !== 1) throw new Error(`ativar plano falhou (rows=${actRows?.length ?? 0}): ${actErr?.message ?? 'sem erro DB'}`)
-    await stampAnnualStart(supabase, profile.id, cycle)
-
-    await supabase
-      .from('billing_checkouts')
-      .update({ status: 'paid', last_event: 'REPROCESS_CONFIRMED', asaas_subscription_id: subscriptionId })
-      .eq('id', checkout.id)
-
-    // handleUpgrade SEMPRE (idempotente) — completa o despause mesmo quando o evento original
-    // já reivindicou os efeitos no webhook mas FALHOU ao despausar (foi pra DLQ). Sem isto, um
-    // profile já-ativo não teria os forms despausados na recuperação. (#2, audit 2026-06-08.)
-    await handleUpgrade(profile.id, serviceKey)
-    // E-mail só em transição (não reenvia em renovação/reprocesso de já-ativo).
-    if (profile.plan === 'free' || profile.plan !== plan) {
-      await sendPlanActivated({ to: profile.email, name: profile.full_name ?? 'usuário', plan })
-        .catch((e) => logError('[asaas-reprocess] email ativação falhou', e))
-      void notifyPlanoAtivado(profile.id)
+    // TRAVA DE ATIVAÇÃO (varredura 10/08/2026) — mesma dos crons e, agora, do webhook.
+    // O reprocesso roda por trás de um clique do admin, potencialmente em paralelo com um
+    // webhook do mesmo perfil. Ocupada → relança: o evento continua 'failed' e a próxima
+    // tentativa entra depois que o outro caminho terminar.
+    const activationLockKey = `activation:${profile.id}`
+    if (!(await acquireLock(supabase, activationLockKey))) {
+      throw new Error(`lock de ativação ocupado p/ profile ${profile.id} — mantém failed p/ retry`)
     }
+    try {
+      const { data: actRows, error: actErr } = await supabase
+        .from('profiles')
+        .update(buildActivePlanUpdate({ plan, cycle, customerId, subscriptionId }))
+        .eq('id', profile.id)
+        .select('id')
+      if (actErr || !actRows || actRows.length !== 1) throw new Error(`ativar plano falhou (rows=${actRows?.length ?? 0}): ${actErr?.message ?? 'sem erro DB'}`)
+      await stampAnnualStart(supabase, profile.id, cycle)
 
-    // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente —
-    // MESMA rotina do webhook e do polling (helper compartilhado). Antes, o reprocesso só
-    // ativava (P1-1/P1-2 valiam aqui também) — audit Codex 2026-06-07.
-    const fin = await finalizeActivation({
-      db: supabase,
-      userId: profile.id,
-      customerId,
-      newSubscriptionId: subscriptionId,
-      previousSubscriptionId: previousSubId,
-      plan,
-      cycle,
-      source: 'reprocess',
-    })
-    // Correção de valor recorrente necessária mas falhou → RELANÇA: mantém o evento 'failed'
-    // (reprocessEvent incrementa attempts) p/ nova tentativa. NUNCA subcobrar na renovação.
-    if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
-      throw new Error(`correção de valor recorrente pendente (sub ${subscriptionId}) — mantém failed p/ retry`)
+      await supabase
+        .from('billing_checkouts')
+        .update({ status: 'paid', last_event: 'REPROCESS_CONFIRMED', asaas_subscription_id: subscriptionId })
+        .eq('id', checkout.id)
+
+      // handleUpgrade SEMPRE (idempotente) — completa o despause mesmo quando o evento original
+      // já reivindicou os efeitos no webhook mas FALHOU ao despausar (foi pra DLQ). Sem isto, um
+      // profile já-ativo não teria os forms despausados na recuperação. (#2, audit 2026-06-08.)
+      await handleUpgrade(profile.id, serviceKey)
+      // E-mail só em transição (não reenvia em renovação/reprocesso de já-ativo).
+      if (profile.plan === 'free' || profile.plan !== plan) {
+        await sendPlanActivated({ to: profile.email, name: profile.full_name ?? 'usuário', plan })
+          .catch((e) => logError('[asaas-reprocess] email ativação falhou', e))
+        void notifyPlanoAtivado(profile.id)
+      }
+
+      // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente —
+      // MESMA rotina do webhook e do polling (helper compartilhado). Antes, o reprocesso só
+      // ativava (P1-1/P1-2 valiam aqui também) — audit Codex 2026-06-07.
+      const fin = await finalizeActivation({
+        db: supabase,
+        userId: profile.id,
+        customerId,
+        newSubscriptionId: subscriptionId,
+        previousSubscriptionId: previousSubId,
+        plan,
+        cycle,
+        source: 'reprocess',
+      })
+      // Correção de valor recorrente necessária mas falhou → RELANÇA: mantém o evento 'failed'
+      // (reprocessEvent incrementa attempts) p/ nova tentativa. NUNCA subcobrar na renovação.
+      if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
+        throw new Error(`correção de valor recorrente pendente (sub ${subscriptionId}) — mantém failed p/ retry`)
+      }
+      log('[asaas-reprocess] plano ativado via reprocesso', { profileId: profile.id, plan })
+      return 'activated'
+    } finally {
+      await releaseLock(supabase, activationLockKey)
     }
-    log('[asaas-reprocess] plano ativado via reprocesso', { profileId: profile.id, plan })
-    return 'activated'
   }
+
 
   // ── REFUND/DELETE: NÃO reverte (#2) — espelha o webhook (refund parcial/ambíguo não
   // cancela). Fica como noop p/ revisão manual; não derruba acesso.

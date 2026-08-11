@@ -16,6 +16,12 @@ vi.mock('next/server', () => ({
   },
 }))
 vi.mock('@supabase/supabase-js', () => ({ createClient: vi.fn() }))
+// Trava de ativação (varredura 10/08/2026): livre por padrão; os testes dela ocupam de propósito.
+const lockMocks = vi.hoisted(() => ({
+  acquireLock: vi.fn(async () => true),
+  releaseLock: vi.fn(async () => undefined),
+}))
+vi.mock('@/lib/billing-lock', () => lockMocks)
 vi.mock('@/lib/resend', () => ({
   sendPlanActivated: vi.fn(),
   sendPlanCancelled: vi.fn(),
@@ -714,5 +720,68 @@ describe('POST /api/webhooks/asaas — evento de dinheiro sem dono vai para o DL
 
     expect((await res.json() as { processed?: boolean }).processed).toBe(false)
     expect(foiParaDLQ(calls)).toBeTruthy()
+  })
+})
+
+/**
+ * Trava de ativação no WEBHOOK (varredura 10/08/2026) — o quinto e último caminho a respeitá-la.
+ *
+ * Os crons de reconcile sempre seguraram `activation:{profileId}`; webhook, polling e
+ * reprocessador entravam sem nada. Dois caminhos ativando o MESMO perfil ao mesmo tempo, cada um
+ * com uma foto diferente do banco, é como nascem cobrança dupla e marker órfão.
+ */
+describe('POST /api/webhooks/asaas — trava de ativação', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    lockMocks.acquireLock.mockResolvedValue(true)
+  })
+
+  function setupAtivacao() {
+    const results = baseResults()
+    const { db, calls } = makeRecordingDb(results)
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+    return { db, calls }
+  }
+
+  it('🛡️ lock OCUPADO → evento vai para o DLQ, nenhuma escrita em profiles', async () => {
+    // Outro caminho está ativando este perfil agora. Lançar manda ao DLQ e o reprocessador
+    // retenta DEPOIS que o outro terminar. Nada se perde; nada roda em dupla.
+    lockMocks.acquireLock.mockResolvedValue(false)
+    const { calls } = setupAtivacao()
+
+    const res = await POST(makeReq(CONFIRMED_BODY))
+
+    expect((await res.json() as { processed?: boolean }).processed).toBe(false)
+    expect(calls.find((c) => c.table === 'profiles' && c.method === 'update')).toBeUndefined()
+    expect(calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'failed')).toBeTruthy()
+  })
+
+  it('adquire com a chave activation:{userId} e SOLTA no final feliz', async () => {
+    setupAtivacao()
+
+    await POST(makeReq(CONFIRMED_BODY))
+
+    expect(lockMocks.acquireLock).toHaveBeenCalledWith(expect.anything(), 'activation:user-1')
+    expect(lockMocks.releaseLock).toHaveBeenCalledWith(expect.anything(), 'activation:user-1')
+  })
+
+  it('SOLTA o lock também quando o ramo falha no meio (throw → DLQ)', async () => {
+    // Sem a soltura no catch, o retry deste mesmo evento esperaria os 2min do stale-takeover.
+    const results = baseResults()
+    results.profiles = [
+      { data: USER_ROW, error: null },
+      { data: { asaas_subscription_id: null }, error: null },
+      { data: [], error: null }, // ativação persiste 0 linhas → throw
+    ]
+    const { db } = makeRecordingDb(results)
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+
+    const res = await POST(makeReq(CONFIRMED_BODY))
+
+    expect((await res.json() as { processed?: boolean }).processed).toBe(false)
+    expect(lockMocks.releaseLock).toHaveBeenCalledWith(expect.anything(), 'activation:user-1')
   })
 })

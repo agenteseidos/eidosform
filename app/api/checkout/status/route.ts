@@ -5,6 +5,7 @@ import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getSubscription, getCustomerSubscriptions } from '@/lib/asaas'
 import { handleUpgrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
+import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError } from '@/lib/logger'
 
@@ -159,103 +160,117 @@ export async function GET() {
       return false
     }
 
-    log('[checkout/status] Persisting plan from Asaas polling (service-role)', {
-      userId: user!.id,
-      plan: checkoutPlan,
-      cycle,
-      subscriptionId,
-    })
-
-    const { data: updatedRows, error: updateError } = await admin
-      .from('profiles')
-      .update(buildActivePlanUpdate({
-        plan: checkoutPlan,
-        cycle,
-        customerId: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
-        subscriptionId,
-      }) as never)
-      .eq('id', user!.id)
-      .select('id')
-
-    if (updateError || !updatedRows || updatedRows.length !== 1) {
-      logError('[checkout/status] Falha ao persistir plano no profile (0 linhas/erro)', updateError, {
-        userId: user!.id,
-        subscriptionId,
-        rows: updatedRows?.length ?? 0,
-      })
+    // TRAVA DE ATIVAÇÃO (varredura 10/08/2026) — mesma dos crons, do webhook e do
+    // reprocessador. O polling roda a cada poucos segundos enquanto o overlay espera; sem a
+    // trava, ele e o webhook podiam ativar o MESMO perfil ao mesmo tempo. Ocupada → devolve
+    // false SEM erro: o overlay continua pollando e a próxima rodada entra depois que o outro
+    // caminho terminar. É o caminho com a recuperação mais barata dos cinco.
+    const activationLockKey = `activation:${user!.id}`
+    if (!(await acquireLock(admin, activationLockKey))) {
+      log('[checkout/status] lock de ativação ocupado — aguardando o outro caminho (próximo poll retenta)', { userId: user!.id })
       return false
     }
-    await stampAnnualStart(admin, user!.id, cycle)
-
-    if (checkoutId) {
-      const { error: ckError } = await admin
-        .from('billing_checkouts')
-        .update({
-          asaas_subscription_id: subscriptionId,
-          status: 'paid',
-          last_event: 'POLLING_CONFIRMED',
-        } as never)
-        .eq('id', checkoutId)
-      if (ckError) {
-        logError('[checkout/status] Falha ao atualizar billing_checkouts (não-bloqueante)', ckError, { checkoutId })
-      }
-    }
-
-    // handleUpgrade SÓ depois de confirmar que o plano persistiu de verdade.
     try {
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-      if (serviceKey) {
-        const upgrade = await handleUpgrade(user!.id, serviceKey)
-        log('[checkout/status] Upgrade processed via polling', { userId: user!.id, unpausedForms: upgrade.unpausedCount })
-      }
-    } catch (err) {
-      log('[checkout/status] handleUpgrade failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
-    }
+      log('[checkout/status] Persisting plan from Asaas polling (service-role)', {
+        userId: user!.id,
+        plan: checkoutPlan,
+        cycle,
+        subscriptionId,
+      })
 
-    // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente —
-    // MESMA rotina do webhook e do reprocessador (helper compartilhado). Antes, o polling
-    // só reconciliava: não cancelava a sub anterior do MESMO DIA (P1-2) nem corrigia o
-    // valor recorrente (P1-1) — audit Codex 2026-06-07.
-    const fin = await finalizeActivation({
-      db: admin,
-      userId: user!.id,
-      customerId: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
-      newSubscriptionId: subscriptionId,
-      previousSubscriptionId: previousSubId,
-      plan: checkoutPlan,
-      cycle,
-      source: 'polling',
-    })
-    // Correção de valor recorrente necessária mas falhou: o polling não tem um evento na
-    // DLQ pra retentar, então registra uma linha sintética 'failed' que o reprocessador
-    // (endpoint admin) vai pegar e retentar. NUNCA deixar a renovação subcobrar em silêncio.
-    if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
-      try {
-        // asaas_webhook_events não está no database.types.ts (DLQ adicionada por migration);
-        // cast pra escapar do tipo do client tipado, igual ao webhook (client destipado).
-        await (admin as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
-          .from('asaas_webhook_events')
-          .upsert({
-            event_id: `polling-recurfix:${subscriptionId}`,
-            event: 'PAYMENT_CONFIRMED',
-            status: 'failed',
-            error: 'polling: correção de valor recorrente pendente (proration-checkout)',
-            attempts: 0,
-            customer_id: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
-            subscription_id: subscriptionId,
-            last_attempt_at: new Date().toISOString(),
-          }, { onConflict: 'event_id' })
-        logError('[checkout/status] Valor recorrente não corrigido no polling — enfileirado na DLQ p/ reprocesso', undefined, { userId: user!.id, subscriptionId })
-      } catch (err) {
-        // Não conseguimos NEM corrigir NEM enfileirar p/ retry → não confirmar success
-        // (senão a subcobrança ficaria silenciosa). Retorna pending: o overlay segue
-        // pollando e tentamos de novo; erro alto p/ alerta operacional. (P2b round 3.)
-        logError('[checkout/status] CRÍTICO: valor recorrente não corrigido E falha ao enfileirar DLQ — retornando pending', err, { userId: user!.id, subscriptionId })
+      const { data: updatedRows, error: updateError } = await admin
+        .from('profiles')
+        .update(buildActivePlanUpdate({
+          plan: checkoutPlan,
+          cycle,
+          customerId: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
+          subscriptionId,
+        }) as never)
+        .eq('id', user!.id)
+        .select('id')
+
+      if (updateError || !updatedRows || updatedRows.length !== 1) {
+        logError('[checkout/status] Falha ao persistir plano no profile (0 linhas/erro)', updateError, {
+          userId: user!.id,
+          subscriptionId,
+          rows: updatedRows?.length ?? 0,
+        })
         return false
       }
-    }
+      await stampAnnualStart(admin, user!.id, cycle)
 
-    return true
+      if (checkoutId) {
+        const { error: ckError } = await admin
+          .from('billing_checkouts')
+          .update({
+            asaas_subscription_id: subscriptionId,
+            status: 'paid',
+            last_event: 'POLLING_CONFIRMED',
+          } as never)
+          .eq('id', checkoutId)
+        if (ckError) {
+          logError('[checkout/status] Falha ao atualizar billing_checkouts (não-bloqueante)', ckError, { checkoutId })
+        }
+      }
+
+      // handleUpgrade SÓ depois de confirmar que o plano persistiu de verdade.
+      try {
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+        if (serviceKey) {
+          const upgrade = await handleUpgrade(user!.id, serviceKey)
+          log('[checkout/status] Upgrade processed via polling', { userId: user!.id, unpausedForms: upgrade.unpausedCount })
+        }
+      } catch (err) {
+        log('[checkout/status] handleUpgrade failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) })
+      }
+
+      // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente —
+      // MESMA rotina do webhook e do reprocessador (helper compartilhado). Antes, o polling
+      // só reconciliava: não cancelava a sub anterior do MESMO DIA (P1-2) nem corrigia o
+      // valor recorrente (P1-1) — audit Codex 2026-06-07.
+      const fin = await finalizeActivation({
+        db: admin,
+        userId: user!.id,
+        customerId: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
+        newSubscriptionId: subscriptionId,
+        previousSubscriptionId: previousSubId,
+        plan: checkoutPlan,
+        cycle,
+        source: 'polling',
+      })
+      // Correção de valor recorrente necessária mas falhou: o polling não tem um evento na
+      // DLQ pra retentar, então registra uma linha sintética 'failed' que o reprocessador
+      // (endpoint admin) vai pegar e retentar. NUNCA deixar a renovação subcobrar em silêncio.
+      if (fin.recurringValueNeeded && !fin.recurringValueFixed) {
+        try {
+          // asaas_webhook_events não está no database.types.ts (DLQ adicionada por migration);
+          // cast pra escapar do tipo do client tipado, igual ao webhook (client destipado).
+          await (admin as unknown as { from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<unknown> } })
+            .from('asaas_webhook_events')
+            .upsert({
+              event_id: `polling-recurfix:${subscriptionId}`,
+              event: 'PAYMENT_CONFIRMED',
+              status: 'failed',
+              error: 'polling: correção de valor recorrente pendente (proration-checkout)',
+              attempts: 0,
+              customer_id: asaasCustomerId ?? profile?.asaas_customer_id ?? null,
+              subscription_id: subscriptionId,
+              last_attempt_at: new Date().toISOString(),
+            }, { onConflict: 'event_id' })
+          logError('[checkout/status] Valor recorrente não corrigido no polling — enfileirado na DLQ p/ reprocesso', undefined, { userId: user!.id, subscriptionId })
+        } catch (err) {
+          // Não conseguimos NEM corrigir NEM enfileirar p/ retry → não confirmar success
+          // (senão a subcobrança ficaria silenciosa). Retorna pending: o overlay segue
+          // pollando e tentamos de novo; erro alto p/ alerta operacional. (P2b round 3.)
+          logError('[checkout/status] CRÍTICO: valor recorrente não corrigido E falha ao enfileirar DLQ — retornando pending', err, { userId: user!.id, subscriptionId })
+          return false
+        }
+      }
+
+      return true
+    } finally {
+      await releaseLock(admin, activationLockKey)
+    }
   }
 
   // 1. Try by subscription ID if available

@@ -22,7 +22,7 @@
  * tratamento MANUAL — o evento permanece visível na lista de failed/dead do admin.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription, parseExternalReference } from '@/lib/asaas'
+import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription, parseExternalReference, hasOverduePaymentForSubscription } from '@/lib/asaas'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart, type BillingCycle } from '@/lib/billing-activation'
 import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
@@ -372,6 +372,35 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
   // fica como skip (revisão manual via lista do admin). (P1-3, audit Codex 2026-06-07.)
   if (!subscriptionId || profile.asaas_subscription_id !== subscriptionId) {
     return 'skip_subscription_mismatch_ou_sem_sub'
+  }
+
+  // ESTADO ATUAL ANTES DE DERRUBAR (varredura 10/08/2026 — item do plano §3 nunca executado).
+  // O reprocesso roda horas ou DIAS depois do evento: um PAYMENT_OVERDUE que falhou no webhook
+  // e foi pago no dia seguinte continuava aqui como ordem de rebaixamento. As guardas acima só
+  // olham o NOSSO banco (já-free, sub trocada); nenhuma pergunta ao Asaas como o cliente está
+  // HOJE. Resultado: pagante em dia rebaixado por uma foto velha.
+  //
+  // A prova é a mesma do expire-plans: sub ACTIVE e nenhuma cobrança vencida = cliente em dia,
+  // o evento é obsoleto → não reverte. Sub sumida (404) ou não-ACTIVE → reversão procede.
+  // Consulta falhou → mantém 'failed' para retry: dinheiro não se decide sem dado.
+  try {
+    const subAtual = (await getSubscription(subscriptionId)) as { status?: string }
+    if (String(subAtual?.status ?? '').toUpperCase() === 'ACTIVE') {
+      const due = await hasOverduePaymentForSubscription(subscriptionId)
+      if (!due.ok) throw new Error('consulta de cobranças vencidas falhou')
+      if (!due.overdue) {
+        log('[asaas-reprocess] evento de reversão OBSOLETO — sub ativa e sem vencidos (cliente pagou depois do evento); acesso mantido', {
+          profileId: profile.id, event: ev, subscriptionId,
+        })
+        return 'skip_evento_obsoleto_cliente_em_dia'
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // 404 = a assinatura não existe mais no Asaas — é exatamente o caso de reverter.
+    if (!/error 404/i.test(msg)) {
+      throw new Error(`estado atual da sub indisponível — mantém failed p/ retry: ${msg}`)
+    }
   }
 
   const { data: rows, error } = await supabase

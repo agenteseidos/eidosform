@@ -13,6 +13,7 @@ vi.mock('@/lib/asaas', () => ({
     professional: { monthly: 257.0, yearly: 2364.0 },
   },
   getSubscription: vi.fn(),
+  hasOverduePaymentForSubscription: vi.fn(),
   cancelSubscription: vi.fn(),
   reconcileActiveSubscriptions: vi.fn(),
   updateSubscription: vi.fn(),
@@ -41,10 +42,15 @@ vi.mock('@/lib/plan-limits', () => ({
 }))
 vi.mock('@/lib/resend', () => ({ sendPlanActivated: vi.fn(), sendPlanCancelled: vi.fn() }))
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }))
+vi.mock('@/lib/whatsapp-confirmations', () => ({
+  notifyPlanoAtivado: vi.fn(async () => ({ sent: true })),
+  notifyAssinaturaCancelada: vi.fn(async () => ({ sent: true })),
+  planLabel: (p?: string | null) => p ?? 'x',
+}))
 
 import { reprocessEvent } from './asaas-reprocess'
 import { createClient } from '@supabase/supabase-js'
-import { getSubscription } from '@/lib/asaas'
+import { getSubscription, hasOverduePaymentForSubscription } from '@/lib/asaas'
 import { finalizeActivation } from '@/lib/billing-activation'
 import { handleUpgrade } from '@/lib/plan-limits'
 import { sendPlanActivated, sendPlanCancelled } from '@/lib/resend'
@@ -153,5 +159,89 @@ describe('reprocessEvent — guard de preço-cheio na ativação', () => {
     expect(activation).toBeTruthy()
     expect((activation!.args[0] as { plan: string }).plan).toBe('starter')
     expect(mockFinalize).toHaveBeenCalled()
+  })
+})
+
+/**
+ * Reversão via reprocesso — o estado ATUAL manda, não a foto velha (varredura 10-11/08/2026).
+ *
+ * O reprocesso roda horas ou DIAS depois do evento. Um PAYMENT_OVERDUE que falhou no webhook e
+ * foi PAGO no dia seguinte continuava na fila como ordem de rebaixamento: as guardas antigas só
+ * olhavam o nosso banco (já-free, sub trocada) e nenhuma perguntava ao Asaas como o cliente está
+ * HOJE. Pagante em dia era rebaixado por uma foto velha.
+ */
+describe('reprocessEvent — reversão consulta o estado atual antes de derrubar', () => {
+  const OVERDUE_ROW = { ...FAILED_ROW, event: 'PAYMENT_OVERDUE' }
+  const PAGANTE = { id: 'user-1', email: 'u@x.com', full_name: 'U', plan: 'plus', asaas_subscription_id: 'sub_1' }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://localhost')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'service-key')
+    vi.mocked(sendPlanCancelled).mockResolvedValue(undefined as never)
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  function dbReversao() {
+    return makeRecordingDb({
+      asaas_webhook_events: [{ data: OVERDUE_ROW, error: null }, { error: null }],
+      billing_checkouts: [{ data: CK_ROW, error: null }, { error: null }],
+      profiles: [{ data: PAGANTE, error: null }, { data: [{ id: 'user-1' }], error: null }],
+    })
+  }
+  const mockOverdue = vi.mocked(hasOverduePaymentForSubscription)
+
+  it('🛡️ cliente PAGOU depois do evento (sub ativa, zero vencidos) → NÃO reverte', async () => {
+    const { db, calls } = dbReversao()
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ status: 'ACTIVE' } as never)
+    mockOverdue.mockResolvedValue({ overdue: false, oldestDueDate: null, ok: true })
+
+    const result = await reprocessEvent('e1')
+
+    expect(result.ok).toBe(true)
+    expect(result.action).toBe('skip_evento_obsoleto_cliente_em_dia')
+    expect(calls.find((c) => c.table === 'profiles' && c.method === 'update')).toBeUndefined()
+  })
+
+  it('sub ativa mas COM cobrança vencida → o evento ainda vale, reverte', async () => {
+    const { db, calls } = dbReversao()
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ status: 'ACTIVE' } as never)
+    mockOverdue.mockResolvedValue({ overdue: true, oldestDueDate: '2026-08-01', ok: true })
+
+    const result = await reprocessEvent('e1')
+
+    expect(result.ok).toBe(true)
+    expect(result.action).toBe('reverted_to_free')
+    const rev = calls.find((c) => c.table === 'profiles' && c.method === 'update')
+    expect((rev!.args[0] as { plan: string }).plan).toBe('free')
+  })
+
+  it('sub NÃO existe mais no Asaas (404) → reverte normalmente', async () => {
+    const { db, calls } = dbReversao()
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockRejectedValue(new Error('Asaas error 404: not found'))
+
+    const result = await reprocessEvent('e1')
+
+    expect(result.ok).toBe(true)
+    expect(result.action).toBe('reverted_to_free')
+    expect(calls.find((c) => c.table === 'profiles' && c.method === 'update')).toBeTruthy()
+  })
+
+  it('consulta de vencidos FALHOU → não decide: mantém failed p/ retry, nada gravado', async () => {
+    const { db, calls } = dbReversao()
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ status: 'ACTIVE' } as never)
+    mockOverdue.mockResolvedValue({ overdue: false, oldestDueDate: null, ok: false })
+
+    const result = await reprocessEvent('e1')
+
+    expect(result.ok).toBe(false)
+    expect(calls.find((c) => c.table === 'profiles' && c.method === 'update')).toBeUndefined()
+    const failMark = calls.find((c) => c.table === 'asaas_webhook_events' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'failed')
+    expect(failMark).toBeTruthy()
   })
 })

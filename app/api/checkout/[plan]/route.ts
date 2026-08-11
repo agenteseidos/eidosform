@@ -655,7 +655,22 @@ export async function POST(
       }, { onConflict: 'checkout_id' })
 
     if (ckInsertError) {
-      logError('[checkout] Falhou ao inserir billing_checkouts', ckInsertError, { checkoutId: checkout.id, profileId: profile.profileId })
+      // FALHA FECHADO (E03-S0-002, fechado em 11/08/2026). Esta linha é o VÍNCULO entre o
+      // pagamento e o usuário: o checkout hospedado do Asaas não persiste externalReference
+      // (gate documentado no CLAUDE.md), então a correlação do webhook depende dela e do
+      // asaas_customer_id. A versão antiga LOGAVA a falha e entregava a URL mesmo assim — a
+      // pessoa pagava numa sessão que nenhum registro nosso ligava a ela, e a ativação virava
+      // arqueologia de DLQ. Dinheiro não anda antes de o vínculo ser durável: sem a linha, sem
+      // a URL. A sessão criada no Asaas expira sozinha em 60min sem cobrar nada.
+      logError('[checkout] Falhou ao inserir billing_checkouts — checkout NÃO entregue (fail-closed)', ckInsertError, { checkoutId: checkout.id, profileId: profile.profileId })
+      await sendBillingOpsAlert({
+        subject: 'Checkout NÃO entregue: falha ao gravar billing_checkouts (fail-closed funcionou)',
+        lines: { profileId: profile.profileId, checkoutId: checkout.id, plan, cycle, erro: ckInsertError.message },
+      }).catch(() => {})
+      return NextResponse.json(
+        { error: 'Não foi possível iniciar o checkout agora. Tente novamente em instantes.' },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({

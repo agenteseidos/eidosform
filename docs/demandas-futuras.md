@@ -10,7 +10,38 @@
 
 ---
 
-## D-01 · Régua de cobrança para inadimplência (e-mail + WhatsApp)
+## D-01 · ✅ FASE E-MAIL PRONTA — Régua de cobrança para inadimplência
+
+**Construída em 11/08/2026**, com os textos aprovados pelo Sidney na revisão (5 correções dele:
+não citar a plataforma de cobrança, incluir link de pagamento, detalhar o prazo e o que se perde,
+um e-mail POR DIA, e gatilho de perda concreto a partir do D+3).
+
+**Régua de 6 estágios** (D+0 a D+5), rotação de horário 9h/12h/17h com o **D+4 fixo de manhã** —
+é a véspera do corte da meia-noite e o cliente precisa do dia inteiro para resolver com o banco.
+
+**Arquitetura:** `lib/dunning-engine.ts` decide (agnóstico de canal), `lib/dunning-content.ts`
+tem os textos dos DOIS canais lado a lado, `app/api/cron/dunning/route.ts` entrega. A decisão
+mora no motor, ANTES de qualquer canal — assim é impossível um canal disparar sem as checagens
+do outro, que foi a exigência do Sidney. Um cérebro, duas bocas.
+
+**Gatilho de parada:** nada é agendado com antecedência; a cada rodada o estado é relido do banco
+e do gateway. Quem pagou no meio da régua não recebe o aviso seguinte — sem ninguém cancelar nada.
+
+**Brinde:** a régua virou o detector de falha do `expire-plans`, que nunca teve alarme próprio
+(verificado: zero alertas no arquivo). Passou do prazo e a conta segue paga = o rebaixamento não
+aconteceu → alerta operacional no WhatsApp do dono. Ela detecta e avisa; NUNCA rebaixa — dois
+sistemas escrevendo no mesmo estado de dinheiro é como nascem os bugs desta auditoria.
+
+**Link de pagamento:** `getLinkPagamentoVencido` traz a página da fatura vencida, que aceita
+cartão novo, Pix e boleto — resolve "trocar cartão" e "lançar pagamento" sem construirmos tela.
+Sem link, o botão vira "responda este e-mail": botão quebrado numa cobrança é pior que nenhum.
+
+**55 testes** (23 do motor, 20 dos textos, 12 do cron). Sabotagem provada nas garantias:
+cobrar quem pagou, mentir sobre o rebaixamento, D+4 à noite, quebra de paridade entre canais e
+idempotência do dia.
+
+⏳ **Falta:** ligar o timer (receita em `docs/D-01-ativacao.md`) e, na 2ª onda, submeter os 6
+templates à Meta e ligar `DUNNING_WHATSAPP_ENABLED=true`.
 
 **Origem:** decisão do Sidney em 06/08/2026, durante o lote 1D da auditoria geral.
 

@@ -415,6 +415,43 @@ export async function sendWebhookFailureAlert(params: {
 }
 
 /** Plano cancelado */
+/**
+ * E-mail da régua de cobrança (D-01). Um único remetente para os 6 estágios — o conteúdo vem
+ * pronto de `lib/dunning-content.ts`, e a DECISÃO de enviar já foi tomada pelo motor.
+ *
+ * ⚠️ O espaçamento de UMA LINHA entre parágrafos é pedido explícito do Sidney ("acho que fica
+ * uma leitura mais agradável") — por isso cada parágrafo é um <p> com margem, nunca <br>.
+ *
+ * Sem link de pagamento (gateway fora do ar, cobrança sem URL), o botão dá lugar a um convite
+ * para responder o e-mail: botão quebrado numa cobrança é pior que nenhum botão.
+ */
+export async function sendDunningEmail(params: {
+  to: string
+  assunto: string
+  paragrafos: string[]
+  ctaLabel: string
+  ctaUrl: string | null
+}) {
+  const { to, assunto, paragrafos, ctaLabel, ctaUrl } = params
+  const corpo = paragrafos
+    .map((p) => `<p style="margin:0 0 16px;line-height:1.6;color:#1f2937">${escapeHtml(p)}</p>`)
+    .join('\n')
+  const cta = ctaUrl
+    ? `<a href="${escapeHtml(ctaUrl)}" style="display:inline-block;padding:14px 28px;background:#6366f1;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">${escapeHtml(ctaLabel)}</a>`
+    : `<p style="margin:0 0 16px;line-height:1.6;color:#1f2937"><strong>Responda este e-mail</strong> que a gente regulariza para você.</p>`
+  return sendEmailWithRetry({
+    to,
+    subject: assunto,
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:8px">
+        ${corpo}
+        <div style="margin:24px 0">${cta}</div>
+        <p style="color:#888;font-size:12px;margin-top:24px">— Equipe EidosForm · Instituto Eidos</p>
+      </div>
+    `,
+  })
+}
+
 export async function sendPlanCancelled(params: {
   to: string
   name: string

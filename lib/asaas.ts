@@ -710,6 +710,36 @@ export async function hasOverduePaymentForSubscription(subscriptionId: string): 
   }
 }
 
+/**
+ * Link de pagamento da cobrança VENCIDA mais antiga — o botão "Regularizar meu pagamento" da
+ * régua de cobrança (D-01, 11/08/2026).
+ *
+ * A página de fatura do gateway já aceita cartão NOVO, Pix e boleto, então ela resolve as duas
+ * necessidades do Sidney ("trocar o cartão" e "lançar o pagamento") sem construirmos tela
+ * nenhuma. O e-mail nunca cita o gateway — o cliente só vê o botão.
+ *
+ * ⚠️ `null` é um desfecho ESPERADO, não erro: gateway fora do ar, cobrança sem URL, sem vencida.
+ * Quem chama tem de ter um caminho sem link (a régua troca o botão por "responda este e-mail")
+ * — um botão quebrado numa cobrança é pior que nenhum botão.
+ */
+export async function getLinkPagamentoVencido(subscriptionId: string): Promise<{ ok: boolean; url: string | null; dueDate: string | null }> {
+  try {
+    const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=OVERDUE&limit=20`)
+    const pays: Array<{ dueDate?: string; invoiceUrl?: string; bankSlipUrl?: string }> = data?.data ?? []
+    // Mais ANTIGA primeiro: é a que trava a renovação; pagar ela é o que regulariza a conta.
+    const ordenadas = pays
+      .filter((p) => typeof p.dueDate === 'string' && p.dueDate)
+      .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))
+    const alvo = ordenadas.find((p) => p.invoiceUrl || p.bankSlipUrl)
+    if (!alvo) return { ok: true, url: null, dueDate: ordenadas[0]?.dueDate ?? null }
+    // invoiceUrl é a página completa (cartão + Pix + boleto); bankSlipUrl só o boleto.
+    return { ok: true, url: alvo.invoiceUrl ?? alvo.bankSlipUrl ?? null, dueDate: alvo.dueDate ?? null }
+  } catch (err) {
+    logWarn('[asaas] getLinkPagamentoVencido falhou', { subscriptionId, err: String(err).slice(0, 120) })
+    return { ok: false, url: null, dueDate: null }
+  }
+}
+
 export async function getPendingPaymentsBySubscription(subscriptionId: string): Promise<{ ok: boolean; payments: Array<{ id: string; dueDate: string; value: number }> }> {
   try {
     const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=PENDING&limit=20`)

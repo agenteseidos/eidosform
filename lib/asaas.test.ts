@@ -8,7 +8,7 @@
  * pagamento de outro cliente (o backstop estornaria uma renovação legítima).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createDetachedCheckout, getPaymentWithCard, findPaymentByCheckoutSession, hasConfirmedPaymentForSubscription } from './asaas'
+import { createDetachedCheckout, getPaymentWithCard, findPaymentByCheckoutSession, hasConfirmedPaymentForSubscription, getLinkPagamentoVencido } from './asaas'
 
 function stubFetch(status: number, body: unknown) {
   const fn = vi.fn().mockResolvedValue({
@@ -234,5 +234,45 @@ describe('hasConfirmedPaymentForSubscription — recorte de data', () => {
   it('consulta que falha devolve ok:false (o chamador não ativa nada)', async () => {
     stubFetch(500, {})
     expect(await hasConfirmedPaymentForSubscription('sub_1', CORTE)).toEqual({ confirmed: false, ok: false })
+  })
+})
+
+/**
+ * D-01 · o link de pagamento da régua de cobrança.
+ *
+ * O botão "Regularizar meu pagamento" precisa levar a uma página que aceite cartão novo, Pix e
+ * boleto — sem construirmos tela nenhuma. `null` é desfecho esperado (a régua troca o botão por
+ * "responda este e-mail"), porque botão quebrado numa cobrança é pior que nenhum botão.
+ */
+describe('getLinkPagamentoVencido', () => {
+  it('devolve a URL da cobrança vencida MAIS ANTIGA (é ela que trava a renovação)', async () => {
+    stubFetch(200, { data: [
+      { dueDate: '2026-08-20', invoiceUrl: 'https://fatura/nova' },
+      { dueDate: '2026-08-10', invoiceUrl: 'https://fatura/antiga' },
+    ] })
+    const r = await getLinkPagamentoVencido('sub_1')
+    expect(r).toEqual({ ok: true, url: 'https://fatura/antiga', dueDate: '2026-08-10' })
+  })
+
+  it('cai no boleto quando não há página de fatura', async () => {
+    stubFetch(200, { data: [{ dueDate: '2026-08-10', bankSlipUrl: 'https://boleto/x' }] })
+    expect((await getLinkPagamentoVencido('sub_1')).url).toBe('https://boleto/x')
+  })
+
+  it('sem cobrança vencida → url null, mas ok:true (não é erro)', async () => {
+    stubFetch(200, { data: [] })
+    expect(await getLinkPagamentoVencido('sub_1')).toEqual({ ok: true, url: null, dueDate: null })
+  })
+
+  it('cobrança vencida SEM url nenhuma → null com ok:true (a régua manda sem botão)', async () => {
+    stubFetch(200, { data: [{ dueDate: '2026-08-10' }] })
+    const r = await getLinkPagamentoVencido('sub_1')
+    expect(r.url).toBeNull()
+    expect(r.ok).toBe(true)
+  })
+
+  it('gateway fora do ar → ok:false (a régua decide o que fazer, não inventa link)', async () => {
+    stubFetch(500, {})
+    expect(await getLinkPagamentoVencido('sub_1')).toEqual({ ok: false, url: null, dueDate: null })
   })
 })

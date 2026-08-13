@@ -12,8 +12,10 @@ import {
   getSubscription,
   reconcileActiveSubscriptions,
   updateSubscription,
+  updateSubscriptionCreditCard,
   extractCardToken,
 } from '@/lib/asaas'
+import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError, logWarn } from '@/lib/logger'
 import { computeProrationBasisDays } from '@/lib/proration'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
@@ -215,8 +217,14 @@ export async function finalizeActivation(params: {
    *  O webhook passa `!skipProfileUpdate`: no RECEIVED TARDIO (liquidação ~D+32 do ciclo
    *  ANTERIOR) NÃO reescreve a base vigente. (guard do route.ts:728.) */
   writeBasis?: boolean
+  /** Token do cartão que PAGOU a cobrança corrente (webhook: payment.creditCard.creditCardToken;
+   *  reprocess: relido do payment via getPaymentCardToken — a DLQ não guarda payload/PII).
+   *  Quando difere do cartão salvo NA SUB, o cliente pagou com cartão NOVO na página da fatura
+   *  (caminho da régua D-01) → alinhamos a sub ao cartão novo (4a-align). Ausente (Pix/boleto,
+   *  polling de 1ª compra) → sem alinhamento, captura de token atual inalterada. */
+  paymentCardToken?: string | null
 }): Promise<FinalizeActivationResult> {
-  const { db, userId, customerId, newSubscriptionId, previousSubscriptionId, plan, cycle, source, paymentDueDate, writeBasis } = params
+  const { db, userId, customerId, newSubscriptionId, previousSubscriptionId, plan, cycle, source, paymentDueDate, writeBasis, paymentCardToken } = params
   const tag = `[${source}] finalizeActivation`
   const noop: FinalizeActivationResult = { skipped: true, cancelledPrevious: false, recurringValueNeeded: false, recurringValueFixed: true }
 
@@ -263,10 +271,33 @@ export async function finalizeActivation(params: {
   try {
     const sub = (await getSubscription(newSubscriptionId)) as { value?: number; nextDueDate?: string; creditCard?: { creditCardToken?: string } }
 
+    // (4a-align) INVARIANTE: a assinatura cobra o cartão que pagou por ÚLTIMO. O gateway NÃO
+    // propaga sozinho o cartão novo usado na página da fatura — o endpoint próprio
+    // (PUT /subscriptions/{id}/creditCard) existe exatamente porque a troca não é automática.
+    // Sem isto, o cliente da régua D-01 regulariza com cartão novo e o ciclo seguinte cobra o
+    // cartão MORTO de novo → régua todo mês. Best-effort + ALERTA: nunca bloqueia a ativação,
+    // mas falha silenciosa recriaria o loop mensal. Idempotente por natureza: o 2º evento
+    // (CONFIRMED×RECEIVED) relê a sub já alinhada (cache invalidado no PUT) e os tokens batem.
+    const subCardToken = extractCardToken(sub)
+    let cardToken = subCardToken
+    if (paymentCardToken && paymentCardToken !== subCardToken) {
+      try {
+        await updateSubscriptionCreditCard(newSubscriptionId, paymentCardToken)
+        cardToken = paymentCardToken
+        log(`${tag}: cartão da sub ALINHADO ao cartão que pagou (troca de cartão via fatura)`, { userId, newSubscriptionId, source })
+      } catch (err) {
+        logError(`${tag}: FALHA ao alinhar o cartão da sub ao cartão que pagou — próximo ciclo cobraria o cartão antigo`, err, { userId, newSubscriptionId, source })
+        await sendBillingOpsAlert({
+          subject: 'Cartão NOVO pagou mas a assinatura segue no ANTIGO — alinhar manualmente no gateway',
+          lines: { userId, subscriptionId: newSubscriptionId, source, error: err instanceof Error ? err.message : String(err) },
+        }).catch(() => {})
+      }
+    }
+
     // (4a-token) Captura o creditCardToken (tokenização por cliente) p/ permitir RECRIAR a
     // assinatura na reativação pós-cancelamento (a sub é deletada no cancel) sem pedir o cartão
-    // de novo. Best-effort, não-bloqueante. (#2b, 2026-06-08.)
-    const cardToken = extractCardToken(sub)
+    // de novo. Best-effort, não-bloqueante. (#2b, 2026-06-08.) Após um alinhamento (4a-align),
+    // o token guardado é o do cartão NOVO — o plan-switch recria subs por este token.
     if (cardToken) {
       const { error: tokErr } = await db.from('profiles').update({ asaas_card_token: cardToken }).eq('id', userId)
       if (tokErr) logError(`${tag}: falha ao salvar card token (não-bloqueante)`, tokErr, { userId })

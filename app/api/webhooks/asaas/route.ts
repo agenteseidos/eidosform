@@ -311,6 +311,9 @@ interface AsaasPayment {
   dueDate?: string
   /** Id da sessão de checkout (avulso DETACHED do fallback de cartão morto). Correlação P0. */
   checkoutSession?: string
+  /** Cartão que efetivamente PAGOU (payloads de pagamento por cartão trazem o token).
+   *  Alimenta o alinhamento 4a-align do finalizeActivation (régua D-01, troca via fatura). */
+  creditCard?: { creditCardToken?: string }
 }
 
 interface AsaasSubscription {
@@ -875,6 +878,8 @@ export async function POST(req: NextRequest) {
           paymentDueDate: payment?.dueDate ?? null,
           // RECEIVED tardio (skipProfileUpdate) NÃO reescreve a base vigente (guard L728).
           writeBasis: !skipProfileUpdate,
+          // Cartão que PAGOU: se difere do cartão da sub, o finalize alinha (4a-align, D-01).
+          paymentCardToken: payment?.creditCard?.creditCardToken ?? null,
         })
         // Correção de valor recorrente necessária mas falhou → DLQ (throw → catch marca
         // 'failed' → reprocessador retenta). NUNCA deixar a renovação subcobrar em silêncio.

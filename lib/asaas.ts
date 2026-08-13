@@ -952,6 +952,42 @@ export async function updateSubscription(
   return data
 }
 
+/**
+ * Troca o cartão de uma assinatura para um token JÁ tokenizado
+ * (PUT /v3/subscriptions/{id}/creditCard). Não cobra nada no ato; cobranças pendentes e
+ * futuras passam a usar o cartão novo (doc Asaas). Usado pelo alinhamento pós-pagamento
+ * (D-01, 13/08/2026): a página de fatura aceita cartão NOVO, mas o gateway NÃO propaga o
+ * cartão novo para a assinatura — existe endpoint próprio exatamente porque a troca não é
+ * automática. Sem o alinhamento, o ciclo seguinte cobraria o cartão antigo (morto) e a
+ * régua de cobrança dispararia todo mês.
+ */
+export async function updateSubscriptionCreditCard(subscriptionId: string, creditCardToken: string): Promise<{ id: string }> {
+  const data = await asaasFetch(`/subscriptions/${subscriptionId}/creditCard`, {
+    method: 'PUT',
+    body: JSON.stringify({ creditCardToken }),
+  })
+  // Invalida o cache (30s): a próxima leitura precisa VER o cartão novo — o próprio
+  // alinhamento usa a leitura da sub p/ decidir se ainda há divergência (idempotência).
+  subscriptionCache.delete(subscriptionId)
+  return { id: data?.id ?? subscriptionId }
+}
+
+/**
+ * creditCardToken do PAGAMENTO (GET /v3/payments/{id}) — o cartão que efetivamente PAGOU.
+ * Usado pelo reprocessador da DLQ, que não guarda payload de webhook (PII) e por isso
+ * precisa reler o payment fresco. Best-effort: null em Pix/boleto, payment sem cartão ou
+ * falha de rede (quem chama trata null como "sem alinhamento", nunca como erro).
+ */
+export async function getPaymentCardToken(paymentId: string): Promise<string | null> {
+  try {
+    const data = await asaasFetch(`/payments/${paymentId}`)
+    return (data as { creditCard?: { creditCardToken?: string } } | null)?.creditCard?.creditCardToken ?? null
+  } catch (err) {
+    logWarn('[asaas] getPaymentCardToken falhou (segue sem alinhamento)', { paymentId, err: String(err).slice(0, 120) })
+    return null
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // NFS-e (notas fiscais de serviço) — wrappers finos; a política mora em lib/nfse.ts.
 

@@ -22,7 +22,7 @@
  * tratamento MANUAL — o evento permanece visível na lista de failed/dead do admin.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription, parseExternalReference, hasOverduePaymentForSubscription } from '@/lib/asaas'
+import { getSubscription, resolvePlanCycleFromSubscription, alignPendingPaymentsDueDate, cancelSubscription, parseExternalReference, hasOverduePaymentForSubscription, getPaymentCardToken } from '@/lib/asaas'
 import { acquireLock, releaseLock } from '@/lib/billing-lock'
 import { handleUpgrade, handleDowngrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, buildFreePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart, type BillingCycle } from '@/lib/billing-activation'
@@ -344,6 +344,9 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
         plan,
         cycle,
         source: 'reprocess',
+        // A DLQ não guarda payload (PII) → relê o cartão que PAGOU direto do payment.
+        // null (Pix/boleto/falha de leitura) = sem alinhamento — nunca bloqueia o retry.
+        paymentCardToken: row.payment_id ? await getPaymentCardToken(row.payment_id) : null,
       })
       // Correção de valor recorrente necessária mas falhou → RELANÇA: mantém o evento 'failed'
       // (reprocessEvent incrementa attempts) p/ nova tentativa. NUNCA subcobrar na renovação.

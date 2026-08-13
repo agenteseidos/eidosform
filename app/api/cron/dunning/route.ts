@@ -10,6 +10,7 @@ import {
   decidirAviso, detectarRebaixamentoAtrasado, ehHoraDoEstagio, horaAtualBRT, type EstagioDunning,
 } from '@/lib/dunning-engine'
 import { TEXTOS_DUNNING, preencher } from '@/lib/dunning-content'
+import { signPaymentLinkToken } from '@/lib/payment-link-token'
 
 /**
  * GET /api/cron/dunning — a régua de cobrança (D-01).
@@ -117,10 +118,18 @@ export async function GET(req: NextRequest) {
         nome: (p.full_name ?? '').trim().split(/\s+/)[0] || 'tudo bem',
         plano: planLabel(p.plan, p.plan_cycle),
       }
-      // Sem link o botão vira convite a responder o e-mail — botão quebrado numa cobrança é
-      // pior que nenhum botão.
+      // O botão aponta para a NOSSA rota /pagar/<token>, que redireciona para a cobrança. Dois
+      // ganhos: o cliente nunca vê o nome do gateway (exigência do Sidney — ele comprou do
+      // Instituto Eidos), e o template do WhatsApp fica aprovado para sempre, porque o destino
+      // vira código nosso em vez de conteúdo submetido à Meta.
+      //
+      // Confere ANTES se existe cobrança com link: mandar para /pagar sabendo que não há fatura
+      // faria o cliente clicar e cair no painel — parece que o botão quebrou. Sem link, o e-mail
+      // troca o botão por "responda este e-mail".
       const link = await getLinkPagamentoVencido(p.asaas_subscription_id)
-      const ctaUrl = link.url ?? null
+      const tokenPagamento = link.url ? signPaymentLinkToken(p.id) : null
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'
+      const ctaUrl = tokenPagamento ? `${appUrl}/pagar/${tokenPagamento}` : null
 
       if (p.email) {
         await sendDunningEmail({

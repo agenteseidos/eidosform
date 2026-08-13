@@ -203,6 +203,23 @@ describe('🛡️ detector do rebaixamento atrasado', () => {
 })
 
 describe('o link de pagamento', () => {
+  it('🛡️ o botão aponta para a NOSSA rota — o cliente nunca vê o gateway', async () => {
+    // Exigência do Sidney: ele comprou do Instituto Eidos. E é o que mantém o template do
+    // WhatsApp aprovado para sempre — o destino vira código nosso.
+    process.env.PAYMENT_LINK_TOKEN_SECRET = 'segredo-de-teste'
+    process.env.NEXT_PUBLIC_APP_URL = 'https://eidosform.com.br'
+    const req = reqNaHora(9)
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+
+    await GET(req)
+
+    const { ctaUrl } = resendMocks.sendDunningEmail.mock.calls[0][0]
+    expect(ctaUrl).toMatch(/^https:\/\/eidosform\.com\.br\/pagar\//)
+    expect(ctaUrl).not.toContain('cobranca')  // a URL da fatura nunca aparece
+  })
+
   it('sem link disponível o e-mail ainda sai (botão vira convite a responder)', async () => {
     const req = reqNaHora(9)
     const { db } = makeDb([PAGANTE])

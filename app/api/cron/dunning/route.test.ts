@@ -149,6 +149,36 @@ describe('🛡️ paridade: quem não passa no motor não recebe NENHUM canal', 
     expect(resendMocks.sendDunningEmail).toHaveBeenCalledTimes(1)
     expect(wppMocks.sendConfirmationTemplate).toHaveBeenCalledTimes(1)
   })
+
+  it('pagou entre a decisão e a entrega → rechecagem final aborta todos os canais', async () => {
+    process.env.DUNNING_WHATSAPP_ENABLED = 'true'
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription
+      .mockResolvedValueOnce({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+      .mockResolvedValueOnce({ overdue: false, oldestDueDate: null, ok: true })
+
+    const body = await (await GET(reqNaHora(9))).json() as { avisados: number }
+
+    expect(body.avisados).toBe(0)
+    expect(asaasMocks.hasOverduePaymentForSubscription).toHaveBeenCalledTimes(2)
+    expect(outboxMocks.reserveDunningDelivery).not.toHaveBeenCalled()
+    expect(resendMocks.sendDunningEmail).not.toHaveBeenCalled()
+    expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
+  })
+
+  it('rechecagem final falhou → fail-closed, sem reservar nem cobrar', async () => {
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription
+      .mockResolvedValueOnce({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+      .mockResolvedValueOnce({ overdue: false, oldestDueDate: null, ok: false })
+
+    await GET(reqNaHora(9))
+
+    expect(outboxMocks.reserveDunningDelivery).not.toHaveBeenCalled()
+    expect(resendMocks.sendDunningEmail).not.toHaveBeenCalled()
+  })
 })
 
 describe('a rotação de horários é respeitada', () => {

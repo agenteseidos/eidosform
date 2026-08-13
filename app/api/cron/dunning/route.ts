@@ -150,6 +150,21 @@ export async function GET(req: NextRequest) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'
       const ctaUrl = tokenPagamento ? `${appUrl}/pagar/${tokenPagamento}` : null
 
+      // PROVA FINAL imediatamente antes da primeira reserva/entrega. Entre a leitura que
+      // escolheu o estágio e a resolução do link o cliente pode ter pago. Recalcular a decisão
+      // impede mandar "pagamento pendente" com uma fotografia que já ficou velha.
+      const dueFinal = await hasOverduePaymentForSubscription(subscriptionId)
+      const decisaoFinal = decidirAviso({
+        plano: p.plan,
+        planStatus: p.plan_status,
+        temVencida: dueFinal.ok ? dueFinal.overdue : null,
+        vencidaDesde: dueFinal.oldestDueDate,
+      })
+      if (!decisaoFinal.avisar || decisaoFinal.estagio !== decisao.estagio) {
+        r.silenciados++
+        continue
+      }
+
       let algumCanalReservado = false
 
       const reservar = async (channel: DunningChannel): Promise<DunningReservation | null> => {

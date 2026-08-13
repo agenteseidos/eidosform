@@ -63,6 +63,11 @@ export function buildActivePlanUpdate(params: {
     plan_cycle: cycle,
     plan_status: 'active',
     plan_expires_at: calculateExpiryDate(cycle),
+    // Uma ativação paga encerra o estado de cobrança que sobreviveu ao corte D+5.
+    overdue_subscription_id: null,
+    previous_plan: null,
+    previous_plan_cycle: null,
+    downgraded_at: null,
     // Limpa a régua de valoração do plano ANTERIOR: o finalizeActivation (passo 4a) grava
     // logo em seguida a base REAL (payment.dueDate → subscription.nextDueDate). Deixá-la
     // suja faria o crédito do plano recém-ativado ser valorado pela base velha até a 1ª
@@ -370,6 +375,10 @@ export function buildFreePlanUpdate(newStatus: 'overdue' | 'cancelled' | 'charge
     plan_status: newStatus,
     plan_expires_at: null,
     asaas_subscription_id: null,
+    overdue_subscription_id: null,
+    previous_plan: null,
+    previous_plan_cycle: null,
+    downgraded_at: null,
     limit_alert_sent: false,
     responses_limit: PLANS.free.maxResponses,
     ...buildResponseQuotaPeriodReset(),

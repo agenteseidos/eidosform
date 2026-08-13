@@ -41,11 +41,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
     const db = createServiceClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
     const { data: profile } = await db
       .from('profiles')
-      .select('asaas_subscription_id, plan')
+      .select('asaas_subscription_id, overdue_subscription_id, plan')
       .eq('id', profileId)
       .maybeSingle()
 
-    const subId = (profile as { asaas_subscription_id?: string | null } | null)?.asaas_subscription_id
+    const p = profile as { asaas_subscription_id?: string | null; overdue_subscription_id?: string | null } | null
+    const subId = p?.asaas_subscription_id ?? p?.overdue_subscription_id
     if (!subId) {
       // Sem assinatura vinculada: ou já regularizou e o ciclo seguiu, ou cancelou. O painel
       // resolve os dois casos.

@@ -11,6 +11,16 @@ describe('annual_started_at nos payloads de billing', () => {
     expect(p).toHaveProperty('annual_started_at', null)
   })
 
+  it('ativação paga limpa o snapshot de inadimplência do corte D+5', () => {
+    const p = buildActivePlanUpdate({ plan: 'starter', cycle: 'MONTHLY', subscriptionId: 'sub_nova' })
+    expect(p).toMatchObject({
+      overdue_subscription_id: null,
+      previous_plan: null,
+      previous_plan_cycle: null,
+      downgraded_at: null,
+    })
+  })
+
   it('ativação ANUAL NÃO toca a coluna no payload (carimbo é condicional, à parte)', () => {
     const p = buildActivePlanUpdate({ plan: 'starter', cycle: 'YEARLY' })
     expect(Object.keys(p)).not.toContain('annual_started_at')

@@ -228,7 +228,7 @@ describe('expire-plans — prova de pagamento e carência (comportamento existen
     mockGetSub.mockResolvedValue({ status: 'ACTIVE', nextDueDate: '2026-09-10' } as never)
     const dezDias = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10)
     mockOverdue.mockResolvedValue({ overdue: true, oldestDueDate: dezDias, ok: true })
-    const { db } = makeDb({
+    const { db, calls } = makeDb({
       profiles: [
         { data: [EXPIRADO], error: null },
         { data: [{ id: 'u1' }], error: null },
@@ -240,6 +240,13 @@ describe('expire-plans — prova de pagamento e carência (comportamento existen
 
     expect(body.reverted).toBe(1)
     expect(planMocks.handleDowngrade).toHaveBeenCalled()
+    expect(casDaEscrita(calls).payload).toMatchObject({
+      asaas_subscription_id: null,
+      overdue_subscription_id: 'sub_1',
+      previous_plan: 'plus',
+      previous_plan_cycle: 'MONTHLY',
+    })
+    expect(casDaEscrita(calls).payload.downgraded_at).toEqual(expect.any(String))
   })
 
   it('erro TRANSITÓRIO do Asaas → adia a decisão, nunca derruba pagante por falha de rede', async () => {

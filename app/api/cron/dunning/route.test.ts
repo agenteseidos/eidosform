@@ -63,7 +63,7 @@ function makeDb(candidatos: unknown[], marcadorJaExiste = false) {
       from: () => ({
         select: () => {
           const chain: Record<string, unknown> = {
-            not: () => chain, eq: () => chain, limit: async () => ({ data: candidatos, error: null }),
+            not: () => chain, or: () => chain, eq: () => chain, limit: async () => ({ data: candidatos, error: null }),
           }
           return chain
         },
@@ -199,6 +199,33 @@ describe('🛡️ detector do rebaixamento atrasado', () => {
     expect(body.alertasRebaixamento).toBe(1)
     expect(resendMocks.sendBillingOpsAlert).toHaveBeenCalled()
     expect(resendMocks.sendDunningEmail).not.toHaveBeenCalled() // não mente para o cliente
+  })
+})
+
+describe('🛡️ estado preservado depois do corte D+5', () => {
+  it('perfil free usa a assinatura e o plano anteriores para entregar o 6º aviso', async () => {
+    const cortado = {
+      ...PAGANTE,
+      plan: 'free',
+      plan_status: 'expired',
+      plan_cycle: null,
+      asaas_subscription_id: null,
+      overdue_subscription_id: 'sub_cortada',
+      previous_plan: 'plus',
+      previous_plan_cycle: 'YEARLY',
+      downgraded_at: new Date().toISOString(),
+    }
+    const { db } = makeDb([cortado])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(5), ok: true })
+
+    const body = await (await GET(reqNaHora(9))).json() as { avisados: number }
+
+    expect(body.avisados).toBe(1)
+    expect(asaasMocks.hasOverduePaymentForSubscription).toHaveBeenCalledWith('sub_cortada')
+    expect(asaasMocks.getLinkPagamentoVencido).toHaveBeenCalledWith('sub_cortada')
+    const email = resendMocks.sendDunningEmail.mock.calls[0][0]
+    expect(email.paragrafos.join(' ')).toContain('plus YEARLY')
   })
 })
 

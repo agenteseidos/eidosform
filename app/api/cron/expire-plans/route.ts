@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
   for (const row of expired ?? []) {
     const p = row as { id: string; plan: string | null; plan_status: string | null; plan_cycle: string | null; plan_expires_at: string | null; asaas_subscription_id: string | null }
     let shouldRevert = true
+    let rebaixamentoPorInadimplencia = false
 
     if (p.asaas_subscription_id) {
       try {
@@ -123,6 +124,7 @@ export async function GET(req: NextRequest) {
               profileId: p.id, subscriptionId: p.asaas_subscription_id,
               oldestDueDate: due.oldestDueDate, diasVencido, carenciaDias: OVERDUE_GRACE_DAYS,
             })
+            rebaixamentoPorInadimplencia = true
           } else {
           // Renovação atrasada — estende em vez de derrubar o pagante. Recomputa TAMBÉM a
           // régua de valoração (§4.F): este é o fallback do webhook-fora-do-ar; sem recomputar,
@@ -189,6 +191,15 @@ export async function GET(req: NextRequest) {
             plan_status: p.plan_status === 'canceling' ? 'cancelled' : 'expired',
             plan_expires_at: null,
             asaas_subscription_id: null,
+            // Ao cortar por inadimplência, preserva a assinatura e o plano que originaram a
+            // dívida. Sem esse snapshot, o D+5 fica inalcançável e links antigos de /pagar
+            // passam a responder "sem pendência" assim que o vínculo ativo é apagado.
+            ...(rebaixamentoPorInadimplencia ? {
+              overdue_subscription_id: p.asaas_subscription_id,
+              previous_plan: p.plan,
+              previous_plan_cycle: p.plan_cycle,
+              downgraded_at: new Date().toISOString(),
+            } : {}),
             annual_started_at: null,
             // free LIMPA a régua de valoração (caso 5) — este revert NÃO usa buildFreePlanUpdate.
             proration_basis_days: null,

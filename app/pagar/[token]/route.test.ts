@@ -57,6 +57,20 @@ describe('caminho feliz', () => {
     const res = await chamar(signPaymentLinkToken(PERFIL)!)
     expect(res.status).toBe(302)
   })
+
+  it('depois do corte D+5, o link antigo usa a assinatura vencida preservada', async () => {
+    mockCreate.mockReturnValue(db({
+      asaas_subscription_id: null,
+      overdue_subscription_id: 'sub_cortada',
+      plan: 'free',
+    }) as never)
+
+    const res = await chamar(signPaymentLinkToken(PERFIL)!)
+
+    expect(res.status).toBe(302)
+    expect(asaasMocks.getLinkPagamentoVencido).toHaveBeenCalledWith('sub_cortada')
+    expect(res.headers.get('location')).toBe('https://cobranca/fatura-123')
+  })
 })
 
 describe('🛡️ o cliente nunca vê erro técnico', () => {

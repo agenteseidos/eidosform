@@ -55,8 +55,8 @@ export async function GET(req: NextRequest) {
   // gratuito recentemente (o estágio 5 precisa deles). O motor filtra o resto.
   const { data: candidatos, error } = await db
     .from('profiles')
-    .select('id, email, full_name, phone, plan, plan_status, plan_cycle, asaas_subscription_id')
-    .not('asaas_subscription_id', 'is', null)
+    .select('id, email, full_name, phone, plan, plan_status, plan_cycle, asaas_subscription_id, overdue_subscription_id, previous_plan, previous_plan_cycle, downgraded_at')
+    .or('asaas_subscription_id.not.is.null,overdue_subscription_id.not.is.null')
     .limit(500)
 
   if (error) {
@@ -70,11 +70,17 @@ export async function GET(req: NextRequest) {
     const p = bruto as {
       id: string; email: string | null; full_name: string | null; phone: string | null
       plan: string | null; plan_status: string | null; plan_cycle: string | null
-      asaas_subscription_id: string
+      asaas_subscription_id: string | null; overdue_subscription_id: string | null
+      previous_plan: string | null; previous_plan_cycle: string | null; downgraded_at: string | null
     }
     try {
+      const subscriptionId = p.asaas_subscription_id ?? p.overdue_subscription_id
+      if (!subscriptionId) {
+        r.silenciados++
+        continue
+      }
       // ── ESTADO ATUAL, lido AGORA (o gatilho de parada mora aqui) ─────────────────────────
-      const due = await hasOverduePaymentForSubscription(p.asaas_subscription_id)
+      const due = await hasOverduePaymentForSubscription(subscriptionId)
       const estado = {
         plano: p.plan,
         planStatus: p.plan_status,
@@ -91,7 +97,7 @@ export async function GET(req: NextRequest) {
           lines: {
             'O QUE ISSO SIGNIFICA': 'O expire-plans deveria ter rebaixado esta conta e não rebaixou — verificar se o cron está rodando.',
             profileId: p.id, cliente: p.email, plano: p.plan,
-            vencidaDesde: due.oldestDueDate, assinatura: p.asaas_subscription_id,
+            vencidaDesde: due.oldestDueDate, assinatura: subscriptionId,
           },
         }).catch(() => {})
       }
@@ -120,7 +126,7 @@ export async function GET(req: NextRequest) {
       const texto = TEXTOS_DUNNING[decisao.estagio]
       const dados = {
         nome: (p.full_name ?? '').trim().split(/\s+/)[0] || 'tudo bem',
-        plano: planLabel(p.plan, p.plan_cycle),
+        plano: planLabel(p.plan === 'free' ? p.previous_plan : p.plan, p.plan === 'free' ? p.previous_plan_cycle : p.plan_cycle),
       }
       // O botão aponta para a NOSSA rota /pagar/<token>, que redireciona para a cobrança. Dois
       // ganhos: o cliente nunca vê o nome do gateway (exigência do Sidney — ele comprou do
@@ -130,7 +136,7 @@ export async function GET(req: NextRequest) {
       // Confere ANTES se existe cobrança com link: mandar para /pagar sabendo que não há fatura
       // faria o cliente clicar e cair no painel — parece que o botão quebrou. Sem link, o e-mail
       // troca o botão por "responda este e-mail".
-      const link = await getLinkPagamentoVencido(p.asaas_subscription_id)
+      const link = await getLinkPagamentoVencido(subscriptionId)
       const tokenPagamento = link.url ? signPaymentLinkToken(p.id) : null
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://eidosform.com.br'
       const ctaUrl = tokenPagamento ? `${appUrl}/pagar/${tokenPagamento}` : null

@@ -431,8 +431,9 @@ export async function sendDunningEmail(params: {
   paragrafos: string[]
   ctaLabel: string
   ctaUrl: string | null
+  idempotencyKey: string
 }) {
-  const { to, assunto, paragrafos, ctaLabel, ctaUrl } = params
+  const { to, assunto, paragrafos, ctaLabel, ctaUrl, idempotencyKey } = params
   const corpo = paragrafos
     .map((p) => `<p style="margin:0 0 16px;line-height:1.6;color:#1f2937">${escapeHtml(p)}</p>`)
     .join('\n')
@@ -442,6 +443,7 @@ export async function sendDunningEmail(params: {
   return sendEmailWithRetry({
     to,
     subject: assunto,
+    idempotencyKey,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:8px">
         ${corpo}

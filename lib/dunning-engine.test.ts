@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   decidirAviso, detectarRebaixamentoAtrasado, diasDesde, ehHoraDoEstagio,
-  HORARIO_POR_ESTAGIO, PRAZO_DIAS,
+  dataAtualBRT, HORARIO_POR_ESTAGIO, PRAZO_DIAS,
 } from './dunning-engine'
 
 const AGORA = Date.parse('2026-08-20T15:00:00-03:00')
@@ -133,5 +133,10 @@ describe('diasDesde — contagem em horário de Brasília', () => {
   it('conta dias inteiros e ignora a hora', () => {
     expect(diasDesde('2026-08-20', Date.parse('2026-08-20T23:59:00-03:00'))).toBe(0)
     expect(diasDesde('2026-08-19', Date.parse('2026-08-20T00:01:00-03:00'))).toBe(1)
+  })
+
+  it('a chave diária só vira depois da meia-noite de Brasília', () => {
+    expect(dataAtualBRT(new Date('2026-08-14T00:30:00Z'))).toBe('2026-08-13')
+    expect(dataAtualBRT(new Date('2026-08-14T03:00:00Z'))).toBe('2026-08-14')
   })
 })

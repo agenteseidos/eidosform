@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sanitizeSubject, SUBJECT_MAX_CHARS, sendLeadNotificationEmail } from './resend'
+import { sanitizeSubject, SUBJECT_MAX_CHARS, sendDunningEmail, sendLeadNotificationEmail } from './resend'
 
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logWarn: vi.fn(), logError: vi.fn() }))
 
@@ -190,5 +190,23 @@ describe('sendLeadNotificationEmail — logs sem PII', () => {
     expect(logged).not.toContain('paciente@gmail.com')
     // o domínio fica: dá pra depurar entrega sem identificar a pessoa
     expect(logged).toContain('@gmail.com')
+  })
+})
+
+describe('sendDunningEmail — idempotência da outbox', () => {
+  it('repassa a chave estável como Idempotency-Key', async () => {
+    process.env.RESEND_API_KEY = 'test-key'
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ id: 'email-1' }) }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await sendDunningEmail({
+      to: 'cliente@exemplo.com', assunto: 'Pagamento pendente', paragrafos: ['Olá'],
+      ctaLabel: 'Regularizar', ctaUrl: 'https://eidosform.com.br/pagar/token',
+      idempotencyKey: 'dunning:p1:0:2026-08-13:email',
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { headers: Record<string, string> }]
+    expect(init.headers['Idempotency-Key']).toBe('dunning:p1:0:2026-08-13:email')
+    vi.unstubAllGlobals()
   })
 })

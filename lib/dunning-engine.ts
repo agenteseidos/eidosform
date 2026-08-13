@@ -141,3 +141,12 @@ export function horaAtualBRT(agora = new Date()): number {
     timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false,
   }).format(agora))
 }
+
+/** Dia civil atual em Brasília, usado nas chaves diárias da outbox. */
+export function dataAtualBRT(agora = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(agora)
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value
+  return `${value('year')}-${value('month')}-${value('day')}`
+}

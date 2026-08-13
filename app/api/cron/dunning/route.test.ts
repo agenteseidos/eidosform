@@ -26,11 +26,22 @@ const asaasMocks = vi.hoisted(() => ({
 vi.mock('@/lib/asaas', async (orig) => ({ ...(await orig<object>()), ...asaasMocks }))
 
 const resendMocks = vi.hoisted(() => ({
-  sendDunningEmail: vi.fn(async (_p: { to: string; assunto: string; paragrafos: string[]; ctaLabel: string; ctaUrl: string | null }) => ({ id: 'e1' })),
+  sendDunningEmail: vi.fn(async (_p: { to: string; assunto: string; paragrafos: string[]; ctaLabel: string; ctaUrl: string | null; idempotencyKey: string }) => ({ id: 'e1' })),
   sendBillingOpsAlert: vi.fn(async () => ({})),
 }))
 vi.mock('@/lib/resend', () => resendMocks)
 vi.mock('@/lib/billing-ops-whatsapp', () => ({ notifyBillingOpsWhatsApp: vi.fn(async () => ({ sent: true })) }))
+
+const outboxMocks = vi.hoisted(() => ({
+  reserveDunningDelivery: vi.fn(),
+  finishDunningDelivery: vi.fn(async () => undefined),
+  listRecoverableDunningKeys: vi.fn(async () => new Set<string>()),
+}))
+vi.mock('@/lib/dunning-outbox', () => ({
+  ...outboxMocks,
+  buildDunningDeliveryKey: ({ profileId, stage, day, channel }: { profileId: string; stage: number; day: string; channel: string }) =>
+    `dunning:${profileId}:${stage}:${day}:${channel}`,
+}))
 
 const wppMocks = vi.hoisted(() => ({ sendConfirmationTemplate: vi.fn(async () => ({ sent: true })) }))
 vi.mock('@/lib/whatsapp-confirmations', () => ({
@@ -47,18 +58,14 @@ const reqNaHora = (hora: number) => ({
   url: `https://x/api/cron/dunning?hora=${hora}`,
   headers: { get: (k: string) => (k === 'authorization' ? 'Bearer segredo' : null) },
 }) as never
-const REQ = reqNaHora(9)
-
 const PAGANTE = {
   id: 'u1', email: 'cliente@x.com', full_name: 'Julia Souza', phone: '5583999110173',
   plan: 'plus', plan_status: 'active', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_1',
 }
 
-/** Banco falso: lista de candidatos + marcador de idempotência controlável. */
-function makeDb(candidatos: unknown[], marcadorJaExiste = false) {
-  const inserts: unknown[] = []
+/** Banco falso: a outbox é mockada à parte; aqui só entra a lista de candidatos. */
+function makeDb(candidatos: unknown[]) {
   return {
-    inserts,
     db: {
       from: () => ({
         select: () => {
@@ -66,10 +73,6 @@ function makeDb(candidatos: unknown[], marcadorJaExiste = false) {
             not: () => chain, or: () => chain, eq: () => chain, limit: async () => ({ data: candidatos, error: null }),
           }
           return chain
-        },
-        insert: async (v: unknown) => {
-          inserts.push(v)
-          return { error: marcadorJaExiste ? { code: '23505' } : null }
         },
       }),
     },
@@ -87,6 +90,15 @@ beforeEach(() => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'chave'
   delete process.env.DUNNING_WHATSAPP_ENABLED
   asaasMocks.getLinkPagamentoVencido.mockResolvedValue({ ok: true, url: 'https://fatura/x', dueDate: '2026-08-10' })
+  outboxMocks.reserveDunningDelivery.mockImplementation(async (_db, p: { profileId: string; stage: number; day: string; channel: 'email' | 'whatsapp' }) => ({
+    key: `dunning:${p.profileId}:${p.stage}:${p.day}:${p.channel}`,
+    leaseToken: `lease-${p.channel}`,
+    channel: p.channel,
+  }))
+  outboxMocks.finishDunningDelivery.mockResolvedValue(undefined)
+  outboxMocks.listRecoverableDunningKeys.mockResolvedValue(new Set())
+  resendMocks.sendDunningEmail.mockResolvedValue({ id: 'e1' })
+  wppMocks.sendConfirmationTemplate.mockResolvedValue({ sent: true })
 })
 
 describe('autenticação', () => {
@@ -159,14 +171,44 @@ describe('a rotação de horários é respeitada', () => {
     const body = await (await GET(req)).json() as { avisados: number }
     expect(body.avisados).toBe(1)
   })
+
+  it('fora da hora original retoma uma entrega failed já existente, sem criar outra', async () => {
+    const day = vencidaHa(0)
+    const key = `dunning:u1:0:${day}:email`
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: day, ok: true })
+    outboxMocks.listRecoverableDunningKeys.mockResolvedValue(new Set([key]))
+
+    const body = await (await GET(reqNaHora(10))).json() as { avisados: number }
+
+    expect(body.avisados).toBe(1)
+    expect(outboxMocks.reserveDunningDelivery).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      profileId: 'u1', channel: 'email', createIfMissing: false,
+    }))
+  })
+
+  it('reserva recuperável NÃO dispara depois das 18h', async () => {
+    const day = vencidaHa(0)
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: day, ok: true })
+    outboxMocks.listRecoverableDunningKeys.mockResolvedValue(new Set([`dunning:u1:0:${day}:email`]))
+
+    const body = await (await GET(reqNaHora(19))).json() as { avisados: number }
+
+    expect(body.avisados).toBe(0)
+    expect(outboxMocks.reserveDunningDelivery).not.toHaveBeenCalled()
+  })
 })
 
 describe('idempotência do dia', () => {
-  it('marcador já existente → não reenvia a mesma cobrança', async () => {
+  it('canal já reservado/entregue → não reenvia a mesma cobrança', async () => {
     const req = reqNaHora(9)
-    const { db } = makeDb([PAGANTE], true) // insert do marcador falha com 23505
+    const { db } = makeDb([PAGANTE])
     mockCreate.mockReturnValue(db as never)
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+    outboxMocks.reserveDunningDelivery.mockResolvedValue(null)
 
     const body = await (await GET(req)).json() as { avisados: number }
 
@@ -174,16 +216,62 @@ describe('idempotência do dia', () => {
     expect(resendMocks.sendDunningEmail).not.toHaveBeenCalled()
   })
 
-  it('o marcador é único por cliente + estágio + dia', async () => {
+  it('a chave é única por cliente + estágio + dia + canal e vai igual à Resend', async () => {
     const req = reqNaHora(9)
-    const { db, inserts } = makeDb([PAGANTE])
+    const { db } = makeDb([PAGANTE])
     mockCreate.mockReturnValue(db as never)
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
 
     await GET(req)
 
-    const id = (inserts[0] as { event_id: string }).event_id
-    expect(id).toMatch(/^dunning:u1:0:\d{4}-\d{2}-\d{2}$/)
+    const reserva = outboxMocks.reserveDunningDelivery.mock.calls[0][1]
+    expect(reserva).toMatchObject({ profileId: 'u1', stage: 0, channel: 'email' })
+    expect(reserva.day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(resendMocks.sendDunningEmail.mock.calls[0][0].idempotencyKey)
+      .toBe(`dunning:u1:0:${reserva.day}:email`)
+  })
+
+  it('erro não-conflito ao reservar não é tratado como duplicata silenciosa', async () => {
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+    outboxMocks.reserveDunningDelivery.mockRejectedValue(new Error('DB indisponível'))
+
+    const body = await (await GET(reqNaHora(9))).json() as { falhas: number; avisados: number }
+
+    expect(body.falhas).toBeGreaterThan(0)
+    expect(body.avisados).toBe(0)
+    expect(resendMocks.sendDunningEmail).not.toHaveBeenCalled()
+  })
+
+  it('retorno {error} da Resend marca failed e NÃO incrementa avisados', async () => {
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+    resendMocks.sendDunningEmail.mockResolvedValue({ error: 'HTTP 503' } as never)
+
+    const body = await (await GET(reqNaHora(9))).json() as { falhas: number; avisados: number }
+
+    expect(body.avisados).toBe(0)
+    expect(body.falhas).toBeGreaterThan(0)
+    expect(outboxMocks.finishDunningDelivery).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ channel: 'email' }), 'failed',
+      expect.objectContaining({ error: 'HTTP 503' }),
+    )
+  })
+
+  it('aceite do e-mail marca accepted com o id do provedor', async () => {
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+
+    const body = await (await GET(reqNaHora(9))).json() as { avisados: number }
+
+    expect(body.avisados).toBe(1)
+    expect(outboxMocks.finishDunningDelivery).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ channel: 'email' }), 'accepted',
+      { providerMessageId: 'e1' },
+    )
   })
 })
 

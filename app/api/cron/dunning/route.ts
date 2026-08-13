@@ -42,7 +42,11 @@ export async function GET(req: NextRequest) {
 
   // Hora de Brasília pelo fuso EXPLÍCITO (ver horaAtualBRT). `?hora=` só existe para conferir
   // uma janela específica à mão em homologação — não muda nada do que é enviado, só QUANDO.
-  const horaForcada = Number(new URL(req.url).searchParams.get('hora'))
+  // ⚠️ `Number(null)` é 0 (não NaN): sem o guard de presença, TODA chamada sem `?hora=`
+  // forçava horaBRT=0 → nenhum estágio dispara à 0h → régua muda de silenciosa p/ MUDA.
+  // (Pego no disparo de validação de 13/08 — horaBRT:0 às 19h42 BRT.)
+  const horaParam = new URL(req.url).searchParams.get('hora')
+  const horaForcada = horaParam === null || horaParam === '' ? NaN : Number(horaParam)
   const horaBRT = Number.isInteger(horaForcada) && horaForcada >= 0 && horaForcada <= 23
     ? horaForcada
     : horaAtualBRT()

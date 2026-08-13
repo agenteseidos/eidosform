@@ -263,3 +263,29 @@ describe('robustez', () => {
     expect(body.avisados).toBe(1)
   })
 })
+
+describe('🛡️ regressão: chamada SEM ?hora= (o jeito que o cron REAL chama)', () => {
+  it('usa o relógio de Brasília — Number(null)=0 forçava meia-noite e emudecia a régua', async () => {
+    // 12:00 UTC = 9h BRT → janela do estágio 0. O bug: sem ?hora=, Number(null) dava 0
+    // (não NaN), o guard aceitava 0 como hora válida e NENHUM estágio dispara à 0h —
+    // a régua inteira ficava muda em produção. (Pego no disparo de validação 13/08.)
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-13T12:00:00Z'))
+    try {
+      const req = {
+        url: 'https://x/api/cron/dunning',
+        headers: { get: (k: string) => (k === 'authorization' ? 'Bearer segredo' : null) },
+      } as never
+      const { db } = makeDb([PAGANTE])
+      mockCreate.mockReturnValue(db as never)
+      asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+
+      const body = await (await GET(req)).json() as { horaBRT: number; avisados: number }
+
+      expect(body.horaBRT).toBe(9)  // hora REAL de Brasília, nunca o 0 do Number(null)
+      expect(body.avisados).toBe(1) // e a régua FALA quando é a janela do estágio
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

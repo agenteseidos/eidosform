@@ -116,11 +116,12 @@ export async function stampAnnualStart(
 }
 
 /**
- * Reivindica ATOMICAMENTE os "efeitos de ativação" (e-mail "plano ativado" + handleUpgrade)
+ * Reivindica ATOMICAMENTE a comunicação de ativação (e-mail + WhatsApp)
  * para uma assinatura+plano+ciclo, via insert com unique constraint em asaas_webhook_events.
  * Retorna true só para o PRIMEIRO chamador — os demais (PAYMENT_CONFIRMED+RECEIVED do mesmo
- * pagamento; webhook × polling concorrentes) recebem false e PULAM os efeitos. Dedup durável
- * e atômico (não depende de ler o profile já-atualizado). (#3, audit 2026-06-08.)
+ * pagamento; webhook × polling concorrentes) recebem false e PULAM a comunicação. Dedup
+ * durável e atômico (não depende de ler o profile já-atualizado). O reparo idempotente de
+ * estado (handleUpgrade) NÃO pode depender deste marker permanente. (#3, audit 2026-08-13.)
  *
  * Falha NÃO-conflito (DB transitório) → retorna true (melhor um e-mail duplicado do que pular
  * o e-mail de uma ativação legítima).

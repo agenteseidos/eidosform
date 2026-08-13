@@ -243,6 +243,25 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
     expect(mockPlanActivated).toHaveBeenCalled()
   })
 
+  it('pagamento após corte repara formulários mesmo com comunicação já reivindicada', async () => {
+    const results = baseResults()
+    results.profiles = [
+      { data: USER_ROW, error: null },
+      { data: { asaas_subscription_id: null, plan: 'free', plan_status: 'expired', plan_cycle: 'MONTHLY' }, error: null },
+      { data: [{ id: 'user-1' }], error: null },
+    ]
+    const { db } = makeRecordingDb(results)
+    mockCreateClient.mockReturnValue(db as never)
+    mockGetSubscription.mockResolvedValue({ value: 49, cycle: 'MONTHLY' } as never)
+    mockClaim.mockResolvedValue(false) // consumido na primeira compra da mesma assinatura
+
+    await POST(makeReq({ ...CONFIRMED_BODY, id: 'evt_recovery' }))
+
+    expect(mockPlanActivated).not.toHaveBeenCalled()
+    expect(mockHandleUpgrade).toHaveBeenCalledTimes(1)
+    expect(mockHandleUpgrade).toHaveBeenCalledWith('user-1', 'service-key')
+  })
+
   // ── P2-a (audit 2026-06-09): eventos de dinheiro nunca morrem como 'processed' ──
 
   it('user não resolvido em PAYMENT_CONFIRMED → DLQ (failed), não processed', async () => {

@@ -723,6 +723,11 @@ export async function POST(req: NextRequest) {
           .eq('id', user.id)
           .single()
         const previousSubId = previousProfile?.asaas_subscription_id ?? null
+        // Reparar o produto é efeito de ESTADO, não de comunicação. O marker permanente de
+        // ativação já foi consumido na primeira compra desta mesma assinatura; depois de um
+        // corte por inadimplência ele continuará ocupado, mas os formulários precisam voltar.
+        const precisaRepararFormularios =
+          previousProfile?.plan === 'free' || previousProfile?.plan_status === 'expired'
 
         // #7 (audit 2026-06-08): RE-CHECK "checkout mais recente vence" imediatamente antes de
         // ativar. Reduz a race entre eventos concorrentes: se um checkout MAIS NOVO já foi pago
@@ -848,22 +853,26 @@ export async function POST(req: NextRequest) {
           billingType,
         })
 
-        // Efeitos de ativação (e-mail + despause) reivindicados ATOMICAMENTE pela chave
+        // Comunicação de ativação reivindicada ATOMICAMENTE pela chave
         // effects:{sub}:{plan}:{cycle} (#1/#3/#4, audit 2026-06-08). O marker SUBSTITUI o
         // antigo isPlanTransition: a chave é IDÊNTICA numa renovação (mesma sub/plano/ciclo)
         // → já reivindicada no 1º pagamento → renovação pula; e numa transição (plano/ciclo/
-        // sub novo) a chave é nova → reivindica e dispara. Garante e-mail+handleUpgrade UMA
-        // vez entre CONFIRMED/RECEIVED e webhook×polling. E-mail ANTES do despause: se o
-        // handleUpgrade lançar (forms não despausados) → DLQ → o reprocessador completa o
-        // despause, e o e-mail (já enviado) não é reenviado.
+        // sub novo) a chave é nova → reivindica e dispara. O marker governa SOMENTE e-mail e
+        // WhatsApp: reparo dos formulários depende da transição de estado e roda abaixo.
         if (await claimActivationEffects(supabase, payment.subscription, plan, cycle)) {
           await sendPlanActivated({ to: user.email, name: user.full_name ?? 'usuário', plan }).catch((err) => logError('Failed to send plan activation email', err))
           // WhatsApp espelha o e-mail: mesmo ponto, mesma idempotência (claim acima).
           agendar(() => notifyPlanoAtivado(user.id))
+        } else {
+          log('[asaas-webhook] Comunicação de ativação já reivindicada (renovação/duplicata/polling) — pulando', { userId: user.id, plan, cycle, subscriptionId: payment.subscription })
+        }
+
+        // free/expired → pago sempre recompõe os formulários. handleUpgrade já é idempotente:
+        // relê só os pausados e despausa até o limite atual. Se falhar, o evento vai à DLQ e o
+        // reprocessador executa a mesma cura novamente.
+        if (precisaRepararFormularios) {
           const upgrade = await handleUpgrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
           log('[asaas-webhook] Upgrade processed', { userId: user.id, unpausedForms: upgrade.unpausedCount })
-        } else {
-          log('[asaas-webhook] Efeitos de ativação já reivindicados (renovação/duplicata/polling) — pulando', { userId: user.id, plan, cycle, subscriptionId: payment.subscription })
         }
 
         // Finaliza ativação: cancel-previous + reconcile + correção de valor recorrente.

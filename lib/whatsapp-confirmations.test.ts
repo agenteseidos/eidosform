@@ -89,6 +89,33 @@ describe('sendConfirmationTemplate — nunca quebra a ação principal', () => {
       .toEqual(['Sidney', 'Starter Mensal', '30/08/2026'])
   })
 
+  it('template com URL dinâmica recebe somente o parâmetro do botão', async () => {
+    graphOk()
+    await sendConfirmationTemplate({
+      toPhone: '83999376704',
+      template: 'eidosform_cobranca_v1',
+      bodyParams: ['Sidney', 'Plus Mensal', 'Faltam 4 dias.'],
+      buttonUrlParam: 'token.assinado',
+      context: 'dunning:1:p1',
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.template.components).toEqual([
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: 'Sidney' },
+          { type: 'text', text: 'Plus Mensal' },
+          { type: 'text', text: 'Faltam 4 dias.' },
+        ],
+      },
+      {
+        type: 'button', sub_type: 'url', index: '0',
+        parameters: [{ type: 'text', text: 'token.assinado' }],
+      },
+    ])
+  })
+
   it('erro do Graph (ex.: template ainda PENDING): loga alto e devolve send_failed', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: { message: 'Template not approved', code: 132001 } }) })
     const r = await sendConfirmationTemplate({ toPhone: '83999376704', template: 'x', bodyParams: [], context: 't' })

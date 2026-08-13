@@ -43,7 +43,9 @@ vi.mock('@/lib/dunning-outbox', () => ({
     `dunning:${profileId}:${stage}:${day}:${channel}`,
 }))
 
-const wppMocks = vi.hoisted(() => ({ sendConfirmationTemplate: vi.fn(async () => ({ sent: true })) }))
+const wppMocks = vi.hoisted(() => ({ sendConfirmationTemplate: vi.fn(async (_p?: {
+  toPhone: string; template: string; bodyParams: string[]; buttonUrlParam?: string | null; context: string
+}) => ({ sent: true })) }))
 vi.mock('@/lib/whatsapp-confirmations', () => ({
   ...wppMocks,
   planLabel: (p?: string | null, c?: string | null) => `${p ?? '?'} ${c ?? ''}`.trim(),
@@ -79,8 +81,14 @@ function makeDb(candidatos: unknown[]) {
   }
 }
 
-/** Vencida há N dias (o motor conta em dias inteiros BRT). */
-const vencidaHa = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)
+/** Vencida há N dias no mesmo calendário BRT do motor (não vira o dia às 21h de Recife). */
+const vencidaHa = (n: number) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(Date.now() - n * 86_400_000))
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -88,6 +96,7 @@ beforeEach(() => {
   process.env.CRON_SECRET = 'segredo'
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost'
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'chave'
+  process.env.PAYMENT_LINK_TOKEN_SECRET = 'segredo-token-teste'
   delete process.env.DUNNING_WHATSAPP_ENABLED
   asaasMocks.getLinkPagamentoVencido.mockResolvedValue({ ok: true, url: 'https://fatura/x', dueDate: '2026-08-10' })
   outboxMocks.reserveDunningDelivery.mockImplementation(async (_db, p: { profileId: string; stage: number; day: string; channel: 'email' | 'whatsapp' }) => ({
@@ -390,6 +399,52 @@ describe('WhatsApp atrás da flag (2ª onda, aguardando a Meta)', () => {
 
     expect(resendMocks.sendDunningEmail).toHaveBeenCalledTimes(1)
     expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
+  })
+
+  it('flag ligada usa o template genérico, texto do estágio e só o token no botão', async () => {
+    process.env.DUNNING_WHATSAPP_ENABLED = 'true'
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+
+    await GET(reqNaHora(9))
+
+    const envio = wppMocks.sendConfirmationTemplate.mock.calls[0][0]!
+    expect(envio.template).toBe('eidosform_cobranca_v1')
+    expect(envio.bodyParams).toHaveLength(3)
+    expect(envio.bodyParams[2]).toContain('5 dias')
+    expect(envio.buttonUrlParam).toEqual(expect.any(String))
+    expect(envio.buttonUrlParam).not.toContain('https://')
+    expect(envio.buttonUrlParam).not.toContain('/pagar/')
+  })
+
+  it('sem cobrança com link não gera token nem tenta template com botão incompleto', async () => {
+    process.env.DUNNING_WHATSAPP_ENABLED = 'true'
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+    asaasMocks.getLinkPagamentoVencido.mockResolvedValue({ ok: true, url: null, dueDate: null })
+
+    await GET(reqNaHora(9))
+
+    expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
+    expect(outboxMocks.reserveDunningDelivery.mock.calls.map((call) => call[1].channel)).not.toContain('whatsapp')
+  })
+
+  it('{sent:false} marca o canal failed em vez de sumir no catch', async () => {
+    process.env.DUNNING_WHATSAPP_ENABLED = 'true'
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+    wppMocks.sendConfirmationTemplate.mockResolvedValue({ sent: false, skipped: 'send_failed' } as never)
+
+    const body = await (await GET(reqNaHora(9))).json() as { falhas: number }
+
+    expect(body.falhas).toBeGreaterThan(0)
+    expect(outboxMocks.finishDunningDelivery).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ channel: 'whatsapp' }), 'failed',
+      { error: 'send_failed' },
+    )
   })
 })
 

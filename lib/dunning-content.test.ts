@@ -3,11 +3,11 @@
  * Cada uma delas nasceu de uma correção dele durante a revisão, e regredir custa cliente.
  */
 import { describe, it, expect } from 'vitest'
-import { TEXTOS_DUNNING, preencher } from './dunning-content'
+import { DUNNING_WHATSAPP_TEMPLATES, TEXTOS_DUNNING, preencher } from './dunning-content'
 
 const ESTAGIOS = [0, 1, 2, 3, 4, 5] as const
 const todosOsTextos = (e: (typeof ESTAGIOS)[number]) =>
-  [TEXTOS_DUNNING[e].assunto, ...TEXTOS_DUNNING[e].paragrafos, TEXTOS_DUNNING[e].whatsappBody].join(' ')
+  [TEXTOS_DUNNING[e].assunto, ...TEXTOS_DUNNING[e].paragrafos, TEXTOS_DUNNING[e].whatsappStageText ?? ''].join(' ')
 
 describe('🛡️ o cliente comprou do Instituto Eidos', () => {
   it('NENHUM texto cita a plataforma de cobrança', () => {
@@ -83,28 +83,26 @@ describe('paridade entre os canais', () => {
   it('todo estágio tem e-mail E template de WhatsApp', () => {
     for (const e of ESTAGIOS) {
       expect(TEXTOS_DUNNING[e].paragrafos.length).toBeGreaterThan(0)
-      expect(TEXTOS_DUNNING[e].whatsappBody.length).toBeGreaterThan(40)
-      expect(TEXTOS_DUNNING[e].whatsappTemplate).toMatch(/^eidosform_cobranca_d\d_v\d$/)
+      expect(TEXTOS_DUNNING[e].whatsappTemplate).toMatch(/^eidosform_(cobranca|plano_rebaixado)_v1$/)
     }
   })
 
-  it('nomes de template únicos por estágio', () => {
+  it('usa só os dois templates genéricos canônicos', () => {
     const nomes = ESTAGIOS.map((e) => TEXTOS_DUNNING[e].whatsappTemplate)
-    expect(new Set(nomes).size).toBe(nomes.length)
+    expect(new Set(nomes)).toEqual(new Set(Object.values(DUNNING_WHATSAPP_TEMPLATES)))
   })
 
-  it('o WhatsApp usa {{1}} e {{2}} na ordem nome, plano', () => {
-    for (const e of ESTAGIOS) {
-      const corpo = TEXTOS_DUNNING[e].whatsappBody
-      expect(corpo.indexOf('{{1}}')).toBeGreaterThanOrEqual(0)
-      if (corpo.includes('{{2}}')) expect(corpo.indexOf('{{1}}')).toBeLessThan(corpo.indexOf('{{2}}'))
+  it('D+0..D+4 fornecem o texto do estágio como o terceiro parâmetro; D+5 usa BODY fixo', () => {
+    for (const e of [0, 1, 2, 3, 4] as const) {
+      expect(TEXTOS_DUNNING[e].whatsappStageText?.length).toBeGreaterThan(40)
     }
+    expect(TEXTOS_DUNNING[5].whatsappStageText).toBeNull()
   })
 
   it('o e-mail NÃO deixa placeholder de WhatsApp vazando, nem vice-versa', () => {
     for (const e of ESTAGIOS) {
       expect(TEXTOS_DUNNING[e].paragrafos.join(' ')).not.toContain('{{')
-      expect(TEXTOS_DUNNING[e].whatsappBody).not.toMatch(/\{nome\}|\{plano\}/)
+      expect(TEXTOS_DUNNING[e].whatsappStageText ?? '').not.toMatch(/\{nome\}|\{plano\}|\{\{\d+\}\}/)
     }
   })
 })

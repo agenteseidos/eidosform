@@ -22,12 +22,17 @@ export type EstagioTexto = {
    *  "gosto de textos com espaçamento de uma linha entre parágrafos"). */
   paragrafos: string[]
   ctaLabel: string
-  /** Corpo do template de WhatsApp — mesma história, versão curta. Os {{n}} são as variáveis
-   *  na ordem em que a Meta as recebe. */
-  whatsappBody: string
-  /** Nome do template a submeter à Meta. */
+  /** Trecho variável do template genérico de cobrança ({{3}} do BODY). No D+5 o BODY do
+   * template rebaixado já é completo e este campo fica null. */
+  whatsappStageText: string | null
+  /** Um dos dois templates UTILITY canônicos mantidos no repositório da Elen. */
   whatsappTemplate: string
 }
+
+export const DUNNING_WHATSAPP_TEMPLATES = {
+  cobranca: 'eidosform_cobranca_v1',
+  planoRebaixado: 'eidosform_plano_rebaixado_v1',
+} as const
 
 /** Bloco curto do que muda no gratuito — repetido para o cliente não precisar caçar a informação. */
 const LIMITES_FREE = 'só 3 formulários ativos, 100 respostas/mês e sem pixel, integrações ou notificações'
@@ -44,10 +49,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
       'Seus formulários seguem funcionando normalmente enquanto isso.',
     ],
     ctaLabel: 'Regularizar meu pagamento',
-    whatsappTemplate: 'eidosform_cobranca_d0_v1',
-    whatsappBody:
-      'Olá, {{1}}! Hoje tentamos renovar sua assinatura do EidosForm ({{2}}) e o pagamento não foi aprovado — costuma ser limite do dia, cartão vencido ou instabilidade do banco.\n\n' +
-      'Você tem 5 dias para regularizar. Seus formulários seguem funcionando normalmente. É só tocar no botão abaixo para pagar com cartão, Pix ou boleto.',
+    whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
+    whatsappStageText: 'Você tem 5 dias para regularizar; seus formulários seguem funcionando normalmente.',
   },
   1: {
     assunto: 'Faltam 4 dias no seu plano {plano}',
@@ -56,10 +59,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
       'Regularizar leva um minuto — cartão, Pix ou boleto:',
     ],
     ctaLabel: 'Regularizar meu pagamento',
-    whatsappTemplate: 'eidosform_cobranca_d1_v1',
-    whatsappBody:
-      'Olá, {{1}}! Sua assinatura do EidosForm ({{2}}) ainda está pendente.\n\n' +
-      'Faltam 4 dias para a conta voltar ao plano gratuito (3 formulários ativos e 100 respostas/mês). Nada é apagado. Regularizar leva um minuto:',
+    whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
+    whatsappStageText: 'Faltam 4 dias para a conta voltar ao plano gratuito (3 formulários ativos e 100 respostas/mês). Nada é apagado.',
   },
   2: {
     assunto: 'Faltam 3 dias — depois seus formulários começam a pausar',
@@ -69,10 +70,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
       'Se o cartão tiver algum problema, dá pra pagar com outro pelo link:',
     ],
     ctaLabel: 'Regularizar meu pagamento',
-    whatsappTemplate: 'eidosform_cobranca_d2_v1',
-    whatsappBody:
-      'Olá, {{1}}! Faltam 3 dias para sua conta do EidosForm ({{2}}) voltar ao plano gratuito.\n\n' +
-      'Nada é apagado, mas os formulários acima de 3 ficam pausados e param de receber respostas. Se o cartão tiver problema, dá pra pagar com outro:',
+    whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
+    whatsappStageText: 'Faltam 3 dias para a conta voltar ao plano gratuito. Nada é apagado, mas os formulários acima de 3 ficam pausados e param de receber respostas.',
   },
   3: {
     assunto: 'Em 2 dias você deixa de ser avisado dos seus leads',
@@ -81,10 +80,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
       'Também ficam só 3 formulários ativos e 100 respostas/mês. Nada é apagado; tudo volta quando você regularizar.',
     ],
     ctaLabel: 'Regularizar meu pagamento',
-    whatsappTemplate: 'eidosform_cobranca_d3_v1',
-    whatsappBody:
-      'Olá, {{1}}. Faltam 2 dias para sua conta do EidosForm ({{2}}) voltar ao gratuito.\n\n' +
-      'Aí as notificações param: você deixa de ser avisado na hora de cada novo lead, e eles param de cair na sua planilha. Nada é apagado; tudo volta quando regularizar:',
+    whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
+    whatsappStageText: 'Faltam 2 dias para a conta voltar ao gratuito. As notificações param: você deixa de ser avisado na hora de cada novo lead. Nada é apagado.',
   },
   4: {
     assunto: 'Amanhã seus formulários param de receber respostas',
@@ -96,11 +93,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
       'Nada é apagado — tudo volta como está assim que você regularizar.',
     ],
     ctaLabel: 'Regularizar meu pagamento',
-    whatsappTemplate: 'eidosform_cobranca_d4_v1',
-    whatsappBody:
-      'Olá, {{1}}. O prazo termina amanhã.\n\n' +
-      'Sem o pagamento, sua conta do EidosForm ({{2}}) volta ao gratuito: os formulários acima de 3 param de receber respostas e você deixa de ser avisado dos novos leads.\n\n' +
-      'Nada é apagado — tudo volta assim que você regularizar:',
+    whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
+    whatsappStageText: 'O prazo termina amanhã. Sem o pagamento, os formulários acima de 3 param de receber respostas e você deixa de ser avisado dos novos leads. Nada é apagado.',
   },
   5: {
     assunto: 'Seus formulários foram pausados — reative quando quiser',
@@ -109,10 +103,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
       'Nenhum dado foi perdido — todas as respostas, formulários e configurações continuam guardados. Para voltar ao {plano} e reativar tudo na hora:',
     ],
     ctaLabel: 'Reativar minha assinatura',
-    whatsappTemplate: 'eidosform_cobranca_d5_v1',
-    whatsappBody:
-      'Olá, {{1}}. Como o pagamento não foi confirmado no prazo, sua conta do EidosForm voltou ao plano gratuito.\n\n' +
-      'Os formulários acima de 3 estão pausados e as notificações desativadas. Nenhum dado foi perdido. Para voltar ao {{2}} e reativar tudo na hora:',
+    whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.planoRebaixado,
+    whatsappStageText: null,
   },
 }
 

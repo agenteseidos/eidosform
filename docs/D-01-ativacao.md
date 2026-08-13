@@ -60,17 +60,22 @@ age na hora certa. `Persistent=true` recupera a rodada se a VPS estiver desligad
 
 ## Passo 2 (2ª onda) — os templates de WhatsApp
 
-Os 6 corpos estão em `lib/dunning-content.ts` (campo `whatsappBody`), já redigidos para
-**categoria UTILITY**. Submeter na Meta com os nomes `eidosform_cobranca_d0_v1` … `d5_v1`,
-cada um com **1 botão de URL dinâmica** (o link de pagamento) e 2 variáveis: `{{1}}` nome,
-`{{2}}` plano.
+A régua usa somente os 2 templates genéricos UTILITY já mantidos pela Elen:
+
+- `eidosform_cobranca_v1` (D+0 a D+4): `{{1}}` nome, `{{2}}` plano e `{{3}}` texto do estágio;
+- `eidosform_plano_rebaixado_v1` (D+5): `{{1}}` nome e `{{2}}` plano.
+
+Os dois têm um botão URL dinâmica `https://eidosform.com.br/pagar/{{1}}`; o envio passa apenas
+o token como parâmetro do botão e só tenta o canal quando ainda existe cobrança com link. Os
+JSONs canônicos ficam em `eidos-atendente-wpp/campanhas/templates/` e um teste contratual do
+EidosForm lê esses arquivos reais para travar nome, categoria e componentes.
 
 ⚠️ **A armadilha da categoria:** a Meta recategoriza pelo TEXTO, e cobrança tende a cair em
 MARKETING (~9× mais caro). Ver a ficha `whatsapp-template-categoria-utility` na memória ANTES de
 submeter. Depois do primeiro aprovado, **conferir a categoria que a Meta atribuiu** — se vier
 MARKETING, reescrever antes de ligar.
 
-Com os templates aprovados:
+Com os templates confirmados como UTILITY:
 
 ```bash
 # env na Vercel (produção)

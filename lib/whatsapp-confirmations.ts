@@ -31,8 +31,9 @@ import { notifyBillingOpsWhatsApp } from '@/lib/billing-ops-whatsapp'
 
 // _v2 = versões com botão de URL (4× "Acessar minha conta"→/login; cancelada:
 // "Gerenciar assinatura"→/billing). APROVADAS na Meta em 08/2026; contagem de
-// params conferida contra a Graph API (1/3/4/3/3) antes da troca. Botão é URL
-// ESTÁTICA — não entra parâmetro de botão no envio. Os v1 (sem botão) foram
+// params conferida contra a Graph API (1/3/4/3/3) antes da troca. Os templates usuais têm
+// URL ESTÁTICA; a régua de cobrança usa a mesma função com `buttonUrlParam` para o sufixo
+// dinâmico de /pagar/{{1}}. Os v1 (sem botão) foram
 // arquivados; NUNCA reintroduzir fallback automático v1/v2 (risco de mensagem
 // duplicada se a Meta aceitar e a resposta se perder — ordem Codex 2026-07-30).
 export const CONFIRMATION_TEMPLATES = {
@@ -114,6 +115,8 @@ export async function sendConfirmationTemplate(params: {
   template: string
   bodyParams: string[]
   context: string
+  /** Sufixo do primeiro botão URL dinâmico. Ex.: somente o token de /pagar/{{1}}. */
+  buttonUrlParam?: string | null
   /** Rótulo curto pro evento da Elen (ex.: "Plus Mensal", "Starter → Plus"). */
   eventoDetalhe?: string
 }): Promise<{ sent: boolean; skipped?: string }> {
@@ -140,10 +143,18 @@ export async function sendConfirmationTemplate(params: {
         template: {
           name: params.template,
           language: { code: 'pt_BR' },
-          components: [{
-            type: 'body',
-            parameters: params.bodyParams.map((text) => ({ type: 'text', text })),
-          }],
+          components: [
+            {
+              type: 'body',
+              parameters: params.bodyParams.map((text) => ({ type: 'text', text })),
+            },
+            ...(params.buttonUrlParam ? [{
+              type: 'button',
+              sub_type: 'url',
+              index: '0',
+              parameters: [{ type: 'text', text: params.buttonUrlParam }],
+            }] : []),
+          ],
         },
       }),
       signal: AbortSignal.timeout(8000),

@@ -228,7 +228,10 @@ export async function GET(req: NextRequest) {
       // WhatsApp: 2ª onda. Os templates estão redigidos em `dunning-content.ts` e aguardam
       // aprovação da Meta; enquanto não existirem, o envio devolve send_failed e some no log —
       // por isso o canal fica atrás desta flag, para não poluir com falha esperada.
-      if (process.env.DUNNING_WHATSAPP_ENABLED === 'true' && p.phone) {
+      // Os dois templates UTILITY têm botão dinâmico /pagar/{{1}}. Sem cobrança com link não
+      // existe token válido para preencher o botão; nesse caso o e-mail oferece resposta e o
+      // WhatsApp é corretamente suprimido, em vez de enviar um template inválido.
+      if (process.env.DUNNING_WHATSAPP_ENABLED === 'true' && p.phone && tokenPagamento) {
         const reserva = await reservar('whatsapp')
         if (reserva) {
           try {
@@ -236,7 +239,10 @@ export async function GET(req: NextRequest) {
             const whatsapp = await sendConfirmationTemplate({
               toPhone: p.phone,
               template: texto.whatsappTemplate,
-              bodyParams: [dados.nome, dados.plano],
+              bodyParams: decisao.estagio === 5
+                ? [dados.nome, dados.plano]
+                : [dados.nome, dados.plano, texto.whatsappStageText!],
+              buttonUrlParam: tokenPagamento,
               context: `dunning:${decisao.estagio}:${p.id}`,
             })
             if (!whatsapp.sent) {

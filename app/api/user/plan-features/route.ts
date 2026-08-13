@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { PLANS, PlanName, handleDowngrade } from '@/lib/plan-limits'
-import { getSubscription } from '@/lib/asaas'
+import { getSubscription, hasOverduePaymentForSubscription } from '@/lib/asaas'
 import { expiryFromNextDueDate, calculateExpiryDate, type BillingCycle } from '@/lib/billing-activation'
 import { computeProrationBasisDays } from '@/lib/proration'
 import { log, logError, logWarn } from '@/lib/logger'
@@ -45,6 +45,37 @@ export async function GET() {
           const sub = (await getSubscription(profile.asaas_subscription_id)) as { status?: string; nextDueDate?: string }
           if (String(sub?.status ?? '').toUpperCase() === 'ACTIVE') {
             shouldRevert = false
+            // ACTIVE não prova pagamento: no Asaas a assinatura continua ACTIVE quando a
+            // cobrança do ciclo vira OVERDUE. Espelha o fail-safe do expire-plans: consulta
+            // inconclusiva ou vencida não estende e não derruba; o cron reavalia o estado.
+            const due = await hasOverduePaymentForSubscription(profile.asaas_subscription_id)
+            if (!due.ok) {
+              logWarn('[plan-features] Consulta de OVERDUE falhou — não estende nem reverte', {
+                userId: user.id, subscriptionId: profile.asaas_subscription_id,
+              })
+              return NextResponse.json({
+                plan: planName,
+                quota: {
+                  responsesUsed: profile?.responses_used ?? 0,
+                  responsesLimit: profile?.responses_limit ?? PLANS.free.maxResponses,
+                },
+                features: featuresFor(planName),
+              })
+            }
+            if (due.overdue) {
+              logWarn('[plan-features] Sub ACTIVE com cobrança OVERDUE — mantém carência sem estender', {
+                userId: user.id, subscriptionId: profile.asaas_subscription_id,
+                oldestDueDate: due.oldestDueDate,
+              })
+              return NextResponse.json({
+                plan: planName,
+                quota: {
+                  responsesUsed: profile?.responses_used ?? 0,
+                  responsesLimit: profile?.responses_limit ?? PLANS.free.maxResponses,
+                },
+                features: featuresFor(planName),
+              })
+            }
             // Sub ACTIVE → renovação a caminho. Estende a expiração pelo nextDueDate real;
             // se ele não der uma data futura válida, cai no fallback now+ciclo (P2, Codex):
             // SEMPRE corrige plan_expires_at, pra outros gates (getEffectivePlan) não verem
@@ -63,7 +94,18 @@ export async function GET() {
                 upd.proration_basis_days = basisRenew
                 upd.billing_period_end_on = sub?.nextDueDate ?? null
               }
-              await sc.from('profiles').update(upd).eq('id', user.id)
+              const { data: extended, error: extErr } = await sc.from('profiles').update(upd)
+                .eq('id', user.id)
+                .eq('plan', profile.plan)
+                .eq('plan_expires_at', profile.plan_expires_at)
+                .eq('asaas_subscription_id', profile.asaas_subscription_id)
+                .select('id')
+              if (extErr) throw extErr
+              if (!extended || extended.length !== 1) {
+                logWarn('[plan-features] Extensão perdeu a corrida — snapshot do profile mudou', {
+                  userId: user.id, subscriptionId: profile.asaas_subscription_id,
+                })
+              }
             } catch (e) {
               logWarn('[plan-features] Falha ao estender plan_expires_at (não-bloqueante)', { error: e instanceof Error ? e.message : String(e) })
             }
@@ -146,21 +188,26 @@ export async function GET() {
       responsesUsed: profile?.responses_used ?? 0,
       responsesLimit: profile?.responses_limit ?? PLANS.free.maxResponses,
     },
-    features: {
-      maxResponses: planConfig.maxResponses,
-      maxForms: planConfig.maxForms,
-      maxUsers: planConfig.maxUsers,
-      watermark: planConfig.watermark,
-      pixels: planConfig.pixels,
-      pixelEvents: planConfig.pixels,
-      customDomain: planConfig.customDomain,
-      apiAccess: planConfig.apiAccess,
-      partialResponses: planConfig.partialResponses,
-      csvExport: planConfig.csvExport,
-      webhooks: planConfig.webhooks,
-      redirect: planConfig.redirect,
-      emailNotifications: planConfig.emailNotifications,
-      prioritySupport: planConfig.prioritySupport,
-    },
+    features: featuresFor(planName),
   })
+}
+
+function featuresFor(plan: PlanName) {
+  const config = PLANS[plan]
+  return {
+    maxResponses: config.maxResponses,
+    maxForms: config.maxForms,
+    maxUsers: config.maxUsers,
+    watermark: config.watermark,
+    pixels: config.pixels,
+    pixelEvents: config.pixels,
+    customDomain: config.customDomain,
+    apiAccess: config.apiAccess,
+    partialResponses: config.partialResponses,
+    csvExport: config.csvExport,
+    webhooks: config.webhooks,
+    redirect: config.redirect,
+    emailNotifications: config.emailNotifications,
+    prioritySupport: config.prioritySupport,
+  }
 }

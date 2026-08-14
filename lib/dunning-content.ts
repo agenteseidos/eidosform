@@ -39,7 +39,10 @@ export type EstagioTexto = {
 
 export const DUNNING_WHATSAPP_TEMPLATES = {
   cobranca: 'eidosform_cobranca_v1',
-  planoRebaixado: 'eidosform_plano_rebaixado_v1',
+  // v1 flipou p/ MARKETING ainda em análise (14/08). Suspeito: o botão 'Reativar assinatura'
+  // — win-back lê como promocional. A v2 usa o MESMO botão do de cobrança, que segurou UTILITY.
+  // O nome v1 fica bloqueado 30 dias; não reaproveitar.
+  planoRebaixado: 'eidosform_plano_rebaixado_v2',
 } as const
 
 /** Bloco curto do que muda no gratuito — repetido para o cliente não precisar caçar a informação. */

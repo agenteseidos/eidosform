@@ -56,7 +56,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const mockCreate = vi.mocked(createClient)
 /** Requisição com a hora BRT fixada — a régua só age na janela do estágio. */
-const reqNaHora = (hora: number) => ({
+const reqNaHora = (hora: number | string) => ({
   url: `https://x/api/cron/dunning?hora=${hora}`,
   headers: { get: (k: string) => (k === 'authorization' ? 'Bearer segredo' : null) },
 }) as never
@@ -206,8 +206,8 @@ describe('a rotação de horários é respeitada', () => {
     expect(body.avisados).toBe(0)
   })
 
-  it('estágio 2 dispara às 17h', async () => {
-    const req = reqNaHora(17)
+  it('estágio 2 dispara às 19h30 — o turno da NOITE (pedido do Sidney, 14/08)', async () => {
+    const req = reqNaHora('19:35') // o timer real dispara aos :35; a fatia de 30min casa
     const { db } = makeDb([PAGANTE])
     mockCreate.mockReturnValue(db as never)
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(2), ok: true })
@@ -232,14 +232,14 @@ describe('a rotação de horários é respeitada', () => {
     }))
   })
 
-  it('reserva recuperável NÃO dispara depois das 18h', async () => {
+  it('reserva recuperável NÃO dispara depois do último turno (19h30)', async () => {
     const day = vencidaHa(0)
     const { db } = makeDb([PAGANTE])
     mockCreate.mockReturnValue(db as never)
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: day, ok: true })
     outboxMocks.listRecoverableDunningKeys.mockResolvedValue(new Set([`dunning:u1:0:${day}:email`]))
 
-    const body = await (await GET(reqNaHora(19))).json() as { avisados: number }
+    const body = await (await GET(reqNaHora('20:05'))).json() as { avisados: number }
 
     expect(body.avisados).toBe(0)
     expect(outboxMocks.reserveDunningDelivery).not.toHaveBeenCalled()
@@ -485,9 +485,9 @@ describe('🛡️ regressão: chamada SEM ?hora= (o jeito que o cron REAL chama)
       mockCreate.mockReturnValue(db as never)
       asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
 
-      const body = await (await GET(req)).json() as { horaBRT: number; avisados: number }
+      const body = await (await GET(req)).json() as { horaBRT: string; avisados: number }
 
-      expect(body.horaBRT).toBe(9)  // hora REAL de Brasília, nunca o 0 do Number(null)
+      expect(body.horaBRT).toBe('09:00')  // hora REAL de Brasília, nunca a meia-noite do Number(null)
       expect(body.avisados).toBe(1) // e a régua FALA quando é a janela do estágio
     } finally {
       vi.useRealTimers()

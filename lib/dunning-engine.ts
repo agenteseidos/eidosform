@@ -117,13 +117,20 @@ export function detectarRebaixamentoAtrasado(estado: EstadoConta, agora = Date.n
  * E nada depois das 18h: cobrança à noite soa invasiva e o cliente não CONSEGUE agir (banco
  * fechado) — ele só dorme com o problema.
  */
+/** Minutos desde a meia-noite. `hm(19, 30)` = 1170. Os horários viraram minutos em 14/08, para
+ *  o turno da noite (19h30) poder existir — de hora cheia ele era inexprimível. */
+export const hm = (hora: number, minuto = 0): number => hora * 60 + minuto
+
+/** Passo do agendador (o timer roda a cada 30 min). Todo horário tem de cair num múltiplo. */
+export const PASSO_MINUTOS = 30
+
 export const HORARIO_POR_ESTAGIO: Record<EstagioDunning, number> = {
-  0: 9,
-  1: 12,
-  2: 17,
-  3: 9,
-  4: 9,  // FIXO — véspera do corte
-  5: 9,
+  0: hm(9),
+  1: hm(12),
+  2: hm(19, 30), // turno da NOITE (pedido do Sidney, 14/08)
+  3: hm(9),
+  4: hm(9),      // FIXO — véspera do corte
+  5: hm(9),
 }
 
 /**
@@ -136,27 +143,45 @@ export const HORARIO_POR_ESTAGIO: Record<EstagioDunning, number> = {
  * 19h não pode ser respondida — banco fechado. O teto vale para os DOIS canais.
  */
 export const HORARIO_WHATSAPP_POR_ESTAGIO: Record<EstagioDunning, number> = {
-  0: 15,
-  1: 17,
-  2: 11,  // antes do e-mail das 17h — respeitar o teto das 18h vale mais que a ordem
-  3: 15,
-  4: 13,  // véspera: mais perto do e-mail matinal, ainda com o dia útil pela frente
-  5: 11,
+  0: hm(15),
+  1: hm(19, 30), // turno da NOITE
+  2: hm(11),     // o e-mail deste estágio é o das 19h30 — o WhatsApp abre o dia
+  3: hm(15),
+  4: hm(13),     // véspera: mais perto do e-mail matinal, ainda com o dia útil pela frente
+  5: hm(11),
 }
 
 export type CanalDunning = 'email' | 'whatsapp'
 
-/** É a hora deste estágio NESTE canal? A régua roda de hora em hora e só age na janela dele. */
-export function ehHoraDoEstagio(estagio: EstagioDunning, horaBRT: number, canal: CanalDunning = 'email'): boolean {
-  const tabela = canal === 'whatsapp' ? HORARIO_WHATSAPP_POR_ESTAGIO : HORARIO_POR_ESTAGIO
-  return tabela[estagio] === horaBRT
+/**
+ * Janela civilizada de cobrança. O teto era 18h por raciocínio MEU ("banco fechado") — o Sidney
+ * derrubou em 14/08 e tem razão: Pix e cartão rodam 24h e a página de pagamento é autoatendimento,
+ * então 19h30 é hora em que o cliente PODE resolver, e é quando ele olha o celular. O piso segue:
+ * ninguém cobra ninguém de madrugada.
+ */
+export const JANELA_MINIMA = hm(8)
+export const JANELA_MAXIMA = hm(19, 30)
+
+/**
+ * Fatia de 30 min em que este instante cai. O timer dispara aos :05 e :35, então o minuto exato
+ * nunca bate com a tabela — comparar por fatia é o que faz `hm(19,30)` casar com um disparo às
+ * 19h35. Também torna o agendamento tolerante a atraso de alguns minutos.
+ */
+export function slotDe(minutoDoDia: number): number {
+  return Math.floor(minutoDoDia / PASSO_MINUTOS) * PASSO_MINUTOS
 }
 
-/** Canais cuja janela é AGORA. Vazio = nada a fazer nesta hora (o caso comum). */
-export function canaisNaHora(estagio: EstagioDunning, horaBRT: number): CanalDunning[] {
+/** É a janela deste estágio NESTE canal? A régua roda a cada 30 min e só age na fatia dele. */
+export function ehHoraDoEstagio(estagio: EstagioDunning, minutoBRT: number, canal: CanalDunning = 'email'): boolean {
+  const tabela = canal === 'whatsapp' ? HORARIO_WHATSAPP_POR_ESTAGIO : HORARIO_POR_ESTAGIO
+  return slotDe(tabela[estagio]) === slotDe(minutoBRT)
+}
+
+/** Canais cuja janela é AGORA. Vazio = nada a fazer nesta fatia (o caso comum). */
+export function canaisNaHora(estagio: EstagioDunning, minutoBRT: number): CanalDunning[] {
   const canais: CanalDunning[] = []
-  if (ehHoraDoEstagio(estagio, horaBRT, 'email')) canais.push('email')
-  if (ehHoraDoEstagio(estagio, horaBRT, 'whatsapp')) canais.push('whatsapp')
+  if (ehHoraDoEstagio(estagio, minutoBRT, 'email')) canais.push('email')
+  if (ehHoraDoEstagio(estagio, minutoBRT, 'whatsapp')) canais.push('whatsapp')
   return canais
 }
 
@@ -169,6 +194,20 @@ export function horaAtualBRT(agora = new Date()): number {
   return Number(new Intl.DateTimeFormat('pt-BR', {
     timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false,
   }).format(agora))
+}
+
+/**
+ * Minutos desde a meia-noite em Brasília. Mesmo cuidado do `horaAtualBRT`: fuso EXPLÍCITO, nunca
+ * o relógio da máquina — o cron pode rodar de qualquer lugar. Usa `hourCycle: 'h23'` porque o
+ * 'pt-BR' devolve "24:05" à meia-noite e cinco, e `Number('24') * 60` jogaria a fatia para fora
+ * do dia.
+ */
+export function minutoAtualBRT(agora = new Date()): number {
+  const partes = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(agora)
+  const valor = (tipo: string) => Number(partes.find((p) => p.type === tipo)?.value ?? '0')
+  return hm(valor('hour') % 24, valor('minute'))
 }
 
 /** Dia civil atual em Brasília, usado nas chaves diárias da outbox. */

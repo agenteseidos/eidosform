@@ -83,7 +83,7 @@ describe('paridade entre os canais', () => {
   it('todo estágio tem e-mail E template de WhatsApp', () => {
     for (const e of ESTAGIOS) {
       expect(TEXTOS_DUNNING[e].paragrafos.length).toBeGreaterThan(0)
-      expect(TEXTOS_DUNNING[e].whatsappTemplate).toMatch(/^eidosform_(cobranca|plano_rebaixado)_v1$/)
+      expect(TEXTOS_DUNNING[e].whatsappTemplate).toMatch(/^eidosform_(cobranca|plano_rebaixado)_v\d+$/)
     }
   })
 

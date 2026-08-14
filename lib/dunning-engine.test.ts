@@ -10,6 +10,9 @@ import {
   dataAtualBRT, HORARIO_POR_ESTAGIO, PRAZO_DIAS,
   HORARIO_WHATSAPP_POR_ESTAGIO,
   canaisNaHora,
+  hm,
+  JANELA_MAXIMA,
+  JANELA_MINIMA,
 } from './dunning-engine'
 
 const AGORA = Date.parse('2026-08-20T15:00:00-03:00')
@@ -112,22 +115,33 @@ describe('🛡️ detector: o rebaixamento não aconteceu', () => {
 })
 
 describe('horários — rotação com a véspera fixa de manhã', () => {
-  it('a rotação é 9h / 12h / 17h', () => {
-    expect([HORARIO_POR_ESTAGIO[0], HORARIO_POR_ESTAGIO[1], HORARIO_POR_ESTAGIO[2]]).toEqual([9, 12, 17])
+  it('a rotação é 9h / 12h / 19h30 (o turno da noite entrou em 14/08)', () => {
+    expect([HORARIO_POR_ESTAGIO[0], HORARIO_POR_ESTAGIO[1], HORARIO_POR_ESTAGIO[2]])
+      .toEqual([hm(9), hm(12), hm(19, 30)])
   })
 
   it('🛡️ o D+4 (véspera do corte) é de MANHÃ — o cliente precisa do dia inteiro', () => {
-    expect(HORARIO_POR_ESTAGIO[4]).toBe(9)
+    expect(HORARIO_POR_ESTAGIO[4]).toBe(hm(9))
   })
 
-  it('nenhum aviso depois das 18h (cobrança à noite não deixa o cliente agir)', () => {
-    for (const h of Object.values(HORARIO_POR_ESTAGIO)) expect(h).toBeLessThanOrEqual(18)
+  it('nenhum aviso fora da janela civilizada (8h–19h30)', () => {
+    for (const h of Object.values(HORARIO_POR_ESTAGIO)) expect(h).toBeLessThanOrEqual(JANELA_MAXIMA)
   })
 
-  it('cada estágio dispara em UMA hora só', () => {
-    expect(ehHoraDoEstagio(0, 9)).toBe(true)
-    expect(ehHoraDoEstagio(0, 12)).toBe(false)
-    expect(ehHoraDoEstagio(2, 17)).toBe(true)
+  it('cada estágio dispara em UMA fatia só', () => {
+    expect(ehHoraDoEstagio(0, hm(9))).toBe(true)
+    expect(ehHoraDoEstagio(0, hm(12))).toBe(false)
+    expect(ehHoraDoEstagio(2, hm(19, 30))).toBe(true)
+    expect(ehHoraDoEstagio(2, hm(17))).toBe(false)
+  })
+
+  it('🛡️ o timer dispara aos :05/:35 — a fatia de 30 min é que faz o horário casar', () => {
+    // Sem o arredondamento por fatia, hm(19,30) nunca bateria com um disparo às 19h35 e o
+    // turno da noite seria mudo — a mesma família do bug de 13/08 (régua silenciosa).
+    expect(ehHoraDoEstagio(2, hm(19, 35))).toBe(true)   // disparo real do timer
+    expect(ehHoraDoEstagio(0, hm(9, 5))).toBe(true)     // idem, hora cheia
+    expect(ehHoraDoEstagio(2, hm(19, 0))).toBe(false)   // fatia anterior NÃO conta
+    expect(ehHoraDoEstagio(2, hm(20, 5))).toBe(false)   // fatia seguinte também não
   })
 })
 
@@ -146,15 +160,15 @@ describe('diasDesde — contagem em horário de Brasília', () => {
 describe('🛡️ horários por canal (14/08) — as duas tabelas obedecem às mesmas regras', () => {
   const ESTAGIOS = [0, 1, 2, 3, 4, 5] as const
 
-  it('nenhum canal cobra fora da janela civilizada (8h–18h)', () => {
+  it('nenhum canal cobra fora da janela civilizada (8h–19h30)', () => {
     // A regra estava escrita no motor desde 11/08 e a primeira proposta de horários do
     // WhatsApp a violava (D+2 às 19h). Cobrança à noite não pode ser respondida: banco
     // fechado — o cliente só dorme com o problema.
     for (const e of ESTAGIOS) {
-      expect(HORARIO_POR_ESTAGIO[e]).toBeGreaterThanOrEqual(8)
-      expect(HORARIO_POR_ESTAGIO[e]).toBeLessThanOrEqual(18)
-      expect(HORARIO_WHATSAPP_POR_ESTAGIO[e]).toBeGreaterThanOrEqual(8)
-      expect(HORARIO_WHATSAPP_POR_ESTAGIO[e]).toBeLessThanOrEqual(18)
+      expect(HORARIO_POR_ESTAGIO[e]).toBeGreaterThanOrEqual(JANELA_MINIMA)
+      expect(HORARIO_POR_ESTAGIO[e]).toBeLessThanOrEqual(JANELA_MAXIMA)
+      expect(HORARIO_WHATSAPP_POR_ESTAGIO[e]).toBeGreaterThanOrEqual(JANELA_MINIMA)
+      expect(HORARIO_WHATSAPP_POR_ESTAGIO[e]).toBeLessThanOrEqual(JANELA_MAXIMA)
     }
   })
 
@@ -165,8 +179,8 @@ describe('🛡️ horários por canal (14/08) — as duas tabelas obedecem às m
   })
 
   it('canaisNaHora devolve só o canal da vez', () => {
-    expect(canaisNaHora(0, 9)).toEqual(['email'])     // D+0 e-mail
-    expect(canaisNaHora(0, 15)).toEqual(['whatsapp']) // D+0 WhatsApp
-    expect(canaisNaHora(0, 11)).toEqual([])           // hora de ninguém
+    expect(canaisNaHora(0, hm(9))).toEqual(['email'])     // D+0 e-mail
+    expect(canaisNaHora(0, hm(15))).toEqual(['whatsapp']) // D+0 WhatsApp
+    expect(canaisNaHora(0, hm(11))).toEqual([])           // hora de ninguém
   })
 })

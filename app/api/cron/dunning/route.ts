@@ -6,7 +6,7 @@ import { hasOverduePaymentForSubscription, getLinkPagamentoVencido } from '@/lib
 import { sendDunningEmail, sendBillingOpsAlert } from '@/lib/resend'
 import { planLabel } from '@/lib/whatsapp-confirmations'
 import {
-  dataAtualBRT, decidirAviso, detectarRebaixamentoAtrasado, canaisNaHora, horaAtualBRT,
+  dataAtualBRT, decidirAviso, detectarRebaixamentoAtrasado, canaisNaHora, minutoAtualBRT, hm, JANELA_MAXIMA,
 } from '@/lib/dunning-engine'
 import { TEXTOS_DUNNING, preencher } from '@/lib/dunning-content'
 import { signPaymentLinkToken } from '@/lib/payment-link-token'
@@ -54,11 +54,17 @@ export async function GET(req: NextRequest) {
   // ⚠️ `Number(null)` é 0 (não NaN): sem o guard de presença, TODA chamada sem `?hora=`
   // forçava horaBRT=0 → nenhum estágio dispara à 0h → régua muda de silenciosa p/ MUDA.
   // (Pego no disparo de validação de 13/08 — horaBRT:0 às 19h42 BRT.)
+  // Aceita `?hora=9` e `?hora=19:30` (os horários viraram minutos em 14/08, p/ o turno da noite).
   const horaParam = new URL(req.url).searchParams.get('hora')
-  const horaForcada = horaParam === null || horaParam === '' ? NaN : Number(horaParam)
-  const horaBRT = Number.isInteger(horaForcada) && horaForcada >= 0 && horaForcada <= 23
-    ? horaForcada
-    : horaAtualBRT()
+  const minutoForcado = (() => {
+    if (!horaParam) return NaN
+    const [h, m = '0'] = horaParam.split(':')
+    const hora = Number(h), minuto = Number(m)
+    if (!Number.isInteger(hora) || !Number.isInteger(minuto)) return NaN
+    if (hora < 0 || hora > 23 || minuto < 0 || minuto > 59) return NaN
+    return hm(hora, minuto)
+  })()
+  const minutoBRT = Number.isFinite(minutoForcado) ? minutoForcado : minutoAtualBRT()
 
   // Candidatos: quem tem assinatura vinculada e NÃO está no gratuito, mais quem caiu para o
   // gratuito recentemente (o estágio 5 precisa deles). O motor filtra o resto.
@@ -129,12 +135,13 @@ export async function GET(req: NextRequest) {
       // JANELA POR CANAL (14/08): e-mail e WhatsApp têm horários próprios, então numa dada hora
       // pode ser a vez de um, do outro, dos dois (se coincidirem) ou de nenhum. Só quem está na
       // própria janela entrega agora — o outro canal espera a hora dele, no mesmo dia.
-      const canaisAgora = new Set<DunningChannel>(canaisNaHora(decisao.estagio, horaBRT))
+      const canaisAgora = new Set<DunningChannel>(canaisNaHora(decisao.estagio, minutoBRT))
       const canalTemRecuperacao = (channel: DunningChannel) =>
         recuperaveis.has(buildDunningDeliveryKey({ profileId: p.id, stage: decisao.estagio, day: dia, channel }))
-      // Retry de outbox é exceção à hora inicial, mas nunca atravessa o limite de cobrança à
-      // noite. Às 19h+ a linha fica registrada e o próximo estágio assume no dia seguinte.
-      const podeRetomar = horaBRT <= 18
+      // Retry de outbox é exceção à hora inicial, mas nunca atravessa o fim da janela de
+      // cobrança. Passado o último turno a linha fica registrada e o próximo estágio assume
+      // no dia seguinte.
+      const podeRetomar = minutoBRT <= JANELA_MAXIMA
       /** Este canal age agora? Na janela dele, ou retomando uma entrega que falhou/ficou órfã. */
       const canalAtivo = (channel: DunningChannel) =>
         canaisAgora.has(channel) || (podeRetomar && canalTemRecuperacao(channel))
@@ -285,5 +292,5 @@ export async function GET(req: NextRequest) {
   }
 
   if (r.avisados > 0 || r.alertasRebaixamento > 0) log('[cron/dunning] concluído', r)
-  return NextResponse.json({ ok: true, horaBRT, ...r })
+  return NextResponse.json({ ok: true, horaBRT: `${String(Math.floor(minutoBRT / 60)).padStart(2, '0')}:${String(minutoBRT % 60).padStart(2, '0')}`, ...r })
 }

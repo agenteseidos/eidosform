@@ -123,7 +123,10 @@ describe('🛡️ paridade: quem não passa no motor não recebe NENHUM canal', 
     const req = reqNaHora(9)
     const { db } = makeDb([PAGANTE])
     mockCreate.mockReturnValue(db as never)
-    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: false, oldestDueDate: null, ok: true })
+    // Cenário REAL da pergunta do Sidney (14/08): estava vencido desde o dia 3 e PAGOU.
+    // A data antiga continua sendo devolvida de propósito no teste — se ela sozinha bastasse
+    // para cobrar, este teste denunciaria. O que manda é `overdue: false`.
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: false, oldestDueDate: vencidaHa(3), ok: true })
 
     const body = await (await GET(req)).json() as { avisados: number }
 

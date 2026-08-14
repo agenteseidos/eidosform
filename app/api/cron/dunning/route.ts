@@ -6,7 +6,7 @@ import { hasOverduePaymentForSubscription, getLinkPagamentoVencido } from '@/lib
 import { sendDunningEmail, sendBillingOpsAlert } from '@/lib/resend'
 import { planLabel } from '@/lib/whatsapp-confirmations'
 import {
-  dataAtualBRT, decidirAviso, detectarRebaixamentoAtrasado, canaisNaHora, minutoAtualBRT, hm, JANELA_MAXIMA,
+  dataAtualBRT, decidirAviso, detectarRebaixamentoAtrasado, canaisNaHora, minutoAtualBRT, hm, slotDe, JANELA_MAXIMA,
 } from '@/lib/dunning-engine'
 import { TEXTOS_DUNNING, preencher } from '@/lib/dunning-content'
 import { signPaymentLinkToken } from '@/lib/payment-link-token'
@@ -141,7 +141,10 @@ export async function GET(req: NextRequest) {
       // Retry de outbox é exceção à hora inicial, mas nunca atravessa o fim da janela de
       // cobrança. Passado o último turno a linha fica registrada e o próximo estágio assume
       // no dia seguinte.
-      const podeRetomar = minutoBRT <= JANELA_MAXIMA
+      // Comparar por FATIA, igual à entrega. Com comparação exata, o disparo real das 19h35
+      // ficava > JANELA_MAXIMA (19h30) e a régua entregava mensagem nova no turno da noite mas
+      // RECUSAVA retomar uma entrega que falhou de manhã — no mesmo instante.
+      const podeRetomar = slotDe(minutoBRT) <= slotDe(JANELA_MAXIMA)
       /** Este canal age agora? Na janela dele, ou retomando uma entrega que falhou/ficou órfã. */
       const canalAtivo = (channel: DunningChannel) =>
         canaisAgora.has(channel) || (podeRetomar && canalTemRecuperacao(channel))

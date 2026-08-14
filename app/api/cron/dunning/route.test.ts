@@ -497,3 +497,22 @@ describe('🛡️ regressão: chamada SEM ?hora= (o jeito que o cron REAL chama)
     }
   })
 })
+
+describe('🛡️ retomada no turno da noite (bug pego em 14/08)', () => {
+  it('19h35 — o disparo REAL do último turno — ainda retoma uma entrega que falhou', async () => {
+    // A janela é 19h30 e o timer dispara às 19h35. Com comparação exata, a régua entregava
+    // mensagem nova nesse instante mas recusava retomar uma falha da manhã: o mesmo tique do
+    // relógio valia para um caminho e não para o outro.
+    const day = vencidaHa(0)
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: day, ok: true })
+    outboxMocks.listRecoverableDunningKeys.mockResolvedValue(new Set([`dunning:u1:0:${day}:email`]))
+
+    await GET(reqNaHora('19:35'))
+
+    expect(outboxMocks.reserveDunningDelivery).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ channel: 'email', createIfMissing: false }),
+    )
+  })
+})

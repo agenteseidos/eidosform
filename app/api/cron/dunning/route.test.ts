@@ -145,18 +145,23 @@ describe('🛡️ paridade: quem não passa no motor não recebe NENHUM canal', 
     expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
   })
 
-  it('inadimplente na hora certa recebe os DOIS canais', async () => {
+  it('inadimplente recebe os DOIS canais — cada um na SUA hora (e-mail 9h, WhatsApp 15h)', async () => {
     process.env.DUNNING_WHATSAPP_ENABLED = 'true'
-    const req = reqNaHora(9) // estágio 0 = 9h
     const { db } = makeDb([PAGANTE])
     mockCreate.mockReturnValue(db as never)
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
 
-    const body = await (await GET(req)).json() as { avisados: number }
-
-    expect(body.avisados).toBe(1)
+    // 9h: janela do E-MAIL. O WhatsApp NÃO pode sair junto (era o comportamento antigo).
+    const manha = await (await GET(reqNaHora(9))).json() as { avisados: number }
+    expect(manha.avisados).toBe(1)
     expect(resendMocks.sendDunningEmail).toHaveBeenCalledTimes(1)
+    expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
+
+    // 15h: janela do WhatsApp. Agora ele sai — e o e-mail não é reenviado.
+    const tarde = await (await GET(reqNaHora(15))).json() as { avisados: number }
+    expect(tarde.avisados).toBe(1)
     expect(wppMocks.sendConfirmationTemplate).toHaveBeenCalledTimes(1)
+    expect(resendMocks.sendDunningEmail).toHaveBeenCalledTimes(1)
   })
 
   it('pagou entre a decisão e a entrega → rechecagem final aborta todos os canais', async () => {
@@ -407,7 +412,7 @@ describe('WhatsApp atrás da flag (2ª onda, aguardando a Meta)', () => {
     mockCreate.mockReturnValue(db as never)
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
 
-    await GET(reqNaHora(9))
+    await GET(reqNaHora(15)) // janela do WhatsApp no D+0
 
     const envio = wppMocks.sendConfirmationTemplate.mock.calls[0][0]!
     expect(envio.template).toBe('eidosform_cobranca_v1')
@@ -438,7 +443,7 @@ describe('WhatsApp atrás da flag (2ª onda, aguardando a Meta)', () => {
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
     wppMocks.sendConfirmationTemplate.mockResolvedValue({ sent: false, skipped: 'send_failed' } as never)
 
-    const body = await (await GET(reqNaHora(9))).json() as { falhas: number }
+    const body = await (await GET(reqNaHora(15))).json() as { falhas: number } // janela do WhatsApp
 
     expect(body.falhas).toBeGreaterThan(0)
     expect(outboxMocks.finishDunningDelivery).toHaveBeenCalledWith(

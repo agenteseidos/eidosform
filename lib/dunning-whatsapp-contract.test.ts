@@ -31,7 +31,7 @@ function bodyParamCount(template: TemplateJson): number {
 describe('contrato dos templates UTILITY reais da régua', () => {
   it.each([
     [DUNNING_WHATSAPP_TEMPLATES.cobranca, 3],
-    [DUNNING_WHATSAPP_TEMPLATES.planoRebaixado, 2],
+    [DUNNING_WHATSAPP_TEMPLATES.planoRebaixado, 3],
   ] as const)('%s: nome, categoria e componentes batem com o envio', (name, bodyParams) => {
     const template = readTemplate(name)
 

@@ -22,9 +22,17 @@ export type EstagioTexto = {
    *  "gosto de textos com espaçamento de uma linha entre parágrafos"). */
   paragrafos: string[]
   ctaLabel: string
-  /** Trecho variável do template genérico de cobrança ({{3}} do BODY). No D+5 o BODY do
-   * template rebaixado já é completo e este campo fica null. */
-  whatsappStageText: string | null
+  /**
+   * A MENSAGEM DO DIA no WhatsApp — vai inteira no {{3}} do BODY (técnica {UP}, adotada como
+   * padrão em 24/07 e aplicada aqui em 14/08). Os dois esqueletos submetidos à Meta são
+   * neutros de propósito: saudação + este parâmetro + fecho fixo. Assim as 6 mensagens são
+   * de fato diferentes (pedido do Sidney: "quero mensagens alinhadas aos e-mails") sem
+   * precisar de 6 aprovações, e mudar uma frase não exige novo ciclo com a Meta.
+   *
+   * ⚠️ UMA LINHA CORRIDA, sempre: parâmetro da Cloud API NÃO aceita quebra de linha. É por isso
+   * que a lista de 4 itens do e-mail do D+4 aqui vira uma frase só.
+   */
+  whatsappStageText: string
   /** Um dos dois templates UTILITY canônicos mantidos no repositório da Elen. */
   whatsappTemplate: string
 }
@@ -50,7 +58,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
     ],
     ctaLabel: 'Regularizar meu pagamento',
     whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
-    whatsappStageText: 'Você tem 5 dias para regularizar; seus formulários seguem funcionando normalmente.',
+    whatsappStageText:
+      'O pagamento de hoje não foi aprovado — costuma ser algo simples: limite do dia, cartão vencido ou instabilidade do banco. Você tem 5 dias para regularizar, e seus formulários seguem funcionando normalmente enquanto isso.',
   },
   1: {
     assunto: 'Faltam 4 dias no seu plano {plano}',
@@ -60,7 +69,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
     ],
     ctaLabel: 'Regularizar meu pagamento',
     whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
-    whatsappStageText: 'Faltam 4 dias para a conta voltar ao plano gratuito (3 formulários ativos e 100 respostas/mês). Nada é apagado.',
+    whatsappStageText:
+      'O pagamento segue pendente. Faltam 4 dias para a conta voltar ao plano gratuito, onde ficam só 3 formulários ativos, 100 respostas por mês e sem notificações ou integrações. Regularizar leva um minuto — cartão, Pix ou boleto.',
   },
   2: {
     assunto: 'Faltam 3 dias — depois seus formulários começam a pausar',
@@ -71,7 +81,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
     ],
     ctaLabel: 'Regularizar meu pagamento',
     whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
-    whatsappStageText: 'Faltam 3 dias para a conta voltar ao plano gratuito. Nada é apagado, mas os formulários acima de 3 ficam pausados e param de receber respostas.',
+    whatsappStageText:
+      'Faltam 3 dias para a conta voltar ao plano gratuito. A partir daí, os formulários acima do limite ficam pausados e param de receber respostas. Se o cartão tiver algum problema, dá para pagar com outro pelo link.',
   },
   3: {
     assunto: 'Em 2 dias você deixa de ser avisado dos seus leads',
@@ -81,7 +92,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
     ],
     ctaLabel: 'Regularizar meu pagamento',
     whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
-    whatsappStageText: 'Faltam 2 dias para a conta voltar ao gratuito. As notificações param: você deixa de ser avisado na hora de cada novo lead. Nada é apagado.',
+    whatsappStageText:
+      'Faltam 2 dias. Sem a confirmação do pagamento, a conta volta ao gratuito e as notificações param: você deixa de ser avisado na hora de cada novo lead, e eles param de cair na sua planilha e no seu CRM. Também ficam só 3 formulários ativos e 100 respostas por mês.',
   },
   4: {
     assunto: 'Amanhã seus formulários param de receber respostas',
@@ -94,7 +106,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
     ],
     ctaLabel: 'Regularizar meu pagamento',
     whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
-    whatsappStageText: 'O prazo termina amanhã. Sem o pagamento, os formulários acima de 3 param de receber respostas e você deixa de ser avisado dos novos leads. Nada é apagado.',
+    whatsappStageText:
+      'O prazo termina amanhã. Sem o pagamento, a conta volta ao plano gratuito: apenas 3 formulários ativos (os demais ficam pausados e param de receber respostas), 100 respostas por mês, sem notificações de novos leads e sem integrações.',
   },
   5: {
     assunto: 'Seus formulários foram pausados — reative quando quiser',
@@ -104,7 +117,8 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
     ],
     ctaLabel: 'Reativar minha assinatura',
     whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.planoRebaixado,
-    whatsappStageText: null,
+    whatsappStageText:
+      'Como o pagamento não foi confirmado no prazo, a conta voltou ao plano gratuito: formulários acima de 3 pausados, sem notificação de novos leads e integrações desativadas.',
   },
 }
 

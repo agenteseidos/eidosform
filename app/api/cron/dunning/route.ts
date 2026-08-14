@@ -6,7 +6,7 @@ import { hasOverduePaymentForSubscription, getLinkPagamentoVencido } from '@/lib
 import { sendDunningEmail, sendBillingOpsAlert } from '@/lib/resend'
 import { planLabel } from '@/lib/whatsapp-confirmations'
 import {
-  dataAtualBRT, decidirAviso, detectarRebaixamentoAtrasado, ehHoraDoEstagio, horaAtualBRT,
+  dataAtualBRT, decidirAviso, detectarRebaixamentoAtrasado, canaisNaHora, horaAtualBRT,
 } from '@/lib/dunning-engine'
 import { TEXTOS_DUNNING, preencher } from '@/lib/dunning-content'
 import { signPaymentLinkToken } from '@/lib/payment-link-token'
@@ -18,14 +18,20 @@ import {
 /**
  * GET /api/cron/dunning — a régua de cobrança (D-01).
  *
- * Roda DE HORA EM HORA e só age na janela de cada estágio (rotação 9h/12h/17h, D+4 fixo de
- * manhã). O motor (`lib/dunning-engine.ts`) decide; este arquivo apenas entrega.
+ * Roda DE HORA EM HORA e só age na janela do estágio — que agora é POR CANAL (e-mail 9/12/17h,
+ * WhatsApp 15/17/11/15/13/11h; ver as duas tabelas em `lib/dunning-engine.ts`). O motor decide;
+ * este arquivo apenas entrega.
  *
  * ⚠️ A ORDEM AQUI É O CONTRATO. As checagens acontecem UMA vez, no motor, ANTES de qualquer
- * canal — e-mail e WhatsApp saem juntos ou não saem. Foi a instrução explícita do Sidney:
- * "tudo que ocorre de checagem com os e-mails antes do envio tem que ocorrer nas mensagens
- * também". Se um dia alguém adicionar um terceiro canal, ele herda as checagens de graça; o
- * erro a evitar é ler o estado dentro de cada canal.
+ * canal. Foi a instrução explícita do Sidney: "tudo que ocorre de checagem com os e-mails antes
+ * do envio tem que ocorrer nas mensagens também". Se um dia alguém adicionar um terceiro canal,
+ * ele herda as checagens de graça; o erro a evitar é ler o estado dentro de cada canal.
+ *
+ * O que MUDOU em 14/08: os canais deixaram de sair na mesma hora (pedido do Sidney — dois toques
+ * espalhados cobrem mais gente que dois toques simultâneos). A paridade que importa continua de
+ * pé e é OUTRA: nenhum canal entrega sem passar pelas MESMAS checagens, incluindo a revalidação
+ * final. Cada hora de cron reexecuta tudo do zero para o canal da vez — então quem pagou às 10h
+ * não recebe o WhatsApp das 15h.
  *
  * NADA é agendado com antecedência: a cada rodada o estado é relido do banco e do gateway. É
  * assim que "pagou no meio da régua" interrompe os avisos sem ninguém cancelar nada.
@@ -120,13 +126,19 @@ export async function GET(req: NextRequest) {
         continue
       }
 
-      const naHoraOriginal = ehHoraDoEstagio(decisao.estagio, horaBRT)
-      const temRecuperacao = (['email', 'whatsapp'] as const).some((channel) =>
-        recuperaveis.has(buildDunningDeliveryKey({ profileId: p.id, stage: decisao.estagio, day: dia, channel })))
+      // JANELA POR CANAL (14/08): e-mail e WhatsApp têm horários próprios, então numa dada hora
+      // pode ser a vez de um, do outro, dos dois (se coincidirem) ou de nenhum. Só quem está na
+      // própria janela entrega agora — o outro canal espera a hora dele, no mesmo dia.
+      const canaisAgora = new Set<DunningChannel>(canaisNaHora(decisao.estagio, horaBRT))
+      const canalTemRecuperacao = (channel: DunningChannel) =>
+        recuperaveis.has(buildDunningDeliveryKey({ profileId: p.id, stage: decisao.estagio, day: dia, channel }))
       // Retry de outbox é exceção à hora inicial, mas nunca atravessa o limite de cobrança à
       // noite. Às 19h+ a linha fica registrada e o próximo estágio assume no dia seguinte.
-      const podeRetomarAgora = temRecuperacao && horaBRT <= 18
-      if (!naHoraOriginal && !podeRetomarAgora) {
+      const podeRetomar = horaBRT <= 18
+      /** Este canal age agora? Na janela dele, ou retomando uma entrega que falhou/ficou órfã. */
+      const canalAtivo = (channel: DunningChannel) =>
+        canaisAgora.has(channel) || (podeRetomar && canalTemRecuperacao(channel))
+      if (!canalAtivo('email') && !canalAtivo('whatsapp')) {
         r.silenciados++
         continue
       }
@@ -171,7 +183,7 @@ export async function GET(req: NextRequest) {
         try {
           const reserva = await reserveDunningDelivery(db, {
             profileId: p.id, stage: decisao.estagio, day: dia, channel,
-            createIfMissing: naHoraOriginal,
+            createIfMissing: canaisAgora.has(channel),
           })
           if (reserva) algumCanalReservado = true
           return reserva
@@ -195,7 +207,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (p.email) {
+      if (p.email && canalAtivo('email')) {
         const reserva = await reservar('email')
         if (reserva) {
           try {
@@ -231,7 +243,7 @@ export async function GET(req: NextRequest) {
       // Os dois templates UTILITY têm botão dinâmico /pagar/{{1}}. Sem cobrança com link não
       // existe token válido para preencher o botão; nesse caso o e-mail oferece resposta e o
       // WhatsApp é corretamente suprimido, em vez de enviar um template inválido.
-      if (process.env.DUNNING_WHATSAPP_ENABLED === 'true' && p.phone && tokenPagamento) {
+      if (process.env.DUNNING_WHATSAPP_ENABLED === 'true' && p.phone && tokenPagamento && canalAtivo('whatsapp')) {
         const reserva = await reservar('whatsapp')
         if (reserva) {
           try {
@@ -239,9 +251,10 @@ export async function GET(req: NextRequest) {
             const whatsapp = await sendConfirmationTemplate({
               toPhone: p.phone,
               template: texto.whatsappTemplate,
-              bodyParams: decisao.estagio === 5
-                ? [dados.nome, dados.plano]
-                : [dados.nome, dados.plano, texto.whatsappStageText!],
+              // Os DOIS esqueletos têm a mesma forma: nome, plano e a mensagem do dia no {{3}}.
+              // (Até 14/08 o D+5 mandava só 2 — o template dele tinha BODY fixo. Com a técnica
+              // {UP} aplicada aos seis, mandar 2 num template de 3 faria a Meta recusar o envio.)
+              bodyParams: [dados.nome, dados.plano, texto.whatsappStageText],
               buttonUrlParam: tokenPagamento,
               context: `dunning:${decisao.estagio}:${p.id}`,
             })
@@ -250,6 +263,7 @@ export async function GET(req: NextRequest) {
               await finalizar(reserva, 'failed', { error: whatsapp.skipped ?? 'envio recusado' })
             } else {
               await finalizar(reserva, 'sent')
+              r.avisados++
             }
           } catch (err) {
             r.falhas++

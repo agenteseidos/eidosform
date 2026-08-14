@@ -126,9 +126,38 @@ export const HORARIO_POR_ESTAGIO: Record<EstagioDunning, number> = {
   5: 9,
 }
 
-/** É a hora deste estágio? A régua roda de hora em hora e só age na janela do estágio. */
-export function ehHoraDoEstagio(estagio: EstagioDunning, horaBRT: number): boolean {
-  return HORARIO_POR_ESTAGIO[estagio] === horaBRT
+/**
+ * Horário do WhatsApp — INDEPENDENTE do e-mail (decisão do Sidney, 14/08): dois toques por dia
+ * em momentos diferentes cobrem mais gente do que dois toques na mesma hora. O outbox já é por
+ * canal, então cada um tem a própria reserva e a própria idempotência.
+ *
+ * Distância ao e-mail encurta conforme o prazo aperta (6h → 4h → 2h). No D+2 o WhatsApp vem
+ * ANTES (11h × e-mail 17h): pôr o WhatsApp depois estouraria o teto das 18h, e uma mensagem às
+ * 19h não pode ser respondida — banco fechado. O teto vale para os DOIS canais.
+ */
+export const HORARIO_WHATSAPP_POR_ESTAGIO: Record<EstagioDunning, number> = {
+  0: 15,
+  1: 17,
+  2: 11,  // antes do e-mail das 17h — respeitar o teto das 18h vale mais que a ordem
+  3: 15,
+  4: 13,  // véspera: mais perto do e-mail matinal, ainda com o dia útil pela frente
+  5: 11,
+}
+
+export type CanalDunning = 'email' | 'whatsapp'
+
+/** É a hora deste estágio NESTE canal? A régua roda de hora em hora e só age na janela dele. */
+export function ehHoraDoEstagio(estagio: EstagioDunning, horaBRT: number, canal: CanalDunning = 'email'): boolean {
+  const tabela = canal === 'whatsapp' ? HORARIO_WHATSAPP_POR_ESTAGIO : HORARIO_POR_ESTAGIO
+  return tabela[estagio] === horaBRT
+}
+
+/** Canais cuja janela é AGORA. Vazio = nada a fazer nesta hora (o caso comum). */
+export function canaisNaHora(estagio: EstagioDunning, horaBRT: number): CanalDunning[] {
+  const canais: CanalDunning[] = []
+  if (ehHoraDoEstagio(estagio, horaBRT, 'email')) canais.push('email')
+  if (ehHoraDoEstagio(estagio, horaBRT, 'whatsapp')) canais.push('whatsapp')
+  return canais
 }
 
 /**

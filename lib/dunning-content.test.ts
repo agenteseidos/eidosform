@@ -92,17 +92,27 @@ describe('paridade entre os canais', () => {
     expect(new Set(nomes)).toEqual(new Set(Object.values(DUNNING_WHATSAPP_TEMPLATES)))
   })
 
-  it('D+0..D+4 fornecem o texto do estágio como o terceiro parâmetro; D+5 usa BODY fixo', () => {
-    for (const e of [0, 1, 2, 3, 4] as const) {
-      expect(TEXTOS_DUNNING[e].whatsappStageText?.length).toBeGreaterThan(40)
+  it('os SEIS estágios mandam a mensagem do dia no terceiro parâmetro (técnica {UP})', () => {
+    for (const e of ESTAGIOS) {
+      expect(TEXTOS_DUNNING[e].whatsappStageText.length).toBeGreaterThan(40)
     }
-    expect(TEXTOS_DUNNING[5].whatsappStageText).toBeNull()
+    // O que a Meta aprovou é só o esqueleto; a mensagem real viaja no parâmetro. Se dois
+    // estágios repetirem o texto, o cliente recebe a MESMA mensagem dois dias seguidos —
+    // exatamente a reclamação do Sidney em 14/08 ("as mensagens são iguais").
+    const textos = ESTAGIOS.map((e) => TEXTOS_DUNNING[e].whatsappStageText)
+    expect(new Set(textos).size).toBe(ESTAGIOS.length)
+  })
+
+  it('🛡️ o parâmetro NUNCA tem quebra de linha — a Cloud API rejeita', () => {
+    for (const e of ESTAGIOS) {
+      expect(TEXTOS_DUNNING[e].whatsappStageText).not.toMatch(/[\r\n]/)
+    }
   })
 
   it('o e-mail NÃO deixa placeholder de WhatsApp vazando, nem vice-versa', () => {
     for (const e of ESTAGIOS) {
       expect(TEXTOS_DUNNING[e].paragrafos.join(' ')).not.toContain('{{')
-      expect(TEXTOS_DUNNING[e].whatsappStageText ?? '').not.toMatch(/\{nome\}|\{plano\}|\{\{\d+\}\}/)
+      expect(TEXTOS_DUNNING[e].whatsappStageText).not.toMatch(/\{nome\}|\{plano\}|\{\{\d+\}\}/)
     }
   })
 })

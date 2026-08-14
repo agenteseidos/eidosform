@@ -8,6 +8,8 @@ import { describe, it, expect } from 'vitest'
 import {
   decidirAviso, detectarRebaixamentoAtrasado, diasDesde, ehHoraDoEstagio,
   dataAtualBRT, HORARIO_POR_ESTAGIO, PRAZO_DIAS,
+  HORARIO_WHATSAPP_POR_ESTAGIO,
+  canaisNaHora,
 } from './dunning-engine'
 
 const AGORA = Date.parse('2026-08-20T15:00:00-03:00')
@@ -138,5 +140,33 @@ describe('diasDesde — contagem em horário de Brasília', () => {
   it('a chave diária só vira depois da meia-noite de Brasília', () => {
     expect(dataAtualBRT(new Date('2026-08-14T00:30:00Z'))).toBe('2026-08-13')
     expect(dataAtualBRT(new Date('2026-08-14T03:00:00Z'))).toBe('2026-08-14')
+  })
+})
+
+describe('🛡️ horários por canal (14/08) — as duas tabelas obedecem às mesmas regras', () => {
+  const ESTAGIOS = [0, 1, 2, 3, 4, 5] as const
+
+  it('nenhum canal cobra fora da janela civilizada (8h–18h)', () => {
+    // A regra estava escrita no motor desde 11/08 e a primeira proposta de horários do
+    // WhatsApp a violava (D+2 às 19h). Cobrança à noite não pode ser respondida: banco
+    // fechado — o cliente só dorme com o problema.
+    for (const e of ESTAGIOS) {
+      expect(HORARIO_POR_ESTAGIO[e]).toBeGreaterThanOrEqual(8)
+      expect(HORARIO_POR_ESTAGIO[e]).toBeLessThanOrEqual(18)
+      expect(HORARIO_WHATSAPP_POR_ESTAGIO[e]).toBeGreaterThanOrEqual(8)
+      expect(HORARIO_WHATSAPP_POR_ESTAGIO[e]).toBeLessThanOrEqual(18)
+    }
+  })
+
+  it('os canais NUNCA coincidem — o ganho da mudança é espalhar os toques', () => {
+    for (const e of ESTAGIOS) {
+      expect(HORARIO_WHATSAPP_POR_ESTAGIO[e]).not.toBe(HORARIO_POR_ESTAGIO[e])
+    }
+  })
+
+  it('canaisNaHora devolve só o canal da vez', () => {
+    expect(canaisNaHora(0, 9)).toEqual(['email'])     // D+0 e-mail
+    expect(canaisNaHora(0, 15)).toEqual(['whatsapp']) // D+0 WhatsApp
+    expect(canaisNaHora(0, 11)).toEqual([])           // hora de ninguém
   })
 })

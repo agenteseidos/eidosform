@@ -89,9 +89,11 @@ function cloudCreds(): { token: string; phoneId: string } | null {
  *  · COBRANÇA (a régua): desconhecido → NÃO ENVIA. É mensagem não solicitada; mandar para quem
  *    pediu silêncio queima o número e desrespeita o pedido dela.
  *
- * ⚠️ `ELEN_OPTOUT_CHECK_URL` NÃO está configurada em produção (conferido 14/08) — ou seja, hoje
- * a consulta nem acontece. Enquanto ela não existir, a régua fica corretamente MUDA no WhatsApp,
- * e é assim que a falta de fiação vira visível em vez de virar mensagem indevida.
+ * ✅ Fiação COMPLETA desde 14/08: `ELEN_OPTOUT_CHECK_URL` e `ELEN_OPTOUT_SECRET` existem nos 3
+ * ambientes e o endpoint `/interno/optout` responde na Elen. (Este comentário afirmou o contrário
+ * por um dia — foi escrito ANTES de eu ligar a fiação e não atualizado depois; pego pelo passe
+ * adversarial em 15/08. Comentário desatualizado sobre configuração já dirigiu decisão errada
+ * neste projeto mais de uma vez.)
  */
 export type EstadoOptOut = 'liberado' | 'opt_out' | 'desconhecido'
 

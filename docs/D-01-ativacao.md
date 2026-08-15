@@ -1,6 +1,8 @@
 # D-01 · Ativação da régua de cobrança
 
-> Código no ar e **inerte até o timer ser ligado**. O canal WhatsApp fica atrás de uma flag,
+> ✅ **ATIVA desde 12/08.** O timer `eidosform-dunning.timer` está habilitado e rodando a cada
+> 30 min (aos :05 e :35) e as duas tabelas existem no banco (conferido no catálogo em 15/08).
+> O canal WhatsApp segue atrás da flag `DUNNING_WHATSAPP_ENABLED`,
 > aguardando a Meta aprovar os templates (2ª onda).
 
 ## Como a régua funciona (resumo operacional)

@@ -1,7 +1,12 @@
 # D-05 · Ativação da fila de reenvio de e-mail
 
-> Código no ar desde 11/08/2026 e **inofensivo enquanto a tabela não existir** (no-op silencioso,
-> mesmo contrato do `email_deliveries`). Dois passos para ligar.
+> ✅ **ATIVA.** Código no ar desde 11/08/2026; a tabela `email_retry_queue` **existe** e o timer
+> `eidosform-email-retry.timer` está habilitado e ativo (conferido no catálogo em 15/08). O texto
+> abaixo descreve a ATIVAÇÃO, que já foi feita — não é um pendente.
+>
+> ⚠️ Os dois runbooks (D-01 e D-05) descreviam o sistema como inerte DEPOIS de ele já estar
+> rodando. Achado pelo parecer independente do Codex em 15/08: documento que mente sobre o
+> próprio estado faz alguém "ligar" o que já está ligado, ou concluir que nada acontece.
 
 ## Passo 1 — a tabela (SQL Editor do Supabase)
 

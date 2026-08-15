@@ -117,6 +117,50 @@ export async function listRecoverableDunningKeys(db: SupabaseClient, day: string
   return new Set((data ?? []).map((row) => row.idempotency_key))
 }
 
+/**
+ * SELA a reserva ANTES de chamar um transporte NÃO-IDEMPOTENTE (a Cloud API do WhatsApp é um).
+ *
+ * O buraco que isto fecha (achado 15/08, confirmado em dois passes): a ordem era reservar →
+ * chamar a Meta → gravar 'sent'. Se a Meta ACEITAVA e a gravação falhava, a linha ficava
+ * 'reserved' — e 'reserved' é retomável por DOIS caminhos (a lista de recuperáveis e a própria
+ * janela de tolerância de 90 min). Dez minutos depois, a MESMA cobrança saía de novo no celular
+ * do cliente. Reenviar cobrança não solicitada é o pior defeito que esta régua pode ter.
+ *
+ * `accepted` é o estado "entreguei ao transporte e o desfecho é meu problema, não da fila":
+ * `listRecoverableDunningKeys` só enxerga 'failed' e 'reserved', e a retomada de reserva órfã
+ * também. Selar antes da chamada troca a garantia de AO MENOS UMA para NO MÁXIMO UMA — que é a
+ * correta aqui. Perder um lembrete custa um lembrete; duplicar custa a relação.
+ *
+ * ⚠️ Assimetria DELIBERADA entre canais: o e-mail continua em ao-menos-uma porque a Resend aceita
+ * Idempotency-Key determinística — lá o reenvio é absorvido pelo provedor. O WhatsApp não tem
+ * equivalente, então é aqui que a trava mora.
+ */
+export async function sealDunningDelivery(db: SupabaseClient, reservation: DunningReservation): Promise<void> {
+  const { data, error } = await table(db)
+    .update({ status: 'accepted', updated_at: new Date().toISOString() })
+    .eq('idempotency_key', reservation.key)
+    .eq('lease_token', reservation.leaseToken)
+    .select('idempotency_key')
+  if (error) throw new Error(`falha ao selar outbox: ${error.message ?? 'erro DB'}`)
+  if (!data?.length) throw new Error('lease da outbox não pertence mais a esta execução')
+}
+
+/**
+ * DEVOLVE a reserva para a fila — só quando o transporte RECUSOU explicitamente (a Meta respondeu
+ * dizendo não) ou nem foi chamado. Nesses casos nada saiu e reenviar é seguro. NUNCA chamar com
+ * desfecho desconhecido (timeout/rede): aí a mensagem pode ter saído.
+ */
+export async function releaseDunningDelivery(
+  db: SupabaseClient,
+  reservation: DunningReservation,
+  erro: string,
+): Promise<void> {
+  await table(db)
+    .update({ status: 'failed', last_error: erro.slice(0, 500), updated_at: new Date().toISOString() })
+    .eq('idempotency_key', reservation.key)
+    .eq('lease_token', reservation.leaseToken)
+}
+
 /** Finaliza somente a reserva que ainda possui o lease; um worker antigo não pisa no novo. */
 export async function finishDunningDelivery(
   db: SupabaseClient,

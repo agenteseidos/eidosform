@@ -33,6 +33,8 @@ vi.mock('@/lib/resend', () => resendMocks)
 vi.mock('@/lib/billing-ops-whatsapp', () => ({ notifyBillingOpsWhatsApp: vi.fn(async () => ({ sent: true })) }))
 
 const outboxMocks = vi.hoisted(() => ({
+  sealDunningDelivery: vi.fn(async () => {}),
+  releaseDunningDelivery: vi.fn(async () => {}),
   reserveDunningDelivery: vi.fn(),
   finishDunningDelivery: vi.fn(async () => undefined),
   listRecoverableDunningKeys: vi.fn(async () => new Set<string>()),
@@ -45,7 +47,7 @@ vi.mock('@/lib/dunning-outbox', () => ({
 
 const wppMocks = vi.hoisted(() => ({ consultarOptOut: vi.fn(async () => 'liberado' as const), sendConfirmationTemplate: vi.fn(async (_p?: {
   toPhone: string; template: string; bodyParams: string[]; buttonUrlParam?: string | null; context: string
-}) => ({ sent: true })) }))
+}) => ({ sent: true, wamid: 'wamid.TESTE', desfecho: 'entregue' as const })) }))
 vi.mock('@/lib/whatsapp-confirmations', () => ({
   ...wppMocks,
   planLabel: (p?: string | null, c?: string | null) => `${p ?? '?'} ${c ?? ''}`.trim(),
@@ -126,7 +128,8 @@ beforeEach(() => {
   outboxMocks.finishDunningDelivery.mockResolvedValue(undefined)
   outboxMocks.listRecoverableDunningKeys.mockResolvedValue(new Set())
   resendMocks.sendDunningEmail.mockResolvedValue({ id: 'e1' })
-  wppMocks.sendConfirmationTemplate.mockResolvedValue({ sent: true })
+  // Precisa carregar `desfecho`: desde 15/08 o cron decide pelo desfecho, não por `sent`.
+  wppMocks.sendConfirmationTemplate.mockResolvedValue({ sent: true, wamid: 'wamid.TESTE', desfecho: 'entregue' } as never)
 })
 
 describe('autenticação', () => {
@@ -504,19 +507,18 @@ describe('WhatsApp atrás da flag (2ª onda, aguardando a Meta)', () => {
     expect(outboxMocks.reserveDunningDelivery.mock.calls.map((call) => call[1].channel)).not.toContain('whatsapp')
   })
 
-  it('{sent:false} marca o canal failed em vez de sumir no catch', async () => {
+  it('recusa da Meta devolve o canal à fila (era finish failed; virou release em 15/08)', async () => {
     process.env.DUNNING_WHATSAPP_ENABLED = 'true'
     const { db } = makeDb([PAGANTE])
     mockCreate.mockReturnValue(db as never)
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
-    wppMocks.sendConfirmationTemplate.mockResolvedValue({ sent: false, skipped: 'send_failed' } as never)
+    wppMocks.sendConfirmationTemplate.mockResolvedValue({ sent: false, skipped: 'send_failed', desfecho: 'recusado' } as never)
 
     const body = await (await GET(reqNaHora(15))).json() as { falhas: number } // janela do WhatsApp
 
     expect(body.falhas).toBeGreaterThan(0)
-    expect(outboxMocks.finishDunningDelivery).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ channel: 'whatsapp' }), 'failed',
-      { error: 'send_failed' },
+    expect(outboxMocks.releaseDunningDelivery).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ channel: 'whatsapp' }), 'send_failed',
     )
   })
 })
@@ -579,5 +581,81 @@ describe('🛡️ retomada no turno da noite (bug pego em 14/08)', () => {
     expect(outboxMocks.reserveDunningDelivery).toHaveBeenCalledWith(
       expect.anything(), expect.objectContaining({ channel: 'email', createIfMissing: false }),
     )
+  })
+})
+
+describe('🛡️ NUNCA duplicar cobrança no WhatsApp (achado 15/08, confirmado em 2 passes)', () => {
+  beforeEach(() => {
+    process.env.DUNNING_WHATSAPP_ENABLED = 'true'
+    // clearAllMocks limpa CHAMADAS, não IMPLEMENTAÇÕES — sem isto o mockImplementation de um
+    // teste vaza para o seguinte e o próximo passa/falha pelo motivo errado.
+    outboxMocks.sealDunningDelivery.mockImplementation(async () => {})
+    wppMocks.sendConfirmationTemplate.mockImplementation(
+      async () => ({ sent: true, wamid: 'wamid.TESTE', desfecho: 'entregue' as const }),
+    )
+  })
+
+  function pronto() {
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+  }
+
+  it('SELA a linha ANTES de chamar a Meta — a ordem é o que impede a duplicata', async () => {
+    // Se selar depois, existe uma janela em que a mensagem saiu e a linha ainda é retomável:
+    // 10 min depois a MESMA cobrança chega de novo no celular do cliente.
+    pronto()
+    const ordem: string[] = []
+    outboxMocks.sealDunningDelivery.mockImplementation(async () => { ordem.push('selou') })
+    wppMocks.sendConfirmationTemplate.mockImplementation(async () => {
+      ordem.push('chamou-meta')
+      return { sent: true, wamid: 'wamid.X', desfecho: 'entregue' as const }
+    })
+
+    await GET(reqNaHora(15))
+
+    expect(ordem).toEqual(['selou', 'chamou-meta'])
+  })
+
+  it('desfecho DESCONHECIDO (timeout) → NÃO devolve à fila e alerta a operação', async () => {
+    // Este é o caso que duplicava: o timeout voltava como {sent:false} e era tratado igual a
+    // recusa — a linha voltava para 'failed', virava recuperável, e reenviava.
+    pronto()
+    wppMocks.sendConfirmationTemplate.mockResolvedValue(
+      { sent: false, skipped: 'exception', desfecho: 'desconhecido' } as never,
+    )
+
+    await GET(reqNaHora(15))
+
+    expect(outboxMocks.releaseDunningDelivery).not.toHaveBeenCalled()
+    expect(outboxMocks.finishDunningDelivery).not.toHaveBeenCalled()
+    expect(resendMocks.sendBillingOpsAlert).toHaveBeenCalled()
+  })
+
+  it('a Meta RECUSOU → aí sim devolve à fila (nada saiu, reenviar é seguro)', async () => {
+    pronto()
+    wppMocks.sendConfirmationTemplate.mockResolvedValue(
+      { sent: false, skipped: 'send_failed', desfecho: 'recusado' } as never,
+    )
+
+    await GET(reqNaHora(15))
+
+    expect(outboxMocks.releaseDunningDelivery).toHaveBeenCalled()
+  })
+
+  it('entregue → grava o WAMID (sem ele não dá para conferir depois se saiu)', async () => {
+    pronto()
+    await GET(reqNaHora(15))
+    expect(outboxMocks.finishDunningDelivery).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ channel: 'whatsapp' }), 'sent',
+      { providerMessageId: 'wamid.TESTE' },
+    )
+  })
+
+  it('se o SELO falhar, não chama a Meta (fail-closed)', async () => {
+    pronto()
+    outboxMocks.sealDunningDelivery.mockRejectedValueOnce(new Error('db fora'))
+    await GET(reqNaHora(15))
+    expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
   })
 })

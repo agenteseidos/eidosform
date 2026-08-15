@@ -119,6 +119,27 @@ export async function consultarOptOut(phoneDigits: string): Promise<EstadoOptOut
   }
 }
 
+/**
+ * Desfecho do envio — a distinção que evita cobrar a mesma pessoa duas vezes (15/08).
+ *
+ * A Cloud API NÃO tem idempotência: reenviar o mesmo template gera OUTRA mensagem no celular do
+ * cliente. Então quem chama precisa saber a diferença entre "não saiu" e "não sei se saiu":
+ *
+ *  · `entregue`      — a Meta devolveu wamid. Saiu. Registre e nunca reenvie.
+ *  · `nao_tentado`   — nem chegamos a chamar (sem credencial, sem telefone, opt-out). Nada saiu;
+ *                      reenviar depois é seguro.
+ *  · `recusado`      — a Meta RESPONDEU recusando (template pendente, parâmetro errado, 4xx).
+ *                      Nada saiu; reenviar é seguro.
+ *  · `desconhecido`  — timeout, rede caiu, resposta ilegível. **PODE TER SAÍDO.** Reenviar é o
+ *                      erro caro: cobrança não solicitada chegando em dobro. Quem chama tem de
+ *                      tratar como "não mexa mais nisto" e pedir conferência humana.
+ *
+ * Antes de 15/08 os três últimos voltavam iguais (`{sent:false}`), e o timeout era tratado como
+ * recusa — a linha voltava para a fila e era reenviada 10 min depois. Achado pelo passe
+ * adversarial da verificação do parecer Codex.
+ */
+export type DesfechoEnvio = 'entregue' | 'nao_tentado' | 'recusado' | 'desconhecido'
+
 /** Compatibilidade das CONFIRMAÇÕES: só o opt-out explícito bloqueia (ver nota acima). */
 async function isOptedOut(phoneDigits: string): Promise<boolean> {
   return (await consultarOptOut(phoneDigits)) === 'opt_out'
@@ -145,18 +166,18 @@ export async function sendConfirmationTemplate(params: {
   buttonUrlParam?: string | null
   /** Rótulo curto pro evento da Elen (ex.: "Plus Mensal", "Starter → Plus"). */
   eventoDetalhe?: string
-}): Promise<{ sent: boolean; skipped?: string }> {
+}): Promise<{ sent: boolean; skipped?: string; wamid?: string; desfecho: DesfechoEnvio }> {
   try {
     const creds = cloudCreds()
     if (!creds) {
       logWarn('[wpp-confirm] WHATSAPP_CLOUD_TOKEN/PHONE_ID ausentes — confirmação NÃO enviada', { context: params.context })
-      return { sent: false, skipped: 'no_credentials' }
+      return { sent: false, skipped: 'no_credentials', desfecho: 'nao_tentado' }
     }
     const digits = toWhatsAppDigits(params.toPhone ?? '')
-    if (!digits) return { sent: false, skipped: 'no_phone' }
+    if (!digits) return { sent: false, skipped: 'no_phone', desfecho: 'nao_tentado' }
     if (await isOptedOut(digits)) {
       log('[wpp-confirm] Destinatário em opt-out — confirmação suprimida', { context: params.context })
-      return { sent: false, skipped: 'opted_out' }
+      return { sent: false, skipped: 'opted_out', desfecho: 'nao_tentado' }
     }
 
     const res = await fetch(`https://graph.facebook.com/v21.0/${creds.phoneId}/messages`, {
@@ -193,7 +214,8 @@ export async function sendConfirmationTemplate(params: {
       logError('[wpp-confirm] Envio de confirmação falhou', json?.error ?? `HTTP ${res.status}`, {
         context: params.context, template: params.template,
       })
-      return { sent: false, skipped: 'send_failed' }
+      // A Meta RESPONDEU recusando → nada saiu → seguro reenviar depois.
+      return { sent: false, skipped: 'send_failed', desfecho: 'recusado' }
     }
     const wamid = json.messages[0].id
     log('[wpp-confirm] Confirmação enviada', { context: params.context, template: params.template, wamid })
@@ -205,10 +227,11 @@ export async function sendConfirmationTemplate(params: {
       await emitirEventoElen({ evento, telefone: params.toPhone, wamid, detalhe: params.eventoDetalhe ?? null })
         .catch((err) => logWarn('[wpp-confirm] emitirEventoElen lançou (não bloqueante)', { err: String(err).slice(0, 120) }))
     }
-    return { sent: true }
+    return { sent: true, wamid, desfecho: 'entregue' }
   } catch (err) {
     logError('[wpp-confirm] Exceção no envio de confirmação (não bloqueante)', err, { context: params.context })
-    return { sent: false, skipped: 'exception' }
+    // ⚠️ timeout/rede: NÃO sabemos se a Meta processou. Reenviar pode duplicar a cobrança.
+    return { sent: false, skipped: 'exception', desfecho: 'desconhecido' }
   }
 }
 
@@ -253,9 +276,9 @@ export function firstName(fullName?: string | null): string {
 }
 
 /** Cadastro concluído (e-mail confirmado). Dedupe é do chamador (flag em user_metadata). */
-export async function notifyCadastroConfirmado(profileId: string): Promise<{ sent: boolean; skipped?: string }> {
+export async function notifyCadastroConfirmado(profileId: string): Promise<{ sent: boolean; skipped?: string; wamid?: string; desfecho: DesfechoEnvio }> {
   const p = await fetchProfile(profileId)
-  if (!p) return { sent: false, skipped: 'no_profile' }
+  if (!p) return { sent: false, skipped: 'no_profile', desfecho: 'nao_tentado' as const }
   return sendConfirmationTemplate({
     toPhone: p.phone,
     template: CONFIRMATION_TEMPLATES.cadastroConfirmado,
@@ -265,9 +288,9 @@ export async function notifyCadastroConfirmado(profileId: string): Promise<{ sen
 }
 
 /** Plano ativado (pagamento confirmado). chargeInfo ex.: "30/08/2026" ou texto de cortesia. */
-export async function notifyPlanoAtivado(profileId: string, opts?: { chargeInfo?: string }): Promise<{ sent: boolean; skipped?: string }> {
+export async function notifyPlanoAtivado(profileId: string, opts?: { chargeInfo?: string }): Promise<{ sent: boolean; skipped?: string; wamid?: string; desfecho: DesfechoEnvio }> {
   const p = await fetchProfile(profileId)
-  if (!p) return { sent: false, skipped: 'no_profile' }
+  if (!p) return { sent: false, skipped: 'no_profile', desfecho: 'nao_tentado' as const }
   const charge = opts?.chargeInfo ?? brDate(p.plan_expires_at) ?? 'a confirmar'
   // Espelho ao DONO (decisão Sidney 11/08/2026): toda movimentação de pagamento pinga no
   // WhatsApp dele. ANTES do envio ao cliente, de propósito — cliente sem telefone ou em
@@ -286,9 +309,9 @@ export async function notifyPlanoAtivado(profileId: string, opts?: { chargeInfo?
 }
 
 /** Troca de plano (upgrade/downgrade). Rótulos do estado ANTERIOR vêm do chamador. */
-export async function notifyPlanoAlterado(profileId: string, opts: { fromLabel: string; chargeInfo?: string }): Promise<{ sent: boolean; skipped?: string }> {
+export async function notifyPlanoAlterado(profileId: string, opts: { fromLabel: string; chargeInfo?: string }): Promise<{ sent: boolean; skipped?: string; wamid?: string; desfecho: DesfechoEnvio }> {
   const p = await fetchProfile(profileId)
-  if (!p) return { sent: false, skipped: 'no_profile' }
+  if (!p) return { sent: false, skipped: 'no_profile', desfecho: 'nao_tentado' as const }
   const charge = opts.chargeInfo ?? brDate(p.plan_expires_at) ?? 'a confirmar'
   // Espelho ao dono — upgrade E downgrade passam por aqui (ver notifyPlanoAtivado).
   await notifyBillingOpsWhatsApp(
@@ -305,9 +328,9 @@ export async function notifyPlanoAlterado(profileId: string, opts: { fromLabel: 
 }
 
 /** Cancelamento. accessUntil default = plan_expires_at do perfil. */
-export async function notifyAssinaturaCancelada(profileId: string, opts: { planLabel: string; accessUntil?: string }): Promise<{ sent: boolean; skipped?: string }> {
+export async function notifyAssinaturaCancelada(profileId: string, opts: { planLabel: string; accessUntil?: string }): Promise<{ sent: boolean; skipped?: string; wamid?: string; desfecho: DesfechoEnvio }> {
   const p = await fetchProfile(profileId)
-  if (!p) return { sent: false, skipped: 'no_profile' }
+  if (!p) return { sent: false, skipped: 'no_profile', desfecho: 'nao_tentado' as const }
   const until = opts.accessUntil ?? brDate(p.plan_expires_at) ?? 'o fim do período pago'
   // Espelho ao dono — cobre TODOS os caminhos de cancelamento (auto-cancelamento do cliente,
   // webhook, admin, reprocessador), porque todos desembocam nesta função.
@@ -325,9 +348,9 @@ export async function notifyAssinaturaCancelada(profileId: string, opts: { planL
 }
 
 /** Ajuste de data de acesso (o "+15 dias" do admin). */
-export async function notifyAcessoAtualizado(profileId: string, opts?: { validUntil?: string }): Promise<{ sent: boolean; skipped?: string }> {
+export async function notifyAcessoAtualizado(profileId: string, opts?: { validUntil?: string }): Promise<{ sent: boolean; skipped?: string; wamid?: string; desfecho: DesfechoEnvio }> {
   const p = await fetchProfile(profileId)
-  if (!p) return { sent: false, skipped: 'no_profile' }
+  if (!p) return { sent: false, skipped: 'no_profile', desfecho: 'nao_tentado' as const }
   const until = opts?.validUntil ?? brDate(p.plan_expires_at) ?? 'a data informada'
   // Espelho ao dono — ajuste manual de acesso é movimentação de billing também.
   await notifyBillingOpsWhatsApp(

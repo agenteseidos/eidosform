@@ -62,13 +62,13 @@ describe('sendConfirmationTemplate — nunca quebra a ação principal', () => {
   it('sem credenciais: pula com log, sem lançar', async () => {
     delete process.env.WHATSAPP_CLOUD_TOKEN
     const r = await sendConfirmationTemplate({ toPhone: '83999376704', template: 'x', bodyParams: [], context: 't' })
-    expect(r).toEqual({ sent: false, skipped: 'no_credentials' })
+    expect(r).toEqual({ sent: false, skipped: 'no_credentials', desfecho: 'nao_tentado' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('sem telefone (ex.: conta OAuth): pula em silêncio', async () => {
     const r = await sendConfirmationTemplate({ toPhone: null, template: 'x', bodyParams: [], context: 't' })
-    expect(r).toEqual({ sent: false, skipped: 'no_phone' })
+    expect(r).toEqual({ sent: false, skipped: 'no_phone', desfecho: 'nao_tentado' })
   })
 
   it('envia template com número normalizado (55 + dígitos) e params na ordem', async () => {
@@ -119,14 +119,14 @@ describe('sendConfirmationTemplate — nunca quebra a ação principal', () => {
   it('erro do Graph (ex.: template ainda PENDING): loga alto e devolve send_failed', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: { message: 'Template not approved', code: 132001 } }) })
     const r = await sendConfirmationTemplate({ toPhone: '83999376704', template: 'x', bodyParams: [], context: 't' })
-    expect(r).toEqual({ sent: false, skipped: 'send_failed' })
+    expect(r).toEqual({ sent: false, skipped: 'send_failed', desfecho: 'recusado' })
     expect(vi.mocked(logError)).toHaveBeenCalled()
   })
 
   it('exceção de rede: capturada, nunca propaga', async () => {
     fetchMock.mockRejectedValue(new Error('ETIMEDOUT'))
     const r = await sendConfirmationTemplate({ toPhone: '83999376704', template: 'x', bodyParams: [], context: 't' })
-    expect(r).toEqual({ sent: false, skipped: 'exception' })
+    expect(r).toEqual({ sent: false, skipped: 'exception', desfecho: 'desconhecido' })
   })
 })
 
@@ -155,7 +155,7 @@ describe('notify* — busca o perfil e monta os params', () => {
   it('perfil inexistente: pula sem lançar', async () => {
     mockProfile(null)
     const r = await notifyPlanoAtivado('ghost')
-    expect(r).toEqual({ sent: false, skipped: 'no_profile' })
+    expect(r).toEqual({ sent: false, skipped: 'no_profile', desfecho: 'nao_tentado' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
@@ -249,5 +249,37 @@ describe('espelho de billing ao dono (ADMIN_ALERT_WHATSAPP)', () => {
     const r = await notifyPlanoAtivado('p4')
 
     expect(r.sent).toBe(true)
+  })
+})
+
+describe('🛡️ desfecho: "não saiu" e "não sei se saiu" são coisas DIFERENTES (15/08)', () => {
+  it('timeout devolve desconhecido, NUNCA recusado — é o que impede o reenvio automático', async () => {
+    // Antes os dois voltavam como {sent:false} indistinguíveis, e o cron tratava timeout como
+    // recusa: a linha voltava para a fila e a MESMA cobrança saía de novo 10 min depois.
+    process.env.WHATSAPP_CLOUD_TOKEN = 'tok'
+    process.env.WHATSAPP_CLOUD_PHONE_ID = '123'
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network timeout') }))
+
+    const r = await sendConfirmationTemplate({
+      toPhone: '5583999999999', template: 't', bodyParams: ['a'], context: 'c',
+    })
+
+    expect(r.desfecho).toBe('desconhecido')
+    expect(r.desfecho).not.toBe('recusado')
+  })
+
+  it('entrega devolve o WAMID — sem ele não há como conferir depois se a mensagem saiu', async () => {
+    process.env.WHATSAPP_CLOUD_TOKEN = 'tok'
+    process.env.WHATSAPP_CLOUD_PHONE_ID = '123'
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.ABC123' }] }),
+    })))
+
+    const r = await sendConfirmationTemplate({
+      toPhone: '5583999999999', template: 't', bodyParams: ['a'], context: 'c',
+    })
+
+    expect(r.desfecho).toBe('entregue')
+    expect(r.wamid).toBe('wamid.ABC123')
   })
 })

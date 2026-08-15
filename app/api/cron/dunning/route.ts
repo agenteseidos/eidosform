@@ -13,6 +13,7 @@ import { TEXTOS_DUNNING, DUNNING_WHATSAPP_TEMPLATES, preencher } from '@/lib/dun
 import { signPaymentLinkToken } from '@/lib/payment-link-token'
 import {
   buildDunningDeliveryKey, finishDunningDelivery, listRecoverableDunningKeys, reserveDunningDelivery,
+  sealDunningDelivery, releaseDunningDelivery,
   type DunningChannel, type DunningDeliveryStatus, type DunningReservation,
 } from '@/lib/dunning-outbox'
 
@@ -299,6 +300,12 @@ export async function GET(req: NextRequest) {
         if (reserva) {
           try {
             const { sendConfirmationTemplate } = await import('@/lib/whatsapp-confirmations')
+            // SELA ANTES DE CHAMAR A META (15/08). A Cloud API não tem idempotência: se a
+            // mensagem sai e a gravação do 'enviado' falha, a linha ficaria retomável e a MESMA
+            // cobrança chegaria de novo ao cliente. Selada, ela sai da fila antes do risco
+            // existir. Se o selo falhar, NÃO enviamos — a rodada seguinte tenta de novo.
+            await sealDunningDelivery(db, reserva)
+
             const whatsapp = await sendConfirmationTemplate({
               toPhone: p.phone,
               template: texto.whatsappTemplate,
@@ -309,12 +316,30 @@ export async function GET(req: NextRequest) {
               buttonUrlParam: tokenPagamento,
               context: `dunning:${decisao.estagio}:${p.id}`,
             })
-            if (!whatsapp.sent) {
-              r.falhas++
-              await finalizar(reserva, 'failed', { error: whatsapp.skipped ?? 'envio recusado' })
-            } else {
-              await finalizar(reserva, 'sent')
+
+            if (whatsapp.desfecho === 'entregue') {
+              await finalizar(reserva, 'sent', { providerMessageId: whatsapp.wamid ?? null })
               r.avisados++
+            } else if (whatsapp.desfecho === 'desconhecido') {
+              // ⚠️ A mensagem PODE ter saído. A linha fica selada (não-retomável) e um humano
+              // decide — reenviar por conta própria é o erro caro. Sem isto, o timeout virava
+              // reenvio automático 10 min depois.
+              r.falhas++
+              logError('[cron/dunning] desfecho DESCONHECIDO no WhatsApp — linha selada, sem reenvio automático', undefined, {
+                profileId: p.id, estagio: decisao.estagio, chave: reserva.key,
+              })
+              await sendBillingOpsAlert({
+                subject: '🟠 Cobrança por WhatsApp com desfecho incerto — conferir antes de reenviar',
+                lines: {
+                  'O QUE ISSO SIGNIFICA': 'A Meta não respondeu a tempo. A mensagem pode ter chegado ao cliente. NÃO reenviamos de propósito: duplicar cobrança é pior que perder um lembrete.',
+                  'O QUE FAZER': 'Conferir no WhatsApp Manager se a mensagem saiu. Se não saiu, reenviar à mão.',
+                  profileId: p.id, cliente: p.email, estagio: decisao.estagio, chave: reserva.key,
+                },
+              }).catch(() => {})
+            } else {
+              // 'recusado' (a Meta respondeu não) ou 'nao_tentado': nada saiu → devolve à fila.
+              r.falhas++
+              await releaseDunningDelivery(db, reserva, whatsapp.skipped ?? 'envio recusado')
             }
           } catch (err) {
             r.falhas++

@@ -127,3 +127,20 @@ describe('preencher', () => {
     expect(preencher('sem variável', { nome: 'x', plano: 'y' })).toBe('sem variável')
   })
 })
+
+describe('🛡️ meios de pagamento: só CARTÃO (decisão de 10/06)', () => {
+  it('nenhum texto promete Pix ou boleto — o produto não os oferece', () => {
+    // Pego pelo Sidney em 15/08: o D+1 dizia "cartão, Pix ou boleto" nos DOIS canais. O cliente
+    // leria isso, clicaria no botão e não acharia o prometido — na hora mais delicada da relação.
+    for (const e of ESTAGIOS) {
+      const tudo = [
+        TEXTOS_DUNNING[e].assunto,
+        ...TEXTOS_DUNNING[e].paragrafos,
+        TEXTOS_DUNNING[e].whatsappStageText,
+        TEXTOS_DUNNING[e].ctaLabel,
+      ].join(' ').toLowerCase()
+      expect(tudo).not.toMatch(/\bpix\b/)
+      expect(tudo).not.toMatch(/\bboleto\b/)
+    }
+  })
+})

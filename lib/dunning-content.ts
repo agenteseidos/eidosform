@@ -12,6 +12,10 @@
  *    que perdeu o trabalho — quem acha que perdeu, não reassina.
  *  · Sem "deixar de existir": os formulários PAUSAM. Exagerar aqui compra desconfiança e perde
  *    o cliente de vez.
+ *  · NUNCA prometer Pix ou boleto. O produto é assinatura por CARTÃO (decisão de 10/06:
+ *    Pix/boleto não implementados). Prometer meio de pagamento que não existe faz o cliente
+ *    clicar no botão e não achar o que foi dito — pega mal exatamente na hora mais delicada.
+ *    (O texto do D+1 dizia "cartão, Pix ou boleto"; corrigido em 15/08.)
  *  · Gatilho de perda só a partir do D+3, e sempre CONCRETO (deixa de ser avisado dos leads;
  *    formulários param de receber). Assustar no dia 1 é apelação; perda vaga é ruído.
  */
@@ -68,12 +72,12 @@ export const TEXTOS_DUNNING: Record<0 | 1 | 2 | 3 | 4 | 5, EstagioTexto> = {
     assunto: 'Faltam 4 dias no seu plano {plano}',
     paragrafos: [
       'Olá, {nome}! Sua assinatura do EidosForm ({plano}) ainda está pendente. Faltam 4 dias para a conta voltar ao plano gratuito — onde ficam ' + LIMITES_FREE + '. Nada é apagado.',
-      'Regularizar leva um minuto — cartão, Pix ou boleto:',
+      'Regularizar leva um minuto — dá para usar o mesmo cartão ou trocar por outro:',
     ],
     ctaLabel: 'Regularizar meu pagamento',
     whatsappTemplate: DUNNING_WHATSAPP_TEMPLATES.cobranca,
     whatsappStageText:
-      'O pagamento segue pendente. Faltam 4 dias para a conta voltar ao plano gratuito, onde ficam só 3 formulários ativos, 100 respostas por mês e sem notificações ou integrações. Regularizar leva um minuto — cartão, Pix ou boleto.',
+      'O pagamento segue pendente. Faltam 4 dias para a conta voltar ao plano gratuito, onde ficam só 3 formulários ativos, 100 respostas por mês e sem notificações ou integrações. Regularizar leva um minuto — dá para usar o mesmo cartão ou trocar por outro.',
   },
   2: {
     assunto: 'Faltam 3 dias — depois seus formulários começam a pausar',

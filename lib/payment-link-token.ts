@@ -22,14 +22,13 @@ import { createHmac, timingSafeEqual } from 'crypto'
 const TTL_MS = 15 * 24 * 60 * 60 * 1000
 
 function signingSecret(): string {
-  // Mesma cadeia do recovery-token: secret dedicado quando existir, senão os de sempre.
-  // Todos server-side; nenhum chega ao browser.
-  return (
-    process.env.PAYMENT_LINK_TOKEN_SECRET ||
-    process.env.INTERNAL_API_SECRET ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    ''
-  )
+  // SEGREDO DEDICADO, sem cadeia de fallback (S3, auditoria 14/08). Antes caía em
+  // INTERNAL_API_SECRET e até na service-role do Supabase: um mesmo segredo assinando link
+  // público de pagamento e autenticando rotas internas amarra dois raios de dano que não têm
+  // motivo para andar juntos — e rotacionar um obrigaria a rotacionar o outro.
+  // Ausente = NÃO ASSINA. A régua trata link nulo desde sempre (o e-mail troca o botão por
+  // "responda este e-mail"), então falhar fechado aqui degrada, não quebra.
+  return process.env.PAYMENT_LINK_TOKEN_SECRET || ''
 }
 
 /** Só [A-Za-z0-9_-] — o token viaja na URL e precisa sobreviver a qualquer encoder. */

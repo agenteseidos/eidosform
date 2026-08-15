@@ -5,14 +5,26 @@
 
 ## Como a régua funciona (resumo operacional)
 
-| Dia | Estágio | Horário | Assunto |
-|---|---|---|---|
-| D+0 | 0 | 9h | Seu pagamento de hoje não foi aprovado |
-| D+1 | 1 | 12h | Faltam 4 dias no seu plano |
-| D+2 | 2 | 17h | Faltam 3 dias — depois seus formulários começam a pausar |
-| D+3 | 3 | 9h | Em 2 dias você deixa de ser avisado dos seus leads |
-| D+4 | 4 | **9h fixo** | Amanhã seus formulários param de receber respostas |
-| D+5 | 5 | 9h | Seus formulários foram pausados — reative quando quiser |
+⚠️ **Horários são POR CANAL desde 14/08** (dois toques espalhados cobrem mais gente que dois
+simultâneos). A tabela abaixo é a fonte da verdade operacional; a fonte no código são as duas
+constantes de `lib/dunning-engine.ts`, travadas por teste célula a célula.
+
+| Dia | Estágio | E-mail | WhatsApp | Assunto do e-mail |
+|---|---|---|---|---|
+| D+0 | 0 | 9h | 15h | Seu pagamento de hoje não foi aprovado |
+| D+1 | 1 | 12h | **19h30** | Faltam 4 dias no seu plano |
+| D+2 | 2 | **19h30** | 11h | Faltam 3 dias — depois seus formulários começam a pausar |
+| D+3 | 3 | 9h | 15h | Em 2 dias você deixa de ser avisado dos seus leads |
+| D+4 | 4 | **9h fixo** | 13h | Amanhã seus formulários param de receber respostas |
+| D+5 | 5 | 9h | 11h | Seus formulários foram pausados — reative quando quiser |
+
+**Janela civilizada:** piso 8h, teto 19h30. O teto era 18h até 14/08 — caiu porque o argumento
+("banco fechado") não vale: Pix e cartão rodam 24h e a página de pagamento é autoatendimento.
+
+**Tolerância de atraso:** cada canal aceita ser executado até 90 min depois da hora dele (ou até
+a fatia do outro canal, o que vier antes). Recupera VPS reiniciando ou fila travada; NÃO
+ressuscita um aviso das 9h às 18h. O `Persistent=true` do systemd **não** basta sozinho: ele
+redispara a execução, mas a rota lê o relógio ATUAL — quem recupera a janela é esta tolerância.
 
 **O gatilho de parada:** a régua consulta o gateway A CADA rodada. Quem pagou não tem cobrança
 vencida → nenhum aviso sai. Nada é agendado com antecedência, então o pagamento interrompe a
@@ -22,7 +34,7 @@ sequência sem ninguém cancelar nada.
 "sua conta voltou ao gratuito" só sai se o rebaixamento REALMENTE aconteceu — se ele falhar, a
 régua cala a boca e dispara um **alerta operacional** (o `expire-plans` não tem alarme próprio).
 
-## Passo 1 — ligar o timer (a régua roda de hora em hora)
+## Passo 1 — ligar o timer (a régua roda A CADA 30 MIN)
 
 ```ini
 # /etc/systemd/system/eidosform-dunning.service
@@ -40,10 +52,10 @@ StandardError=append:/home/sidney/.eidos-credentials/produtos/cron.log
 ```ini
 # /etc/systemd/system/eidosform-dunning.timer
 [Unit]
-Description=Roda a régua de cobrança de hora em hora (ela decide a janela de cada estágio)
+Description=Roda a régua de cobrança a cada 30 min (a rota decide a janela de cada estágio/canal)
 
 [Timer]
-OnCalendar=*-*-* *:05:00
+OnCalendar=*-*-* *:05,35:00
 Persistent=true
 
 [Install]
@@ -55,15 +67,18 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now eidosform-dunning.timer
 ```
 
-Roda no minuto 5 de cada hora; a rota compara a hora de Brasília com a janela do estágio e só
-age na hora certa. `Persistent=true` recupera a rodada se a VPS estiver desligada na virada.
+Roda aos **:05 e :35** de cada hora. Os horários são MINUTOS do dia (`hm(19,30)`) e a rota
+compara por **fatia de 30 min** — é isso que faz 19h30 casar com o disparo real das 19h35. Sem
+o arredondamento, o turno da noite nasceria mudo.
 
 ## Passo 2 (2ª onda) — os templates de WhatsApp
 
 A régua usa somente os 2 templates genéricos UTILITY já mantidos pela Elen:
 
-- `eidosform_cobranca_v1` (D+0 a D+4): `{{1}}` nome, `{{2}}` plano e `{{3}}` texto do estágio;
-- `eidosform_plano_rebaixado_v1` (D+5): `{{1}}` nome e `{{2}}` plano.
+- `eidosform_cobranca_v1` (D+0 a D+4) e `eidosform_plano_rebaixado_v2` (D+5): os DOIS têm
+  `{{1}}` nome, `{{2}}` plano e `{{3}}` a mensagem do dia inteira (técnica {UP}).
+- ⚠️ `eidosform_plano_rebaixado_v1` virou **MARKETING** e está morto: nome bloqueado 30 dias,
+  nunca reaproveitar. Foi o que motivou o preflight ao vivo.
 
 Os dois têm um botão URL dinâmica `https://eidosform.com.br/pagar/{{1}}`; o envio passa apenas
 o token como parâmetro do botão e só tenta o canal quando ainda existe cobrança com link. Os
@@ -92,7 +107,7 @@ grep dunning /home/sidney/.eidos-credentials/produtos/cron.log | tail -5
 # {"ok":true,"horaBRT":14,"candidatos":3,"avisados":0,"silenciados":3,...}
 ```
 
-Fora das janelas (9h/12h/17h) o esperado é `avisados: 0` com `silenciados` = candidatos.
+Fora das janelas de cada canal (ver tabela acima) o esperado é `avisados: 0` com `silenciados` = candidatos.
 
 ## Teste manual de uma janela específica
 

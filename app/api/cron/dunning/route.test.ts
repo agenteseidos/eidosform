@@ -43,13 +43,18 @@ vi.mock('@/lib/dunning-outbox', () => ({
     `dunning:${profileId}:${stage}:${day}:${channel}`,
 }))
 
-const wppMocks = vi.hoisted(() => ({ sendConfirmationTemplate: vi.fn(async (_p?: {
+const wppMocks = vi.hoisted(() => ({ consultarOptOut: vi.fn(async () => 'liberado' as const), sendConfirmationTemplate: vi.fn(async (_p?: {
   toPhone: string; template: string; bodyParams: string[]; buttonUrlParam?: string | null; context: string
 }) => ({ sent: true })) }))
 vi.mock('@/lib/whatsapp-confirmations', () => ({
   ...wppMocks,
   planLabel: (p?: string | null, c?: string | null) => `${p ?? '?'} ${c ?? ''}`.trim(),
 }))
+// Porteiro do canal: liberado por padrão nos testes; casos específicos o fecham.
+const preflightMocks = vi.hoisted(() => ({
+  preflightWhatsAppDunning: vi.fn(async () => ({ pode: true, quality: 'GREEN' })),
+}))
+vi.mock('@/lib/whatsapp-preflight', () => preflightMocks)
 
 import { GET } from './route'
 import { createClient } from '@supabase/supabase-js'
@@ -66,8 +71,13 @@ const PAGANTE = {
 }
 
 /** Banco falso: a outbox é mockada à parte; aqui só entra a lista de candidatos. */
-function makeDb(candidatos: unknown[]) {
+function makeDb(candidatos: unknown[], alertaJaEmitido = false) {
+  // `inserts` guarda os marcadores do alerta diário do detector — a fixture tinha perdido o
+  // `insert` quando o outbox substituiu o marcador antigo, e sem ele o detector explodia.
+  const inserts: unknown[] = []
+  const vistos = new Set<string>()
   return {
+    inserts,
     db: {
       from: () => ({
         select: () => {
@@ -75,6 +85,15 @@ function makeDb(candidatos: unknown[]) {
             not: () => chain, or: () => chain, eq: () => chain, limit: async () => ({ data: candidatos, error: null }),
           }
           return chain
+        },
+        insert: async (v: unknown) => {
+          // Honra a unicidade de event_id como o banco REAL: sem isto, duas rodadas no mesmo
+          // dia gravavam dois marcadores e o teste de idempotência passava sem provar nada.
+          const id = (v as { event_id?: string })?.event_id ?? ''
+          if (alertaJaEmitido || vistos.has(id)) return { error: { code: '23505' } }
+          vistos.add(id)
+          inserts.push(v)
+          return { error: null }
         },
       }),
     },
@@ -227,7 +246,9 @@ describe('a rotação de horários é respeitada', () => {
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: day, ok: true })
     outboxMocks.listRecoverableDunningKeys.mockResolvedValue(new Set([key]))
 
-    const body = await (await GET(reqNaHora(10))).json() as { avisados: number }
+    // 12h está FORA da tolerância de atraso do e-mail do D+0 (9h + 90min) — então aqui só
+    // existe retomada, nunca criação. Antes o teste usava 10h, que hoje ainda é catch-up.
+    const body = await (await GET(reqNaHora(12))).json() as { avisados: number }
 
     expect(body.avisados).toBe(1)
     expect(outboxMocks.reserveDunningDelivery).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -335,6 +356,21 @@ describe('🛡️ detector do rebaixamento atrasado', () => {
     expect(resendMocks.sendBillingOpsAlert).toHaveBeenCalled()
     expect(resendMocks.sendDunningEmail).not.toHaveBeenCalled() // não mente para o cliente
   })
+
+  it('🛡️ alerta é UMA vez por dia, não 48 (o timer roda a cada 30 min)', async () => {
+    // Sem marcador diário, uma conta presa geraria 48 e-mails + 48 WhatsApps operacionais por
+    // dia — e enterraria justamente o incidente que o alerta existe para denunciar. (S2, Codex.)
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(9), ok: true })
+
+    const r1 = await (await GET(reqNaHora(9))).json() as { alertasRebaixamento: number }
+    const r2 = await (await GET(reqNaHora('9:30'))).json() as { alertasRebaixamento: number }
+
+    expect(r1.alertasRebaixamento).toBe(1)
+    expect(r2.alertasRebaixamento).toBe(0)
+    expect(resendMocks.sendBillingOpsAlert).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('🛡️ estado preservado depois do corte D+5', () => {
@@ -397,16 +433,45 @@ describe('o link de pagamento', () => {
 })
 
 describe('WhatsApp atrás da flag (2ª onda, aguardando a Meta)', () => {
-  it('flag desligada → só e-mail', async () => {
-    const req = reqNaHora(9)
+  it('🛡️ flag desligada → nada de WhatsApp NA HORA DELE (o teste antigo rodava às 9h e era cego)', async () => {
+    // Sabotagem do Codex (14/08): remover o guard da flag não derrubava nada, porque o teste
+    // rodava às 9h — janela do e-mail, onde o WhatsApp não sairia de qualquer jeito.
     const { db } = makeDb([PAGANTE])
     mockCreate.mockReturnValue(db as never)
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
 
-    await GET(req)
+    await GET(reqNaHora(15)) // janela do WhatsApp no D+0
 
-    expect(resendMocks.sendDunningEmail).toHaveBeenCalledTimes(1)
     expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
+  })
+
+  it('🛡️ flag LIGADA mas template não-UTILITY na Meta → canal fechado (regra dura do Sidney)', async () => {
+    // O caso que existe de verdade: o eidosform_plano_rebaixado_v1 virou MARKETING depois de
+    // submetido. O contrato local seguiria verde — só o preflight ao vivo vê isso.
+    process.env.DUNNING_WHATSAPP_ENABLED = 'true'
+    preflightMocks.preflightWhatsAppDunning.mockResolvedValueOnce(
+      { pode: false, motivo: 'template_nao_utility', detalhe: 'x=MARKETING' } as never,
+    )
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+
+    await GET(reqNaHora(15))
+
+    expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
+  })
+
+  it('🛡️ opt-out desconhecido SUPRIME a cobrança (dúvida não é autorização)', async () => {
+    process.env.DUNNING_WHATSAPP_ENABLED = 'true'
+    wppMocks.consultarOptOut.mockResolvedValueOnce('desconhecido' as never)
+    const { db } = makeDb([PAGANTE])
+    mockCreate.mockReturnValue(db as never)
+    asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
+
+    await GET(reqNaHora(15))
+
+    expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
+    expect(outboxMocks.reserveDunningDelivery).not.toHaveBeenCalled()
   })
 
   it('flag ligada usa o template genérico, texto do estágio e só o token no botão', async () => {
@@ -433,7 +498,7 @@ describe('WhatsApp atrás da flag (2ª onda, aguardando a Meta)', () => {
     asaasMocks.hasOverduePaymentForSubscription.mockResolvedValue({ overdue: true, oldestDueDate: vencidaHa(0), ok: true })
     asaasMocks.getLinkPagamentoVencido.mockResolvedValue({ ok: true, url: null, dueDate: null })
 
-    await GET(reqNaHora(9))
+    await GET(reqNaHora(15))
 
     expect(wppMocks.sendConfirmationTemplate).not.toHaveBeenCalled()
     expect(outboxMocks.reserveDunningDelivery.mock.calls.map((call) => call[1].channel)).not.toContain('whatsapp')

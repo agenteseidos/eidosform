@@ -79,23 +79,44 @@ function cloudCreds(): { token: string; phoneId: string } | null {
   return { token, phoneId }
 }
 
-/** Consulta de opt-out plugável (serviço da Elen na VPS). Fail-open com log. */
-async function isOptedOut(phoneDigits: string): Promise<boolean> {
+/**
+ * Estado de opt-out do destinatário. TRI-ESTADO de propósito (S1, auditoria 14/08): antes isto
+ * devolvia boolean e o `false` misturava "consultei e ele PODE receber" com "não consegui
+ * consultar". São coisas diferentes e as duas classes de mensagem tratam a dúvida ao contrário:
+ *
+ *  · CONFIRMAÇÃO transacional (plano ativado, cartão trocado): desconhecido → ENVIA. É recibo de
+ *    algo que a pessoa acabou de fazer; segurar por causa de uma consulta fora do ar é pior.
+ *  · COBRANÇA (a régua): desconhecido → NÃO ENVIA. É mensagem não solicitada; mandar para quem
+ *    pediu silêncio queima o número e desrespeita o pedido dela.
+ *
+ * ⚠️ `ELEN_OPTOUT_CHECK_URL` NÃO está configurada em produção (conferido 14/08) — ou seja, hoje
+ * a consulta nem acontece. Enquanto ela não existir, a régua fica corretamente MUDA no WhatsApp,
+ * e é assim que a falta de fiação vira visível em vez de virar mensagem indevida.
+ */
+export type EstadoOptOut = 'liberado' | 'opt_out' | 'desconhecido'
+
+export async function consultarOptOut(phoneDigits: string): Promise<EstadoOptOut> {
   const url = process.env.ELEN_OPTOUT_CHECK_URL
   const secret = process.env.INTERNAL_API_SECRET
-  if (!url || !secret) return false
+  if (!url || !secret) return 'desconhecido'
   try {
     const res = await fetch(`${url}?phone=${encodeURIComponent(phoneDigits)}`, {
       headers: { Authorization: `Bearer ${secret}` },
       signal: AbortSignal.timeout(3000),
     })
-    if (!res.ok) return false
+    if (!res.ok) return 'desconhecido'
     const json = await res.json().catch(() => null) as { optedOut?: boolean } | null
-    return json?.optedOut === true
+    if (typeof json?.optedOut !== 'boolean') return 'desconhecido'
+    return json.optedOut ? 'opt_out' : 'liberado'
   } catch (err) {
-    logWarn('[wpp-confirm] Consulta de opt-out falhou — fail-open (transacional)', { err: String(err) })
-    return false
+    logWarn('[wpp-confirm] Consulta de opt-out falhou', { err: String(err) })
+    return 'desconhecido'
   }
+}
+
+/** Compatibilidade das CONFIRMAÇÕES: só o opt-out explícito bloqueia (ver nota acima). */
+async function isOptedOut(phoneDigits: string): Promise<boolean> {
+  return (await consultarOptOut(phoneDigits)) === 'opt_out'
 }
 
 /**

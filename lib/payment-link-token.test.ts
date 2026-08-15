@@ -76,3 +76,29 @@ describe('🛡️ prazo de validade', () => {
     expect(verifyPaymentLinkToken(t, AGORA + 15 * 86_400_000)).toBeNull()
   })
 })
+
+describe('🛡️ o segredo é DEDICADO — sem cadeia de fallback (S3, auditoria 14/08)', () => {
+  it('sem PAYMENT_LINK_TOKEN_SECRET não assina, mesmo com os segredos legados presentes', () => {
+    // O teste antigo removia os três juntos, então não travava a SEPARAÇÃO: voltar o fallback
+    // para INTERNAL_API_SECRET seguia verde. Aqui os legados existem de propósito.
+    const salvos = {
+      dedicado: process.env.PAYMENT_LINK_TOKEN_SECRET,
+      interno: process.env.INTERNAL_API_SECRET,
+      service: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    }
+    try {
+      delete process.env.PAYMENT_LINK_TOKEN_SECRET
+      process.env.INTERNAL_API_SECRET = 'segredo-interno-que-NAO-deve-assinar-link'
+      process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-que-NAO-deve-assinar-link'
+
+      expect(signPaymentLinkToken('11111111-1111-4111-8111-111111111111')).toBeNull()
+    } finally {
+      if (salvos.dedicado === undefined) delete process.env.PAYMENT_LINK_TOKEN_SECRET
+      else process.env.PAYMENT_LINK_TOKEN_SECRET = salvos.dedicado
+      if (salvos.interno === undefined) delete process.env.INTERNAL_API_SECRET
+      else process.env.INTERNAL_API_SECRET = salvos.interno
+      if (salvos.service === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = salvos.service
+    }
+  })
+})

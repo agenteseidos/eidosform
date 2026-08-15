@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { isValidBearerSecret } from '@/lib/bearer-auth'
 import { log, logError, logWarn } from '@/lib/logger'
 import { hasOverduePaymentForSubscription, getLinkPagamentoVencido } from '@/lib/asaas'
 import { sendDunningEmail, sendBillingOpsAlert } from '@/lib/resend'
-import { planLabel } from '@/lib/whatsapp-confirmations'
+import { planLabel, consultarOptOut } from '@/lib/whatsapp-confirmations'
+import { preflightWhatsAppDunning } from '@/lib/whatsapp-preflight'
 import {
   dataAtualBRT, decidirAviso, detectarRebaixamentoAtrasado, canaisNaHora, minutoAtualBRT, hm, slotDe, JANELA_MAXIMA,
 } from '@/lib/dunning-engine'
-import { TEXTOS_DUNNING, preencher } from '@/lib/dunning-content'
+import { TEXTOS_DUNNING, DUNNING_WHATSAPP_TEMPLATES, preencher } from '@/lib/dunning-content'
 import { signPaymentLinkToken } from '@/lib/payment-link-token'
 import {
   buildDunningDeliveryKey, finishDunningDelivery, listRecoverableDunningKeys, reserveDunningDelivery,
@@ -18,8 +19,8 @@ import {
 /**
  * GET /api/cron/dunning — a régua de cobrança (D-01).
  *
- * Roda DE HORA EM HORA e só age na janela do estágio — que agora é POR CANAL (e-mail 9/12/17h,
- * WhatsApp 15/17/11/15/13/11h; ver as duas tabelas em `lib/dunning-engine.ts`). O motor decide;
+ * Roda A CADA 30 MIN e só age na janela do estágio — que agora é POR CANAL (e-mail 9/12/19h30/9/9/9h,
+ * WhatsApp 15/19h30/11/15/13/11h; ver as duas tabelas em `lib/dunning-engine.ts`). O motor decide;
  * este arquivo apenas entrega.
  *
  * ⚠️ A ORDEM AQUI É O CONTRATO. As checagens acontecem UMA vez, no motor, ANTES de qualquer
@@ -36,6 +37,21 @@ import {
  * NADA é agendado com antecedência: a cada rodada o estado é relido do banco e do gateway. É
  * assim que "pagou no meio da régua" interrompe os avisos sem ninguém cancelar nada.
  */
+/**
+ * Reivindica O ALERTA do dia para este perfil. Mesma mecânica dos demais marcadores de billing
+ * (event_id UNIQUE): a primeira rodada do dia grava e alerta; as outras 47 colidem e calam.
+ * Erro que NÃO é conflito deixa passar — perder um alerta operacional é pior que repeti-lo.
+ */
+async function reivindicarAlertaDiario(db: SupabaseClient, profileId: string, dia: string): Promise<boolean> {
+  const { error } = await db
+    .from('asaas_webhook_events')
+    .insert({ event_id: `dunning-downgrade-late:${profileId}:${dia}`, event: 'DUNNING_DOWNGRADE_LATE', status: 'processed' })
+  if (!error) return true
+  if ((error as { code?: string }).code === '23505') return false
+  logWarn('[cron/dunning] marcador do alerta falhou (alerta segue, duplicata é o mal menor)', { profileId })
+  return true
+}
+
 export async function GET(req: NextRequest) {
   if (!isValidBearerSecret(req.headers.get('authorization'), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -55,16 +71,18 @@ export async function GET(req: NextRequest) {
   // forçava horaBRT=0 → nenhum estágio dispara à 0h → régua muda de silenciosa p/ MUDA.
   // (Pego no disparo de validação de 13/08 — horaBRT:0 às 19h42 BRT.)
   // Aceita `?hora=9` e `?hora=19:30` (os horários viraram minutos em 14/08, p/ o turno da noite).
+  // Parser ESTRITO (S3, auditoria 14/08): antes '19:30:lixo' era aceito como 19h30 e qualquer
+  // valor inválido caía SILENCIOSAMENTE no relógio real — num teste manual, um typo executaria
+  // a janela de verdade em vez de avisar. Presente e inválido agora é 400.
   const horaParam = new URL(req.url).searchParams.get('hora')
-  const minutoForcado = (() => {
-    if (!horaParam) return NaN
-    const [h, m = '0'] = horaParam.split(':')
-    const hora = Number(h), minuto = Number(m)
-    if (!Number.isInteger(hora) || !Number.isInteger(minuto)) return NaN
-    if (hora < 0 || hora > 23 || minuto < 0 || minuto > 59) return NaN
-    return hm(hora, minuto)
-  })()
-  const minutoBRT = Number.isFinite(minutoForcado) ? minutoForcado : minutoAtualBRT()
+  let minutoBRT: number
+  if (horaParam === null) {
+    minutoBRT = minutoAtualBRT()
+  } else {
+    const m = /^([01]?\d|2[0-3]):([0-5]\d)$|^([01]?\d|2[0-3])$/.exec(horaParam.trim())
+    if (!m) return NextResponse.json({ error: 'hora inválida (use HH ou HH:MM)' }, { status: 400 })
+    minutoBRT = m[3] !== undefined ? hm(Number(m[3])) : hm(Number(m[1]), Number(m[2]))
+  }
 
   // Candidatos: quem tem assinatura vinculada e NÃO está no gratuito, mais quem caiu para o
   // gratuito recentemente (o estágio 5 precisa deles). O motor filtra o resto.
@@ -88,6 +106,20 @@ export async function GET(req: NextRequest) {
     // A entrega da hora ainda pode criar reservas novas. Só a recuperação fora da hora fica
     // adiada; falhar fechado aqui silenciaria toda a régua por uma leitura auxiliar.
     logWarn('[cron/dunning] não foi possível listar reservas recuperáveis', { err: String(err).slice(0, 120) })
+  }
+
+  // ── PORTEIRO DO CANAL (S1, 14/08): uma consulta por rodada, não por perfil ──────────────
+  // A Meta recategoriza DEPOIS de aprovar. Sem esta checagem ao vivo, uma virada para MARKETING
+  // seguiria disparando em silêncio — o teste de contrato local não vê isso, porque lê o JSON
+  // do repositório, não o estado real. Fail-closed: dúvida = canal fechado.
+  const whatsappLigado = process.env.DUNNING_WHATSAPP_ENABLED === 'true'
+  const preflight = whatsappLigado
+    ? await preflightWhatsAppDunning(Object.values(DUNNING_WHATSAPP_TEMPLATES))
+    : ({ pode: false, motivo: 'flag_desligada' } as const)
+  if (whatsappLigado && !preflight.pode) {
+    logWarn('[cron/dunning] canal WhatsApp bloqueado nesta rodada — só e-mail', {
+      motivo: preflight.motivo, detalhe: 'detalhe' in preflight ? preflight.detalhe : undefined,
+    })
   }
 
   for (const bruto of candidatos ?? []) {
@@ -114,7 +146,9 @@ export async function GET(req: NextRequest) {
 
       // O expire-plans não rebaixou quem devia? Ele não tem alarme próprio (verificado em
       // 11/08). A régua roda horas depois dele, então é a testemunha natural — avisa, nunca age.
-      if (detectarRebaixamentoAtrasado(estado)) {
+      // Marcador diário: com o timer de 30 min, uma conta presa geraria 48 alertas por dia e
+      // enterraria justamente o incidente que ele existe para denunciar. (S2, auditoria 14/08.)
+      if (detectarRebaixamentoAtrasado(estado) && await reivindicarAlertaDiario(db, p.id, dia)) {
         r.alertasRebaixamento++
         await sendBillingOpsAlert({
           subject: '🔴 Rebaixamento ATRASADO: passou do prazo e a conta segue paga',
@@ -253,8 +287,15 @@ export async function GET(req: NextRequest) {
       // Os dois templates UTILITY têm botão dinâmico /pagar/{{1}}. Sem cobrança com link não
       // existe token válido para preencher o botão; nesse caso o e-mail oferece resposta e o
       // WhatsApp é corretamente suprimido, em vez de enviar um template inválido.
-      if (process.env.DUNNING_WHATSAPP_ENABLED === 'true' && p.phone && tokenPagamento && canalAtivo('whatsapp')) {
-        const reserva = await reservar('whatsapp')
+      if (whatsappLigado && preflight.pode && p.phone && tokenPagamento && canalAtivo('whatsapp')) {
+        // Opt-out ANTES da reserva. Cobrança é mensagem não solicitada: 'desconhecido' vale
+        // como 'não' — quem pediu silêncio não pode receber por causa de consulta fora do ar.
+        // (Confirmação transacional segue o critério oposto; ver nota em whatsapp-confirmations.)
+        const optOut = await consultarOptOut(p.phone)
+        if (optOut !== 'liberado') {
+          logWarn('[cron/dunning] WhatsApp suprimido pelo opt-out', { profileId: p.id, estado: optOut })
+        }
+        const reserva = optOut === 'liberado' ? await reservar('whatsapp') : null
         if (reserva) {
           try {
             const { sendConfirmationTemplate } = await import('@/lib/whatsapp-confirmations')

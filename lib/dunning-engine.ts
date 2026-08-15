@@ -109,13 +109,14 @@ export function detectarRebaixamentoAtrasado(estado: EstadoConta, agora = Date.n
 }
 
 /**
- * Horário de envio por estágio (decisão do Sidney, 11/08): rotação para descobrir quando o
- * cliente de fato abre — e porque apostar tudo num horário só é palpite.
+ * Horário de envio do E-MAIL por estágio (decisão do Sidney, 11/08): rotação para descobrir
+ * quando o cliente de fato abre — apostar tudo num horário só é palpite. O WhatsApp tem tabela
+ * PRÓPRIA logo abaixo (14/08). As duas são travadas célula a célula por teste.
  *
  * ⚠️ O D+4 é FIXO de manhã. É o último aviso antes do corte da meia-noite: saindo às 9h o
  * cliente tem o dia inteiro para resolver com o banco; às 17h sobrariam poucas horas.
- * E nada depois das 18h: cobrança à noite soa invasiva e o cliente não CONSEGUE agir (banco
- * fechado) — ele só dorme com o problema.
+ * O teto de 18h que existia aqui CAIU em 14/08 (ver JANELA_MAXIMA): o argumento do "banco
+ * fechado" não vale — Pix e cartão rodam 24h e a página de pagamento é autoatendimento.
  */
 /** Minutos desde a meia-noite. `hm(19, 30)` = 1170. Os horários viraram minutos em 14/08, para
  *  o turno da noite (19h30) poder existir — de hora cheia ele era inexprimível. */
@@ -177,11 +178,44 @@ export function ehHoraDoEstagio(estagio: EstagioDunning, minutoBRT: number, cana
   return slotDe(tabela[estagio]) === slotDe(minutoBRT)
 }
 
-/** Canais cuja janela é AGORA. Vazio = nada a fazer nesta fatia (o caso comum). */
+/**
+ * Tolerância de atraso (S2, auditoria 14/08). O timer tem `Persistent=true`, mas quem se atrasa
+ * é o RELÓGIO, não o agendamento: uma execução das 9h05 que só rode às 9h31 cai na fatia 9h30 e
+ * perderia o aviso das 9h para sempre — VPS reiniciando, máquina suspensa, fila travada.
+ *
+ * Então a janela não é um instante, é um INTERVALO: do horário do canal até o próximo toque
+ * daquele estágio. `createIfMissing` continua valendo, e o outbox (chave única por perfil,
+ * estágio, dia e canal) é quem garante que a recuperação não vire segunda mensagem.
+ *
+ * O teto de 90 min é deliberado: recupera queda de infra, mas não ressuscita um aviso das 9h
+ * às 18h — cobrança fora de hora é pior que cobrança perdida. E nunca invade a fatia do OUTRO
+ * canal do mesmo estágio (o mínimo entre 90 min e a distância até ele).
+ */
+export const TOLERANCIA_ATRASO_MINUTOS = 90
+
+function toleranciaDoCanal(estagio: EstagioDunning, canal: CanalDunning): number {
+  const meu = canal === 'whatsapp' ? HORARIO_WHATSAPP_POR_ESTAGIO[estagio] : HORARIO_POR_ESTAGIO[estagio]
+  const outro = canal === 'whatsapp' ? HORARIO_POR_ESTAGIO[estagio] : HORARIO_WHATSAPP_POR_ESTAGIO[estagio]
+  const distancia = outro > meu ? outro - meu : Number.POSITIVE_INFINITY
+  return Math.min(TOLERANCIA_ATRASO_MINUTOS, distancia)
+}
+
+/**
+ * Este canal ainda está na janela dele? Verdadeiro na fatia exata e durante a tolerância de
+ * atraso — nunca antes da hora, nunca depois do fim da janela civilizada.
+ */
+export function dentroDaJanela(estagio: EstagioDunning, minutoBRT: number, canal: CanalDunning): boolean {
+  const inicio = canal === 'whatsapp' ? HORARIO_WHATSAPP_POR_ESTAGIO[estagio] : HORARIO_POR_ESTAGIO[estagio]
+  if (slotDe(minutoBRT) < slotDe(inicio)) return false
+  if (slotDe(minutoBRT) > slotDe(JANELA_MAXIMA)) return false
+  return minutoBRT - inicio <= toleranciaDoCanal(estagio, canal)
+}
+
+/** Canais cuja janela é AGORA (incluindo a tolerância de atraso). Vazio = nada a fazer. */
 export function canaisNaHora(estagio: EstagioDunning, minutoBRT: number): CanalDunning[] {
   const canais: CanalDunning[] = []
-  if (ehHoraDoEstagio(estagio, minutoBRT, 'email')) canais.push('email')
-  if (ehHoraDoEstagio(estagio, minutoBRT, 'whatsapp')) canais.push('whatsapp')
+  if (dentroDaJanela(estagio, minutoBRT, 'email')) canais.push('email')
+  if (dentroDaJanela(estagio, minutoBRT, 'whatsapp')) canais.push('whatsapp')
   return canais
 }
 

@@ -172,6 +172,24 @@ describe('🛡️ horários por canal (14/08) — as duas tabelas obedecem às m
     }
   })
 
+  it('🛡️ as 12 células estão TRAVADAS — mudar qualquer horário quebra aqui', () => {
+    // Sabotagem do Codex (14/08): mover o WhatsApp do D+1 de 19h30 p/ 18h30 não derrubava
+    // NENHUM teste, porque só se verificava limite e colisão. Tabela é decisão de produto —
+    // muda com intenção, nunca por acidente.
+    expect(HORARIO_POR_ESTAGIO).toEqual({
+      0: hm(9), 1: hm(12), 2: hm(19, 30), 3: hm(9), 4: hm(9), 5: hm(9),
+    })
+    expect(HORARIO_WHATSAPP_POR_ESTAGIO).toEqual({
+      0: hm(15), 1: hm(19, 30), 2: hm(11), 3: hm(15), 4: hm(13), 5: hm(11),
+    })
+  })
+
+  it('🛡️ existe pelo menos UM turno noturno em cada canal (pedido do Sidney, 14/08)', () => {
+    const noite = (t: Record<number, number>) => Object.values(t).some((m) => m >= hm(19))
+    expect(noite(HORARIO_POR_ESTAGIO)).toBe(true)
+    expect(noite(HORARIO_WHATSAPP_POR_ESTAGIO)).toBe(true)
+  })
+
   it('os canais NUNCA coincidem — o ganho da mudança é espalhar os toques', () => {
     for (const e of ESTAGIOS) {
       expect(HORARIO_WHATSAPP_POR_ESTAGIO[e]).not.toBe(HORARIO_POR_ESTAGIO[e])

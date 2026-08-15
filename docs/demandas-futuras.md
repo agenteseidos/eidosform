@@ -32,8 +32,10 @@ e do gateway. Quem pagou no meio da régua não recebe o aviso seguinte — sem 
 aconteceu → alerta operacional no WhatsApp do dono. Ela detecta e avisa; NUNCA rebaixa — dois
 sistemas escrevendo no mesmo estado de dinheiro é como nascem os bugs desta auditoria.
 
-**Link de pagamento:** `getLinkPagamentoVencido` traz a página da fatura vencida, que aceita
-cartão novo, Pix e boleto — resolve "trocar cartão" e "lançar pagamento" sem construirmos tela.
+**Link de pagamento:** `getLinkPagamentoVencido` traz a página da fatura vencida, onde o cliente
+paga com o mesmo cartão ou troca por outro — resolve "trocar cartão" e "lançar pagamento" sem
+construirmos tela. (⚠️ Este texto já afirmou "aceita Pix e boleto", sem evidência e contra a
+decisão de só-cartão. Corrigido em 15/08.)
 Sem link, o botão vira "responda este e-mail": botão quebrado numa cobrança é pior que nenhum.
 
 **55 testes** (23 do motor, 20 dos textos, 12 do cron). Sabotagem provada nas garantias:

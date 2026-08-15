@@ -345,7 +345,7 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
         cycle,
         source: 'reprocess',
         // A DLQ não guarda payload (PII) → relê o cartão que PAGOU direto do payment.
-        // null (Pix/boleto/falha de leitura) = sem alinhamento — nunca bloqueia o retry.
+        // null (payment sem cartão / falha de leitura) = sem alinhamento — nunca bloqueia o retry.
         paymentCardToken: row.payment_id ? await getPaymentCardToken(row.payment_id) : null,
       })
       // Correção de valor recorrente necessária mas falhou → RELANÇA: mantém o evento 'failed'

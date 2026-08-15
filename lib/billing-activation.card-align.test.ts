@@ -11,7 +11,7 @@
  * Casos:
  *  (a) cartão novo pagou → PUT chamado + asaas_card_token gravado com o token NOVO
  *  (b) renovação normal (mesmo cartão) → PUT NÃO chamado (idempotência natural)
- *  (c) Pix/boleto (sem token no payment) → PUT NÃO chamado
+ *  (c) payment sem cartão (sem token) → PUT NÃO chamado
  *  (d) PUT falha → ativação NÃO quebra + ALERTA ops + token gravado segue o da SUB
  *      (o estado real: o alinhamento falhou, a sub ainda cobra o cartão antigo)
  *  (e) sub SEM cartão + payment com token → alinha (cobre sub órfã de cartão)
@@ -118,7 +118,7 @@ describe('finalizeActivation (4a-align) — a sub cobra o cartão que pagou por 
     expect(tokenUpdate(updates)?.asaas_card_token).toBe(TOKEN_SUB)
   })
 
-  it('(c) Pix/boleto (payment sem cartão) → NÃO chama o PUT, captura atual preservada', async () => {
+  it('(c) payment SEM cartão → NÃO chama o PUT, captura atual preservada', async () => {
     vi.mocked(getSubscription).mockResolvedValue(subComCartao(TOKEN_SUB) as never)
     const updates: Upd[] = []
     await finalize(makeDb(updates), null)

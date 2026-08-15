@@ -240,9 +240,10 @@ describe('hasConfirmedPaymentForSubscription — recorte de data', () => {
 /**
  * D-01 · o link de pagamento da régua de cobrança.
  *
- * O botão "Regularizar meu pagamento" precisa levar a uma página que aceite cartão novo, Pix e
- * boleto — sem construirmos tela nenhuma. `null` é desfecho esperado (a régua troca o botão por
- * "responda este e-mail"), porque botão quebrado numa cobrança é pior que nenhum botão.
+ * O botão "Regularizar meu pagamento" leva à página da fatura, onde o cliente paga com o mesmo
+ * cartão ou troca por outro — sem construirmos tela nenhuma. `null` é desfecho esperado (a régua
+ * troca o botão por "responda este e-mail"), porque botão quebrado numa cobrança é pior que
+ * nenhum botão.
  */
 describe('getLinkPagamentoVencido', () => {
   it('devolve a URL da cobrança vencida MAIS ANTIGA (é ela que trava a renovação)', async () => {
@@ -254,9 +255,13 @@ describe('getLinkPagamentoVencido', () => {
     expect(r).toEqual({ ok: true, url: 'https://fatura/antiga', dueDate: '2026-08-10' })
   })
 
-  it('cai no boleto quando não há página de fatura', async () => {
+  it('🛡️ NUNCA cai no boleto — mesmo que a fatura traga bankSlipUrl', async () => {
+    // Este teste exigia o OPOSTO até 15/08: mandava o cliente para o boleto quando faltava
+    // invoiceUrl. O EidosForm só vende por CARTÃO ([[decisions]]), então o botão da cobrança
+    // jamais pode desembocar num meio de pagamento que não existe no produto. Sem invoiceUrl,
+    // a resposta certa é `null` — a régua degrada para "responda este e-mail".
     stubFetch(200, { data: [{ dueDate: '2026-08-10', bankSlipUrl: 'https://boleto/x' }] })
-    expect((await getLinkPagamentoVencido('sub_1')).url).toBe('https://boleto/x')
+    expect((await getLinkPagamentoVencido('sub_1')).url).toBeNull()
   })
 
   it('sem cobrança vencida → url null, mas ok:true (não é erro)', async () => {

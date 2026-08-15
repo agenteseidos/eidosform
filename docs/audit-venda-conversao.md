@@ -66,7 +66,7 @@ O EidosForm tem uma base sólida de features técnicas (pixels, webhooks, billin
 | Webhook Asaas (ativação/cancelamento) | ✅ Completo | |
 | Limites por plano (respostas, forms) | ✅ Completo | Server-side enforcement |
 | Alerta 80% do limite | ✅ Completo | Email automático |
-| **Boleto/PIX no checkout** | ❌ Ausente | Apenas cartão hardcoded |
+| ~~Boleto/PIX no checkout~~ | 🚫 **NÃO É LACUNA** | Decisão do Sidney (10/06, reafirmada 15/08): o produto é assinatura por CARTÃO. Cartão fixo é o desenho, não a falta dele. |
 | **Multi-user (Professional)** | ⚠️ Parcial | `maxUsers: 10` definido mas sem enforcement nem UI de gestão |
 | **Feature gating** | ⚠️ Fraco | Maioria client-side, bypass possível |
 | Data de ciclo hardcoded | 🐛 Bug | Usa `Date.now() + 32 dias` ao invés de `plan_expires_at` |
@@ -137,7 +137,7 @@ O EidosForm tem uma base sólida de features técnicas (pixels, webhooks, billin
 |---|---------|---------------|
 | 4 | **Exportação PDF/Excel** | CSV-only é dealbreaker para empresas. Export avançado é trigger de upgrade. |
 | 5 | **Branding de conta** (logo, favicon, email sender) | White-label real, não só esconder marca. Diferencia Pro do Plus. |
-| 6 | **PIX/Boleto no checkout** | Mercado brasileiro = PIX é essencial. Perder vendas sem isso. |
+| ~~6~~ | 🚫 ~~PIX/Boleto no checkout~~ | **RECOMENDAÇÃO REVOGADA.** O Sidney decidiu contra, duas vezes. Não reabrir: quem ler esta tabela no futuro não deve tratar isso como pendência. |
 | 7 | **Meta CAPI** | Anunciantes Meta perdem 20-40% de conversões. Feature técnica que vendedores pedem. |
 | 8 | **Webhook HMAC + logs** | Enterprise não confia em webhook sem assinatura. |
 
@@ -186,7 +186,6 @@ O EidosForm tem uma base sólida de features técnicas (pixels, webhooks, billin
 4. Implementar **embed snippet** (🔴 #1) — impacto máximo com esforço moderado
 
 ### Sprint 2 — Checkout & Retenção (1-2 semanas)
-5. Adicionar **PIX/Boleto** ao checkout Asaas (🟠 #6)
 6. Implementar **exportação Excel** (🟠 #4)
 7. Fixar feature gating server-side para features críticas (P2)
 

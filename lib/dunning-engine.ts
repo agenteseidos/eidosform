@@ -116,7 +116,7 @@ export function detectarRebaixamentoAtrasado(estado: EstadoConta, agora = Date.n
  * ⚠️ O D+4 é FIXO de manhã. É o último aviso antes do corte da meia-noite: saindo às 9h o
  * cliente tem o dia inteiro para resolver com o banco; às 17h sobrariam poucas horas.
  * O teto de 18h que existia aqui CAIU em 14/08 (ver JANELA_MAXIMA): o argumento do "banco
- * fechado" não vale — Pix e cartão rodam 24h e a página de pagamento é autoatendimento.
+ * fechado" não vale — o cartão roda 24h e a página de pagamento é autoatendimento.
  */
 /** Minutos desde a meia-noite. `hm(19, 30)` = 1170. Os horários viraram minutos em 14/08, para
  *  o turno da noite (19h30) poder existir — de hora cheia ele era inexprimível. */
@@ -156,7 +156,7 @@ export type CanalDunning = 'email' | 'whatsapp'
 
 /**
  * Janela civilizada de cobrança. O teto era 18h por raciocínio MEU ("banco fechado") — o Sidney
- * derrubou em 14/08 e tem razão: Pix e cartão rodam 24h e a página de pagamento é autoatendimento,
+ * derrubou em 14/08 e tem razão: o cartão roda 24h e a página de pagamento é autoatendimento,
  * então 19h30 é hora em que o cliente PODE resolver, e é quando ele olha o celular. O piso segue:
  * ninguém cobra ninguém de madrugada.
  */

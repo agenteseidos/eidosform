@@ -226,7 +226,7 @@ export async function finalizeActivation(params: {
   /** Token do cartão que PAGOU a cobrança corrente (webhook: payment.creditCard.creditCardToken;
    *  reprocess: relido do payment via getPaymentCardToken — a DLQ não guarda payload/PII).
    *  Quando difere do cartão salvo NA SUB, o cliente pagou com cartão NOVO na página da fatura
-   *  (caminho da régua D-01) → alinhamos a sub ao cartão novo (4a-align). Ausente (Pix/boleto,
+   *  (caminho da régua D-01) → alinhamos a sub ao cartão novo (4a-align). Ausente (payment sem cartão,
    *  polling de 1ª compra) → sem alinhamento, captura de token atual inalterada. */
   paymentCardToken?: string | null
 }): Promise<FinalizeActivationResult> {

@@ -732,15 +732,19 @@ export async function hasOverduePaymentForSubscription(subscriptionId: string): 
 export async function getLinkPagamentoVencido(subscriptionId: string): Promise<{ ok: boolean; url: string | null; dueDate: string | null }> {
   try {
     const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=OVERDUE&limit=20`)
-    const pays: Array<{ dueDate?: string; invoiceUrl?: string; bankSlipUrl?: string }> = data?.data ?? []
+    const pays: Array<{ dueDate?: string; invoiceUrl?: string }> = data?.data ?? []
     // Mais ANTIGA primeiro: é a que trava a renovação; pagar ela é o que regulariza a conta.
     const ordenadas = pays
       .filter((p) => typeof p.dueDate === 'string' && p.dueDate)
       .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))
-    const alvo = ordenadas.find((p) => p.invoiceUrl || p.bankSlipUrl)
+    const alvo = ordenadas.find((p) => p.invoiceUrl)
     if (!alvo) return { ok: true, url: null, dueDate: ordenadas[0]?.dueDate ?? null }
-    // invoiceUrl é a página completa (cartão + Pix + boleto); bankSlipUrl só o boleto.
-    return { ok: true, url: alvo.invoiceUrl ?? alvo.bankSlipUrl ?? null, dueDate: alvo.dueDate ?? null }
+    // SÓ `invoiceUrl` (15/08). O fallback para `bankSlipUrl` que existia aqui era a página do
+    // BOLETO: se uma fatura viesse sem invoiceUrl, o botão "Regularizar meu pagamento" levaria o
+    // cliente a um boleto — meio de pagamento que o EidosForm não vende ([[decisions]]). Sem
+    // invoiceUrl agora é `url: null`, e a régua já sabe lidar: o e-mail troca o botão por
+    // "responda este e-mail" e o WhatsApp é suprimido. Degrada, não mente.
+    return { ok: true, url: alvo.invoiceUrl ?? null, dueDate: alvo.dueDate ?? null }
   } catch (err) {
     logWarn('[asaas] getLinkPagamentoVencido falhou', { subscriptionId, err: String(err).slice(0, 120) })
     return { ok: false, url: null, dueDate: null }
@@ -982,7 +986,7 @@ export async function updateSubscriptionCreditCard(subscriptionId: string, credi
 /**
  * creditCardToken do PAGAMENTO (GET /v3/payments/{id}) — o cartão que efetivamente PAGOU.
  * Usado pelo reprocessador da DLQ, que não guarda payload de webhook (PII) e por isso
- * precisa reler o payment fresco. Best-effort: null em Pix/boleto, payment sem cartão ou
+ * precisa reler o payment fresco. Best-effort: null em payment sem cartão ou
  * falha de rede (quem chama trata null como "sem alinhamento", nunca como erro).
  */
 export async function getPaymentCardToken(paymentId: string): Promise<string | null> {

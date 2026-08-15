@@ -19,7 +19,7 @@ constantes de `lib/dunning-engine.ts`, travadas por teste célula a célula.
 | D+5 | 5 | 9h | 11h | Seus formulários foram pausados — reative quando quiser |
 
 **Janela civilizada:** piso 8h, teto 19h30. O teto era 18h até 14/08 — caiu porque o argumento
-("banco fechado") não vale: Pix e cartão rodam 24h e a página de pagamento é autoatendimento.
+("banco fechado") não vale: o cartão roda 24h e a página de pagamento é autoatendimento.
 
 **Tolerância de atraso:** cada canal aceita ser executado até 90 min depois da hora dele (ou até
 a fatia do outro canal, o que vier antes). Recupera VPS reiniciando ou fila travada; NÃO

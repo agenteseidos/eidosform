@@ -289,7 +289,11 @@ plan 'free' + status 'active').
   `?checkout=success` / "Pagamento confirmado!".
 - `ASAAS_ALLOW_HMAC_FALLBACK=0` quando confirmado que prod autentica só pelo
   access-token nativo; depois remover o código do fallback HMAC.
-- PIX/Boleto no checkout: decisão de 2026-06-10 = NÃO implementar agora.
+- **PIX/Boleto: NUNCA.** Decisão de 2026-06-10, reafirmada sem margem em 15/08/2026 ("não vamos
+  ter pix ou boleto, se tiver isso em algum lugar remova, só cartão"). O EidosForm vende
+  assinatura recorrente por CARTÃO. Não é "ainda não" — é não. Travado por
+  `lib/asaas.somente-cartao.test.ts`, que quebra se algum caminho declarar outro billingType,
+  e por teste de copy que varre os 6 estágios da régua. Registro: `decisoes/decisions.md`.
 - Multi-user: REMOVIDO da oferta em 2026-06-10 (não existe no produto).
 - ✅ `ADMIN_ALERT_EMAIL`: **JÁ CONFIGURADA** — conferido via API da Vercel em 2026-07-29:
   `sidney@institutoeidos.com.br`, nos 3 ambientes (production/preview/development).

@@ -97,7 +97,10 @@ export type EstadoOptOut = 'liberado' | 'opt_out' | 'desconhecido'
 
 export async function consultarOptOut(phoneDigits: string): Promise<EstadoOptOut> {
   const url = process.env.ELEN_OPTOUT_CHECK_URL
-  const secret = process.env.INTERNAL_API_SECRET
+  // Segredo DEDICADO (14/08): antes reaproveitava o INTERNAL_API_SECRET, que autentica rotas
+  // internas — mesma armadilha do token do /pagar corrigida no mesmo lote. Fallback mantido só
+  // para não quebrar ambiente que ainda não recebeu a variável nova.
+  const secret = process.env.ELEN_OPTOUT_SECRET || process.env.INTERNAL_API_SECRET
   if (!url || !secret) return 'desconhecido'
   try {
     const res = await fetch(`${url}?phone=${encodeURIComponent(phoneDigits)}`, {

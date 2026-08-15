@@ -714,9 +714,16 @@ export async function hasOverduePaymentForSubscription(subscriptionId: string): 
  * Link de pagamento da cobrança VENCIDA mais antiga — o botão "Regularizar meu pagamento" da
  * régua de cobrança (D-01, 11/08/2026).
  *
- * A página de fatura do gateway já aceita cartão NOVO, Pix e boleto, então ela resolve as duas
- * necessidades do Sidney ("trocar o cartão" e "lançar o pagamento") sem construirmos tela
- * nenhuma. O e-mail nunca cita o gateway — o cliente só vê o botão.
+ * A página de fatura do gateway resolve as duas necessidades do Sidney ("trocar o cartão" e
+ * "lançar o pagamento") sem construirmos tela nenhuma. O e-mail nunca cita o gateway — o
+ * cliente só vê o botão.
+ *
+ * ⚠️ ESTE COMENTÁRIO JÁ MENTIU (corrigido 15/08): dizia que a página "aceita cartão, Pix e
+ * boleto". Não há evidência disso e o EidosForm **só vende por CARTÃO** ([[decisions]]).
+ * Verificado na API: 100% das nossas cobranças nascem `billingType=CREDIT_CARD`, e o gateway
+ * monta a página pelo tipo da cobrança. A afirmação errada aqui foi a semente de uma proposta
+ * de teste em Pix — o Sidney barrou. O que a página realmente renderiza só será CONFIRMADO no
+ * teste com fatura vencida real; até lá, não afirmar.
  *
  * ⚠️ `null` é um desfecho ESPERADO, não erro: gateway fora do ar, cobrança sem URL, sem vencida.
  * Quem chama tem de ter um caminho sem link (a régua troca o botão por "responda este e-mail")

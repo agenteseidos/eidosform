@@ -7,8 +7,10 @@ import { log, logWarn, logError } from '@/lib/logger'
 /**
  * GET /pagar/[token] — o destino do botão "Regularizar pagamento" (D-01).
  *
- * Redireciona para a página de cobrança da fatura vencida, onde o cliente paga com cartão novo,
- * Pix ou boleto. É a peça que permite ao template do WhatsApp ser aprovado UMA vez e nunca mais:
+ * Redireciona para a página de cobrança da fatura vencida, onde o cliente paga — com o mesmo
+ * cartão ou trocando por outro. ⚠️ NÃO dizer "Pix ou boleto": o EidosForm só vende por CARTÃO
+ * ([[decisions]], reafirmado 15/08) e 100% das cobranças nascem `billingType=CREDIT_CARD`.
+ * É a peça que permite ao template do WhatsApp ser aprovado UMA vez e nunca mais:
  * a Meta valida `eidosform.com.br/pagar/{{1}}`, e para onde isso leva é decisão nossa, mutável
  * sem nova análise.
  *

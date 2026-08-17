@@ -28,6 +28,9 @@ vi.mock('next/server', () => ({
   },
 }))
 
+const purgarAnexos = vi.hoisted(() => vi.fn(async () => ({ revogados: 0, removidos: 0 })))
+vi.mock('@/lib/form-file-purge', () => ({ purgarAnexos }))
+vi.mock('@/lib/supabase/service-role', () => ({ createServiceRoleClient: () => ({}) }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/supabase/request-auth', () => ({ getRequestUser: vi.fn(async () => ({ id: 'dono-1' })) }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn(), logWarn: vi.fn(), log: vi.fn() }))
@@ -38,7 +41,7 @@ vi.mock('@/lib/plan-limits', async (importOriginal) => {
   return { ...real, recomputeActiveForms: (...a: unknown[]) => recomputeActiveForms(...(a as [])) }
 })
 
-import { PATCH } from './route'
+import { PATCH, DELETE } from './route'
 import { createClient } from '@/lib/supabase/server'
 
 const mockCreateClient = vi.mocked(createClient)
@@ -52,7 +55,7 @@ type Cenario = {
   questoesAtuais?: number
 }
 
-function supabaseFalso({ plan = 'free', questoesAtuais = 10 }: Cenario = {}) {
+function supabaseFalso({ plan = 'free', questoesAtuais = 10, semFormulario = false }: Cenario & { semFormulario?: boolean } = {}) {
   const existing = {
     id: 'f1',
     title: 'Anamnese',
@@ -67,7 +70,8 @@ function supabaseFalso({ plan = 'free', questoesAtuais = 10 }: Cenario = {}) {
   const from = vi.fn((table: string) => {
     if (table === 'forms') {
       return {
-        select: () => ({ eq: () => ({ eq: () => ({ single: async () => ({ data: existing, error: null }) }) }) }),
+        select: () => ({ eq: () => ({ eq: () => ({ single: async () => ({ data: semFormulario ? null : existing, error: null }) }) }) }),
+        delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
         update: (payload: Record<string, unknown>) => {
           updatePayload = payload
           return {
@@ -197,5 +201,35 @@ describe('PATCH — recálculo do que fica no ar', () => {
     await PATCH(req({ title: 'X' }), { params })
 
     expect(recomputeActiveForms).not.toHaveBeenCalled()
+  })
+})
+
+describe('🛡️ DELETE — a purga de anexos NUNCA roda antes da autorização (P0, 16/08)', () => {
+  // Eu introduzi este defeito na própria implementação dos anexos privados: a purga ficava ANTES
+  // do `if (!user) return 401`. Qualquer pessoa com o UUID de um formulário publicado mandava
+  // DELETE sem sessão, o servidor apagava TODOS os anexos com service-role, e só então respondia
+  // "Unauthorized". O formulário sobrevivia; os documentos dos leads, não.
+  beforeEach(() => { purgarAnexos.mockClear() })
+
+  it('sem sessão → 401 e NENHUM anexo tocado', async () => {
+    const { getRequestUser } = await import('@/lib/supabase/request-auth')
+    vi.mocked(getRequestUser).mockResolvedValueOnce(null as never)
+    mockCreateClient.mockResolvedValue(supabaseFalso() as never)
+
+    const res = await DELETE(req({}), { params })
+
+    expect(res.status).toBe(401)
+    expect(purgarAnexos).not.toHaveBeenCalled()
+  })
+
+  it('logado, mas o formulário não é dele → nenhum anexo tocado', async () => {
+    const { getRequestUser } = await import('@/lib/supabase/request-auth')
+    vi.mocked(getRequestUser).mockResolvedValueOnce({ id: 'intruso' } as never)
+    // A consulta com `.eq(user_id)` não acha nada — é a prova de propriedade falhando.
+    mockCreateClient.mockResolvedValue(supabaseFalso({ semFormulario: true }) as never)
+
+    await DELETE(req({}), { params })
+
+    expect(purgarAnexos).not.toHaveBeenCalled()
   })
 })

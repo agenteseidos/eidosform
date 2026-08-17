@@ -348,3 +348,25 @@ describe('suspenso E06-L3 (triado no D-07): config permitida pelo builder não p
     expect(validateFieldValue(q('checkboxes', { options: [] }), ['x']).valid).toBe(false)
   })
 })
+
+describe('🛡️ P0 (16/08): file_id NÃO pode vir acompanhado de url do cliente', () => {
+  it('recusa o par file_id + url — era o bypass que colava endereço hostil', () => {
+    // O buraco: bastava um file_id QUALQUER (nem precisava existir) para a url deixar de ser
+    // validada. Nas rotas que ainda não provavam o vínculo, essa url era PERSISTIDA e viajava
+    // para painel, planilha, webhook, e-mail e WhatsApp — phishing com a nossa marca em volta.
+    const r = validateAllAnswers(
+      [{ id: 'q1', type: 'file_upload', title: 'Anexo' } as never],
+      { q1: { name: 'contrato.pdf', file_id: 'qualquer-coisa', url: 'https://evil.example/isca.pdf' } },
+    )
+    expect(r.length).toBeGreaterThan(0)
+    expect(r[0].questionId).toBe('q1')
+  })
+
+  it('aceita file_id sozinho (o caminho normal: quem monta a URL é o servidor)', () => {
+    const r = validateAllAnswers(
+      [{ id: 'q1', type: 'file_upload', title: 'Anexo' } as never],
+      { q1: { name: 'cv.pdf', file_id: '11111111-1111-4111-8111-111111111111' } },
+    )
+    expect(r).toEqual([])
+  })
+})

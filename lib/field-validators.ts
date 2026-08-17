@@ -376,6 +376,14 @@ function validateFileUpload(value: unknown, maxFileSizeMb?: number): FieldValida
   if (!temReferencia && !temUrlLegada) {
     return { valid: false, error: 'Upload deve ter file_id (ou url legada)' }
   }
+  // 🛡️ P0 (16/08): mandar os DOIS desligava a checagem da URL — bastava um `file_id` qualquer,
+  // mesmo inexistente, para colar uma URL externa hostil ao lado. Nas rotas que ainda não provam
+  // o vínculo, essa URL era PERSISTIDA e viajava para painel, planilha, webhook, e-mail e
+  // WhatsApp: phishing com a nossa marca em volta. Os dois juntos nunca são legítimos — quem
+  // manda referência não tem por que mandar endereço, porque quem monta o endereço é o servidor.
+  if (temReferencia && temUrlLegada) {
+    return { valid: false, error: 'Upload não pode combinar file_id com URL enviada pelo cliente' }
+  }
   if (!temReferencia && temUrlLegada) {
     // Caminho LEGADO, mantido só enquanto o backfill roda. Segue exigindo o prefixo do bucket
     // para não regredir a proteção contra link externo.

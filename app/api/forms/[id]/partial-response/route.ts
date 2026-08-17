@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { reivindicarAnexos } from '@/lib/form-file-claim'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { getRequestUser } from '@/lib/supabase/request-auth'
 import { PLANS, PlanName } from '@/lib/plan-limits'
@@ -232,6 +233,17 @@ export async function PUT(
       formId, orphanKeys, offPathKeys, invalidKeys: [...invalidIds],
     })
   }
+  // ANEXO: prova o vínculo antes de persistir. Esta rota é a IRMÃ AUTENTICADA da parcial
+  // pública e o comentário logo acima já descrevia o ataque (conta grátis grava "anexo"
+  // apontando para o domínio do atacante no formulário de outro cliente) — mas a defesa
+  // dependia do validador, e o validador aceitava `file_id` + `url` juntos. Agora quem monta
+  // a URL é o servidor, depois de provar form + pergunta + ficha viva. (P0, 16/08.)
+  const validComAnexos = await reivindicarAnexos(supabase, {
+    formId, responseId: null, answers: validAnswers,
+  })
+  for (const k of Object.keys(validAnswers)) if (!(k in validComAnexos)) delete validAnswers[k]
+  Object.assign(validAnswers, validComAnexos)
+
   if (Object.keys(validAnswers).length === 0) {
     // Nada válido pra salvar — não cria/atualiza linha com objeto vazio.
     return NextResponse.json({ skipped: true }, { status: 200, headers: CORS_HEADERS })

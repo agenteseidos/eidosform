@@ -1,4 +1,5 @@
 import type { ResponseInsert, ResponseUpdate, AnswerItemInsert } from '@/lib/database.types'
+import { reivindicarAnexos } from '@/lib/form-file-claim'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { authenticateApiKey } from '@/lib/api-key-auth'
@@ -299,7 +300,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (offPathKeys.length > 0) {
     console.warn('[v1/forms] off-path answer keys discarded', { form_id: id, offPathKeys })
   }
-  const answersForPersist = onPathAnswers
+  // ANEXO: prova o vínculo (form + pergunta + ficha viva) e deixa o SERVIDOR montar a URL.
+  // Sem isto, esta rota persistia o objeto CRU vindo do navegador — e o validador, ao ver um
+  // `file_id` qualquer, deixava passar junto uma `url` externa escolhida pelo atacante, que
+  // viajava para painel, planilha, webhook, e-mail e WhatsApp. (P0 achado em 16/08.)
+  const answersForPersist = await reivindicarAnexos(supabase, {
+    formId: id, responseId: null, answers: onPathAnswers as Record<string, unknown>,
+  }) as typeof onPathAnswers
 
   // last_question_answered só persiste se apontar pra pergunta EXISTENTE (Codex P3 2026-07-01).
   const lastQuestionOk =

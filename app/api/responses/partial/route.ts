@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { reivindicarAnexos } from '@/lib/form-file-claim'
 import { sanitizeValue } from '@/lib/form-response-security'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkPartialRateLimitAsync, checkPartialCreateLimitAsync } from '@/lib/response-rate-limit'
@@ -266,8 +267,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ANEXO: prova o vínculo (form + pergunta + ficha viva) e deixa o SERVIDOR montar a URL.
+  // Sem isto, esta rota persistia o objeto CRU vindo do navegador — e o validador, ao ver um
+  // `file_id` qualquer, deixava passar junto uma `url` externa escolhida pelo atacante, que
+  // viajava para painel, planilha, webhook, e-mail e WhatsApp. (P0 achado em 16/08.)
+  const validComAnexos = await reivindicarAnexos(supabase, {
+    formId: form.id as string, responseId: null, answers: valid as Record<string, unknown>,
+  }) as typeof valid
+
   return await createPartialResponse({
-    supabase, form, ownerPlan, answers: valid, utmData, urlParams,
+    supabase, form, ownerPlan, answers: validComAnexos, utmData, urlParams,
     lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions,
     sessionHash, revision, deferSheets, updateCtx,
   })

@@ -82,6 +82,17 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
+  // ANEXOS: só DEPOIS de autenticar e provar a propriedade (P0 corrigido 16/08).
+  // Eu havia colocado esta purga ANTES do 401 — qualquer pessoa com o UUID de um formulário
+  // publicado apagava todos os anexos dele sem sessão nenhuma, e só então recebia "Unauthorized".
+  // Rodar com service-role antes da autorização é destruição de dado por requisição anônima.
+  // Aqui, o `existing` já provou que este usuário é o dono.
+  try {
+    const { purgarAnexos } = await import('@/lib/form-file-purge')
+    const { createServiceRoleClient } = await import('@/lib/supabase/service-role')
+    await purgarAnexos(createServiceRoleClient(), { formId: id })
+  } catch { /* exclusão do formulário nunca falha por causa do anexo */ }
+
   const rawBody = await req.json()
 
   // P2-O: Payload size limit for PATCH (500KB)
@@ -494,14 +505,6 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const supabase = await createClient()
   const { id } = await params
   const user = await getRequestUser(req)
-
-  // ANEXOS: revoga o link e apaga o objeto ANTES de apagar o formulário — depois do cascade,
-  // as fichas somem e o arquivo ficaria órfão e vivo no storage. (16/08)
-  try {
-    const { purgarAnexos } = await import('@/lib/form-file-purge')
-    const { createServiceRoleClient } = await import('@/lib/supabase/service-role')
-    await purgarAnexos(createServiceRoleClient(), { formId: id })
-  } catch { /* exclusão do formulário nunca falha por causa do anexo */ }
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

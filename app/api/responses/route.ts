@@ -1,5 +1,5 @@
 import type { ResponseInsert, ResponseUpdate, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
-import { reivindicarAnexos } from '@/lib/form-file-claim'
+import { reivindicarAnexos, vincularAnexosAResposta } from '@/lib/form-file-claim'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -326,11 +326,21 @@ export async function POST(req: NextRequest) {
   // carrega apenas a REFERÊNCIA que o navegador mandou; depois, carrega o endereço nosso.
   // Anexo cujo vínculo não confere é removido em silêncio — derrubar o envio inteiro puniria o
   // lead por um ataque que não é dele.
-  answers = await reivindicarAnexos(supabase, {
-    formId: form_id as string,
-    responseId: null,
-    answers: answers as Record<string, unknown>,
-  }) as typeof answers
+  try {
+    answers = await reivindicarAnexos(supabase, {
+      formId: form_id as string,
+      responseId: null,
+      answers: answers as Record<string, unknown>,
+    }) as typeof answers
+  } catch (err) {
+    // Falha de INFRA ao conferir a ficha. Gravar sem o anexo devolveria 200 com a resposta
+    // incompleta e o lead veria "enviado" — 503 é retentável e honesto. (Parecer Codex, 16/08.)
+    logError('[responses] falha ao conferir anexos — 503 retentável', err, { formId: form_id })
+    return NextResponse.json(
+      { error: 'Não foi possível confirmar o anexo. Tente enviar novamente.' },
+      { status: 503, headers: CORS_HEADERS }
+    )
+  }
 
   // Bug #5: Auto-detect completed based on required questions
   const completed = isResponseComplete(answers, effectiveQuestions)
@@ -604,6 +614,12 @@ export async function POST(req: NextRequest) {
       .eq('completed', false)
       .select('id, meta_events, sheets_row_index, url_params, submitted_at')
       .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null; submitted_at?: string } | null; error: unknown }
+
+    // ANEXO → RESPOSTA. Só aqui o id existe; antes desta linha as fichas ficavam com
+    // response_id nulo e a purga por resposta nunca as encontraria. (Parecer Codex, 16/08.)
+    if (responseId) {
+      await vincularAnexosAResposta(supabase, { answers: answers as Record<string, unknown>, responseId })
+    }
 
     if (updateError || !updated) {
       const { data: check } = await supabase

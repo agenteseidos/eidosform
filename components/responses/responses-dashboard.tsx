@@ -529,8 +529,12 @@ export function ResponsesDashboard({ form, responses: initialResponses, userPlan
   const handleDelete = async () => {
     if (!responseToDelete) return
     setIsDeleting(true)
-    const { error } = await supabase.from('responses').delete().eq('id', responseToDelete)
-    if (error) {
+    // Pela ROTA, não direto no banco (16/08): apagar a resposta tem de apagar o anexo dela, e
+    // purgar exige service-role — que nunca pode ir para o navegador. Enquanto isto era um
+    // delete direto do cliente, a resposta sumia da tela e o documento do lead ficava no
+    // storage, com link funcionando, contra a política publicada.
+    const res = await fetch(`/api/responses/${responseToDelete}`, { method: 'DELETE' })
+    if (!res.ok) {
       toast.error('Erro ao excluir resposta')
     } else {
       setResponses(prev => prev.filter(r => r.id !== responseToDelete))

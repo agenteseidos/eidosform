@@ -832,6 +832,22 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         return
       }
 
+      // ── 2xx NÃO É SUCESSO POR SI SÓ (16/08, parecer Codex) ─────────────────────────────────
+      // O servidor pode responder 200 com a resposta INCOMPLETA — é o que acontece quando um
+      // anexo é recusado numa pergunta obrigatória: a chave some, `completed` vira false, e a
+      // resposta é gravada como parcial. O player só olhava `res.ok`: mostrava "enviado",
+      // disparava os pixels e limpava a tentativa. O lead ia embora achando que terminou, o dono
+      // registrava uma conversão que não existiu, e depois recebia "abandonou" de alguém que viu
+      // a tela de sucesso.
+      const resultado = await res.json().catch(() => null) as { completed?: boolean } | null
+      if (resultado && resultado.completed === false) {
+        toast.error('O envio não foi concluído. Confira o anexo e tente novamente.')
+        setIsSubmitting(false)
+        isSubmittedRef.current = false
+        isSubmittingRef.current = false
+        return
+      }
+
       triggerPixelSubmitRef.current?.()
       // GTM/Google: evento universal de conclusão do formulário. Permite criar um
       // gatilho de conversão no GTM mesmo sem configurar evento por bloco. Vai só

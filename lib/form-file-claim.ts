@@ -14,7 +14,15 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { urlDoArquivo } from '@/lib/file-link-token'
-import { log, logWarn } from '@/lib/logger'
+import { log, logError, logWarn } from '@/lib/logger'
+
+/** Falha de INFRAESTRUTURA ao conferir o anexo — distinta de referência inválida. */
+export class ErroAoConferirAnexo extends Error {
+  constructor(motivo: string) {
+    super(`falha ao conferir anexo: ${motivo}`)
+    this.name = 'ErroAoConferirAnexo'
+  }
+}
 
 type Json = Record<string, unknown>
 
@@ -53,14 +61,13 @@ export async function reivindicarAnexos(
     .in('id', referencias.map((r) => r.fileId))
 
   if (error) {
-    // Sem conseguir provar, não se grava anexo. Deixar passar "porque o banco falhou" é
-    // exatamente o caminho pelo qual um anexo de outro formulário entraria.
-    logWarn('[anexo] não foi possível conferir as fichas — anexos removidos desta resposta', {
-      formId, erro: error.message,
-    })
-    const semAnexo: Json = { ...answers }
-    for (const r of referencias) delete semAnexo[r.questionId]
-    return semAnexo
+    // FALHA DE INFRA ≠ ATAQUE (16/08, parecer Codex). Antes eu apagava os anexos aqui — a mesma
+    // reação de quando a referência é forjada. Mas um soluço de banco não torna o anexo do lead
+    // suspeito: descartá-lo em silêncio grava uma resposta incompleta e devolve 200, e o lead vê
+    // "enviado". Lançar deixa quem chama decidir (o submit final devolve 503 retentável; o
+    // autosave engole e tenta de novo no próximo).
+    logError('[anexo] não foi possível conferir as fichas — deixando o chamador decidir', error, { formId })
+    throw new ErroAoConferirAnexo(error.message ?? 'falha ao consultar form_files')
   }
 
   const porId = new Map((fichas ?? []).map((f) => [(f as { id: string }).id, f as {
@@ -135,4 +142,32 @@ export async function reivindicarAnexos(
   }
 
   return saida
+}
+
+/**
+ * Amarra os anexos à resposta DEPOIS que ela existe.
+ *
+ * Por que em dois tempos: no submit, a prova do vínculo tem de acontecer ANTES de gravar (senão
+ * grava-se lixo), mas o id da resposta só existe DEPOIS. Antes desta correção eu passava
+ * `responseId: null` e nunca voltava — então toda ficha ficava com `response_id` nulo e a purga
+ * por resposta jamais acharia nada. (Parecer Codex, 16/08.)
+ */
+export async function vincularAnexosAResposta(
+  db: SupabaseClient,
+  params: { answers: Json; responseId: string },
+): Promise<void> {
+  const ids = Object.values(params.answers)
+    .filter(ehAnexo)
+    .map((v) => v.file_id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+  if (!ids.length) return
+  const { error } = await db
+    .from('form_files')
+    .update({ response_id: params.responseId } as never)
+    .in('id', ids)
+  if (error) {
+    // Não bloqueia: a resposta é válida e o link funciona. O que se perde é a purga POR RESPOSTA
+    // achar este arquivo — a purga por formulário/conta continua alcançando.
+    logWarn('[anexo] falha ao vincular à resposta (não bloqueante)', { responseId: params.responseId })
+  }
 }

@@ -93,3 +93,38 @@ describe('reivindicarAnexos', () => {
     expect(await reivindicarAnexos(db, { formId: FORM, responseId: 'r', answers })).toEqual(answers)
   })
 })
+
+describe('🛡️ falha de INFRA ≠ ataque (parecer Codex, 16/08)', () => {
+  it('erro ao consultar a ficha LANÇA, em vez de apagar o anexo em silêncio', async () => {
+    // Antes eu tratava os dois igual: apagava o anexo. Mas um soluço de banco não torna o
+    // documento do lead suspeito — descartá-lo gravava resposta incompleta com 200, e o lead
+    // via "enviado". Lançando, o submit devolve 503 retentável.
+    const db = {
+      from: () => ({
+        select: () => ({ eq: () => ({}), in: async () => ({ data: null, error: { message: 'conexão caiu' } }) }),
+      }),
+    } as never
+    await expect(reivindicarAnexos(db, {
+      formId: FORM, responseId: null, answers: { q1: { name: 'x.pdf', file_id: FILE } },
+    })).rejects.toThrow(/falha ao conferir anexo/)
+  })
+})
+
+describe('🛡️ vincularAnexosAResposta — a purga por resposta precisa achar o arquivo', () => {
+  it('grava o response_id nas fichas dos anexos da resposta', async () => {
+    // No submit, a prova do vínculo acontece ANTES de a resposta existir, então `response_id`
+    // nascia nulo e nunca era preenchido: a purga por resposta jamais acharia o arquivo.
+    const updates: unknown[] = []
+    const db = {
+      from: () => ({
+        update: (v: unknown) => { updates.push(v); return { in: async () => ({ error: null }) } },
+      }),
+    } as never
+    const { vincularAnexosAResposta } = await import('./form-file-claim')
+    await vincularAnexosAResposta(db, {
+      answers: { q1: { name: 'x.pdf', file_id: FILE }, q2: 'texto' },
+      responseId: 'resp-99',
+    })
+    expect(updates).toEqual([{ response_id: 'resp-99' }])
+  })
+})

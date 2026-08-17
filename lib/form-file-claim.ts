@@ -26,6 +26,24 @@ export class ErroAoConferirAnexo extends Error {
 
 type Json = Record<string, unknown>
 
+/**
+ * Nome de arquivo seguro para viajar no `Content-Disposition` da URL assinada.
+ *
+ * O nome vem do NAVEGADOR — é dado do respondente, não nosso. O SDK do storage o concatena na
+ * query com `encodeURI`, que NÃO escapa `&`, `#` nem `?` como valor de parâmetro: um arquivo
+ * chamado `a&x=1.pdf` quebraria ou alteraria a query. Aspas e quebras de linha quebrariam o
+ * próprio cabeçalho. Tiramos os perigosos e preservamos o resto, inclusive acento.
+ */
+function nomeSeguroDeArquivo(bruto: string): string {
+  return bruto
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/["'\\]/g, '')
+    .replace(/[&#?%;]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+}
+
 /** Um anexo entre as respostas: `{ name, file_id, ... }` (novo) ou `{ name, url }` (legado). */
 function ehAnexo(v: unknown): v is Json {
   return typeof v === 'object' && v !== null && !Array.isArray(v) &&
@@ -108,6 +126,14 @@ export async function reivindicarAnexos(
       continue
     }
 
+    // NOME ORIGINAL (16/08): sem isto o cliente baixava "7b20c2a1-....jpg" em vez de
+    // "curriculo.pdf" — o nome nunca era gravado em lugar nenhum. É o `Content-Disposition`
+    // da URL assinada que usa este campo.
+    const nomeLimpo = nomeSeguroDeArquivo(String(anexo.name ?? ''))
+    if (nomeLimpo) {
+      await db.from('form_files').update({ original_name: nomeLimpo } as never).eq('id', fileId)
+    }
+
     const url = urlDoArquivo(fileId, versao)
     saida[questionId] = {
       name: anexo.name,
@@ -129,7 +155,6 @@ export async function reivindicarAnexos(
         status: 'claimed',
         response_id: responseId,
         claimed_at: new Date().toISOString(),
-        original_name: undefined,
       } as never)
       .in('id', aReivindicar)
     if (erroClaim) {

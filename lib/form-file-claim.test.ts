@@ -23,7 +23,7 @@ function makeDb(fichas: Array<Record<string, unknown>>, updates: unknown[] = [])
       const chain = () => b
       b.select = chain; b.eq = chain
       b.in = async () => ({ data: fichas, error: null })
-      b.update = (v: unknown) => { updates.push(v); return { in: async () => ({ error: null }) } }
+      b.update = (v: unknown) => { updates.push(v); return { in: async () => ({ error: null }), eq: async () => ({ error: null }) } }
       b.maybeSingle = async () => ({
         data: tabela === 'forms' ? { file_access_version: 3 } : null, error: null,
       })
@@ -126,5 +126,48 @@ describe('🛡️ vincularAnexosAResposta — a purga por resposta precisa achar
       responseId: 'resp-99',
     })
     expect(updates).toEqual([{ response_id: 'resp-99' }])
+  })
+})
+
+describe('🛡️ nome do arquivo — o cliente baixa "curriculo.pdf", não um UUID', () => {
+  it('grava o nome original na ficha', async () => {
+    // Antes o campo nunca era preenchido (o update mandava `undefined`, que o JSON descarta),
+    // então o Content-Disposition caía no basename do objeto: um UUID.
+    const updates: Array<Record<string, unknown>> = []
+    const db = {
+      from: () => {
+        const b: Record<string, unknown> = {}
+        b.select = () => b; b.eq = () => b
+        b.in = async () => ({ data: [{ id: FILE, form_id: FORM, question_id: 'q1', status: 'pending', revoked_at: null }], error: null })
+        b.maybeSingle = async () => ({ data: { file_access_version: 1 }, error: null })
+        b.update = (v: Record<string, unknown>) => { updates.push(v); return { eq: async () => ({ error: null }), in: async () => ({ error: null }) } }
+        return b
+      },
+    } as never
+    await reivindicarAnexos(db, {
+      formId: FORM, responseId: 'r1', answers: { q1: { name: 'currículo final.pdf', file_id: FILE } },
+    })
+    expect(updates.some((u) => u.original_name === 'currículo final.pdf')).toBe(true)
+  })
+
+  it('🛡️ higieniza o que quebraria o cabeçalho ou a query (o nome vem do respondente)', async () => {
+    const updates: Array<Record<string, unknown>> = []
+    const db = {
+      from: () => {
+        const b: Record<string, unknown> = {}
+        b.select = () => b; b.eq = () => b
+        b.in = async () => ({ data: [{ id: FILE, form_id: FORM, question_id: 'q1', status: 'pending', revoked_at: null }], error: null })
+        b.maybeSingle = async () => ({ data: { file_access_version: 1 }, error: null })
+        b.update = (v: Record<string, unknown>) => { updates.push(v); return { eq: async () => ({ error: null }), in: async () => ({ error: null }) } }
+        return b
+      },
+    } as never
+    await reivindicarAnexos(db, {
+      formId: FORM, responseId: 'r1',
+      answers: { q1: { name: 'a"b&x=1\n#c.pdf', file_id: FILE } },
+    })
+    const nome = String(updates.find((u) => 'original_name' in u)?.original_name ?? '')
+    expect(nome).not.toMatch(/["&#\n\r]/)
+    expect(nome).toContain('.pdf')
   })
 })

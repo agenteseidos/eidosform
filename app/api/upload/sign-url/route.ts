@@ -175,11 +175,39 @@ export async function POST(request: NextRequest) {
     }
 
     const { signedUrl, token } = signedData
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const publicUrl = `${supabaseUrl}/storage/v1/object/public/form-uploads/${path}`
+
+    // FICHA DO ARQUIVO (16/08). O anexo deixa de ser um caminho solto e vira entidade: é ela que
+    // permite, depois, revogar, expirar, apagar de verdade e provar a QUAL formulário e a QUAL
+    // pergunta o arquivo pertence. Esse último ponto fecha um buraco que existia ANTES deste
+    // redesenho: o validador do envio só conferia o prefixo do bucket, então dava para pegar a
+    // URL de um anexo de um formulário e gravá-la como resposta de OUTRO.
+    //
+    // Nasce 'pending': URL de escrita assinada, conteúdo ainda não confirmado. A rota /arquivo
+    // recusa servir 'pending' — só vira servível quando a resposta é gravada.
+    const { data: ficha, error: erroFicha } = await supabase
+      .from('form_files')
+      .insert({
+        form_id, question_id, object_path: path,
+        declared_mime: mime, size_bytes: size, status: 'pending',
+      })
+      .select('id')
+      .single()
+
+    if (erroFicha || !ficha) {
+      logError('Falha ao registrar a ficha do arquivo', erroFicha)
+      return NextResponse.json(
+        { error: 'Erro ao preparar o upload' },
+        { status: 500, headers: CORS_HEADERS }
+      )
+    }
 
     return NextResponse.json(
-      { upload_url: signedUrl, upload_token: token, public_url: publicUrl, path },
+      {
+        upload_url: signedUrl,
+        upload_token: token,
+        file_id: (ficha as { id: string }).id,
+        path,
+      },
       { headers: { ...CORS_HEADERS, 'X-RateLimit-Remaining': String(rateCheck.remaining) } }
     )
   } catch (error) {

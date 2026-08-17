@@ -495,6 +495,14 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const { id } = await params
   const user = await getRequestUser(req)
 
+  // ANEXOS: revoga o link e apaga o objeto ANTES de apagar o formulário — depois do cascade,
+  // as fichas somem e o arquivo ficaria órfão e vivo no storage. (16/08)
+  try {
+    const { purgarAnexos } = await import('@/lib/form-file-purge')
+    const { createServiceRoleClient } = await import('@/lib/supabase/service-role')
+    await purgarAnexos(createServiceRoleClient(), { formId: id })
+  } catch { /* exclusão do formulário nunca falha por causa do anexo */ }
+
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

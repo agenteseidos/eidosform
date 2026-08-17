@@ -485,6 +485,8 @@ export interface Database {
       }
       forms: {
         Row: {
+          file_access_mode: 'owner_only' | 'link'
+          file_access_version: number
           id: string
           user_id: string
           folder_id: string | null
@@ -691,6 +693,50 @@ export interface Database {
           quota_counted_at?: string | null
           updated_at?: string
           last_activity_at?: string
+        }
+        Relationships: []
+      }
+      form_files: {
+        // Anexo como ENTIDADE (migration 20260816_form_files). Cada acesso via /arquivo resolve
+        // o estado ATUAL — o link nunca carrega dono, caminho nem modo.
+        Row: {
+          id: string
+          form_id: string
+          question_id: string | null
+          response_id: string | null
+          object_path: string
+          original_name: string | null
+          declared_mime: string | null
+          size_bytes: number | null
+          status: 'pending' | 'ready' | 'claimed' | 'deleted'
+          revoked_at: string | null
+          expires_at: string | null
+          created_at: string
+          claimed_at: string | null
+        }
+        Insert: {
+          id?: string
+          form_id: string
+          question_id?: string | null
+          response_id?: string | null
+          object_path: string
+          original_name?: string | null
+          declared_mime?: string | null
+          size_bytes?: number | null
+          status?: 'pending' | 'ready' | 'claimed' | 'deleted'
+          revoked_at?: string | null
+          expires_at?: string | null
+          created_at?: string
+          claimed_at?: string | null
+        }
+        Update: {
+          question_id?: string | null
+          response_id?: string | null
+          original_name?: string | null
+          status?: 'pending' | 'ready' | 'claimed' | 'deleted'
+          revoked_at?: string | null
+          expires_at?: string | null
+          claimed_at?: string | null
         }
         Relationships: []
       }

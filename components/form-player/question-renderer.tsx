@@ -15,9 +15,12 @@ import { renderTiptapHtml } from '@/components/ui/tiptap/TiptapEditor'
 
 interface FileUploadValue {
   name: string
-  url: string
+  /** LEGADO: preenchido só em respostas antigas. Hoje quem monta é o servidor. */
+  url?: string
   type: string
   size?: number
+  /** Referência à ficha do anexo. Quem monta a URL é o SERVIDOR (16/08). */
+  file_id?: string
 }
 
 interface FileUploadQuestionProps {
@@ -74,12 +77,14 @@ const FileUploadQuestion = React.memo(function FileUploadQuestion({ question, va
         throw new Error('Falha ao enviar arquivo')
       }
 
-      // 3. Store only the public URL (no base64)
+      // 3. Guarda a REFERÊNCIA, não o endereço (16/08). Quem monta a URL é o servidor, no
+      //    momento de gravar a resposta — o navegador não tem como forjar um anexo de outro
+      //    formulário, porque o `file_id` é conferido contra a ficha no banco.
       onChange({
         name: file.name,
         type: file.type,
         size: file.size,
-        url: signData.public_url,
+        file_id: signData.file_id,
       })
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Falha no upload')

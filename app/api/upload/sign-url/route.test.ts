@@ -25,6 +25,11 @@ vi.mock('@/lib/supabase/admin', () => ({
 }))
 vi.mock('@/lib/supabase/service-role', () => ({
   createServiceRoleClient: () => ({
+    // A ficha do anexo (form_files) nasce aqui desde 16/08 — é ela que permite provar depois
+    // que o arquivo é DESTE formulário e DESTA pergunta, e revogar/apagar de verdade.
+    from: () => ({
+      insert: () => ({ select: () => ({ single: async () => ({ data: { id: 'file-teste' }, error: null }) }) }),
+    }),
     storage: {
       from: () => ({ createSignedUploadUrl }),
     },
@@ -137,5 +142,28 @@ describe('POST /api/upload/sign-url', () => {
     expect(createSignedUploadUrl.mock.calls[0][0]).toMatch(
       new RegExp(`^owner-1/${FORM_ID}/[0-9a-f-]+\\.pdf$`)
     )
+  })
+})
+
+describe('🛡️ o navegador recebe REFERÊNCIA, não endereço (16/08)', () => {
+  it('devolve file_id e NÃO devolve mais public_url', async () => {
+    // Antes a rota devolvia a URL pública do bucket e o player a gravava direto na resposta.
+    // Isso deixava o endereço nas mãos do cliente — que podia trocá-lo pelo de outro formulário
+    // (o validador só conferia o prefixo). Agora quem monta a URL é o servidor, na gravação.
+    formSingle.mockResolvedValue({
+      data: { id: 'form-1', user_id: 'user-1', questions: [{ id: 'q1', type: 'file_upload' }] },
+      error: null,
+    })
+    createSignedUploadUrl.mockResolvedValue({
+      data: { signedUrl: 'https://storage/assinada', token: 'tok' }, error: null,
+    })
+
+    const res = await POST(request({ form_id: 'form-1', mime: 'application/pdf', size: 1000, question_id: 'q1' }))
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.file_id).toBe('file-teste')
+    expect(body.public_url).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain('/storage/v1/object/public/')
   })
 })

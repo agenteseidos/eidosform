@@ -358,19 +358,34 @@ function validateFileUpload(value: unknown, maxFileSizeMb?: number): FieldValida
     return { valid: false, error: 'Upload deve ser um objeto com name e url' }
   }
   const obj = value as Record<string, unknown>
-  if (typeof obj.name !== 'string' || typeof obj.url !== 'string') {
-    return { valid: false, error: 'Upload deve ter name (string) e url (string)' }
+  if (typeof obj.name !== 'string') {
+    return { valid: false, error: 'Upload deve ter name (string)' }
   }
-  // A URL DEVE apontar para o bucket público de uploads (form-uploads).
-  // Antes a condição era uma disjunção que aceitava qualquer https?:// —
-  // tornando a restrição inútil e permitindo URL externa controlada pelo
-  // respondente (phishing/tracking disfarçado de anexo). (P1-4)
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const allowedPrefix = supabaseUrl
-    ? `${supabaseUrl}/storage/v1/object/public/form-uploads/`
-    : '/storage/v1/object/public/form-uploads/'
-  if (!obj.url.startsWith(allowedPrefix)) {
-    return { valid: false, error: 'URL do arquivo inválida' }
+
+  // ESTRUTURA aqui; DONO no servidor (16/08). Esta função é síncrona e não fala com o banco,
+  // então ela confere o FORMATO — quem prova que o arquivo pertence a ESTE formulário e a ESTA
+  // pergunta é `validarAnexosDaResposta`, na gravação.
+  //
+  // ⚠️ Por que a mudança: a regra antiga ("a URL tem de começar com o prefixo do bucket") parecia
+  // uma trava e não era. Ela impedia link externo — isso funcionava —, mas aceitava QUALQUER URL
+  // daquele bucket. Como o bucket é um só para todos os clientes, dava para pegar o endereço de
+  // um anexo de um formulário e gravá-lo como resposta de OUTRO. O buraco é anterior a este
+  // redesenho e não seria corrigido só trocando o prefixo público pelo nosso.
+  const temReferencia = typeof obj.file_id === 'string' && obj.file_id.length > 0
+  const temUrlLegada = typeof obj.url === 'string' && obj.url.length > 0
+  if (!temReferencia && !temUrlLegada) {
+    return { valid: false, error: 'Upload deve ter file_id (ou url legada)' }
+  }
+  if (!temReferencia && temUrlLegada) {
+    // Caminho LEGADO, mantido só enquanto o backfill roda. Segue exigindo o prefixo do bucket
+    // para não regredir a proteção contra link externo.
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const allowedPrefix = supabaseUrl
+      ? `${supabaseUrl}/storage/v1/object/public/form-uploads/`
+      : '/storage/v1/object/public/form-uploads/'
+    if (!(obj.url as string).startsWith(allowedPrefix)) {
+      return { valid: false, error: 'URL do arquivo inválida' }
+    }
   }
   if (obj.name.length > 500) {
     return { valid: false, error: 'Nome do arquivo muito longo' }

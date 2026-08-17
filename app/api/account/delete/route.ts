@@ -68,6 +68,13 @@ export async function POST() {
 
   const adminSupabase = createAdminClient()
 
+  // ANEXOS: a política publicada promete exclusão em até 30 dias e o storage não era tocado —
+  // o arquivo do respondente sobrevivia à exclusão da conta. Revoga e apaga ANTES do cascade.
+  try {
+    const { purgarAnexos } = await import('@/lib/form-file-purge')
+    await purgarAnexos(adminSupabase, { userId: user.id })
+  } catch { /* a exclusão da conta nunca falha por causa do anexo */ }
+
   // form_whatsapp_settings.created_by → profiles(id) has no ON DELETE CASCADE
   await adminSupabase.from('form_whatsapp_settings').delete().eq('created_by', user.id)
 

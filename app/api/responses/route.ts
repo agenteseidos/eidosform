@@ -1,4 +1,5 @@
 import type { ResponseInsert, ResponseUpdate, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
+import { reivindicarAnexos } from '@/lib/form-file-claim'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -320,6 +321,16 @@ export async function POST(req: NextRequest) {
       { status: 422, headers: CORS_HEADERS }
     )
   }
+
+  // ANEXOS: prova o vínculo e deixa o SERVIDOR montar a URL (16/08). Antes daqui, `answers`
+  // carrega apenas a REFERÊNCIA que o navegador mandou; depois, carrega o endereço nosso.
+  // Anexo cujo vínculo não confere é removido em silêncio — derrubar o envio inteiro puniria o
+  // lead por um ataque que não é dele.
+  answers = await reivindicarAnexos(supabase, {
+    formId: form_id as string,
+    responseId: null,
+    answers: answers as Record<string, unknown>,
+  }) as typeof answers
 
   // Bug #5: Auto-detect completed based on required questions
   const completed = isResponseComplete(answers, effectiveQuestions)

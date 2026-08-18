@@ -304,7 +304,13 @@ function usePdfBlob(url: string | null, ativo: boolean): { src: string | null; e
       return () => { vivo = false }
     }
     Promise.resolve().then(() => { if (vivo) { setSrc(null); setErro(false) } })
-    fetch(url, { credentials: 'include' })
+    // `credentials: 'same-origin'` (18/08): o cookie é preciso na NOSSA rota /arquivo, e ela é
+    // mesma-origem — o `same-origin` cobre isso. O fetch então SEGUE o 302 até o storage, que é
+    // cross-origin e responde `access-control-allow-origin: *`. E a regra do CORS proíbe curinga
+    // `*` junto de `credentials: 'include'` — foi por isso que o PDF falhava no fetch enquanto a
+    // <img> (que só desenha pixels e ignora CORS) funcionava. A autorização já aconteceu no
+    // porteiro ANTES do redirect; a URL assinada do storage não precisa do nosso cookie.
+    fetch(url, { credentials: 'same-origin' })
       .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob() })
       .then((b) => {
         if (!vivo) return

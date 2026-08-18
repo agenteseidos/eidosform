@@ -39,7 +39,12 @@ function buildFormPlayerCsp(nonce: string): string {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https: blob:",
     "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.asaas.com https://www.facebook.com https://connect.facebook.net https://*.facebook.net https://*.facebook.com https://analytics.tiktok.com https://*.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.google.com https://*.googleadservices.com https://www.google.com/pagead https://*.doubleclick.net https://viacep.com.br https://calendly.com https://*.calendly.com",
-    "frame-src 'self' https:",
+    // `blob:` no frame-src + object-src explícito (18/08): o preview de PDF do painel desenha
+    // um blob LOCAL num iframe, e o visualizador de PDF do Chrome é conteúdo de PLUGIN — regido
+    // pelo object-src, que sem declaração cai no default-src 'self' e BARRA blob:. Era a causa
+    // final do ícone de página quebrada: o arquivo baixava, e a CSP proibia desenhá-lo.
+    "frame-src 'self' https: blob:",
+    "object-src 'self' blob:",
     "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://assets.calendly.com",
     'frame-ancestors *',
     "form-action 'self'",

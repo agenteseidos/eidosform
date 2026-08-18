@@ -53,15 +53,46 @@ export async function purgarAnexos(db: SupabaseClient, alvo: Alvo): Promise<{ re
       logError('[purge] falha ao listar anexos — nada removido', error, alvo)
       return { revogados: 0, removidos: 0 }
     }
-    const lista = (fichas ?? []) as Array<{ id: string; object_path: string }>
+    let lista = (fichas ?? []) as Array<{ id: string; object_path: string }>
     if (!lista.length) return { revogados: 0, removidos: 0 }
 
-    // 1) REVOGA primeiro. A partir daqui o link responde 404, mesmo que o passo 2 falhe.
+    // ANEXO COMPARTILHADO (18/08, achado no teste real do Sidney). O MESMO objeto pode estar
+    // vinculado a mais de uma ficha — acontece quando o mesmo arquivo é enviado em respostas
+    // diferentes. Ao excluir UMA resposta, remover o objeto do storage cegamente derrubava o
+    // anexo da OUTRA, que continua viva: o painel mostrava o arquivo e o preview dizia que não
+    // existia. Aqui, só some do storage o objeto que nenhuma ficha SOBREVIVENTE ainda usa.
+    if (alvo.responseId) {
+      const caminhos = lista.map((f) => f.object_path)
+      const { data: irmas } = await db
+        .from('form_files')
+        .select('id, object_path, response_id, status')
+        .in('object_path', caminhos)
+      const aindaEmUso = new Set(
+        ((irmas ?? []) as Array<{ id: string; object_path: string; response_id: string | null; status: string }>)
+          .filter((i) => i.status !== 'deleted'
+            && !lista.some((f) => f.id === i.id)     // não é uma das que estamos apagando
+            && i.response_id !== alvo.responseId)     // e pertence a OUTRA resposta
+          .map((i) => i.object_path),
+      )
+      if (aindaEmUso.size) {
+        log('[purge] objeto compartilhado por outra resposta — revoga a ficha, PRESERVA o arquivo', {
+          ...alvo, preservados: aindaEmUso.size,
+        })
+        lista = lista.filter((f) => !aindaEmUso.has(f.object_path))
+      }
+      // As fichas desta resposta são revogadas de qualquer forma abaixo — o que muda é se o
+      // OBJETO sai do storage. `lista` agora contém só o que pode sair de verdade.
+    }
+
+    // 1) REVOGA primeiro — TODAS as fichas do alvo (inclusive as cujo objeto será preservado
+    //    por estar em uso por outra resposta: o LINK desta resposta morre de qualquer jeito).
+    //    A partir daqui o link responde 404, mesmo que o passo 2 falhe.
     const agora = new Date().toISOString()
+    const todasDoAlvo = (fichas ?? []) as Array<{ id: string }>
     const { error: erroRevoga } = await db
       .from('form_files')
       .update({ status: 'deleted', revoked_at: agora } as never)
-      .in('id', lista.map((f) => f.id))
+      .in('id', todasDoAlvo.map((f) => f.id))
     if (erroRevoga) {
       logError('[purge] falha ao revogar — abortando remoção (link ainda vivo)', erroRevoga, alvo)
       return { revogados: 0, removidos: 0 }

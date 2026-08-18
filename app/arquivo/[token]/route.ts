@@ -94,7 +94,20 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
     declared_mime: string | null; status: string; revoked_at: string | null; expires_at: string | null
   }
 
-  if (a.status === 'deleted' || a.revoked_at) return nao()
+  // 410 GONE para arquivo APAGADO — distinto do 404 de "não existe ou você não pode".
+  // Não vaza nada: quem chega aqui já provou posse de um token íntegro, emitido por nós para
+  // ESTE arquivo. O ganho é o painel poder dizer "foi excluído" em vez de "não foi possível
+  // carregar, use o botão Baixar" — que manda o dono tentar baixar o que não existe mais.
+  if (a.status === 'deleted' || a.revoked_at) {
+    return new NextResponse('Arquivo excluído', {
+      status: 410,
+      headers: {
+        'Cache-Control': 'private, no-store, max-age=0',
+        'Referrer-Policy': 'no-referrer',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
+  }
   if (a.expires_at && Date.parse(a.expires_at) <= Date.now()) return nao()
   // `pending` = upload assinado mas nunca confirmado. Não é arquivo entregue; não se serve.
   if (a.status !== 'ready' && a.status !== 'claimed') return nao()

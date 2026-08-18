@@ -291,19 +291,20 @@ function DragScrollArea({ children, className }: { children: ReactNode; classNam
  * include`) e recebe os bytes. Viram um blob local (`blob:` = MESMA origem), e o iframe aponta
  * para ele. Sem plugin cross-origin, sem sandbox brigando. O objeto é revogado ao fechar.
  */
-function usePdfBlob(url: string | null, ativo: boolean): { src: string | null; erro: boolean } {
+function usePdfBlob(url: string | null, ativo: boolean): { src: string | null; erro: boolean; excluido: boolean } {
   const [src, setSrc] = useState<string | null>(null)
   const [erro, setErro] = useState(false)
+  const [excluido, setExcluido] = useState(false)
   useEffect(() => {
     let vivo = true
     let objectUrl: string | null = null
     // Reset dentro de microtask: setState SÍNCRONO no corpo do effect dispara render em cascata
     // (lint react-hooks). Aqui o reset e o fetch já são assíncronos, então não há cascata.
     if (!ativo || !url) {
-      Promise.resolve().then(() => { if (vivo) { setSrc(null); setErro(false) } })
+      Promise.resolve().then(() => { if (vivo) { setSrc(null); setErro(false); setExcluido(false) } })
       return () => { vivo = false }
     }
-    Promise.resolve().then(() => { if (vivo) { setSrc(null); setErro(false) } })
+    Promise.resolve().then(() => { if (vivo) { setSrc(null); setErro(false); setExcluido(false) } })
     // `credentials: 'same-origin'` (18/08): o cookie é preciso na NOSSA rota /arquivo, e ela é
     // mesma-origem — o `same-origin` cobre isso. O fetch então SEGUE o 302 até o storage, que é
     // cross-origin e responde `access-control-allow-origin: *`. E a regra do CORS proíbe curinga
@@ -311,7 +312,13 @@ function usePdfBlob(url: string | null, ativo: boolean): { src: string | null; e
     // <img> (que só desenha pixels e ignora CORS) funcionava. A autorização já aconteceu no
     // porteiro ANTES do redirect; a URL assinada do storage não precisa do nosso cookie.
     fetch(url, { credentials: 'same-origin' })
-      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob() })
+      .then((r) => {
+        // 410 = o arquivo foi EXCLUÍDO (resposta/formulário/conta apagados). É estado legítimo,
+        // não falha — e o dono precisa saber disso em vez de ser mandado baixar o que não existe.
+        if (r.status === 410) { if (vivo) setExcluido(true); throw new Error('410') }
+        if (!r.ok) throw new Error(String(r.status))
+        return r.blob()
+      })
       .then((b) => {
         if (!vivo) return
         objectUrl = URL.createObjectURL(b)
@@ -320,7 +327,7 @@ function usePdfBlob(url: string | null, ativo: boolean): { src: string | null; e
       .catch(() => { if (vivo) setErro(true) })
     return () => { vivo = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [url, ativo])
-  return { src, erro }
+  return { src, erro, excluido }
 }
 
 // ─── Preview de arquivo (imagem/PDF/outros) — reutilizado pela tabela E pelo modal ─
@@ -328,7 +335,7 @@ function FilePreviewDialog({ file, onClose }: { file: FileUpload | null; onClose
   const ehPdf = file?.type === 'application/pdf'
   // O anexo do storage não vem com cabeçalho de download quando servido para preview; aqui
   // buscamos os bytes com a sessão do dono e desenhamos localmente.
-  const { src: pdfSrc, erro: pdfErro } = usePdfBlob(file ? getFilePreviewUrl(file) : null, !!ehPdf)
+  const { src: pdfSrc, erro: pdfErro, excluido: pdfExcluido } = usePdfBlob(file ? getFilePreviewUrl(file) : null, !!ehPdf)
   if (!file) return null
   return (
     <Dialog open onOpenChange={onClose}>
@@ -350,7 +357,12 @@ function FilePreviewDialog({ file, onClose }: { file: FileUpload | null; onClose
                navegador do dono, com a sessão dele. (Previsto no parecer Codex.) */
             <Image src={getFilePreviewUrl(file)} alt={file.name} width={800} height={600} unoptimized className="max-w-full h-auto rounded-lg mx-auto" />
           ) : ehPdf ? (
-            pdfErro ? (
+            pdfExcluido ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                <File className="w-16 h-16 mb-4 opacity-40" />
+                <p className="text-sm">Este arquivo foi excluído e não está mais disponível.</p>
+              </div>
+            ) : pdfErro ? (
               <div className="flex flex-col items-center justify-center py-12 text-slate-400">
                 <File className="w-16 h-16 mb-4 opacity-40" />
                 <p className="text-sm">Não foi possível carregar o preview. Use o botão Baixar.</p>

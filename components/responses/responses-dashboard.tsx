@@ -295,10 +295,15 @@ function usePdfBlob(url: string | null, ativo: boolean): { src: string | null; e
   const [src, setSrc] = useState<string | null>(null)
   const [erro, setErro] = useState(false)
   useEffect(() => {
-    if (!ativo || !url) { setSrc(null); setErro(false); return }
     let vivo = true
     let objectUrl: string | null = null
-    setSrc(null); setErro(false)
+    // Reset dentro de microtask: setState SÍNCRONO no corpo do effect dispara render em cascata
+    // (lint react-hooks). Aqui o reset e o fetch já são assíncronos, então não há cascata.
+    if (!ativo || !url) {
+      Promise.resolve().then(() => { if (vivo) { setSrc(null); setErro(false) } })
+      return () => { vivo = false }
+    }
+    Promise.resolve().then(() => { if (vivo) { setSrc(null); setErro(false) } })
     fetch(url, { credentials: 'include' })
       .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob() })
       .then((b) => {

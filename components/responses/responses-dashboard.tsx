@@ -302,9 +302,13 @@ function FilePreviewDialog({ file, onClose }: { file: FileUpload | null; onClose
                navegador do dono, com a sessão dele. (Previsto no parecer Codex.) */
             <Image src={getFilePreviewUrl(file)} alt={file.name} width={800} height={600} unoptimized className="max-w-full h-auto rounded-lg mx-auto" />
           ) : file.type === 'application/pdf' ? (
-            // sandbox sem allow-scripts: se o anexo for um HTML disfarçado de PDF
-            // (MIME confusion), nada executa no contexto do dashboard.
-            <iframe src={getFilePreviewUrl(file)} sandbox="" className="w-full h-[60vh] rounded-lg border" title={file.name} />
+            // `allow-scripts` é NECESSÁRIO para PDF (18/08): o visualizador de PDF do Chrome é
+            // ele próprio JavaScript — com sandbox vazio ele nem carrega, e o preview virava um
+            // ícone de página quebrada (2º achado do teste real do Sidney). O que protege é o
+            // que NÃO está aqui: sem `allow-same-origin`, o conteúdo roda em origem OPACA — não
+            // lê cookie, não toca no DOM do painel, não fala com a nossa origem. E um HTML
+            // disfarçado chega com content-type de PDF, que o navegador não renderiza como HTML.
+            <iframe src={getFilePreviewUrl(file)} sandbox="allow-scripts" className="w-full h-[60vh] rounded-lg border" title={file.name} />
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <File className="w-16 h-16 mb-4 opacity-40" />

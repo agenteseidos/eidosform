@@ -323,7 +323,10 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
     const labelToValue: Record<string, string> = {}
     for (const [questionId, value] of Object.entries(answers)) {
       const label = questionIdToLabel[questionId]
-      if (label) labelToValue[label] = formatAnswerValue(value)
+      if (!label) continue
+      labelToValue[label] = ehAnexoComUrl(value)
+        ? celulaDeArquivo(value.name, value.url)
+        : protegerCelula(formatAnswerValue(value))
     }
 
     const now = new Date()
@@ -342,11 +345,11 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
       if (header === 'Data/Hora') return timestamp
       // Identidade em qualquer posição — desde que o nome não colida com o
       // título de uma pergunta do form (aí a RESPOSTA vence, não o url_param).
-      if (isIdentityHeader(header)) return urlParams?.[header] ?? ''
+      if (isIdentityHeader(header)) return protegerCelula(urlParams?.[header] ?? '')
       if (header === RESPONSE_ID_COLUMN) return responseId
       if (header === STATUS_COLUMN) return status
-      if (header === META_EVENTS_COLUMN) return metaEventsValue
-      if (UTM_COLUMNS.includes(header)) return utmData[header] ?? ''
+      if (header === META_EVENTS_COLUMN) return protegerCelula(metaEventsValue)
+      if (UTM_COLUMNS.includes(header)) return protegerCelula(utmData[header] ?? '')
       return labelToValue[header] ?? ''
     })
 
@@ -381,7 +384,7 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
         await sheets.spreadsheets.values.update({
           spreadsheetId,
           range: `Respostas!A${rowIndex}`,
-          valueInputOption: 'RAW',
+          valueInputOption: 'USER_ENTERED',
           requestBody: { values: [row] },
         })
         return { rowIndex }
@@ -412,7 +415,7 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
         await sheets.spreadsheets.values.update({
           spreadsheetId,
           range: `Respostas!A${foundRow}`,
-          valueInputOption: 'RAW',
+          valueInputOption: 'USER_ENTERED',
           requestBody: { values: [row] },
         })
         return { rowIndex: foundRow }
@@ -422,7 +425,7 @@ export async function upsertSubmission(opts: UpsertOptions): Promise<UpsertResul
     const appendRes = await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: 'Respostas!A:A',
-      valueInputOption: 'RAW',
+      valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: [row] },
     })
@@ -455,6 +458,26 @@ export async function appendSubmission(
     responseId: '',
     status: STATUS_COMPLETE,
   })
+}
+
+/** Escudo anti-fórmula (18/08): valor de respondente que começa com caractere de fórmula ganha
+ *  apóstrofo — condição de segurança para USER_ENTERED existir sem injeção na planilha do cliente. */
+export function protegerCelula(v: string): string {
+  return /^[=+\-@\t\r]/.test(v) ? `'${v}` : v
+}
+
+/** Anexo → link CLICÁVEL (=HYPERLINK mostra o NOME e abre o endereço). Separador `;` = locale
+ *  pt-BR das planilhas dos clientes; aspas duplicadas escapam dentro da fórmula. */
+export function celulaDeArquivo(nome: string, url: string): string {
+  const esc = (t: string) => t.replace(/"/g, '""')
+  return `=HYPERLINK("${esc(url)}";"${esc(nome)}")`
+}
+
+function ehAnexoComUrl(v: unknown): v is { name: string; url: string } {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) &&
+    typeof (v as Record<string, unknown>).name === 'string' &&
+    typeof (v as Record<string, unknown>).url === 'string' &&
+    String((v as Record<string, unknown>).url).length > 0
 }
 
 function formatAnswerValue(value: unknown): string {

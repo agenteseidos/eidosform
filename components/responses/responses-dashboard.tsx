@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, type ReactNode, type PointerEvent as RPointerEvent, type MouseEvent as RMouseEvent } from 'react'
+import { useState, useMemo, useRef, useEffect, type ReactNode, type PointerEvent as RPointerEvent, type MouseEvent as RMouseEvent } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -279,8 +279,45 @@ function DragScrollArea({ children, className }: { children: ReactNode; classNam
   )
 }
 
+/**
+ * PDF via BLOB, não via iframe cross-origin (18/08).
+ *
+ * O visualizador de PDF do Chrome é um plugin, e o Chrome NÃO o executa dentro de um iframe
+ * cross-origin com sandbox — nem com allow-scripts. O redirect do /arquivo leva ao domínio do
+ * storage, que é justamente cross-origin. Por isso o preview do PDF ficava como um ícone de
+ * página quebrada, enquanto a IMAGEM (uma <img>, que não usa plugin) funcionava.
+ *
+ * Solução: o NAVEGADOR DO DONO busca o arquivo (a sessão dele acompanha o fetch, `credentials:
+ * include`) e recebe os bytes. Viram um blob local (`blob:` = MESMA origem), e o iframe aponta
+ * para ele. Sem plugin cross-origin, sem sandbox brigando. O objeto é revogado ao fechar.
+ */
+function usePdfBlob(url: string | null, ativo: boolean): { src: string | null; erro: boolean } {
+  const [src, setSrc] = useState<string | null>(null)
+  const [erro, setErro] = useState(false)
+  useEffect(() => {
+    if (!ativo || !url) { setSrc(null); setErro(false); return }
+    let vivo = true
+    let objectUrl: string | null = null
+    setSrc(null); setErro(false)
+    fetch(url, { credentials: 'include' })
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob() })
+      .then((b) => {
+        if (!vivo) return
+        objectUrl = URL.createObjectURL(b)
+        setSrc(objectUrl)
+      })
+      .catch(() => { if (vivo) setErro(true) })
+    return () => { vivo = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [url, ativo])
+  return { src, erro }
+}
+
 // ─── Preview de arquivo (imagem/PDF/outros) — reutilizado pela tabela E pelo modal ─
 function FilePreviewDialog({ file, onClose }: { file: FileUpload | null; onClose: () => void }) {
+  const ehPdf = file?.type === 'application/pdf'
+  // O anexo do storage não vem com cabeçalho de download quando servido para preview; aqui
+  // buscamos os bytes com a sessão do dono e desenhamos localmente.
+  const { src: pdfSrc, erro: pdfErro } = usePdfBlob(file ? getFilePreviewUrl(file) : null, !!ehPdf)
   if (!file) return null
   return (
     <Dialog open onOpenChange={onClose}>
@@ -301,14 +338,19 @@ function FilePreviewDialog({ file, onClose }: { file: FileUpload | null; onClose
                levaria 404, deixando a miniatura quebrada. Sem otimizar, quem busca é o
                navegador do dono, com a sessão dele. (Previsto no parecer Codex.) */
             <Image src={getFilePreviewUrl(file)} alt={file.name} width={800} height={600} unoptimized className="max-w-full h-auto rounded-lg mx-auto" />
-          ) : file.type === 'application/pdf' ? (
-            // `allow-scripts` é NECESSÁRIO para PDF (18/08): o visualizador de PDF do Chrome é
-            // ele próprio JavaScript — com sandbox vazio ele nem carrega, e o preview virava um
-            // ícone de página quebrada (2º achado do teste real do Sidney). O que protege é o
-            // que NÃO está aqui: sem `allow-same-origin`, o conteúdo roda em origem OPACA — não
-            // lê cookie, não toca no DOM do painel, não fala com a nossa origem. E um HTML
-            // disfarçado chega com content-type de PDF, que o navegador não renderiza como HTML.
-            <iframe src={getFilePreviewUrl(file)} sandbox="allow-scripts" className="w-full h-[60vh] rounded-lg border" title={file.name} />
+          ) : ehPdf ? (
+            pdfErro ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                <File className="w-16 h-16 mb-4 opacity-40" />
+                <p className="text-sm">Não foi possível carregar o preview. Use o botão Baixar.</p>
+              </div>
+            ) : pdfSrc ? (
+              // Blob LOCAL (mesma origem) — o plugin de PDF do Chrome roda aqui, o que não
+              // acontecia com o iframe apontando para o storage cross-origin.
+              <iframe src={pdfSrc} className="w-full h-[60vh] rounded-lg border" title={file.name} />
+            ) : (
+              <div className="flex items-center justify-center py-12 text-slate-400 text-sm">Carregando preview…</div>
+            )
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <File className="w-16 h-16 mb-4 opacity-40" />

@@ -357,17 +357,68 @@ Os 5 defeitos reais achados e corrigidos no ato: consentimento não reconferido 
 (elen b14fd7c) · XSS por href em aspas simples (f3cc98f) · API key crua no rate limit (f3cc98f) ·
 dropdown/checkbox de 1 opção = 422 permanente (0df8500) · rating min≥max inenviável (0df8500).
 
-## D-08 · Meta CAPI por cliente (pixel global aposentado)
+## D-08 · ✅ FEITO (18/08/2026) — Meta CAPI por cliente (pixel global aposentado)
 
 **Origem:** §0.8 do lote 0 — o ÚNICO dos 8 achados da investigação que nunca entrou em lote nem
 em demanda (varredura 11/08/2026).
 
-**O problema.** `lib/meta-capi.ts` usa `META_PIXEL_ID`/token GLOBAIS da plataforma e
-`event_name: 'Lead'` fixo. Os pixels dos clientes são POR FORMULÁRIO: o CAPI server-side hoje
-mistura eventos de todos os clientes num pixel só, sem dedup real com o browser. Por isso o CAPI
-está **fora da vitrine** ("NÃO ANUNCIAR", auditoria LP 2026-07-28).
+**O problema.** `lib/meta-capi.ts` usava `META_PIXEL_ID`/token GLOBAIS da plataforma e
+`event_name: 'Lead'` fixo. Os pixels dos clientes são POR FORMULÁRIO: o evento do lead do cliente
+— com e-mail e telefone hasheados — ia para o ativo do Instituto Eidos, e a conversão do cliente
+nunca chegava por essa via. Sem `event_id` real, não havia dedup com o browser.
 
-**O que é.** Funcionalidade, não conserto: config de pixel+token CAPI por cliente/formulário,
-`event_id` real para dedup, e só então anunciar. Pré-requisito para vender CAPI como recurso.
+**O que ficou (commit `8ea6e6c`).**
 
-**Esforço:** 1-2 sessões. Bloqueia apenas o ANÚNCIO do recurso, não as vendas.
+- **Token por formulário**, em `form_capi_credentials`, **cifrado** (AES-256-GCM,
+  `META_CAPI_ENC_KEY`, sem cadeia de fallback). ⚠️ Tabela PRÓPRIA e não coluna em `forms` porque
+  `forms.pixels` é selecionada na página pública e viaja para o navegador de TODO visitante — o
+  Pixel ID pode (é público), o token não.
+- **Sem fallback global.** `decidirEnviosCapi` (núcleo puro) recusa envio sem pixel ou sem token
+  DO FORMULÁRIO. Teste dedicado quebra se o fallback voltar, mesmo com as vars antigas setadas.
+- **Dedup real.** `eventID` gerado no navegador, RESERVADO antes do POST para os eventos de
+  conclusão (que disparam depois dele) e reusado pelo servidor. Evento sem id não é enviado:
+  conversão a menos é melhor que conversão inflada.
+- **`event_name` real**, não 'Lead' fixo.
+- **`META_TEST_EVENT_CODE` removido** — var global que, esquecida, anularia a otimização de TODOS
+  os clientes de uma vez, em silêncio.
+- **Rota própria** `/api/forms/[id]/capi-token` (PUT/GET/DELETE), fora do autosave: credencial não
+  faz viagem de volta ao navegador; o que retorna é só a dica `••••ab12`.
+- **Validação contra o Meta na hora de salvar**, com motivo traduzido. Token inválido não é gravado.
+
+**Vars:** `META_CAPI_ENC_KEY` passa a ser obrigatória. `META_PIXEL_ID`, `META_ACCESS_TOKEN` e
+`META_TEST_EVENT_CODE` não são lidos por nenhum código — removidos da Vercel.
+
+**Libera o anúncio:** o "NÃO ANUNCIAR CAPI" da auditoria LP 2026-07-28 caiu. Ver CLAUDE.md.
+
+---
+
+## D-09 · Pixel do PRÓPRIO EidosForm (funil da plataforma)
+
+**Origem:** Sidney, 18/08/2026, logo depois do D-08. Pergunta dele: *"eu vou ter um pixel do
+eidosform central pra todo mundo que acessa a plataforma ele mapear?"*
+
+**O problema.** Varredura de 18/08 confirmou: **não existe pixel nenhum nas páginas da própria
+plataforma.** Nem no layout raiz, nem na página de vendas (`/v3`, `/v4`), nem no cadastro, nem no
+checkout. O funil do EidosForm está sem medição — e o objetivo declarado do Sidney é VENDER.
+Sem isso, campanha de aquisição otimiza por clique, não por assinatura paga.
+
+**⚠️ A FRONTEIRA QUE NÃO PODE SER CRUZADA.** O pixel do Sidney vai nas páginas DELE. **NUNCA** em
+`/f/[slug]`: o endereço é o mesmo domínio, mas quem está ali é LEAD DO CLIENTE, vindo do anúncio
+do cliente, respondendo o formulário do cliente. Pixel da plataforma ali seria recriar exatamente
+o vazamento que o D-08 acabou de fechar — desta vez pelo navegador em vez do servidor.
+
+**Escopo pedido pelo Sidney:** páginas públicas **e o builder**.
+- **Públicas:** `/`, `/v3`, `/v4`, `/register`, `/login`, checkout e confirmação de assinatura.
+- **Builder / área logada:** eventos de ativação (criou 1º formulário, publicou, recebeu 1ª
+  resposta). São os sinais que fazem a campanha aprender a trazer assinante que FICA, não só quem
+  se cadastra. ⚠️ Cuidado ao instrumentar o painel de RESPOSTAS: ali há dado de lead de cliente na
+  tela; evento de página nessa rota não pode carregar identificador de resposta nem de lead.
+
+**O que vale mais:** o evento de COMPRA, ligado ao Asaas. Conversão de assinatura paga é o que
+faz a otimização funcionar — cadastro sozinho é sinal fraco e enche a campanha de curioso.
+
+**Reaproveitável:** `lib/pixel-events.ts` já tem o disparo com `eventID` (feito no D-08), então a
+mesma dedup navegador↔servidor serve aqui. O envio server-side pode reusar `sendMetaCAPIEvent`
+passando o pixel/token da PLATAFORMA — que é o uso legítimo dele, agora que é parâmetro.
+
+**Esforço:** ~2 sessões, incluindo os eventos de compra.

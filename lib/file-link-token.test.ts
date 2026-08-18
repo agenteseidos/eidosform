@@ -65,3 +65,24 @@ describe('crachá do anexo', () => {
     expect(u).not.toContain('supabase')
   })
 })
+
+describe('🛡️ visualizar × baixar — a lista de tipos é fechada', () => {
+  it('a rota só desenha na tela o que está na lista; o resto continua baixando', async () => {
+    // Achado no 1º teste real (18/08): o preview do painel era um retângulo BRANCO. Causa: o
+    // anexo é servido com `Content-Disposition: attachment` (correto — impede HTML/SVG de
+    // terceiro ser renderizado), e o navegador se recusa a desenhar isso no iframe.
+    // A lista existe para NÃO virar "qualquer imagem pode": SVG é imagem e carrega script.
+    const fonte = await import('node:fs').then((fs) =>
+      fs.readFileSync('app/arquivo/[token]/route.ts', 'utf8'))
+
+    const bloco = fonte.slice(fonte.indexOf('PODE_DESENHAR = new Set'), fonte.indexOf('])', fonte.indexOf('PODE_DESENHAR')))
+    expect(bloco).toContain('application/pdf')
+    expect(bloco).toContain('image/png')
+    // Os perigosos NÃO podem entrar: os dois renderizam script.
+    expect(bloco).not.toContain('image/svg')
+    expect(bloco).not.toContain('text/html')
+    // E o download só é dispensado quando o pedido é explícito E o tipo está na lista.
+    expect(fonte).toContain("searchParams.get('preview') === '1'")
+    expect(fonte).toContain('podeExibir ? {} : { download:')
+  })
+})

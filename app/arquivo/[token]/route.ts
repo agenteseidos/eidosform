@@ -28,6 +28,21 @@ import { log, logError, logWarn } from '@/lib/logger'
 /** Segundos de validade da URL assinada. Curto de propósito: é só a travessia do redirect. */
 const VALIDADE_S = 60
 
+/**
+ * Tipos que o painel pode DESENHAR na tela (`?preview=1`) em vez de baixar.
+ *
+ * Por que uma lista fechada: o anexo é conteúdo de terceiro. Um HTML ou um SVG renderizado
+ * carrega script junto — e SVG é imagem para o navegador, então entraria numa regra genérica
+ * de "imagem pode". Fora desta lista, tudo continua baixando.
+ *
+ * O que limita o estrago mesmo assim: o redirect leva ao domínio do STORAGE, não ao nosso, e o
+ * `iframe` do painel tem `sandbox=""` — script não roda nem com a nossa origem, nem com a dele.
+ */
+const PODE_DESENHAR = new Set([
+  'application/pdf',
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif',
+])
+
 function nao(): NextResponse {
   // 404 mudo, com cabeçalhos que impedem qualquer camada de guardar a resposta.
   return new NextResponse('Arquivo não encontrado', {
@@ -62,7 +77,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   // ── A FICHA DO ARQUIVO ────────────────────────────────────────────────────────────────────
   const { data: arquivo, error } = await db
     .from('form_files')
-    .select('id, form_id, object_path, original_name, status, revoked_at, expires_at')
+    .select('id, form_id, object_path, original_name, declared_mime, status, revoked_at, expires_at')
     .eq('id', lido.fileId)
     .maybeSingle()
 
@@ -76,7 +91,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
 
   const a = arquivo as {
     id: string; form_id: string; object_path: string; original_name: string | null
-    status: string; revoked_at: string | null; expires_at: string | null
+    declared_mime: string | null; status: string; revoked_at: string | null; expires_at: string | null
   }
 
   if (a.status === 'deleted' || a.revoked_at) return nao()
@@ -127,20 +142,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   }
 
   // ── A TRAVESSIA ───────────────────────────────────────────────────────────────────────────
+  // VISUALIZAR × BAIXAR (18/08). O padrão é BAIXAR: anexo é conteúdo de terceiro e forçar
+  // download é o que impede um HTML/SVG de ser renderizado. Mas isso deixava o preview do painel
+  // como um retângulo branco — o navegador se recusa a desenhar no iframe o que veio marcado
+  // como anexo. Com `?preview=1` e um tipo da lista fechada, servimos para exibição.
+  const querPreview = new URL(req.url).searchParams.get('preview') === '1'
+  const podeExibir = querPreview && PODE_DESENHAR.has(String(a.declared_mime ?? ''))
+
   const { data: assinada, error: erroAssinatura } = await db.storage
     .from('form-uploads')
-    .createSignedUrl(a.object_path, VALIDADE_S, {
-      // O anexo BAIXA, não executa. Um HTML/SVG enviado por respondente e aberto no nosso
-      // domínio seria script rodando com a nossa origem.
-      download: a.original_name ?? true,
-    })
+    .createSignedUrl(a.object_path, VALIDADE_S,
+      podeExibir ? {} : { download: a.original_name ?? true })
 
   if (erroAssinatura || !assinada?.signedUrl) {
     logError('[arquivo] falha ao assinar a leitura', erroAssinatura, { fileId: a.id })
     return nao()
   }
 
-  log('[arquivo] entregue', { fileId: a.id, formId: f.id, modo: f.file_access_mode })
+  log('[arquivo] entregue', { fileId: a.id, formId: f.id, modo: f.file_access_mode, exibindo: podeExibir })
 
   return NextResponse.redirect(assinada.signedUrl, {
     status: 302,

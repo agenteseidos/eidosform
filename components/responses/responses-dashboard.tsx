@@ -115,6 +115,21 @@ function getFileUrl(file: FileUpload): string {
   return file.url || file.data || ''
 }
 
+/**
+ * URL para DESENHAR na tela (`?preview=1`), em vez de baixar.
+ *
+ * O anexo é servido com `Content-Disposition: attachment` por padrão — é isso que impede um
+ * HTML/SVG de terceiro ser renderizado. Só que o navegador então se recusa a desenhar o arquivo
+ * dentro do iframe, e o preview virava um retângulo BRANCO (achado no 1º teste real, 18/08).
+ * A rota só honra o pedido para uma lista fechada de tipos; o resto continua baixando.
+ * `data:` (base64 legado) não passa por rota nenhuma.
+ */
+function getFilePreviewUrl(file: FileUpload): string {
+  const u = getFileUrl(file)
+  if (!u || u.startsWith('data:')) return u
+  return u.includes('?') ? `${u}&preview=1` : `${u}?preview=1`
+}
+
 function formatResponseValue(value: unknown): string {
   if (value === null || value === undefined) return '-'
   if (typeof value === 'string') {
@@ -281,11 +296,15 @@ function FilePreviewDialog({ file, onClose }: { file: FileUpload | null; onClose
         </DialogHeader>
         <div className="flex-1 min-h-0 overflow-auto mt-4">
           {file.type?.startsWith('image/') ? (
-            <Image src={getFileUrl(file)} alt={file.name} width={800} height={600} className="max-w-full h-auto rounded-lg mx-auto" />
+            /* `unoptimized` de propósito (18/08): o otimizador do next/image busca a imagem
+               PELO SERVIDOR, sem os cookies do navegador — bateria no porteiro do /arquivo e
+               levaria 404, deixando a miniatura quebrada. Sem otimizar, quem busca é o
+               navegador do dono, com a sessão dele. (Previsto no parecer Codex.) */
+            <Image src={getFilePreviewUrl(file)} alt={file.name} width={800} height={600} unoptimized className="max-w-full h-auto rounded-lg mx-auto" />
           ) : file.type === 'application/pdf' ? (
             // sandbox sem allow-scripts: se o anexo for um HTML disfarçado de PDF
             // (MIME confusion), nada executa no contexto do dashboard.
-            <iframe src={getFileUrl(file)} sandbox="" className="w-full h-[60vh] rounded-lg border" title={file.name} />
+            <iframe src={getFilePreviewUrl(file)} sandbox="" className="w-full h-[60vh] rounded-lg border" title={file.name} />
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <File className="w-16 h-16 mb-4 opacity-40" />

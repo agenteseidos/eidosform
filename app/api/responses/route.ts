@@ -16,7 +16,8 @@ import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 import { upsertSubmission } from '@/lib/google-sheets'
 import { logError, logWarn } from '@/lib/logger'
-import { sendMetaCAPIEvent, extractPIIFromAnswers } from '@/lib/meta-capi'
+import { sendMetaCAPIEvent, extractPIIFromAnswers, decidirEnviosCapi } from '@/lib/meta-capi'
+import { decifrarToken } from '@/lib/capi-credential'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import { isValidSessionKey, hashSessionKey, hashLogPrefix } from '@/lib/partial-session'
@@ -157,6 +158,22 @@ export async function POST(req: NextRequest) {
         )
       ).slice(0, MAX_META_EVENTS)
     : []
+
+  // IDs DE EVENTO (18/08/2026) — mapa nome→eventID gerado pelo NAVEGADOR. O envio pelo servidor
+  // reusa o mesmo par (nome, id) que o fbq usou, e é isso que faz o Meta entender que o evento do
+  // navegador e o do servidor são o MESMO lead. Sem isto ele conta os dois.
+  // Só entram nomes que já sobreviveram ao filtro acima: o mapa não pode ser via de entrada para
+  // evento que `isRecordableMetaEvent` recusou.
+  const nomesAceitos = new Set(metaEvents)
+  const metaEventIds: Record<string, string> = {}
+  if (body.meta_event_ids && typeof body.meta_event_ids === 'object' && !Array.isArray(body.meta_event_ids)) {
+    for (const [nome, id] of Object.entries(body.meta_event_ids as Record<string, unknown>)) {
+      if (!nomesAceitos.has(nome) || typeof id !== 'string') continue
+      const limpo = id.trim().slice(0, 64)
+      if (limpo) metaEventIds[nome] = limpo
+    }
+  }
+
   const utmData = {
     utm_source: typeof body.utm_source === 'string' ? body.utm_source : null,
     utm_medium: typeof body.utm_medium === 'string' ? body.utm_medium : null,
@@ -221,10 +238,10 @@ export async function POST(req: NextRequest) {
   // Verificar se o formulário existe e está publicado
   const { data: form, error: formError } = await supabase
     .from('forms')
-    .select('id, title, questions, status, user_id, webhook_url, is_closed, paused, notify_email_enabled, notify_email, notify_owner_enabled, google_sheets_enabled, google_sheets_id')
+    .select('id, title, questions, status, user_id, webhook_url, is_closed, paused, notify_email_enabled, notify_email, notify_owner_enabled, google_sheets_enabled, google_sheets_id, pixels')
     .eq('id', form_id as string)
     .eq('status', 'published')
-    .single() as { data: { id: string; title: string | null; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null; is_closed: boolean; paused: boolean; notify_email_enabled: boolean; notify_email: string | null; notify_owner_enabled?: boolean | null; google_sheets_enabled: boolean; google_sheets_id: string | null } | null; error: unknown }
+    .single() as { data: { id: string; title: string | null; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null; is_closed: boolean; paused: boolean; notify_email_enabled: boolean; notify_email: string | null; notify_owner_enabled?: boolean | null; google_sheets_enabled: boolean; google_sheets_id: string | null; pixels: Record<string, unknown> | null } | null; error: unknown }
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404, headers: CORS_HEADERS })
@@ -814,25 +831,65 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Meta Conversions API (CAPI) — server-side Lead event (Plus+ only)
+    // ── Meta Conversions API — envio pelo SERVIDOR, com a credencial DO CLIENTE ──────────────
+    //
+    // REESCRITO EM 18/08/2026. Até aqui isto usava `META_PIXEL_ID` e `META_ACCESS_TOKEN`
+    // GLOBAIS: o cliente colava o pixel dele no construtor e o evento — com o e-mail e o telefone
+    // hasheados do lead DELE — ia para a conta do Instituto Eidos. A conversão do cliente nunca
+    // chegava, e o dado do lead dele entrava no nosso ativo de publicidade.
+    //
+    // Agora: pixel do formulário + token do formulário. SEM FALLBACK — formulário sem token
+    // simplesmente não tem envio pelo servidor, e o pixel do navegador segue funcionando.
     if (ownerPlanConfig?.pixels && metaEvents.length > 0) {
-      const pii = extractPIIFromAnswers(
-        answers as Record<string, unknown>,
-        effectiveQuestions as Array<{ id: string; type?: string; title?: string; fields?: Array<{ id: string; ref?: string }> }>
-      )
-      const userAgent = req.headers.get('user-agent') ?? undefined
-      const referer = req.headers.get('referer') ?? undefined
-      for (const eventId of metaEvents) {
-        postSubmitTasks.push(
-          sendMetaCAPIEvent({
-            ...pii,
-            ip,
-            userAgent,
-            eventId,
-            formTitle: form.title ?? undefined,
-            eventSourceUrl: referer,
-          }).catch((err) => logError('Failed to send Meta CAPI event', err))
-        )
+      const pixelDoCliente = (() => {
+        const px = (form.pixels ?? {}) as Record<string, unknown>
+        const v = typeof px.metaPixelId === 'string' ? px.metaPixelId.trim() : ''
+        return v || null
+      })()
+
+      if (pixelDoCliente) {
+        postSubmitTasks.push((async () => {
+          const { data: cred } = await supabase
+            .from('form_capi_credentials')
+            .select('token_encrypted')
+            .eq('form_id', form_id as string)
+            .maybeSingle()
+
+          const token = decifrarToken((cred as { token_encrypted?: string } | null)?.token_encrypted)
+          // Sem token do cliente não sai nada pelo servidor. Este é o ponto exato onde o
+          // vazamento antigo acontecia — e onde ele agora termina em silêncio.
+          if (!token) return
+
+          const pii = extractPIIFromAnswers(
+            answers as Record<string, unknown>,
+            effectiveQuestions as Array<{ id: string; type?: string; title?: string; fields?: Array<{ id: string; ref?: string }> }>
+          )
+          const userAgent = req.headers.get('user-agent') ?? undefined
+          const referer = req.headers.get('referer') ?? undefined
+
+          // A regra de QUEM vai mora em `decidirEnviosCapi` (pura, testada). Aqui só o encanamento.
+          const aEnviar = decidirEnviosCapi({
+            planoPermite: true,
+            pixelId: pixelDoCliente,
+            token,
+            eventos: metaEvents,
+            eventIds: metaEventIds,
+          })
+
+          await Promise.all(aEnviar.map(({ eventName, eventId }) => {
+            return sendMetaCAPIEvent({
+              ...pii,
+              pixelId: pixelDoCliente,
+              accessToken: token,
+              eventName,
+              eventId,
+              ip,
+              userAgent,
+              formTitle: form.title ?? undefined,
+              eventSourceUrl: referer,
+            })
+          }))
+        })().catch((err) => logError('Falha no envio CAPI', err)))
       }
     }
 

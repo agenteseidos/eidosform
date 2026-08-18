@@ -1,13 +1,28 @@
 /**
- * lib/meta-capi.ts — Meta Conversions API (CAPI) server-side event dispatch
+ * lib/meta-capi.ts — envio de evento ao Meta pelo SERVIDOR (Conversions API).
  *
- * Sends conversion events (Lead) to Meta's Conversions API from the server,
- * complementing client-side pixel tracking. Uses SHA-256 hashed PII for
- * Advanced Matching and deduplicates via event_id shared with the pixel.
+ * ⚠️ MUDANÇA DE 18/08/2026 — LEIA ANTES DE MEXER.
  *
- * Env vars (optional — graceful degradation if missing):
- *   META_ACCESS_TOKEN — System user token with CAPI permissions
- *   META_PIXEL_ID     — Meta Pixel ID
+ * Até esta data, este arquivo lia `META_PIXEL_ID` e `META_ACCESS_TOKEN` do ambiente: UM pixel e
+ * UM token GLOBAIS, os da plataforma. O cliente colava o pixel DELE no construtor, e o servidor
+ * mandava o evento para a conta do Instituto Eidos. Duas consequências, ambas ruins: a conversão
+ * do cliente nunca chegava por este caminho, e o e-mail/telefone do lead DELE — hasheados, mas
+ * hasheados justamente para o Meta reconhecer a pessoa — entravam no NOSSO ativo de publicidade.
+ *
+ * AGORA o pixel e o token vêm POR FORMULÁRIO, como PARÂMETRO. Não há mais leitura de ambiente e
+ * NÃO HÁ FALLBACK GLOBAL: formulário sem credencial simplesmente não tem envio pelo servidor — o
+ * pixel do navegador continua funcionando normalmente, como sempre funcionou. Um fallback aqui
+ * recriaria o problema inteiro no primeiro formulário mal configurado.
+ *
+ * O Pixel ID sozinho não basta: ele é PÚBLICO (está no fonte de qualquer página que anuncia). Por
+ * isso o Meta exige token para aceitar evento por esta via — senão qualquer um injetaria conversão
+ * falsa na conta de qualquer concorrente. O token do cliente mora cifrado em
+ * `form_capi_credentials` (ver `lib/capi-credential.ts`).
+ *
+ * DEDUPLICAÇÃO: `eventId` tem de ser o MESMO valor que o navegador mandou no `eventID` do fbq,
+ * para o mesmo `eventName`. É esse par que faz o Meta entender que o evento do navegador e o do
+ * servidor são o MESMO lead. Sem isso ele conta os dois e o cliente otimiza campanha em cima do
+ * dobro de conversões — pior que não ter CAPI.
  */
 
 const META_API_URL = 'https://graph.facebook.com/v21.0'
@@ -44,13 +59,20 @@ interface MetaCAPIPayload {
 }
 
 export interface MetaCAPIOptions {
+  /** Pixel DO CLIENTE, lido do formulário. Sem ele não há envio. */
+  pixelId: string
+  /** Token DO CLIENTE, já decifrado. Sem ele não há envio. */
+  accessToken: string
+  /** Nome real do evento (o mesmo que o navegador disparou), não mais 'Lead' fixo. */
+  eventName: string
+  /** Identificador do evento — TEM de casar com o `eventID` enviado pelo fbq no navegador. */
+  eventId: string
   email?: string
   phone?: string
   firstName?: string
   lastName?: string
   ip?: string
   userAgent?: string
-  eventId: string
   formTitle?: string
   eventSourceUrl?: string
 }
@@ -60,10 +82,18 @@ export interface MetaCAPIOptions {
  * Fire-and-forget — never throws. Returns success boolean for logging only.
  */
 export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boolean> {
-  const accessToken = process.env.META_ACCESS_TOKEN
-  const pixelId = process.env.META_PIXEL_ID
+  const { accessToken, pixelId } = options
 
+  // Sem credencial DO FORMULÁRIO não sai nada. Nunca cair num pixel global: era exatamente esse
+  // fallback que mandava o lead do cliente para a conta da plataforma.
   if (!accessToken || !pixelId) {
+    return false
+  }
+  // Pixel do Meta é numérico. Barra aqui um valor colado errado antes de virar POST.
+  if (!/^\d{5,25}$/.test(pixelId)) {
+    return false
+  }
+  if (!options.eventName || options.eventName.length > 64) {
     return false
   }
 
@@ -106,7 +136,10 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
     }
 
     const payload: MetaCAPIPayload = {
-      event_name: 'Lead',
+      // O nome REAL do evento. Antes era 'Lead' fixo: um formulário que disparasse
+      // 'FormStarted' no navegador virava 'Lead' no servidor, e o Meta registrava uma conversão
+      // que não aconteceu.
+      event_name: options.eventName,
       event_time: Math.floor(Date.now() / 1000),
       event_id: options.eventId,
       action_source: 'website',
@@ -115,10 +148,10 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
       ...(options.formTitle && { custom_data: { form_title: options.formTitle } }),
     }
 
-    // test_event_code: quando setado em env (META_TEST_EVENT_CODE), o evento aparece
-    // em tempo real na aba "Eventos de teste" do Events Manager. REMOVER em produção
-    // após validar — eventos com test_event_code não contam pra otimização de campanhas.
-    const testEventCode = process.env.META_TEST_EVENT_CODE
+    // `META_TEST_EVENT_CODE` foi REMOVIDO em 18/08/2026. Era uma variável GLOBAL, e evento com
+    // test_event_code não conta para otimização de campanha: com CAPI por cliente, um código
+    // esquecido no ambiente anularia as conversões de TODOS os clientes ao mesmo tempo, sem erro
+    // e sem aviso. Para depurar, use a aba "Eventos de teste" do Events Manager do próprio cliente.
 
     const url = `${META_API_URL}/${pixelId}/events?access_token=${accessToken}`
     const response = await fetch(url, {
@@ -127,18 +160,18 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
       body: JSON.stringify({
         data: [payload],
         access_token: accessToken,
-        ...(testEventCode && { test_event_code: testEventCode }),
       }),
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error('[Meta CAPI] Failed:', response.status, errorText)
+      // Sem o corpo cru e sem a URL: a URL leva o access_token na query, e log é lido por gente
+      // que não deveria ter a credencial do cliente. Trecho curto basta para diagnosticar.
+      const detalhe = (await response.text()).slice(0, 300)
+      console.error('[Meta CAPI] falhou', { status: response.status, pixelId, detalhe })
       return false
     }
 
-    const result = await response.json()
-    console.log('[Meta CAPI] Event sent:', result)
+    console.log('[Meta CAPI] evento enviado', { pixelId, eventName: options.eventName })
     return true
   } catch (err) {
     console.error('[Meta CAPI] Error:', err)
@@ -199,4 +232,84 @@ export function extractPIIFromAnswers(
   }
 
   return result
+}
+
+
+/**
+ * Confere, NA HORA DE SALVAR, se o token realmente tem permissão naquele pixel.
+ *
+ * Por que validar em vez de só guardar: sem isto, um token colado errado falha em silêncio para
+ * sempre — o cliente acha que configurou, nenhuma conversão chega, e não há nada na tela que
+ * indique o problema. Um "não deu certo" no momento do save é a diferença entre um campo que
+ * funciona e um campo que engana.
+ *
+ * A consulta é de LEITURA (`GET /{pixel-id}`): não cria evento nem polui a conta do cliente. Se o
+ * token não tiver permissão naquele pixel, o Meta recusa — que é exatamente o que queremos saber.
+ */
+export async function validarCredencialCapi(
+  pixelId: string,
+  accessToken: string,
+): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  if (!/^\d{5,25}$/.test(pixelId)) {
+    return { ok: false, motivo: 'O Pixel ID deve conter apenas números. Confira no Gerenciador de Eventos.' }
+  }
+  if (!accessToken || accessToken.length < 20) {
+    return { ok: false, motivo: 'Token muito curto — parece incompleto.' }
+  }
+  try {
+    const r = await fetch(`${META_API_URL}/${pixelId}?fields=id,name`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (r.ok) return { ok: true }
+
+    const corpo = await r.json().catch(() => null) as { error?: { code?: number; message?: string } } | null
+    const codigo = corpo?.error?.code
+    // Traduzido: a mensagem crua do Meta vem em inglês e fala de "object" e "node", que não
+    // significam nada para quem só quer saber se colou o token certo.
+    if (codigo === 190) return { ok: false, motivo: 'Token inválido ou expirado. Gere um novo no Gerenciador de Eventos.' }
+    if (codigo === 100 || r.status === 404) {
+      return { ok: false, motivo: 'Este token não tem acesso a este Pixel. Confira se os dois são da mesma conta.' }
+    }
+    if (codigo === 200 || r.status === 403) {
+      return { ok: false, motivo: 'O token existe, mas não tem permissão para enviar eventos deste Pixel.' }
+    }
+    return { ok: false, motivo: 'O Meta recusou a validação. Confira o Pixel e o token e tente de novo.' }
+  } catch {
+    // Rede/timeout NÃO é token inválido. Recusar o save aqui faria o cliente apagar e recolar um
+    // token que estava certo. Ele é guardado como não-validado e a interface diz isso.
+    return { ok: false, motivo: 'Não foi possível falar com o Meta agora. O token foi salvo, mas ainda não validado.' }
+  }
+}
+
+/**
+ * QUEM É ENVIADO PELO SERVIDOR — a regra, separada do encanamento.
+ *
+ * Mesma disciplina do `decidirAviso` da régua de cobrança: a decisão vive numa função pura, que
+ * dá para testar sem banco, sem rede e sem formulário. O que estava inline na rota de submit era
+ * exatamente o tipo de lógica que ninguém consegue cobrir depois.
+ *
+ * As três recusas, e por que cada uma existe:
+ *
+ *  1. SEM PIXEL ou SEM TOKEN do formulário → nada sai. Nunca cair num pixel global: era esse
+ *     fallback que mandava o lead do cliente para a conta da plataforma.
+ *  2. EVENTO SEM ID do navegador → não sai. Sem o par (nome, id) o Meta não deduplica, e o
+ *     cliente veria a MESMA conversão contada duas vezes. Para ele, evento a menos é melhor que
+ *     conversão inflada: número inflado ele usa para decidir orçamento.
+ *  3. PLANO sem o recurso → nada sai (o mesmo portão dos pixels).
+ */
+export function decidirEnviosCapi(params: {
+  planoPermite: boolean
+  pixelId: string | null | undefined
+  token: string | null | undefined
+  eventos: string[]
+  eventIds: Record<string, string>
+}): Array<{ eventName: string; eventId: string }> {
+  const { planoPermite, pixelId, token, eventos, eventIds } = params
+  if (!planoPermite) return []
+  if (!pixelId || !pixelId.trim()) return []
+  if (!token) return []
+  return eventos
+    .map((eventName) => ({ eventName, eventId: eventIds[eventName] }))
+    .filter((e): e is { eventName: string; eventId: string } => Boolean(e.eventId))
 }

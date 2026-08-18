@@ -66,21 +66,85 @@ describe('teto do fan-out de meta_events', () => {
   })
 })
 
-describe('sendMetaCAPIEvent: guard de defesa em profundidade', () => {
+describe('sendMetaCAPIEvent: guards antes da rede', () => {
   beforeEach(() => {
     vi.resetModules()
-    process.env.META_ACCESS_TOKEN = 'tok'
-    process.env.META_PIXEL_ID = '123456'
   })
+
+  /** Credencial válida por padrão; cada teste estraga UM campo. */
+  const valido = { pixelId: '123456789012345', accessToken: 'tok-valido-com-tamanho', eventName: 'Lead', eventId: 'abc-123' }
 
   it('recusa eventId ausente ou maior que 64 sem sequer chamar a rede', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const { sendMetaCAPIEvent } = await import('./meta-capi')
 
-    await expect(sendMetaCAPIEvent({ eventId: '' })).resolves.toBe(false)
-    await expect(sendMetaCAPIEvent({ eventId: 'x'.repeat(65) })).resolves.toBe(false)
+    await expect(sendMetaCAPIEvent({ ...valido, eventId: '' })).resolves.toBe(false)
+    await expect(sendMetaCAPIEvent({ ...valido, eventId: 'x'.repeat(65) })).resolves.toBe(false)
     expect(fetchSpy).not.toHaveBeenCalled()
 
+    fetchSpy.mockRestore()
+  })
+
+  /**
+   * O TESTE QUE IMPORTA (18/08/2026). Antes, este arquivo definia META_PIXEL_ID/META_ACCESS_TOKEN
+   * no ambiente porque a função os LIA de lá — era o pixel GLOBAL da plataforma recebendo o lead
+   * do cliente. Agora a credencial é parâmetro, e sem ela NADA sai: nem com as variáveis antigas
+   * de volta no ambiente. É isto que garante que o fallback global não volte por descuido.
+   */
+  it('sem credencial do formulário não chama a rede — nem com as variáveis globais antigas setadas', async () => {
+    process.env.META_ACCESS_TOKEN = 'token-global-da-plataforma'
+    process.env.META_PIXEL_ID = '999999999999999'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const { sendMetaCAPIEvent } = await import('./meta-capi')
+
+    await expect(sendMetaCAPIEvent({ ...valido, pixelId: '', accessToken: '' })).resolves.toBe(false)
+    await expect(sendMetaCAPIEvent({ ...valido, accessToken: '' })).resolves.toBe(false)
+    await expect(sendMetaCAPIEvent({ ...valido, pixelId: '' })).resolves.toBe(false)
+    expect(fetchSpy).not.toHaveBeenCalled()
+
+    delete process.env.META_ACCESS_TOKEN
+    delete process.env.META_PIXEL_ID
+    fetchSpy.mockRestore()
+  })
+
+  it('recusa pixel que não é numérico (colagem errada) antes de virar POST', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const { sendMetaCAPIEvent } = await import('./meta-capi')
+
+    await expect(sendMetaCAPIEvent({ ...valido, pixelId: 'meu-pixel' })).resolves.toBe(false)
+    await expect(sendMetaCAPIEvent({ ...valido, pixelId: '123' })).resolves.toBe(false)
+    expect(fetchSpy).not.toHaveBeenCalled()
+
+    fetchSpy.mockRestore()
+  })
+
+  it('manda o NOME REAL do evento, não Lead fixo', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ events_received: 1 }), { status: 200 }) as never,
+    )
+    const { sendMetaCAPIEvent } = await import('./meta-capi')
+
+    await sendMetaCAPIEvent({ ...valido, eventName: 'AgendouConsulta' })
+
+    const corpo = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string)
+    expect(corpo.data[0].event_name).toBe('AgendouConsulta')
+    // O par (nome, id) é o que deduplica com o navegador.
+    expect(corpo.data[0].event_id).toBe('abc-123')
+    fetchSpy.mockRestore()
+  })
+
+  it('usa o pixel do PARÂMETRO na URL, não o do ambiente', async () => {
+    process.env.META_PIXEL_ID = '999999999999999'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ events_received: 1 }), { status: 200 }) as never,
+    )
+    const { sendMetaCAPIEvent } = await import('./meta-capi')
+
+    await sendMetaCAPIEvent({ ...valido, pixelId: '111222333444555' })
+
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('111222333444555')
+    expect(String(fetchSpy.mock.calls[0][0])).not.toContain('999999999999999')
+    delete process.env.META_PIXEL_ID
     fetchSpy.mockRestore()
   })
 })

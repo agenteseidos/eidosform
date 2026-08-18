@@ -28,10 +28,65 @@ export function pushDataLayerEvent(event: string, params?: Record<string, unknow
   window.dataLayer.push({ event, ...(params || {}) })
 }
 
-function recordCapturedEvent(name: string) {
-  if (typeof window === 'undefined' || !name) return
+/**
+ * Identificador único do evento, gerado NO NAVEGADOR e reaproveitado pelo servidor.
+ *
+ * É a peça que faltava para o CAPI não contar o mesmo lead duas vezes (18/08/2026). O Meta
+ * deduplica cruzando `event_name` + `event_id`: se o navegador manda "Lead" com o id X e o
+ * servidor manda "Lead" com o MESMO id X, ele entende que é um evento só. Sem o id — como era
+ * até aqui — ele conta os dois, e o cliente otimiza campanha em cima do dobro de conversões.
+ *
+ * Gerado uma vez por evento e guardado: o mesmo disparo precisa levar o mesmo id nas duas vias.
+ */
+function novoEventId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+  } catch { /* segue para o plano B */ }
+  return `e-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/**
+ * Registra o evento disparado e devolve o id que o fbq deve usar.
+ *
+ * O array `__eidosCapturedFbqEvents` continua sendo SÓ de nomes: é dele que sai a coluna
+ * `meta_events`, cujo formato já está gravado em planilha, CSV, PDF e e-mail. Os ids viajam num
+ * mapa PARALELO, para não mexer em dado que já existe lá fora.
+ */
+function recordCapturedEvent(name: string): string {
+  const id = novoEventId()
+  if (typeof window === 'undefined' || !name) return id
   if (!window.__eidosCapturedFbqEvents) window.__eidosCapturedFbqEvents = []
   window.__eidosCapturedFbqEvents.push(name)
+  if (!window.__eidosCapturedFbqEventIds) window.__eidosCapturedFbqEventIds = {}
+  // Primeiro disparo do nome manda: se o mesmo evento repetir, os dois lados continuam
+  // apontando para o mesmo id e o Meta segue enxergando um evento só.
+  if (!window.__eidosCapturedFbqEventIds[name]) {
+    window.__eidosCapturedFbqEventIds[name] = id
+    return id
+  }
+  return window.__eidosCapturedFbqEventIds[name]
+}
+
+/**
+ * RESERVA o eventID de um evento que ainda vai disparar.
+ *
+ * Existe por causa de uma ordem que não dá para inverter: os eventos de conclusão são CALCULADOS
+ * antes do POST (para entrarem em `meta_events` de forma determinística) mas só são DISPARADOS
+ * depois que o servidor confirma — envio que falhou não pode virar conversão. Só que o POST é
+ * justamente quem leva os ids para o servidor.
+ *
+ * Reservando aqui, o id já viaja no POST e o disparo posterior reaproveita o mesmo valor: o
+ * `recordCapturedEvent` respeita o primeiro id gravado para cada nome. Sem isto, navegador e
+ * servidor mandariam ids diferentes para o mesmo evento e o Meta contaria dois leads.
+ */
+export function reservarEventId(name: string): string {
+  const id = novoEventId()
+  if (typeof window === 'undefined' || !name) return id
+  if (!window.__eidosCapturedFbqEventIds) window.__eidosCapturedFbqEventIds = {}
+  if (!window.__eidosCapturedFbqEventIds[name]) window.__eidosCapturedFbqEventIds[name] = id
+  return window.__eidosCapturedFbqEventIds[name]
 }
 
 function normalizeAnswer(answer: unknown): string {
@@ -220,11 +275,12 @@ function fireFbqEvent(event: PixelEventConfig, retries = 10) {
     ? { value: event.value, currency: event.currency || 'BRL' }
     : undefined
 
-  recordCapturedEvent(event.name)
+  // O `eventID` é o 4º argumento do fbq. É ele que casa com o `event_id` do envio pelo servidor.
+  const eventID = recordCapturedEvent(event.name)
   if (event.type === 'standard') {
-    fbq('track', event.name, params)
+    fbq('track', event.name, params, { eventID })
   } else {
-    fbq('trackCustom', event.name, params)
+    fbq('trackCustom', event.name, params, { eventID })
   }
 }
 
@@ -248,12 +304,12 @@ function fireFbqNamedEvent(name: string, retries = 10) {
     }
     return
   }
-  recordCapturedEvent(name)
+  const eventID = recordCapturedEvent(name)
   const standardEvents = ['Lead', 'Purchase', 'CompleteRegistration', 'Contact', 'InitiateCheckout', 'ViewContent', 'AddToCart', 'AddPaymentInfo', 'Subscribe']
   if (standardEvents.includes(name)) {
-    fbq('track', name)
+    fbq('track', name, {}, { eventID })
   } else {
-    fbq('trackCustom', name)
+    fbq('trackCustom', name, {}, { eventID })
   }
 }
 

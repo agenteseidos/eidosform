@@ -11,7 +11,7 @@ import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'l
 import { QuestionRenderer } from './question-renderer'
 import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import { toast } from 'sonner'
-import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent, buildGoogleAdsSendTo, fireGoogleAdsConversion } from '@/lib/pixel-events'
+import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent, reservarEventId, buildGoogleAdsSendTo, fireGoogleAdsConversion } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath, getAdvanceControls, resolveSubmitFieldError } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { captureUrlParams, getUrlParams, clearUrlParams } from '@/lib/url-params'
@@ -59,7 +59,7 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const [progressAnim, setProgressAnim] = useState(0)
   const [responseId, setResponseId] = useState<string | null>(null)
   const [navigationHistory, setNavigationHistory] = useState<string[]>([])
-  const metaEvents = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
+  const { capturedEvents: metaEvents, capturedEventIds } = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
   const partialResponsesEnabled = (ownerPlan === 'plus' || ownerPlan === 'professional')
   // Fluxo público de parciais (session key + Sheets). Quando ativo, ele é o
   // ÚNICO fluxo de parcial — inclusive pra respondente LOGADO. Rodar o fluxo
@@ -782,6 +782,15 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         ...pendingEventNames.filter(isRecordableMetaEvent),
       ]))
 
+      // IDs DE EVENTO (18/08/2026) — o que faz o Meta não contar o mesmo lead duas vezes.
+      // O envio pelo servidor precisa usar o MESMO id que o navegador usa. Para os eventos que
+      // ainda vão disparar (logo abaixo, após o POST), o id é RESERVADO agora: `reservarEventId`
+      // grava no mapa global e o disparo posterior reaproveita o mesmo valor.
+      const allMetaEventIds: Record<string, string> = { ...capturedEventIds }
+      for (const nome of allMetaEvents) {
+        if (!allMetaEventIds[nome]) allMetaEventIds[nome] = reservarEventId(nome)
+      }
+
       const res = await fetch('/api/responses', {
         method: 'POST',
         headers,
@@ -794,6 +803,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           ...utms,
           url_params: getUrlParams(form.id) ?? undefined,
           meta_events: allMetaEvents,
+          // Mapa nome→eventID. Formato NOVO e separado de propósito: `meta_events` continua
+          // sendo só nomes porque planilha, CSV, PDF e e-mail já dependem desse formato.
+          meta_event_ids: allMetaEventIds,
         }),
       })
 

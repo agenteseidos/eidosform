@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
+import { CapiTokenField } from '@/components/form-builder/capi-token-field'
 import {
   Dialog,
   DialogContent,
@@ -1509,6 +1510,14 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                       </div>
                       {userPlan === 'plus' || userPlan === 'professional' ? (
                         <>
+                          {/* Token da API de Conversões: fica logo abaixo do Pixel porque é o par
+                              dele — o Pixel diz PARA ONDE vai, o token é o que autoriza o envio
+                              pelo servidor. Componente próprio, com rota própria: credencial não
+                              entra no autosave nem volta para o navegador. */}
+                          <CapiTokenField
+                            formId={form.id}
+                            temPixel={Boolean((pixels.metaPixelId || '').trim())}
+                          />
                           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Eventos</p>
                           <div>
                             <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Evento ao iniciar</Label>

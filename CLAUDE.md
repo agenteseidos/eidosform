@@ -263,10 +263,19 @@ plan 'free' + status 'active').
 >
 > ⚠️ **NÃO ANUNCIAR (promessas sem lastro, revisão Codex 2026-07-28)** — removidas
 > das /v3 e /v4:
-> - **CAPI server-side**: há UM `META_PIXEL_ID`/token GLOBAL, mas os pixels dos
->   clientes são POR FORMULÁRIO; todo evento sai como `Lead` e o `event_id` é o
->   NOME do evento (sem dedup real com o browser). Só anunciar após config por
->   cliente/formulário.
+> - ~~**CAPI server-side**~~ ✅ **RESOLVIDO EM 18/08/2026 — PODE ANUNCIAR.** O que
+>   havia: UM `META_PIXEL_ID`/token GLOBAL da plataforma, enquanto os pixels dos
+>   clientes são POR FORMULÁRIO — ou seja, o e-mail/telefone hasheados do lead do
+>   CLIENTE iam para o NOSSO ativo do Meta e a conversão dele nunca chegava. Além
+>   disso todo evento saía como `Lead` e o `event_id` era o NOME do evento (sem
+>   dedup real com o browser → conversão contada em dobro).
+>   Agora: pixel **e token por formulário** (`form_capi_credentials`, cifrado
+>   AES-256-GCM, tabela fora de `forms` porque `forms.pixels` viaja para o navegador
+>   do visitante), **sem fallback global** (`decidirEnviosCapi`, testado contra a
+>   volta do fallback), **nome real do evento** e **`eventID` compartilhado** entre
+>   fbq e servidor. `META_PIXEL_ID`/`META_ACCESS_TOKEN`/`META_TEST_EVENT_CODE` não
+>   são mais lidos por nenhum código — **remover da Vercel**. Nova var obrigatória:
+>   `META_CAPI_ENC_KEY` (32 bytes hex, sem fallback: ausente = save recusado).
 > - **"UTM na mensagem do WhatsApp por padrão"**: as variáveis `{utm_*}` existem,
 >   mas os templates PADRÃO não as usam. (O bug de perda de UTM na revalidação do
 >   abandono FOI corrigido.)

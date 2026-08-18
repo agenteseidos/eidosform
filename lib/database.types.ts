@@ -740,6 +740,40 @@ export interface Database {
         }
         Relationships: []
       }
+      form_capi_credentials: {
+        // Token da API de Conversões do Meta, POR FORMULÁRIO e CIFRADO
+        // (migration 20260818_form_capi_credentials). Fora de `forms` de propósito:
+        // `forms.pixels` viaja para o navegador do visitante e o token não pode ir junto.
+        Row: {
+          form_id: string
+          token_encrypted: string
+          hint: string | null
+          pixel_id: string | null
+          validated_at: string | null
+          last_error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          form_id: string
+          token_encrypted: string
+          hint?: string | null
+          pixel_id?: string | null
+          validated_at?: string | null
+          last_error?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          token_encrypted?: string
+          hint?: string | null
+          pixel_id?: string | null
+          validated_at?: string | null
+          last_error?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       answer_items: {
         Row: {
           id: string

@@ -70,7 +70,9 @@ export function CapiTokenField({ formId, pixelAtual }: { formId: string; pixelAt
       }
       // Some da tela no ato: o valor em claro não fica no estado do React depois de gravado.
       setValor('')
-      toast.success('Token validado e salvo.')
+      // NÃO dizer "validado" quando a prova foi inconclusiva — a tarja abaixo já distingue os
+      // dois casos e o toast dizia "validado" nos dois. (Parecer independente, 18/08.)
+      toast.success(dados?.validadoEm ? 'Token validado e salvo.' : 'Token salvo.')
       await carregar()
     } catch {
       setErro('Falha de conexão. Tente de novo.')

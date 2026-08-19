@@ -95,7 +95,7 @@ const TRAFFIC_FEATURES = [
     icon: ShieldCheck,
     color: BRAND_TILE,
     title: 'Conversão server-side (Meta CAPI)',
-    desc: 'O evento também sai do nosso servidor direto para o Meta, na SUA conta de anúncios, com e-mail e telefone em hash para casar o lead. Bloqueador de anúncio e iOS param o navegador, não o servidor — e a deduplicação impede que a mesma conversão seja contada duas vezes.',
+    desc: 'O evento também sai do nosso servidor direto para o Meta, na SUA conta de anúncios, com e-mail e telefone em hash para casar o lead. Menos dependência do navegador — e cada evento leva o identificador que o Meta usa para não contar a mesma conversão duas vezes.',
   },
   {
     icon: LineChart,

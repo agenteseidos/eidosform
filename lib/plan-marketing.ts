@@ -99,7 +99,7 @@ export const PLAN_MARKETING: Record<PlanId, PlanMarketing> = {
       'Respostas parciais (capture o lead mesmo sem envio)',
       'Taxa de abandono por pergunta',
       'Meta Pixel (Facebook)',
-      'Conversão server-side (Meta CAPI) — chega mesmo com bloqueador de anúncio',
+      'Conversão server-side (Meta CAPI) — menos dependência do navegador',
       'Google Ads (Conversões)',
       'Google Tag Manager (GTM)',
       'TikTok Pixel',

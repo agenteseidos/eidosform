@@ -41,13 +41,21 @@ export function cofreConfigurado(): boolean {
   return chave() !== null
 }
 
-/** Cifra o token. Devolve `null` se a chave não estiver configurada — quem chama recusa o save. */
-export function cifrarToken(tokenClaro: string): string | null {
+/**
+ * Cifra o token, AMARRADO ao formulário. Devolve `null` sem a chave — quem chama recusa o save.
+ *
+ * `vinculo` (o `form_id`) entra como AAD do GCM: dado autenticado mas não cifrado. Consequência
+ * prática — um blob copiado para a linha de OUTRO formulário deixa de decifrar. Sem isso, quem
+ * conseguisse escrever no banco poderia mover a credencial de um cliente para o formulário de
+ * outro e passaria a mandar eventos com o token alheio. (Sugestão do parecer independente.)
+ */
+export function cifrarToken(tokenClaro: string, vinculo: string): string | null {
   const k = chave()
-  if (!k || !tokenClaro) return null
+  if (!k || !tokenClaro || !vinculo) return null
   // IV novo a cada cifragem: em GCM, repetir (chave, IV) destrói a garantia do modo.
   const iv = randomBytes(12)
   const cipher = createCipheriv('aes-256-gcm', k, iv)
+  cipher.setAAD(Buffer.from(vinculo, 'utf8'))
   const ct = Buffer.concat([cipher.update(tokenClaro, 'utf8'), cipher.final()])
   const tag = cipher.getAuthTag()
   return `v1.${iv.toString('hex')}.${tag.toString('hex')}.${ct.toString('base64')}`
@@ -58,9 +66,9 @@ export function cifrarToken(tokenClaro: string): string | null {
  * confere (blob adulterado no banco). Nunca lança: isto roda no caminho do submit, e derrubar o
  * envio de um lead porque o token está corrompido puniria o lead pelo erro de configuração.
  */
-export function decifrarToken(blob: string | null | undefined): string | null {
+export function decifrarToken(blob: string | null | undefined, vinculo: string): string | null {
   const k = chave()
-  if (!k || !blob) return null
+  if (!k || !blob || !vinculo) return null
   const partes = blob.split('.')
   if (partes.length !== 4 || partes[0] !== 'v1') return null
   try {
@@ -69,6 +77,7 @@ export function decifrarToken(blob: string | null | undefined): string | null {
     const ct = Buffer.from(partes[3], 'base64')
     if (iv.length !== 12 || tag.length !== 16) return null
     const decipher = createDecipheriv('aes-256-gcm', k, iv)
+    decipher.setAAD(Buffer.from(vinculo, 'utf8'))
     decipher.setAuthTag(tag)
     return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8')
   } catch {

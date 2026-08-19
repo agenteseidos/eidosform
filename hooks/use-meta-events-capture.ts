@@ -7,8 +7,11 @@ declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void
     __eidosCapturedFbqEvents?: string[]
-    /** nome do evento → eventID, para o servidor mandar o MESMO par ao Meta (dedup). */
-    __eidosCapturedFbqEventIds?: Record<string, string>
+    /**
+     * Uma entrada por DISPARO (não por nome): o Meta exige `event_id` único por ocorrência.
+     * `disparado: false` = reservado antes do POST, ainda esperando o fbq.
+     */
+    __eidosFbqOcorrencias?: Array<{ nome: string; id: string; disparado: boolean }>
   }
 }
 
@@ -25,9 +28,9 @@ declare global {
  */
 export function useMetaEventsCapture(enabled: boolean) {
   const [capturedEvents, setCapturedEvents] = useState<string[]>([])
-  // Mapa paralelo nome→eventID. Vai junto no submit para o envio pelo servidor usar o MESMO id
-  // que o navegador usou — é isso que impede o Meta de contar o lead duas vezes.
-  const [capturedEventIds, setCapturedEventIds] = useState<Record<string, string>>({})
+  // Ocorrências (nome + id por disparo). Vão junto no submit para o envio pelo servidor usar o
+  // MESMO id que o navegador usou — é isso que impede o Meta de contar o lead duas vezes.
+  const [capturedOccurrences, setCapturedOccurrences] = useState<Array<{ name: string; id: string }>>([])
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return
@@ -46,19 +49,18 @@ export function useMetaEventsCapture(enabled: boolean) {
         }
         return merged.size === prev.length ? prev : Array.from(merged)
       })
-      const ids = window.__eidosCapturedFbqEventIds ?? {}
-      setCapturedEventIds(prev => {
-        let mudou = false
-        const next = { ...prev }
-        for (const [nome, id] of Object.entries(ids)) {
-          if (isRecordableMetaEvent(nome) && !next[nome]) { next[nome] = id; mudou = true }
-        }
-        return mudou ? next : prev
-      })
+      const ocorrencias = (window.__eidosFbqOcorrencias ?? [])
+        .filter(o => isRecordableMetaEvent(o.nome))
+        .map(o => ({ name: o.nome, id: o.id }))
+      setCapturedOccurrences(prev =>
+        prev.length === ocorrencias.length && prev.every((p, i) => p.id === ocorrencias[i]?.id)
+          ? prev
+          : ocorrencias,
+      )
     }, 500)
 
     return () => clearInterval(interval)
   }, [enabled])
 
-  return { capturedEvents, capturedEventIds }
+  return { capturedEvents, capturedOccurrences }
 }

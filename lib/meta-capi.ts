@@ -25,6 +25,8 @@
  * dobro de conversões — pior que não ter CAPI.
  */
 
+import { log, logError } from '@/lib/logger'
+
 const META_API_URL = 'https://graph.facebook.com/v21.0'
 
 /**
@@ -75,6 +77,9 @@ export interface MetaCAPIOptions {
   userAgent?: string
   formTitle?: string
   eventSourceUrl?: string
+  /** Valor da conversão, vindo da CONFIGURAÇÃO do evento (nunca do POST público). */
+  value?: number
+  currency?: string
 }
 
 /**
@@ -145,7 +150,14 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
       action_source: 'website',
       ...(options.eventSourceUrl && { event_source_url: options.eventSourceUrl }),
       user_data: userData,
-      ...(options.formTitle && { custom_data: { form_title: options.formTitle } }),
+      // `value`/`currency` são o que permite a campanha otimizar por receita em vez de por
+      // volume. Sem eles, um `Purchase` chega ao Meta valendo nada.
+      ...((options.formTitle || typeof options.value === 'number') && {
+        custom_data: {
+          ...(options.formTitle ? { form_title: options.formTitle } : {}),
+          ...(typeof options.value === 'number' ? { value: options.value, currency: options.currency || 'BRL' } : {}),
+        },
+      }),
     }
 
     // `META_TEST_EVENT_CODE` foi REMOVIDO em 18/08/2026. Era uma variável GLOBAL, e evento com
@@ -153,7 +165,9 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
     // esquecido no ambiente anularia as conversões de TODOS os clientes ao mesmo tempo, sem erro
     // e sem aviso. Para depurar, use a aba "Eventos de teste" do Events Manager do próprio cliente.
 
-    const url = `${META_API_URL}/${pixelId}/events?access_token=${accessToken}`
+    // ⚠️ O token NÃO vai na query string (parecer independente, 18/08). URL entra em telemetria,
+    // trace e objeto de erro; o corpo, não. Um mecanismo só de autenticação, no corpo.
+    const url = `${META_API_URL}/${pixelId}/events`
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -167,14 +181,14 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
       // Sem o corpo cru e sem a URL: a URL leva o access_token na query, e log é lido por gente
       // que não deveria ter a credencial do cliente. Trecho curto basta para diagnosticar.
       const detalhe = (await response.text()).slice(0, 300)
-      console.error('[Meta CAPI] falhou', { status: response.status, pixelId, detalhe })
+      logError('[Meta CAPI] falhou', null, { status: response.status, pixelId, detalhe })
       return false
     }
 
-    console.log('[Meta CAPI] evento enviado', { pixelId, eventName: options.eventName })
+    log('[Meta CAPI] evento enviado', { pixelId, eventName: options.eventName })
     return true
   } catch (err) {
-    console.error('[Meta CAPI] Error:', err)
+    logError('[Meta CAPI] erro no envio', err, { pixelId })
     return false
   }
 }
@@ -246,39 +260,59 @@ export function extractPIIFromAnswers(
  * A consulta é de LEITURA (`GET /{pixel-id}`): não cria evento nem polui a conta do cliente. Se o
  * token não tiver permissão naquele pixel, o Meta recusa — que é exatamente o que queremos saber.
  */
+export type VereditoCapi =
+  | { estado: 'ok' }
+  /** O Meta respondeu e RECUSOU. Definitivo: não adianta tentar de novo com o mesmo token. */
+  | { estado: 'recusado'; motivo: string }
+  /** Não deu para saber (rede, timeout, 429, 5xx). NÃO é token inválido — não trate como tal. */
+  | { estado: 'temporario'; motivo: string }
+
 export async function validarCredencialCapi(
   pixelId: string,
   accessToken: string,
-): Promise<{ ok: true } | { ok: false; motivo: string }> {
+): Promise<VereditoCapi> {
   if (!/^\d{5,25}$/.test(pixelId)) {
-    return { ok: false, motivo: 'O Pixel ID deve conter apenas números. Confira no Gerenciador de Eventos.' }
+    return { estado: 'recusado', motivo: 'O Pixel ID deve conter apenas números. Confira no Gerenciador de Eventos.' }
   }
   if (!accessToken || accessToken.length < 20) {
-    return { ok: false, motivo: 'Token muito curto — parece incompleto.' }
+    return { estado: 'recusado', motivo: 'Token muito curto — parece incompleto.' }
   }
   try {
     const r = await fetch(`${META_API_URL}/${pixelId}?fields=id,name`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(10_000),
     })
-    if (r.ok) return { ok: true }
+    if (r.ok) return { estado: 'ok' }
+
+    // 429 e 5xx são do LADO DELES. Recusar o token aqui faria o cliente apagar e recolar um token
+    // que estava certo — e, pior, perderia a credencial que já funcionava. (Parecer independente.)
+    if (r.status === 429 || r.status >= 500) {
+      return { estado: 'temporario', motivo: 'O Meta está indisponível ou limitou as consultas agora. Tente de novo em alguns minutos.' }
+    }
 
     const corpo = await r.json().catch(() => null) as { error?: { code?: number; message?: string } } | null
     const codigo = corpo?.error?.code
     // Traduzido: a mensagem crua do Meta vem em inglês e fala de "object" e "node", que não
     // significam nada para quem só quer saber se colou o token certo.
-    if (codigo === 190) return { ok: false, motivo: 'Token inválido ou expirado. Gere um novo no Gerenciador de Eventos.' }
-    if (codigo === 100 || r.status === 404) {
-      return { ok: false, motivo: 'Este token não tem acesso a este Pixel. Confira se os dois são da mesma conta.' }
+    if (codigo === 190) {
+      return { estado: 'recusado', motivo: 'Token inválido ou expirado. Gere um novo no Gerenciador de Eventos.' }
     }
     if (codigo === 200 || r.status === 403) {
-      return { ok: false, motivo: 'O token existe, mas não tem permissão para enviar eventos deste Pixel.' }
+      return { estado: 'recusado', motivo: 'O token existe, mas não tem permissão para este Pixel.' }
     }
-    return { ok: false, motivo: 'O Meta recusou a validação. Confira o Pixel e o token e tente de novo.' }
+    // ⚠️ O código 100 é "parâmetro inválido" de forma GERAL — não prova "token sem acesso"
+    // (parecer independente). A mensagem passa a descrever o sintoma e sugerir, sem acusar.
+    if (codigo === 100 || r.status === 404) {
+      return {
+        estado: 'recusado',
+        motivo: 'O Meta não encontrou este Pixel com este token. Confira se o Pixel ID está certo e se o token é da mesma conta.',
+      }
+    }
+    return { estado: 'recusado', motivo: 'O Meta recusou a validação. Confira o Pixel e o token e tente de novo.' }
   } catch {
-    // Rede/timeout NÃO é token inválido. Recusar o save aqui faria o cliente apagar e recolar um
-    // token que estava certo. Ele é guardado como não-validado e a interface diz isso.
-    return { ok: false, motivo: 'Não foi possível falar com o Meta agora. O token foi salvo, mas ainda não validado.' }
+    // Rede/timeout NÃO é token inválido — e quem chama precisa saber a diferença para não
+    // destruir uma credencial boa nem mentir na tela dizendo que salvou.
+    return { estado: 'temporario', motivo: 'Não foi possível falar com o Meta agora. Nada foi alterado — tente de novo em instantes.' }
   }
 }
 
@@ -286,30 +320,57 @@ export async function validarCredencialCapi(
  * QUEM É ENVIADO PELO SERVIDOR — a regra, separada do encanamento.
  *
  * Mesma disciplina do `decidirAviso` da régua de cobrança: a decisão vive numa função pura, que
- * dá para testar sem banco, sem rede e sem formulário. O que estava inline na rota de submit era
- * exatamente o tipo de lógica que ninguém consegue cobrir depois.
+ * dá para testar sem banco, sem rede e sem formulário.
  *
- * As três recusas, e por que cada uma existe:
+ * As recusas, e por que cada uma existe:
  *
  *  1. SEM PIXEL ou SEM TOKEN do formulário → nada sai. Nunca cair num pixel global: era esse
  *     fallback que mandava o lead do cliente para a conta da plataforma.
- *  2. EVENTO SEM ID do navegador → não sai. Sem o par (nome, id) o Meta não deduplica, e o
+ *  2. PIXEL TROCADO depois da validação → nada sai. O token foi validado contra um pixel
+ *     específico; se o dono trocou o Pixel ID e não revalidou, o par não é mais o que aprovamos.
+ *     (Achado do parecer independente: a validação deixava de valer em silêncio.)
+ *  3. EVENTO QUE O DONO NÃO CONFIGUROU → não sai. O submit é anônimo; sem isto, um estranho
+ *     mandaria `Purchase` no pixel do cliente usando o token verdadeiro dele. Quem autoriza é a
+ *     configuração gravada do formulário (`derivarEventosAutorizados`), nunca o corpo do POST.
+ *  4. OCORRÊNCIA SEM ID do navegador → não sai. Sem o par (nome, id) o Meta não deduplica, e o
  *     cliente veria a MESMA conversão contada duas vezes. Para ele, evento a menos é melhor que
  *     conversão inflada: número inflado ele usa para decidir orçamento.
- *  3. PLANO sem o recurso → nada sai (o mesmo portão dos pixels).
+ *  5. PLANO sem o recurso → nada sai (o mesmo portão dos pixels).
  */
 export function decidirEnviosCapi(params: {
   planoPermite: boolean
   pixelId: string | null | undefined
   token: string | null | undefined
-  eventos: string[]
-  eventIds: Record<string, string>
-}): Array<{ eventName: string; eventId: string }> {
-  const { planoPermite, pixelId, token, eventos, eventIds } = params
+  /** Pixel contra o qual o token foi validado. `null` = credencial antiga, sem registro. */
+  pixelValidado?: string | null
+  /** Uma entrada por DISPARO do navegador — o Meta exige event_id único por ocorrência. */
+  ocorrencias: Array<{ name: string; id: string }>
+  /** O que a CONFIGURAÇÃO do formulário autoriza, derivado no servidor. */
+  autorizados: Map<string, { value?: number; currency?: string } | null>
+}): Array<{ eventName: string; eventId: string; value?: number; currency?: string }> {
+  const { planoPermite, pixelId, token, pixelValidado, ocorrencias, autorizados } = params
   if (!planoPermite) return []
   if (!pixelId || !pixelId.trim()) return []
   if (!token) return []
-  return eventos
-    .map((eventName) => ({ eventName, eventId: eventIds[eventName] }))
-    .filter((e): e is { eventName: string; eventId: string } => Boolean(e.eventId))
+  if (pixelValidado && pixelValidado.trim() !== pixelId.trim()) return []
+
+  const vistos = new Set<string>()
+  const saida: Array<{ eventName: string; eventId: string; value?: number; currency?: string }> = []
+  for (const o of ocorrencias) {
+    if (!o?.name || !o?.id) continue
+    if (!autorizados.has(o.name)) continue
+    // Id repetido no mesmo POST é entrada malformada (ou adulterada): manda uma vez só.
+    if (vistos.has(o.id)) continue
+    vistos.add(o.id)
+    const cfg = autorizados.get(o.name)
+    saida.push({
+      eventName: o.name,
+      eventId: o.id,
+      // `value`/`currency` vêm da CONFIGURAÇÃO, nunca do POST — senão o valor da conversão
+      // também seria escolhido por quem manda o formulário.
+      ...(typeof cfg?.value === 'number' ? { value: cfg.value } : {}),
+      ...(cfg?.currency ? { currency: cfg.currency } : {}),
+    })
+  }
+  return saida
 }

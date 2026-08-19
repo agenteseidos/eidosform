@@ -276,6 +276,11 @@ plan 'free' + status 'active').
 >   fbq e servidor. `META_PIXEL_ID`/`META_ACCESS_TOKEN`/`META_TEST_EVENT_CODE` não
 >   são mais lidos por nenhum código — **remover da Vercel**. Nova var obrigatória:
 >   `META_CAPI_ENC_KEY` (32 bytes hex, sem fallback: ausente = save recusado).
+>   ⚠️ **Mudar variável na Vercel NÃO afeta o deployment que já está no ar** — só vale para
+>   deploys novos. Apagar sem redeploy não interrompe nada; quem interrompe na hora é revogar o
+>   token no Meta. (Erro que eu cometi ao instruir o Sidney; pego pelo parecer independente.)
+>   ⚠️ Existe cópia local das vars antigas em `.env.production.local` (ignorado pelo git, não vai
+>   no deploy) — apagar depois de revogar o token antigo.
 > - **"UTM na mensagem do WhatsApp por padrão"**: as variáveis `{utm_*}` existem,
 >   mas os templates PADRÃO não as usam. (O bug de perda de UTM na revalidação do
 >   abandono FOI corrigido.)

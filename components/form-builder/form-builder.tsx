@@ -1514,10 +1514,7 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                               dele — o Pixel diz PARA ONDE vai, o token é o que autoriza o envio
                               pelo servidor. Componente próprio, com rota própria: credencial não
                               entra no autosave nem volta para o navegador. */}
-                          <CapiTokenField
-                            formId={form.id}
-                            temPixel={Boolean((pixels.metaPixelId || '').trim())}
-                          />
+                          <CapiTokenField formId={form.id} pixelAtual={pixels.metaPixelId || ''} />
                           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Eventos</p>
                           <div>
                             <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Evento ao iniciar</Label>

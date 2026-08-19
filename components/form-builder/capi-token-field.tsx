@@ -26,7 +26,8 @@ type Estado = {
   pixelDivergente?: boolean
 }
 
-export function CapiTokenField({ formId, temPixel }: { formId: string; temPixel: boolean }) {
+export function CapiTokenField({ formId, pixelAtual }: { formId: string; pixelAtual: string }) {
+  const temPixel = Boolean(pixelAtual.trim())
   const [estado, setEstado] = useState<Estado | null>(null)
   const [valor, setValor] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -53,7 +54,9 @@ export function CapiTokenField({ formId, temPixel }: { formId: string; temPixel:
       const r = await fetch(`/api/forms/${formId}/capi-token`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        // `pixelEsperado` = o que a TELA mostra. O servidor valida sempre contra o do banco;
+        // isto só permite a ele detectar que o autosave ainda não gravou e pedir para esperar.
+        body: JSON.stringify({ token, pixelEsperado: pixelAtual.trim() }),
       })
       const dados = await r.json().catch(() => ({}))
       if (!r.ok) {

@@ -5,6 +5,7 @@ import { getEffectivePlan } from '@/lib/plans'
 import { PLANS, type PlanName } from '@/lib/plan-definitions'
 import { cifrarToken, dicaDoToken, cofreConfigurado } from '@/lib/capi-credential'
 import { validarCredencialCapi } from '@/lib/meta-capi'
+import { lerPixelDoFormulario } from '@/lib/pixel-events'
 import { log, logError } from '@/lib/logger'
 
 /**
@@ -54,9 +55,8 @@ async function donoDoFormulario(id: string): Promise<
     return { ok: false, resposta: NextResponse.json({ error: 'Not found' }, { status: 404 }) }
   }
 
-  const px = f.pixels ?? {}
-  const pixelId = typeof px.metaPixelId === 'string' && px.metaPixelId.trim() ? px.metaPixelId.trim() : null
-  return { ok: true, userId: user.id, pixelId }
+  // Fonte única (mesma da página pública e do submit): apelidos antigos + formato numérico.
+  return { ok: true, userId: user.id, pixelId: lerPixelDoFormulario(f.pixels) }
 }
 
 /** O envio pelo servidor é do mesmo plano que os pixels (Plus+). */
@@ -120,9 +120,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   let token: string
+  let pixelEsperado: string | null = null
   try {
     const body = await req.json()
     token = typeof body?.token === 'string' ? body.token.trim() : ''
+    // O que a TELA está mostrando no campo Pixel ID. Não é usado para validar — o servidor usa
+    // sempre o do banco — serve só para detectar a corrida abaixo.
+    pixelEsperado = typeof body?.pixelEsperado === 'string' ? body.pixelEsperado.trim() : null
   } catch {
     return NextResponse.json({ error: 'Payload inválido' }, { status: 400 })
   }
@@ -138,18 +142,43 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     )
   }
 
+  // CORRIDA COM O AUTOSAVE (achado do parecer independente). O campo do token libera assim que o
+  // cliente digita o Pixel, mas o construtor só grava ~1,5s depois. Sem esta checagem, o token
+  // seria validado contra o Pixel ANTIGO — aprovado contra a conta errada, ou recusado com o
+  // cliente vendo o Pixel certo na tela. Detectar e pedir para esperar é honesto; adivinhar não.
+  if (pixelEsperado && pixelEsperado !== dono.pixelId) {
+    return NextResponse.json(
+      { error: 'O Pixel ID ainda está sendo salvo. Aguarde um instante e tente de novo.', aguarde: true },
+      { status: 409 },
+    )
+  }
+
   const veredito = await validarCredencialCapi(dono.pixelId, token)
 
-  const cifrado = cifrarToken(token)
+  const cifrado = cifrarToken(token, id)
   if (!cifrado) {
     logError('[capi-token] falha ao cifrar', null, { formId: id })
     return NextResponse.json({ error: 'Não foi possível guardar o token com segurança.' }, { status: 500 })
   }
 
-  // Token que NÃO passou na validação não é gravado. Guardar um token comprovadamente inválido
-  // deixaria a tela dizendo "configurado" enquanto nenhuma conversão chega — o silêncio que esta
-  // rota existe para evitar.
-  if (!veredito.ok) {
+  // TRÊS DESFECHOS, e cada um merece resposta diferente (correção do parecer independente —
+  // a versão anterior tratava tudo como "token inválido" e ainda dizia na tela que tinha salvado):
+  //
+  //  · recusado  → o Meta respondeu e negou. Não grava; 400 com o motivo.
+  //  · temporário→ rede, timeout, 429 ou 5xx. NÃO é culpa do token: não grava, não apaga a
+  //                credencial que já existia, e devolve 503 para a tela poder dizer "tente de
+  //                novo" em vez de mandar o cliente caçar um token que estava certo.
+  //  · ok        → grava.
+  if (veredito.estado === 'temporario') {
+    return NextResponse.json({ error: veredito.motivo, temporario: true }, { status: 503 })
+  }
+  if (veredito.estado === 'recusado') {
+    // Registra o motivo na credencial EXISTENTE, se houver: assim a tela mostra por que o envio
+    // parou, em vez de deixar a coluna `last_error` morta como estava.
+    await createServiceRoleClient()
+      .from('form_capi_credentials')
+      .update({ last_error: veredito.motivo, updated_at: new Date().toISOString() } as never)
+      .eq('form_id', id)
     return NextResponse.json({ error: veredito.motivo }, { status: 400 })
   }
 

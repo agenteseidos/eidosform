@@ -48,25 +48,36 @@ function novoEventId(): string {
 }
 
 /**
- * Registra o evento disparado e devolve o id que o fbq deve usar.
+ * Registra o disparo e devolve o id que o fbq deve usar.
  *
- * O array `__eidosCapturedFbqEvents` continua sendo SÓ de nomes: é dele que sai a coluna
- * `meta_events`, cujo formato já está gravado em planilha, CSV, PDF e e-mail. Os ids viajam num
- * mapa PARALELO, para não mexer em dado que já existe lá fora.
+ * ⚠️ CORRIGIDO EM 18/08/2026 (parecer independente). A primeira versão guardava um mapa
+ * nome→id em que "o primeiro id vence para sempre": se o MESMO nome disparasse duas vezes na
+ * mesma página, as duas ocorrências levariam o mesmo `event_id`. O Meta especifica `event_id`
+ * ÚNICO POR OCORRÊNCIA — a deduplicação documentada é entre navegador e servidor, não uma forma
+ * de fundir dois disparos do navegador. Repetir o id seria pedir ao Meta que descartasse um
+ * evento legítimo.
+ *
+ * Agora cada disparo é uma OCORRÊNCIA com id próprio. Uma reserva feita antes do POST
+ * (`reservarEventId`) é CONSUMIDA pelo disparo correspondente, para que o mesmo evento não vire
+ * duas ocorrências.
+ *
+ * O array `__eidosCapturedFbqEvents` continua sendo só de nomes: é dele que sai a coluna
+ * `meta_events`, cujo formato já está gravado em planilha, CSV, PDF e e-mail.
  */
 function recordCapturedEvent(name: string): string {
   const id = novoEventId()
   if (typeof window === 'undefined' || !name) return id
   if (!window.__eidosCapturedFbqEvents) window.__eidosCapturedFbqEvents = []
   window.__eidosCapturedFbqEvents.push(name)
-  if (!window.__eidosCapturedFbqEventIds) window.__eidosCapturedFbqEventIds = {}
-  // Primeiro disparo do nome manda: se o mesmo evento repetir, os dois lados continuam
-  // apontando para o mesmo id e o Meta segue enxergando um evento só.
-  if (!window.__eidosCapturedFbqEventIds[name]) {
-    window.__eidosCapturedFbqEventIds[name] = id
-    return id
+  if (!window.__eidosFbqOcorrencias) window.__eidosFbqOcorrencias = []
+
+  const reservada = window.__eidosFbqOcorrencias.find((o) => o.nome === name && !o.disparado)
+  if (reservada) {
+    reservada.disparado = true
+    return reservada.id
   }
-  return window.__eidosCapturedFbqEventIds[name]
+  window.__eidosFbqOcorrencias.push({ nome: name, id, disparado: true })
+  return id
 }
 
 /**
@@ -84,9 +95,19 @@ function recordCapturedEvent(name: string): string {
 export function reservarEventId(name: string): string {
   const id = novoEventId()
   if (typeof window === 'undefined' || !name) return id
-  if (!window.__eidosCapturedFbqEventIds) window.__eidosCapturedFbqEventIds = {}
-  if (!window.__eidosCapturedFbqEventIds[name]) window.__eidosCapturedFbqEventIds[name] = id
-  return window.__eidosCapturedFbqEventIds[name]
+  if (!window.__eidosFbqOcorrencias) window.__eidosFbqOcorrencias = []
+  // Já existe reserva não disparada para este nome? Reaproveita — reservar duas vezes o mesmo
+  // evento pendente criaria uma ocorrência fantasma que nunca vira disparo no navegador.
+  const pendente = window.__eidosFbqOcorrencias.find((o) => o.nome === name && !o.disparado)
+  if (pendente) return pendente.id
+  window.__eidosFbqOcorrencias.push({ nome: name, id, disparado: false })
+  return id
+}
+
+/** As ocorrências desta página, no formato que viaja no POST: `[{name, id}, ...]`. */
+export function ocorrenciasDeEvento(): Array<{ name: string; id: string }> {
+  if (typeof window === 'undefined') return []
+  return (window.__eidosFbqOcorrencias ?? []).map((o) => ({ name: o.nome, id: o.id }))
 }
 
 function normalizeAnswer(answer: unknown): string {
@@ -407,6 +428,86 @@ const SUPPRESSED_META_EVENTS = new Set([
   'AddToWishlist',
   'AddPaymentInfo',
 ])
+
+/**
+ * O Pixel do Meta configurado no formulário — FONTE ÚNICA.
+ *
+ * Existe porque havia três leituras diferentes do mesmo campo (parecer independente, 18/08/2026):
+ * a página pública aceitava quatro apelidos (`metaPixelId`, `facebook`, `meta_pixel_id`,
+ * `pixel_meta`, herdados de versões antigas do construtor), enquanto o CAPI e a rota do token
+ * liam só `metaPixelId`. Resultado: um formulário antigo rastrearia no navegador e não teria
+ * CAPI — e o cliente veria "preencha o Pixel ID" com o Pixel preenchido na tela.
+ *
+ * Devolve `null` se não for um Pixel plausível: o do Meta é sempre numérico.
+ */
+export function lerPixelDoFormulario(pixels: unknown): string | null {
+  if (!pixels || typeof pixels !== 'object') return null
+  const px = pixels as Record<string, unknown>
+  const bruto = [px.metaPixelId, px.facebook, px.meta_pixel_id, px.pixel_meta]
+    .find((v) => typeof v === 'string' && v.trim())
+  if (typeof bruto !== 'string') return null
+  const limpo = bruto.trim()
+  return /^\d{10,20}$/.test(limpo) ? limpo : null
+}
+
+/**
+ * O QUE ESTE FORMULÁRIO TEM AUTORIZAÇÃO PARA MANDAR AO META PELO SERVIDOR.
+ *
+ * ⚠️ ESTE É O CONSERTO DO ACHADO MAIS GRAVE DO PARECER INDEPENDENTE (18/08/2026).
+ *
+ * O submit de formulário publicado é ANÔNIMO por natureza — qualquer um posta. Até aqui, a lista
+ * `meta_events` que vinha nesse POST era usada quase como veio: `isRecordableMetaEvent` é uma
+ * lista de BLOQUEIO (recusa PageView, ViewContent e mais quatro) e libera todo o resto, inclusive
+ * `Purchase`, `Lead` e qualquer nome inventado.
+ *
+ * Enquanto o CAPI usava o pixel global da plataforma, isso sujava o ativo do dono. Com o CAPI por
+ * cliente ficou pior: um estranho podia mandar `{"meta_events":["Purchase"]}` e o servidor
+ * dispararia no pixel do CLIENTE, autenticado com o token VERDADEIRO dele — poluindo atribuição e
+ * otimização de campanha de terceiro.
+ *
+ * A regra agora: o navegador pode DIZER o que disparou, mas quem AUTORIZA é o servidor, relendo a
+ * configuração gravada do formulário e reavaliando as condições contra as respostas que ele mesmo
+ * recebeu. Nome que o dono não configurou não sai daqui — não importa o que veio no POST.
+ *
+ * Pura de propósito: sem rede, sem banco, testável sozinha.
+ */
+export function derivarEventosAutorizados(params: {
+  onStart?: string | null
+  onComplete?: string | null
+  answerSetEvents?: AnswerSetEvent[] | null
+  questions: Array<{ id: string; pixelEvents?: PixelEventRule[] }>
+  answers: Record<string, unknown>
+}): Map<string, PixelEventConfig | null> {
+  const { onStart, onComplete, answerSetEvents, questions, answers } = params
+  // Map em vez de Set porque o valor guarda `value`/`currency` da configuração — sem isso um
+  // `Purchase` chegaria ao Meta sem valor e a campanha não conseguiria otimizar por receita.
+  const autorizados = new Map<string, PixelEventConfig | null>()
+
+  const nomeSimples = (v: string | null | undefined) => (v || '').trim()
+  for (const n of [nomeSimples(onStart), nomeSimples(onComplete)]) {
+    if (n && !autorizados.has(n)) autorizados.set(n, null)
+  }
+
+  // Regras POR PERGUNTA: reavaliadas aqui contra as respostas recebidas. Confiar no navegador
+  // para dizer que a condição bateu seria deixar a mesma porta aberta um andar acima.
+  const existentes = new Set(questions.map((q) => q.id))
+  for (const q of questions) {
+    for (const regra of q.pixelEvents || []) {
+      const nome = (regra.event?.name || '').trim()
+      if (!nome || !existentes.has(q.id)) continue
+      if (matchesCondition(answers[q.id], regra.condition) && !autorizados.has(nome)) {
+        autorizados.set(nome, regra.event)
+      }
+    }
+  }
+
+  // Eventos por conjunto de respostas: mesma avaliação que o navegador faz, refeita aqui.
+  for (const nome of evaluateAnswerSetEvents(answerSetEvents, answers, existentes)) {
+    if (!autorizados.has(nome)) autorizados.set(nome, null)
+  }
+
+  return autorizados
+}
 
 export function isRecordableMetaEvent(name: string): boolean {
   return name.trim() !== '' && !SUPPRESSED_META_EVENTS.has(name)

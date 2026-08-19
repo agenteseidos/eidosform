@@ -6,6 +6,7 @@ import { FormPlayer } from '@/components/form-player/form-player'
 import { Form } from '@/lib/database.types'
 import { getEffectivePlan } from '@/lib/plans'
 import { isOverResponseQuota } from '@/lib/response-quota'
+import { lerPixelDoFormulario } from '@/lib/pixel-events'
 import { PLANS, type PlanName } from '@/lib/plan-definitions'
 import { filterQuestionsByPlan } from '@/lib/questions'
 
@@ -133,11 +134,11 @@ export default async function FormPage({ params }: FormPageProps) {
   // Fetch owner's plan to gate pixel rendering
   const ownerPlan = await fetchOwnerPlan(supabase, form.id)
 
-  // Extract Meta Pixel ID from form pixels config (suporte a camelCase e snake_case)
+  // Pixel do Meta: leitura pela FONTE ÚNICA (`lerPixelDoFormulario`), que trata os apelidos
+  // antigos e exige formato numérico. Antes esta lógica era duplicada aqui e divergia da que o
+  // CAPI usava — formulário antigo rastreava no navegador e não tinha CAPI.
   const px = (form.pixels as Record<string, string> | null) ?? {}
-  // Sanitize: Meta Pixel IDs are always numeric (15-16 digits) — strip any non-digits to prevent XSS
-  const rawPixelId = px.metaPixelId || px.facebook || px.meta_pixel_id || px.pixel_meta || null
-  const metaPixelId = rawPixelId && /^\d{10,20}$/.test(rawPixelId.trim()) ? rawPixelId.trim() : null
+  const metaPixelId = lerPixelDoFormulario(form.pixels)
   const canShowPixels = ownerPlan === 'plus' || ownerPlan === 'professional'
 
   // Google Tag Manager + Google Ads — injetados server-side (igual ao Meta Pixel)

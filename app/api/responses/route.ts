@@ -7,7 +7,8 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkAndIncrementResponseCount, sendNearLimitAlert, PLANS } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
-import { isRecordableMetaEvent } from '@/lib/pixel-events'
+import { isRecordableMetaEvent, derivarEventosAutorizados, lerPixelDoFormulario } from '@/lib/pixel-events'
+import type { AnswerSetEvent, PixelEventRule } from '@/types/pixel-events'
 import { extractLead } from '@/lib/lead-extraction'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
@@ -164,13 +165,21 @@ export async function POST(req: NextRequest) {
   // navegador e o do servidor são o MESMO lead. Sem isto ele conta os dois.
   // Só entram nomes que já sobreviveram ao filtro acima: o mapa não pode ser via de entrada para
   // evento que `isRecordableMetaEvent` recusou.
+  // Uma entrada por DISPARO: o Meta exige `event_id` único por ocorrência. Só entram nomes que
+  // já sobreviveram ao filtro acima — e, mais adiante, só os que a CONFIGURAÇÃO do formulário
+  // autorizar. Isto aqui é higiene de formato; a autorização é outra camada, de propósito.
   const nomesAceitos = new Set(metaEvents)
-  const metaEventIds: Record<string, string> = {}
-  if (body.meta_event_ids && typeof body.meta_event_ids === 'object' && !Array.isArray(body.meta_event_ids)) {
-    for (const [nome, id] of Object.entries(body.meta_event_ids as Record<string, unknown>)) {
-      if (!nomesAceitos.has(nome) || typeof id !== 'string') continue
-      const limpo = id.trim().slice(0, 64)
-      if (limpo) metaEventIds[nome] = limpo
+  const metaOcorrencias: Array<{ name: string; id: string }> = []
+  if (Array.isArray(body.meta_event_ids)) {
+    for (const item of body.meta_event_ids.slice(0, MAX_META_EVENTS * 2)) {
+      if (!item || typeof item !== 'object') continue
+      const { name, id } = item as { name?: unknown; id?: unknown }
+      if (typeof name !== 'string' || typeof id !== 'string') continue
+      const nomeLimpo = name.trim().slice(0, MAX_META_EVENT_LEN)
+      const idLimpo = id.trim().slice(0, 64)
+      if (nomeLimpo && idLimpo && nomesAceitos.has(nomeLimpo)) {
+        metaOcorrencias.push({ name: nomeLimpo, id: idLimpo })
+      }
     }
   }
 
@@ -238,10 +247,10 @@ export async function POST(req: NextRequest) {
   // Verificar se o formulário existe e está publicado
   const { data: form, error: formError } = await supabase
     .from('forms')
-    .select('id, title, questions, status, user_id, webhook_url, is_closed, paused, notify_email_enabled, notify_email, notify_owner_enabled, google_sheets_enabled, google_sheets_id, pixels')
+    .select('id, title, questions, status, user_id, webhook_url, is_closed, paused, notify_email_enabled, notify_email, notify_owner_enabled, google_sheets_enabled, google_sheets_id, pixels, pixel_event_on_start, pixel_event_on_complete')
     .eq('id', form_id as string)
     .eq('status', 'published')
-    .single() as { data: { id: string; title: string | null; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null; is_closed: boolean; paused: boolean; notify_email_enabled: boolean; notify_email: string | null; notify_owner_enabled?: boolean | null; google_sheets_enabled: boolean; google_sheets_id: string | null; pixels: Record<string, unknown> | null } | null; error: unknown }
+    .single() as { data: { id: string; title: string | null; questions: Array<{ id: string; required?: boolean }>; status: string; user_id: string; webhook_url: string | null; is_closed: boolean; paused: boolean; notify_email_enabled: boolean; notify_email: string | null; notify_owner_enabled?: boolean | null; google_sheets_enabled: boolean; google_sheets_id: string | null; pixels: Record<string, unknown> | null; pixel_event_on_start: string | null; pixel_event_on_complete: string | null } | null; error: unknown }
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Formulário não encontrado ou não publicado' }, { status: 404, headers: CORS_HEADERS })
@@ -841,21 +850,20 @@ export async function POST(req: NextRequest) {
     // Agora: pixel do formulário + token do formulário. SEM FALLBACK — formulário sem token
     // simplesmente não tem envio pelo servidor, e o pixel do navegador segue funcionando.
     if (ownerPlanConfig?.pixels && metaEvents.length > 0) {
-      const pixelDoCliente = (() => {
-        const px = (form.pixels ?? {}) as Record<string, unknown>
-        const v = typeof px.metaPixelId === 'string' ? px.metaPixelId.trim() : ''
-        return v || null
-      })()
+      // Fonte única: trata os apelidos antigos do campo e exige formato numérico. Ler só
+      // `metaPixelId` aqui deixava formulário antigo com pixel no navegador e sem CAPI.
+      const pixelDoCliente = lerPixelDoFormulario(form.pixels)
 
       if (pixelDoCliente) {
         postSubmitTasks.push((async () => {
           const { data: cred } = await supabase
             .from('form_capi_credentials')
-            .select('token_encrypted')
+            .select('token_encrypted, pixel_id')
             .eq('form_id', form_id as string)
             .maybeSingle()
 
-          const token = decifrarToken((cred as { token_encrypted?: string } | null)?.token_encrypted)
+          const c = cred as { token_encrypted?: string; pixel_id?: string | null } | null
+          const token = decifrarToken(c?.token_encrypted, form_id as string)
           // Sem token do cliente não sai nada pelo servidor. Este é o ponto exato onde o
           // vazamento antigo acontecia — e onde ele agora termina em silêncio.
           if (!token) return
@@ -867,22 +875,47 @@ export async function POST(req: NextRequest) {
           const userAgent = req.headers.get('user-agent') ?? undefined
           const referer = req.headers.get('referer') ?? undefined
 
-          // A regra de QUEM vai mora em `decidirEnviosCapi` (pura, testada). Aqui só o encanamento.
+          // ⚠️ AUTORIZAÇÃO NO SERVIDOR (correção do achado mais grave do parecer independente).
+          // O corpo do POST é anônimo. Sem isto, um estranho mandaria `Purchase` e o servidor
+          // dispararia no pixel do cliente com o token verdadeiro dele. Aqui a configuração
+          // GRAVADA do formulário é relida e as condições são REAVALIADAS contra as respostas que
+          // este servidor recebeu — o navegador diz o que disparou, quem autoriza somos nós.
+          const px = (form.pixels ?? {}) as { answerSetEvents?: AnswerSetEvent[] }
+          const autorizados = derivarEventosAutorizados({
+            onStart: form.pixel_event_on_start,
+            onComplete: form.pixel_event_on_complete,
+            answerSetEvents: px.answerSetEvents ?? null,
+            questions: effectiveQuestions as Array<{ id: string; pixelEvents?: PixelEventRule[] }>,
+            answers: answers as Record<string, unknown>,
+          })
+
           const aEnviar = decidirEnviosCapi({
             planoPermite: true,
             pixelId: pixelDoCliente,
             token,
-            eventos: metaEvents,
-            eventIds: metaEventIds,
+            // Pixel trocado depois da validação = par não aprovado. Recusa até revalidar.
+            pixelValidado: c?.pixel_id ?? null,
+            ocorrencias: metaOcorrencias,
+            autorizados,
           })
 
-          await Promise.all(aEnviar.map(({ eventName, eventId }) => {
+          if (aEnviar.length < metaOcorrencias.length) {
+            // Vale registrar: é o sinal de POST adulterado — ou de configuração que mudou depois
+            // que o lead abriu a página.
+            logWarn('[capi] ocorrências descartadas por falta de autorização', {
+              formId: form_id, recebidas: metaOcorrencias.length, enviadas: aEnviar.length,
+            })
+          }
+
+          await Promise.all(aEnviar.map(({ eventName, eventId, value, currency }) => {
             return sendMetaCAPIEvent({
               ...pii,
               pixelId: pixelDoCliente,
               accessToken: token,
               eventName,
               eventId,
+              value,
+              currency,
               ip,
               userAgent,
               formTitle: form.title ?? undefined,

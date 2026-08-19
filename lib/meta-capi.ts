@@ -80,6 +80,13 @@ export interface MetaCAPIOptions {
   /** Valor da conversão, vindo da CONFIGURAÇÃO do evento (nunca do POST público). */
   value?: number
   currency?: string
+  /**
+   * Código de teste do Gerenciador de Eventos, POR FORMULÁRIO e temporário.
+   * ⚠️ Evento com este código NÃO conta para otimização de campanha — por isso ele expira sozinho
+   * (ver `codigoDeTesteValido`). A versão global disto foi removida hoje justamente porque um
+   * código esquecido no ambiente anularia as conversões de todos os clientes de uma vez.
+   */
+  testEventCode?: string
 }
 
 /**
@@ -174,6 +181,7 @@ export async function sendMetaCAPIEvent(options: MetaCAPIOptions): Promise<boole
       body: JSON.stringify({
         data: [payload],
         access_token: accessToken,
+        ...(options.testEventCode ? { test_event_code: options.testEventCode } : {}),
       }),
     })
 
@@ -395,4 +403,36 @@ export function decidirEnviosCapi(params: {
     })
   }
   return saida
+}
+
+
+/** Quanto tempo um código de teste continua valendo. Curto: é para conferir, não para viver. */
+export const VALIDADE_CODIGO_TESTE_H = 3
+
+/**
+ * O código de teste ainda vale?
+ *
+ * Existe porque código de teste é uma FACA: evento marcado como teste não conta para a otimização
+ * da campanha. Um código esquecido no formulário zeraria as conversões daquele cliente em
+ * silêncio — exatamente o risco que fez a variável global ser removida em 18/08/2026.
+ *
+ * Expirar sozinho transforma o esquecimento em não-evento: passou de {@link VALIDADE_CODIGO_TESTE_H}
+ * horas, o envio volta a ser normal sem ninguém precisar lembrar de nada.
+ */
+export function codigoDeTesteValido(
+  codigo: unknown,
+  marcadoEm: unknown,
+  agora: number = Date.now(),
+): string | null {
+  if (typeof codigo !== 'string') return null
+  const limpo = codigo.trim()
+  // Formato do Meta: TEST seguido de dígitos. Barra colagem errada antes de virar envio.
+  if (!/^TEST[A-Za-z0-9]{2,20}$/.test(limpo)) return null
+  if (typeof marcadoEm !== 'string') return null
+  const t = Date.parse(marcadoEm)
+  if (Number.isNaN(t)) return null
+  if (agora - t > VALIDADE_CODIGO_TESTE_H * 3600_000) return null
+  // Marca no futuro (relógio torto ou payload adulterado) não vale.
+  if (t - agora > 5 * 60_000) return null
+  return limpo
 }

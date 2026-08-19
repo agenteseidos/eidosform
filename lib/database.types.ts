@@ -123,6 +123,15 @@ export interface PixelConfig {
   tiktokPixelId?: string     // TikTok Pixel ID
   gtmId?: string             // Google Tag Manager Container ID (GTM-XXXXXXX)
   answerSetEvents?: AnswerSetEvent[] // Eventos por conjunto de respostas (máx. 10 por form)
+  /**
+   * Código de teste do Gerenciador de Eventos (Meta), TEMPORÁRIO — a única forma de conferir que
+   * o envio pelo servidor está chegando. Não é segredo: é descartável e inútil sem o token.
+   * Por isso pode morar aqui, em `pixels`, que viaja para o navegador do visitante — ao contrário
+   * do token, que fica cifrado em `form_capi_credentials`.
+   */
+  metaTestEventCode?: string
+  /** Quando o código foi colado. É isto que o faz EXPIRAR sozinho (3h) — ver `codigoDeTesteValido`. */
+  metaTestEventCodeAt?: string
 }
 
 // Database tables

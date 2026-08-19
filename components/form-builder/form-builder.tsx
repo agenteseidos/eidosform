@@ -71,6 +71,7 @@ import {
   Zap,
   Table,
   Crosshair,
+  AlertTriangle,
   Database,
   Bell,
   ChevronDown,
@@ -1515,6 +1516,46 @@ export function FormBuilder({ form: initialForm, userPlan = 'free', userInfo, ca
                               pelo servidor. Componente próprio, com rota própria: credencial não
                               entra no autosave nem volta para o navegador. */}
                           <CapiTokenField formId={form.id} pixelAtual={pixels.metaPixelId || ''} />
+
+                          {/* Código de teste: a única forma de CONFERIR que o envio pelo servidor
+                              chegou. Some sozinho em 3h — evento marcado como teste não conta para
+                              a campanha, e código esquecido zeraria as conversões em silêncio. */}
+                          <div className="pt-4 border-t border-slate-200">
+                            <Label htmlFor="meta_test_code" className="text-sm font-medium text-slate-700">
+                              Código de teste <span className="font-normal text-slate-400">(temporário)</span>
+                            </Label>
+                            <p className="text-xs text-slate-500 mt-1">
+                              Para conferir se o envio pelo servidor está chegando. Pegue em Gerenciador de
+                              Eventos → Eventos de teste, cole aqui e preencha o formulário: o evento aparece
+                              lá na hora.
+                            </p>
+                            <Input
+                              id="meta_test_code"
+                              value={pixels.metaTestEventCode || ''}
+                              onChange={(e) => {
+                                const v = e.target.value.trim()
+                                setPixels({
+                                  ...pixels,
+                                  metaTestEventCode: v || undefined,
+                                  // O carimbo é o que faz o código expirar sozinho.
+                                  metaTestEventCodeAt: v ? new Date().toISOString() : undefined,
+                                })
+                                markDirty()
+                              }}
+                              className="mt-1.5 text-slate-900 placeholder:text-slate-400 bg-white font-mono text-xs"
+                              placeholder="TEST12345"
+                            />
+                            {pixels.metaTestEventCode && (
+                              <p className="mt-2 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                                <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
+                                <span>
+                                  Enquanto este código estiver ativo, as conversões deste formulário
+                                  <strong> não contam para a otimização das suas campanhas</strong>. Ele para
+                                  de valer sozinho em 3 horas — apague assim que terminar o teste.
+                                </span>
+                              </p>
+                            )}
+                          </div>
                           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Eventos</p>
                           <div>
                             <Label htmlFor="pixel_event_start" className="text-sm font-medium text-slate-700">Evento ao iniciar</Label>

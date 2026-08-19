@@ -17,7 +17,7 @@ import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 import { upsertSubmission } from '@/lib/google-sheets'
 import { logError, logWarn } from '@/lib/logger'
-import { sendMetaCAPIEvent, extractPIIFromAnswers, decidirEnviosCapi } from '@/lib/meta-capi'
+import { sendMetaCAPIEvent, extractPIIFromAnswers, decidirEnviosCapi, codigoDeTesteValido } from '@/lib/meta-capi'
 import { decifrarToken } from '@/lib/capi-credential'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
@@ -880,7 +880,15 @@ export async function POST(req: NextRequest) {
           // dispararia no pixel do cliente com o token verdadeiro dele. Aqui a configuração
           // GRAVADA do formulário é relida e as condições são REAVALIADAS contra as respostas que
           // este servidor recebeu — o navegador diz o que disparou, quem autoriza somos nós.
-          const px = (form.pixels ?? {}) as { answerSetEvents?: AnswerSetEvent[] }
+          const px = (form.pixels ?? {}) as {
+            answerSetEvents?: AnswerSetEvent[]
+            metaTestEventCode?: string
+            metaTestEventCodeAt?: string
+          }
+          // Código de teste do formulário, se ainda dentro da validade. Expira sozinho: evento
+          // marcado como teste NÃO conta para otimização, então um código esquecido zeraria as
+          // conversões daquele cliente em silêncio.
+          const codigoTeste = codigoDeTesteValido(px.metaTestEventCode, px.metaTestEventCodeAt)
           const autorizados = derivarEventosAutorizados({
             onStart: form.pixel_event_on_start,
             onComplete: form.pixel_event_on_complete,
@@ -916,6 +924,7 @@ export async function POST(req: NextRequest) {
               eventId,
               value,
               currency,
+              ...(codigoTeste ? { testEventCode: codigoTeste } : {}),
               ip,
               userAgent,
               formTitle: form.title ?? undefined,

@@ -262,6 +262,11 @@ const PixelsSchema = z
     tiktokPixelId: z.string().max(40).nullable().optional(),
     gtmId: z.string().max(40).nullable().optional(),
     answerSetEvents: z.array(AnswerSetEventSchema).max(10).optional(),
+    // Código de teste do Meta, TEMPORÁRIO. Declarado (em vez de só passar pelo passthrough) para
+    // que lixo não seja gravado: o formato é TEST + alfanuméricos, e o carimbo é o que faz o
+    // código expirar sozinho em 3h — evento marcado como teste não conta para a campanha.
+    metaTestEventCode: z.string().regex(/^TEST[A-Za-z0-9]{2,20}$/).nullable().optional(),
+    metaTestEventCodeAt: z.string().datetime().nullable().optional(),
   })
   .passthrough()
 

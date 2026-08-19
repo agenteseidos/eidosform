@@ -33,6 +33,15 @@ const CLAIM_RULES: Array<{
     pattern: /conversões personalizadas/i,
     holds: (p) => p.pixels,
   },
+  // Envio pelo SERVIDOR (18/08/2026). Regra própria porque o padrão de pixels acima procura
+  // "meta pixel" e não casaria com "Meta CAPI" — o bullet entraria sem lastro obrigatório.
+  // O runtime usa o MESMO gate (`ownerPlanConfig?.pixels` em app/api/responses/route.ts), então
+  // é `p.pixels` que tem de segurar a promessa.
+  {
+    label: 'Conversão server-side (CAPI)',
+    pattern: /server-side|capi/i,
+    holds: (p) => p.pixels,
+  },
   { label: 'Respostas parciais', pattern: /respostas parciais/i, holds: (p) => p.partialResponses },
   // Taxa de abandono usa o mesmo gate de partialResponses no runtime
   // (app/api/forms/[id]/analytics/route.ts:82)

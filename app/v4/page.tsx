@@ -18,6 +18,7 @@ import {
   LineChart,
   Link2,
   Mail,
+  ShieldCheck,
   Target,
   UserRound,
   X,
@@ -41,10 +42,14 @@ import { ThemeCarousel } from '@/components/ui/theme-carousel'
 // UTM no webhook, alerta de lead abandonado (timer na VPS) e tela de abandono por
 // pergunta (analytics-panel) — tudo EXISTE e está ligado.
 //
+// ✅ CAPI SERVER-SIDE VOLTOU À VITRINE EM 18/08/2026, com lastro. Foi retirado em
+// 28/07 porque havia UM pixel/token GLOBAL da plataforma: o evento do lead do
+// cliente ia para a NOSSA conta e o event_id era o nome do evento (sem dedup).
+// Hoje: pixel E token POR FORMULÁRIO (form_capi_credentials, cifrado), sem
+// fallback global, event_id único por ocorrência e nome real do evento. Validado
+// em produção. Por isso a promessa diz "na SUA conta" — é o que mudou.
+//
 // ⚠️ NÃO ANUNCIAR (revisão Codex 2026-07-28, promessa sem lastro):
-//   - CAPI server-side: existe UM pixel/token GLOBAL, mas os pixels dos clientes
-//     são POR FORMULÁRIO; todo evento sai como 'Lead' e o event_id é o nome do
-//     evento (sem dedup real com o browser). Só anunciar após config por cliente.
 //   - "UTM aparece na mensagem do WhatsApp por padrão": as variáveis {utm_*}
 //     existem, mas os templates PADRÃO não as usam.
 //   - "tempo médio de preenchimento": a tabela responses não tem timestamp de
@@ -52,7 +57,7 @@ import { ThemeCarousel } from '@/components/ui/theme-carousel'
 export const metadata: Metadata = {
   title: 'EidosForm | Formulários que as pessoas respondem até o fim',
   description:
-    'A alternativa brasileira ao Typeform para tráfego pago: Meta Pixel, Google Ads, GTM e TikTok nativos, UTMs em cada lead e alerta de lead incompleto. Pague em real.',
+    'A alternativa brasileira ao Typeform para tráfego pago: Meta Pixel, Google Ads, GTM e TikTok nativos, conversão server-side na sua conta, UTMs em cada lead e alerta de lead incompleto. Pague em real.',
   robots: { index: false, follow: false },
 }
 
@@ -85,6 +90,12 @@ const TRAFFIC_FEATURES = [
     color: BRAND_TILE,
     title: 'Conversão por resposta',
     desc: 'Dispare um evento diferente conforme a resposta — ou combine várias: "LeadQualificado" só quando orçamento E prazo baterem. A campanha otimiza para quem compra, não para quem clica.',
+  },
+  {
+    icon: ShieldCheck,
+    color: BRAND_TILE,
+    title: 'Conversão server-side (Meta CAPI)',
+    desc: 'O evento também sai do nosso servidor direto para o Meta, na SUA conta de anúncios, com e-mail e telefone em hash para casar o lead. Bloqueador de anúncio e iOS param o navegador, não o servidor — e a deduplicação impede que a mesma conversão seja contada duas vezes.',
   },
   {
     icon: LineChart,

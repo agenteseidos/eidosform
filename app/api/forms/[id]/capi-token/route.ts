@@ -173,12 +173,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: veredito.motivo, temporario: true }, { status: 503 })
   }
   if (veredito.estado === 'recusado') {
-    // Registra o motivo na credencial EXISTENTE, se houver: assim a tela mostra por que o envio
-    // parou, em vez de deixar a coluna `last_error` morta como estava.
-    await createServiceRoleClient()
-      .from('form_capi_credentials')
-      .update({ last_error: veredito.motivo, updated_at: new Date().toISOString() } as never)
-      .eq('form_id', id)
+    // ⚠️ NÃO escrever nada na credencial existente. A versão anterior gravava `last_error` aqui —
+    // mas quem foi recusado é o token CANDIDATO, não o que já está guardado. Uma tentativa de
+    // troca malfeita sujava a credencial que continua funcionando, e a tela passava a exibir um
+    // erro sobre um envio que nunca parou. (2º parecer independente, 18/08/2026.)
+    // O motivo vai só na resposta, para a tela mostrar ao lado do campo.
     return NextResponse.json({ error: veredito.motivo }, { status: 400 })
   }
 

@@ -385,13 +385,28 @@ export function decidirEnviosCapi(params: {
   if (pixelValidado && pixelValidado.trim() !== pixelId.trim()) return []
 
   const vistos = new Set<string>()
+  const nomesJaEnviados = new Set<string>()
   const saida: Array<{ eventName: string; eventId: string; value?: number; currency?: string }> = []
   for (const o of ocorrencias) {
     if (!o?.name || !o?.id) continue
     if (!autorizados.has(o.name)) continue
+    // ⚠️ TETO DE UMA OCORRÊNCIA POR NOME — mitigação do P0 achado no 2º parecer independente
+    // (18/08/2026). A autorização limitava QUAIS nomes, não QUANTOS: com `Purchase` legitimamente
+    // configurado, um POST forjado com 50 ocorrências gerava 50 conversões reais na conta de
+    // anúncios do cliente, autenticadas com o token dele. Inflar conversão de terceiro é
+    // sabotagem barata — o Meta passa a entregar o anúncio para público lixo.
+    //
+    // Este teto NÃO tira nada do fluxo legítimo: hoje `metaEvents` já é deduplicado por nome, e o
+    // navegador dispara no máximo uma vez por nome num submit.
+    //
+    // É MITIGAÇÃO, NÃO A CORREÇÃO. A correção é o servidor DERIVAR os gatilhos e devolver ao
+    // navegador o que disparar, com um evento por gatilho — aí a cardinalidade vira propriedade
+    // estrutural em vez de checagem. Enquanto isso não existe, o teto fecha a amplificação.
+    if (nomesJaEnviados.has(o.name)) continue
     // Id repetido no mesmo POST é entrada malformada (ou adulterada): manda uma vez só.
     if (vistos.has(o.id)) continue
     vistos.add(o.id)
+    nomesJaEnviados.add(o.name)
     const cfg = autorizados.get(o.name)
     saida.push({
       eventName: o.name,

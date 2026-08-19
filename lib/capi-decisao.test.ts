@@ -91,15 +91,36 @@ describe('decidirEnviosCapi', () => {
     expect(r).toEqual([{ eventName: 'Lead', eventId: 'id-1' }])
   })
 
-  it('duas ocorrências do MESMO nome com ids diferentes são dois envios', () => {
-    // O Meta exige event_id único por ocorrência: dois disparos legítimos = dois eventos.
+  /**
+   * ⚠️ ESTE TESTE FOI INVERTIDO EM 18/08/2026 — a versão anterior ABENÇOAVA o defeito.
+   *
+   * Ele dizia "dois ids diferentes do mesmo nome = dois envios", raciocinando a partir da regra
+   * do Meta de que `event_id` é único por ocorrência. A regra é verdadeira, mas a conclusão era
+   * errada: como as ocorrências vinham do POST ANÔNIMO, isso significava que qualquer um mandava
+   * 50 `Purchase` e o servidor disparava 50 conversões reais na conta do cliente.
+   *
+   * Eu havia testado o que construí, não o que era exigido. É o mesmo erro de sempre, em roupa
+   * nova: a suíte inteira passava e o furo estava documentado como comportamento correto.
+   */
+  it('MESMO nome repetido no POST vira UM envio — teto contra inflação de conversão', () => {
     const r = decidirEnviosCapi({
       ...base,
-      ocorrencias: [{ name: 'Lead', id: 'id-a' }, { name: 'Lead', id: 'id-b' }],
+      ocorrencias: Array.from({ length: 50 }, (_, i) => ({ name: 'Lead', id: `forjado-${i}` })),
+    })
+    expect(r).toEqual([{ eventName: 'Lead', eventId: 'forjado-0' }])
+  })
+
+  it('o teto é POR NOME — nomes distintos e autorizados continuam saindo', () => {
+    const r = decidirEnviosCapi({
+      ...base,
+      ocorrencias: [
+        { name: 'Lead', id: 'a' }, { name: 'Lead', id: 'b' },
+        { name: 'AgendouConsulta', id: 'c' }, { name: 'AgendouConsulta', id: 'd' },
+      ],
     })
     expect(r).toEqual([
-      { eventName: 'Lead', eventId: 'id-a' },
-      { eventName: 'Lead', eventId: 'id-b' },
+      { eventName: 'Lead', eventId: 'a' },
+      { eventName: 'AgendouConsulta', eventId: 'c' },
     ])
   })
 

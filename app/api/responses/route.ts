@@ -898,7 +898,11 @@ export async function POST(req: NextRequest) {
           })
 
           const aEnviar = decidirEnviosCapi({
-            planoPermite: true,
+            // O valor REAL, não `true` fixo. O `if` acima já barra, mas escrever `true` aqui
+            // tornava o portão de plano do núcleo de decisão letra morta: quem um dia mexesse na
+            // condição de fora derrubaria a checagem inteira sem perceber. Dois portões de
+            // verdade, não um portão e um enfeite.
+            planoPermite: Boolean(ownerPlanConfig?.pixels),
             pixelId: pixelDoCliente,
             token,
             // Pixel trocado depois da validação = par não aprovado. Recusa até revalidar.

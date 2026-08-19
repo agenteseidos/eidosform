@@ -451,6 +451,26 @@ export function lerPixelDoFormulario(pixels: unknown): string | null {
 }
 
 /**
+ * O endereço da aba Configurações DO PIXEL no Gerenciador de Eventos — onde fica o botão que gera
+ * o token da API de Conversões.
+ *
+ * Devolve `null` sem um Pixel válido, e é esse o ponto: a versão anterior montava a URL com o
+ * valor cru do campo, e um campo vazio virava `/list/dataset//settings` — 404 na cara do cliente
+ * (pego pelo Sidney em 18/08/2026). Aqui o caso impossível não é evitado por disciplina de quem
+ * escreve a tela; ele simplesmente não tem como ser construído.
+ *
+ * ⚠️ NUNCA acrescentar `business_id`, `act` ou `nav_source`. A URL que se copia do navegador vem
+ * com os três, e eles identificam a conta e a conta de anúncios de QUEM COPIOU — embutir isso no
+ * produto serviria os identificadores do dono da plataforma a todo cliente que clicasse. O Meta
+ * resolve o contexto pela sessão de quem abre.
+ */
+export function linkConfiguracoesDoPixel(pixelId: string | null | undefined): string | null {
+  const limpo = (pixelId ?? '').trim()
+  if (!/^\d{10,20}$/.test(limpo)) return null
+  return `https://eventsmanager.facebook.com/events_manager2/list/dataset/${limpo}/settings`
+}
+
+/**
  * O QUE ESTE FORMULÁRIO TEM AUTORIZAÇÃO PARA MANDAR AO META PELO SERVIDOR.
  *
  * ⚠️ ESTE É O CONSERTO DO ACHADO MAIS GRAVE DO PARECER INDEPENDENTE (18/08/2026).

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { linkConfiguracoesDoPixel } from '@/lib/pixel-events'
 import { CheckCircle2, AlertTriangle, Loader2, Trash2, ExternalLink } from 'lucide-react'
 
 /**
@@ -28,6 +29,9 @@ type Estado = {
 
 export function CapiTokenField({ formId, pixelAtual }: { formId: string; pixelAtual: string }) {
   const temPixel = Boolean(pixelAtual.trim())
+  // `null` quando o Pixel ainda não é válido — aí o link nem é renderizado. Montar a URL com
+  // campo vazio era o que gerava `/dataset//settings` e um 404.
+  const linkDoPixel = linkConfiguracoesDoPixel(pixelAtual)
   const [estado, setEstado] = useState<Estado | null>(null)
   const [valor, setValor] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -172,17 +176,23 @@ export function CapiTokenField({ formId, pixelAtual }: { formId: string; pixelAt
           )}
 
           {/* Leva à aba Configurações DO PIXEL do próprio cliente — é lá que fica o botão de gerar
-              o token. O link anterior apontava para a entrada genérica do Gerenciador, que cai na
-              lista de conjuntos de dados e não em lugar nenhum útil (reportado pelo Sidney, 18/08).
-              ⚠️ SEM `business_id`, `act` ou `nav_source`: são identificadores da conta de quem
-              copiou a URL e não têm por que viajar no código. O Meta resolve pela sessão. */}
-          <a
-            href={`https://eventsmanager.facebook.com/events_manager2/list/dataset/${encodeURIComponent(pixelAtual.trim())}/settings`}
-            target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
-          >
-            Abrir as configurações deste Pixel <ExternalLink className="w-3 h-3" />
-          </a>
+              o token. O primeiro link apontava para a entrada genérica do Gerenciador, que não cai
+              em lugar nenhum útil; o segundo era montado mesmo sem Pixel preenchido e virava
+              `/dataset//settings`, um 404. As duas coisas foram pegas pelo Sidney em 18/08.
+              ⚠️ SEM `business_id`, `act` ou `nav_source`: identificam a conta de quem copiou a URL
+              e não têm por que viajar no código nem ser servidos a outro cliente. O Meta resolve
+              o contexto pela sessão de quem clica.
+              Só renderiza COM pixel: sem ele não há o que abrir, e o próximo passo do cliente é
+              preencher o Pixel ID, não gerar token. */}
+          {linkDoPixel && (
+            <a
+              href={linkDoPixel}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+            >
+              Abrir as configurações deste Pixel <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
           <p className="text-xs text-slate-500">
             Lá em <strong>Configurar integração direta</strong>, escolha <em>&ldquo;sem a Dataset
             Quality API&rdquo;</em> e clique em <strong>Gerar token de acesso</strong>. O token

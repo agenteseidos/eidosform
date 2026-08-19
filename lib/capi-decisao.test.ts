@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { decidirEnviosCapi } from './meta-capi'
-import { derivarEventosAutorizados } from './pixel-events'
+import { derivarEventosAutorizados, linkConfiguracoesDoPixel } from './pixel-events'
 import type { PixelEventRule } from '@/types/pixel-events'
 
 /**
@@ -165,5 +165,41 @@ describe('derivarEventosAutorizados', () => {
       answers: { q1: 'algo' },
     })
     expect(r.get('Purchase')).toEqual({ type: 'standard', name: 'Purchase', value: 97, currency: 'BRL' })
+  })
+})
+
+describe('linkConfiguracoesDoPixel', () => {
+  /**
+   * O bug que isto tranca (18/08/2026): o link era montado com o valor cru do campo, e um Pixel
+   * vazio virava `.../list/dataset//settings` — 404 na cara do cliente. Agora o caso impossível
+   * não pode ser construído: sem Pixel válido não há URL.
+   */
+  it('monta o endereço da aba Configurações do pixel', () => {
+    expect(linkConfiguracoesDoPixel('3978654055741467'))
+      .toBe('https://eventsmanager.facebook.com/events_manager2/list/dataset/3978654055741467/settings')
+  })
+
+  it('devolve null sem Pixel — nunca uma URL com o id vazio', () => {
+    for (const vazio of ['', '   ', null, undefined]) {
+      expect(linkConfiguracoesDoPixel(vazio)).toBeNull()
+    }
+    // E o resultado nunca pode conter a barra dupla que gerava o 404.
+    expect(String(linkConfiguracoesDoPixel('') ?? '')).not.toContain('dataset//')
+  })
+
+  it('devolve null para valor que não é Pixel', () => {
+    expect(linkConfiguracoesDoPixel('meu-pixel')).toBeNull()
+    expect(linkConfiguracoesDoPixel('123')).toBeNull()
+    expect(linkConfiguracoesDoPixel('12345678901234567890123')).toBeNull()
+  })
+
+  it('NUNCA carrega identificador de conta na URL', () => {
+    // A URL que se copia do navegador vem com business_id/act/nav_source — eles identificam a
+    // conta de quem copiou e não podem ser servidos a outro cliente.
+    const url = linkConfiguracoesDoPixel('3978654055741467')!
+    expect(url).not.toContain('business_id')
+    expect(url).not.toContain('act=')
+    expect(url).not.toContain('nav_source')
+    expect(url).not.toContain('?')
   })
 })

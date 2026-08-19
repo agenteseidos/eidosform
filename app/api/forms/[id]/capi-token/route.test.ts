@@ -25,7 +25,7 @@ vi.mock('next/server', () => ({
   },
 }))
 
-const validar = vi.hoisted(() => vi.fn(async () => ({ estado: 'ok' as const })))
+const validar = vi.hoisted(() => vi.fn(async () => ({ estado: 'ok' as const, conclusivo: true })))
 vi.mock('@/lib/meta-capi', () => ({ validarCredencialCapi: validar }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn(), logWarn: vi.fn(), log: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
@@ -73,7 +73,7 @@ function servicoFalso(credencial: Record<string, unknown> | null = null) {
 beforeEach(() => {
   vi.clearAllMocks()
   gravado = null
-  validar.mockImplementation(async () => ({ estado: 'ok' as const }))
+  validar.mockImplementation(async () => ({ estado: 'ok' as const, conclusivo: true }))
   process.env.META_CAPI_ENC_KEY = 'a'.repeat(64)
   servicoFalso()
 })
@@ -144,6 +144,21 @@ describe('PUT', () => {
     // Cifrado, nunca em claro.
     expect(String(gravado?.token_encrypted)).toMatch(/^v1\./)
     expect(String(gravado?.token_encrypted)).not.toContain('EAAG')
+  })
+
+  /**
+   * O token do fluxo "sem a Dataset Quality API" ENVIA evento mas pode não LER o pixel. A
+   * validação por leitura reprovava esse token — aconteceu no primeiro teste real. Quando a prova
+   * não é conclusiva, a credencial é gravada SEM data de validação, e a tela diz isso.
+   */
+  it('prova inconclusiva grava a credencial mas NÃO carimba data de validação', async () => {
+    mockCreateClient.mockResolvedValue(supabaseFalso() as never)
+    validar.mockImplementation(async () => ({ estado: 'ok', conclusivo: false }) as never)
+    const r = await PUT({ json: async () => ({ token: 'x'.repeat(40) }) } as never, ctx)
+    expect(r.status).toBe(200)
+    expect(gravado?.token_encrypted).toBeTruthy()
+    expect(gravado?.validated_at).toBeNull()
+    expect((await r.json() as Record<string, unknown>).validadoEm).toBeNull()
   })
 
   it('token RECUSADO pelo Meta não é gravado', async () => {

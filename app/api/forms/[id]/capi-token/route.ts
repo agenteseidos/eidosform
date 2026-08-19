@@ -183,6 +183,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   const agora = new Date().toISOString()
+  // `validated_at` só é preenchido quando a prova foi CONCLUSIVA (o Meta aceitou o POST no
+  // endpoint de eventos). Quando ele reclamou do payload em vez do token, a credencial é aceita
+  // — o token passou pela autenticação e pela permissão — mas não temos prova positiva de envio,
+  // e a tela diz isso em vez de estampar uma data de validação que não aconteceu.
   const { error } = await createServiceRoleClient()
     .from('form_capi_credentials')
     .upsert({
@@ -190,7 +194,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       token_encrypted: cifrado,
       hint: dicaDoToken(token),
       pixel_id: dono.pixelId,
-      validated_at: agora,
+      validated_at: veredito.conclusivo ? agora : null,
       last_error: null,
       updated_at: agora,
     } as never, { onConflict: 'form_id' })
@@ -201,7 +205,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   log('[capi-token] token gravado e validado', { formId: id, pixelId: dono.pixelId })
-  return NextResponse.json({ ok: true, dica: dicaDoToken(token), validadoEm: agora })
+  return NextResponse.json({ ok: true, dica: dicaDoToken(token), validadoEm: veredito.conclusivo ? agora : null })
 }
 
 /** DELETE — remove o token. O pixel do navegador continua funcionando; só o servidor para. */

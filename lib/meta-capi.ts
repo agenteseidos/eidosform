@@ -261,12 +261,27 @@ export function extractPIIFromAnswers(
  * token não tiver permissão naquele pixel, o Meta recusa — que é exatamente o que queremos saber.
  */
 export type VereditoCapi =
-  | { estado: 'ok' }
+  | { estado: 'ok'; conclusivo: boolean }
   /** O Meta respondeu e RECUSOU. Definitivo: não adianta tentar de novo com o mesmo token. */
   | { estado: 'recusado'; motivo: string }
   /** Não deu para saber (rede, timeout, 429, 5xx). NÃO é token inválido — não trate como tal. */
   | { estado: 'temporario'; motivo: string }
 
+/**
+ * Confere, NA HORA DE SALVAR, se o token pode MANDAR EVENTO naquele pixel.
+ *
+ * ⚠️ CORRIGIDO EM 18/08/2026, no primeiro teste real do Sidney. A primeira versão fazia
+ * `GET /{pixel-id}` — uma LEITURA. O token gerado pelo fluxo "sem a Dataset Quality API" do
+ * Gerenciador de Eventos serve para ENVIAR evento e não necessariamente para ler o objeto do
+ * pixel: um token perfeitamente bom era reprovado numa prova que não era a dele. O parecer
+ * independente já tinha avisado que a leitura "não prova rigorosamente que consegue enviar";
+ * o teste real confirmou na prática.
+ *
+ * A prova agora exercita a permissão QUE IMPORTA: um POST no endpoint de eventos com a lista
+ * VAZIA. Verificado experimentalmente que o Meta autentica ANTES de validar o payload — token
+ * ruim devolve 190 mesmo com `data: []`. E lista vazia não cria evento nenhum: nada é poluído
+ * na conta do cliente.
+ */
 export async function validarCredencialCapi(
   pixelId: string,
   accessToken: string,
@@ -278,40 +293,47 @@ export async function validarCredencialCapi(
     return { estado: 'recusado', motivo: 'Token muito curto — parece incompleto.' }
   }
   try {
-    const r = await fetch(`${META_API_URL}/${pixelId}?fields=id,name`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    const r = await fetch(`${META_API_URL}/${pixelId}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // Lista vazia: prova a permissão sem gerar conversão na conta de ninguém.
+      body: JSON.stringify({ data: [], access_token: accessToken }),
       signal: AbortSignal.timeout(10_000),
     })
-    if (r.ok) return { estado: 'ok' }
+    if (r.ok) return { estado: 'ok', conclusivo: true }
 
-    // 429 e 5xx são do LADO DELES. Recusar o token aqui faria o cliente apagar e recolar um token
-    // que estava certo — e, pior, perderia a credencial que já funcionava. (Parecer independente.)
+    // 429 e 5xx são do LADO DELES. Recusar aqui faria o cliente apagar e recolar um token que
+    // estava certo — e perderia a credencial que já funcionava.
     if (r.status === 429 || r.status >= 500) {
       return { estado: 'temporario', motivo: 'O Meta está indisponível ou limitou as consultas agora. Tente de novo em alguns minutos.' }
     }
 
     const corpo = await r.json().catch(() => null) as { error?: { code?: number; message?: string } } | null
     const codigo = corpo?.error?.code
-    // Traduzido: a mensagem crua do Meta vem em inglês e fala de "object" e "node", que não
-    // significam nada para quem só quer saber se colou o token certo.
+    const mensagem = String(corpo?.error?.message ?? '')
+
     if (codigo === 190) {
       return { estado: 'recusado', motivo: 'Token inválido ou expirado. Gere um novo no Gerenciador de Eventos.' }
     }
-    if (codigo === 200 || r.status === 403) {
-      return { estado: 'recusado', motivo: 'O token existe, mas não tem permissão para este Pixel.' }
+    if (codigo === 200 || codigo === 10 || r.status === 403) {
+      return { estado: 'recusado', motivo: 'O token não tem permissão para enviar eventos deste Pixel. Confira se os dois são da mesma conta.' }
     }
-    // ⚠️ O código 100 é "parâmetro inválido" de forma GERAL — não prova "token sem acesso"
-    // (parecer independente). A mensagem passa a descrever o sintoma e sugerir, sem acusar.
-    if (codigo === 100 || r.status === 404) {
-      return {
-        estado: 'recusado',
-        motivo: 'O Meta não encontrou este Pixel com este token. Confira se o Pixel ID está certo e se o token é da mesma conta.',
+    if (codigo === 803) {
+      return { estado: 'recusado', motivo: 'Pixel não encontrado. Confira o Pixel ID no Gerenciador de Eventos.' }
+    }
+    // O código 100 é "parâmetro inválido" de forma GERAL. Neste POST ele significa quase sempre
+    // "faltou o data" — ou seja, o token JÁ PASSOU pela autenticação e pela permissão. A exceção
+    // é o objeto inexistente/sem acesso, que o Meta descreve com esta frase padrão.
+    if (codigo === 100) {
+      if (/does not exist|missing permissions|cannot be loaded/i.test(mensagem)) {
+        return { estado: 'recusado', motivo: 'O Meta não encontrou este Pixel com este token. Confira se o Pixel ID está certo e se o token é da mesma conta.' }
       }
+      // Passou na autenticação, mas quem reclamou foi o payload: não temos prova POSITIVA de
+      // envio. Guardamos e dizemos isso na tela, em vez de reprovar um token provavelmente bom.
+      return { estado: 'ok', conclusivo: false }
     }
     return { estado: 'recusado', motivo: 'O Meta recusou a validação. Confira o Pixel e o token e tente de novo.' }
   } catch {
-    // Rede/timeout NÃO é token inválido — e quem chama precisa saber a diferença para não
-    // destruir uma credencial boa nem mentir na tela dizendo que salvou.
     return { estado: 'temporario', motivo: 'Não foi possível falar com o Meta agora. Nada foi alterado — tente de novo em instantes.' }
   }
 }

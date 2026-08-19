@@ -110,11 +110,13 @@ export function CapiTokenField({ formId, pixelAtual }: { formId: string; pixelAt
                 <p className="text-sm font-medium text-emerald-900 truncate">
                   Token configurado <span className="font-mono">{estado.dica}</span>
                 </p>
-                {estado.validadoEm && (
-                  <p className="text-xs text-emerald-700">
-                    Validado em {new Date(estado.validadoEm).toLocaleDateString('pt-BR')}
-                  </p>
-                )}
+                <p className="text-xs text-emerald-700">
+                  {estado.validadoEm
+                    ? `Validado em ${new Date(estado.validadoEm).toLocaleDateString('pt-BR')}`
+                    /* Sem prova positiva de envio: o Meta aceitou a credencial mas não confirmou.
+                       Dizer "validado" aqui seria afirmar mais do que sabemos. */
+                    : 'Salvo. Confirme no Gerenciador de Eventos que os eventos estão chegando.'}
+                </p>
               </div>
             </div>
             <Button

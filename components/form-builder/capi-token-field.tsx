@@ -113,9 +113,11 @@ export function CapiTokenField({ formId, pixelAtual }: { formId: string; pixelAt
                 <p className="text-xs text-emerald-700">
                   {estado.validadoEm
                     ? `Validado em ${new Date(estado.validadoEm).toLocaleDateString('pt-BR')}`
-                    /* Sem prova positiva de envio: o Meta aceitou a credencial mas não confirmou.
-                       Dizer "validado" aqui seria afirmar mais do que sabemos. */
-                    : 'Salvo. Confirme no Gerenciador de Eventos que os eventos estão chegando.'}
+                    /* Sem prova POSITIVA de envio — mas não é ignorância total: o Meta recusaria
+                       com 190/200 se o token fosse inválido ou não tivesse permissão neste pixel.
+                       "Aceito" é o que sabemos; "validado" seria afirmar mais. Na prática este é o
+                       caminho NORMAL com o token estreito do Gerenciador de Eventos. */
+                    : 'Token aceito pelo Meta. Confirme no Gerenciador de Eventos que os eventos estão chegando.'}
                 </p>
               </div>
             </div>
@@ -169,16 +171,22 @@ export function CapiTokenField({ formId, pixelAtual }: { formId: string; pixelAt
             </p>
           )}
 
+          {/* Leva à aba Configurações DO PIXEL do próprio cliente — é lá que fica o botão de gerar
+              o token. O link anterior apontava para a entrada genérica do Gerenciador, que cai na
+              lista de conjuntos de dados e não em lugar nenhum útil (reportado pelo Sidney, 18/08).
+              ⚠️ SEM `business_id`, `act` ou `nav_source`: são identificadores da conta de quem
+              copiou a URL e não têm por que viajar no código. O Meta resolve pela sessão. */}
           <a
-            href="https://www.facebook.com/events_manager2"
+            href={`https://eventsmanager.facebook.com/events_manager2/list/dataset/${encodeURIComponent(pixelAtual.trim())}/settings`}
             target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
           >
-            Onde gerar o token <ExternalLink className="w-3 h-3" />
+            Abrir as configurações deste Pixel <ExternalLink className="w-3 h-3" />
           </a>
           <p className="text-xs text-slate-500">
-            Gerenciador de Eventos → seu Pixel → Configurações → API de Conversões → Gerar token de
-            acesso. O token precisa ser da mesma conta do Pixel acima.
+            Lá em <strong>Configurar integração direta</strong>, escolha <em>&ldquo;sem a Dataset
+            Quality API&rdquo;</em> e clique em <strong>Gerar token de acesso</strong>. O token
+            precisa ser da mesma conta do Pixel acima.
           </p>
         </div>
       )}

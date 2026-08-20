@@ -57,7 +57,35 @@ function makeBuilder(table: string) {
   return b
 }
 
-const fakeClient = { from: (t: string) => makeBuilder(t) }
+const fakeClient = {
+  from: (t: string) => makeBuilder(t),
+  // Simula `promover_resposta_e_enfileirar_capi` com a MESMA semântica observável: promove se a
+  // resposta-alvo existe com completed=false (CAS) e devolve o pacote que a rota consome. Os
+  // testes de contrato do POST olham `calls` — a promoção continua registrada como update.
+  rpc: (fn: string, args: Record<string, unknown>) => ({
+    then: (resolve: (r: Result) => unknown) => {
+      state.calls.push({ table: 'responses', op: 'update', payload: args })
+      if (fn !== 'promover_resposta_e_enfileirar_capi') {
+        return Promise.resolve({ data: null, error: { message: `rpc desconhecida: ${fn}` } }).then(resolve)
+      }
+      const existing = state.existingResponse.data as { id: string; completed?: boolean } | null
+      const inserted = state.insertResult.data as { id: string } | null
+      const target = existing ?? inserted
+      const promovida = Boolean(target) && existing?.completed !== true
+      const data = promovida
+        ? {
+            promovida: true,
+            responseId: args.p_response_id,
+            submittedAt: SUBMITTED_AT,
+            sheetsRowIndex: null,
+            metaEvents: (args.p_meta_events as string[]) ?? [],
+            browserEvents: [],
+          }
+        : { promovida: false, responseId: args.p_response_id, browserEvents: [] }
+      return Promise.resolve({ data, error: null } as Result).then(resolve)
+    },
+  }),
+}
 vi.mock('@/lib/supabase/service-role', () => ({ createServiceRoleClient: () => fakeClient }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fakeClient }))
 vi.mock('@/lib/supabase/request-auth', () => ({ getRequestUser: vi.fn(async () => null) }))
@@ -92,9 +120,10 @@ vi.mock('@/lib/notification-email', async (importOriginal) => {
 vi.mock('@/lib/integration-stubs', () => ({ sendWhatsAppOnFormResponse: vi.fn(async () => undefined) }))
 vi.mock('@/lib/google-sheets', () => ({ upsertSubmission: vi.fn(async () => ({ rowIndex: null })) }))
 vi.mock('@/lib/meta-capi', () => ({
-  sendMetaCAPIEvent: vi.fn(async () => true),
   extractPIIFromAnswers: vi.fn(() => ({})),
+  codigoDeTesteValido: vi.fn(() => null),
 }))
+vi.mock('@/lib/capi-worker', () => ({ processarFila: vi.fn(async () => ({})) }))
 vi.mock('@/lib/resend', () => ({ sendLeadNotificationEmail: vi.fn(async () => ({})) }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn(), logWarn: vi.fn(), log: vi.fn() }))
 

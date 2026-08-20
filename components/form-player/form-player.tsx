@@ -11,7 +11,7 @@ import { ChevronUp, ChevronDown, Check, ArrowRight, Lock, ExternalLink } from 'l
 import { QuestionRenderer } from './question-renderer'
 import { NON_ANSWER_QUESTION_TYPES } from '@/lib/answer-format'
 import { toast } from 'sonner'
-import { evaluatePixelEvents, fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, isRecordableMetaEvent, reservarEventId, ocorrenciasDeEvento, buildGoogleAdsSendTo, fireGoogleAdsConversion } from '@/lib/pixel-events'
+import { fireNamedPixelEvent, pushDataLayerEvent, evaluateAnswerSetEvents, dispararGatilho, dicasParaEnvio, gatilhoJaDisparado, matchesCondition, buildGoogleAdsSendTo, fireGoogleAdsConversion } from '@/lib/pixel-events'
 import { evaluateJumpRules, getVisibleQuestions, buildQuestionPath, getAdvanceControls, resolveSubmitFieldError } from '@/lib/form-logic-engine'
 import { captureUtms, getUtms } from '@/lib/utm-tracker'
 import { captureUrlParams, getUrlParams, clearUrlParams } from '@/lib/url-params'
@@ -59,7 +59,11 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
   const [progressAnim, setProgressAnim] = useState(0)
   const [responseId, setResponseId] = useState<string | null>(null)
   const [navigationHistory, setNavigationHistory] = useState<string[]>([])
-  const { capturedEvents: metaEvents, capturedOccurrences } = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
+  const { capturedEvents: metaEvents } = useMetaEventsCapture(Boolean(form.pixels) && (ownerPlan === 'plus' || ownerPlan === 'professional'))
+  void metaEvents // telemetria legada de UI; o protocolo v2 não envia mais nomes ao servidor
+  // Empurra o autosave público na frente quando um gatilho dispara: o evento de quem vai
+  // abandonar não pode esperar o ciclo de 60s para virar linha na fila do servidor.
+  const flushPartialRef = useRef<(() => void) | null>(null)
   const partialResponsesEnabled = (ownerPlan === 'plus' || ownerPlan === 'professional')
   // Fluxo público de parciais (session key + Sheets). Quando ativo, ele é o
   // ÚNICO fluxo de parcial — inclusive pra respondente LOGADO. Rodar o fluxo
@@ -312,8 +316,34 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     // Salvar progresso parcial + pixel events da pergunta atual
     savePartialResponseDebounced(updatedAnswers, currentQuestion.id)
     schedulePublicPartialSave(updatedAnswers, currentQuestion.id)
-    if (currentQuestion.pixelEvents) {
-      evaluatePixelEvents(currentQuestion.pixelEvents as PixelEventRule[], updatedAnswers[currentQuestion.id])
+    // PROTOCOLO v2: cada regra satisfeita dispara AGORA, com identidade de gatilho — o servidor
+    // rederiva da resposta gravada e adota o mesmo eventId via dica. Conjuntos de respostas
+    // também avaliam AQUI (decisão do Sidney, 18/08): qualificou no meio, disparou no meio.
+    {
+      let disparouNovo = false
+      for (const regra of (currentQuestion.pixelEvents as PixelEventRule[] | undefined) || []) {
+        if (!regra?.id) continue
+        const triggerId = `question:${currentQuestion.id}:${regra.id}`
+        if (gatilhoJaDisparado(triggerId)) continue
+        if (!matchesCondition(updatedAnswers[currentQuestion.id], regra.condition)) continue
+        dispararGatilho({
+          triggerId, eventName: regra.event.name,
+          ...(typeof regra.event.value === 'number' ? { value: regra.event.value } : {}),
+          ...(regra.event.currency ? { currency: regra.event.currency } : {}),
+        })
+        disparouNovo = true
+      }
+      for (const ev of ((form.pixels as PixelConfig | null)?.answerSetEvents) || []) {
+        if (!ev?.id) continue
+        const triggerId = `answerset:${ev.id}`
+        if (gatilhoJaDisparado(triggerId)) continue
+        const bateu = evaluateAnswerSetEvents([ev], updatedAnswers as Record<string, unknown>, new Set(questions.map(q => q.id))).length > 0
+        if (bateu) {
+          dispararGatilho({ triggerId, eventName: ev.name })
+          disparouNovo = true
+        }
+      }
+      if (disparouNovo) flushPartialRef.current?.()
     }
 
     // Visibilidade recalculada COM a resposta recém-dada: alvos de salto e a
@@ -480,6 +510,10 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           ...(deferSheets ? { defer_sheets: true } : {}),
           ...utms,
           url_params: getUrlParams(form.id) ?? undefined,
+          // Protocolo v2: as dicas dos gatilhos já disparados viajam em TODO save — é assim que
+          // a qualificação de quem vai abandonar vira linha na fila do servidor.
+          protocol_version: 2,
+          capi_hints: dicasParaEnvio(),
         }),
       })
       if (res.ok) {
@@ -515,6 +549,12 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.id, publicPartialEnabled, getOrCreateSessionKey, nextPartialRevision, rotatePartialSession, scheduleRetryAfterFailedSave])
+
+  // O gatilho recém-disparado empurra o save na frente (fura o debounce de 60s): a dica precisa
+  // chegar ao servidor ANTES de um eventual abandono, senão o evento fica só no navegador.
+  useEffect(() => {
+    flushPartialRef.current = () => { void runPublicPartialSave() }
+  }, [runPublicPartialSave])
 
   // Mantém a referência fresca pro retry (definido antes desta função).
   runPublicPartialSaveRef.current = runPublicPartialSave
@@ -574,6 +614,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           response_id: publicResponseIdRef.current ?? undefined,
           partial_token: publicPartialTokenRef.current ?? undefined,
           partial_session: publicSessionKeyRef.current ?? undefined,
+          protocol_version: 2,
+          capi_hints: dicasParaEnvio(),
         }
         const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
         navigator.sendBeacon('/api/responses/partial', blob)
@@ -758,40 +800,9 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
         } catch { /* ignore */ }
       }
 
-      // Eventos de conclusão (on_complete + conjuntos de respostas): AVALIADOS
-      // antes do POST — só os nomes, pra entrarem em meta_events de forma
-      // determinística (sem depender do buffer/fbq já ter carregado). O DISPARO
-      // nos pixels acontece só depois do POST bem-sucedido: envio que falhou
-      // não pode virar conversão no Meta/GTM/TikTok.
-      const completeEventName = (form.pixel_event_on_complete || '').trim()
-      const answerSetNames = evaluateAnswerSetEvents(
-        (form.pixels as PixelConfig | null)?.answerSetEvents,
-        finalAnswers as Record<string, unknown>,
-        new Set(questions.map(q => q.id)),
-      )
-      // Set dedupa evento de conjunto homônimo do on_complete (dispara uma vez).
-      const pendingEventNames = Array.from(new Set([completeEventName, ...answerSetNames].filter(Boolean)))
-
-      // Combinar metaEvents (state) com o buffer global, garantindo eventos disparados
-      // entre o último tick do hook (500ms) e o submit — mais os nomes calculados acima.
-      // isRecordableMetaEvent: customs + padrão de conversão entram; genéricos (PageView…) não.
-      const buffered = (typeof window !== 'undefined' && window.__eidosCapturedFbqEvents) || []
-      const allMetaEvents = Array.from(new Set([
-        ...metaEvents,
-        ...buffered.filter(isRecordableMetaEvent),
-        ...pendingEventNames.filter(isRecordableMetaEvent),
-      ]))
-
-      // OCORRÊNCIAS DE EVENTO (18/08/2026, corrigido no mesmo dia após parecer independente).
-      // O Meta exige `event_id` ÚNICO POR OCORRÊNCIA — a versão anterior guardava um id por NOME,
-      // e dois disparos legítimos do mesmo evento levariam o mesmo id.
-      // Para os eventos que ainda vão disparar (logo abaixo, após o POST), o id é RESERVADO
-      // agora; o disparo posterior CONSOME a reserva em vez de criar ocorrência nova.
-      for (const nome of pendingEventNames.filter(isRecordableMetaEvent)) reservarEventId(nome)
-      // Lido do estado global (não do estado do React) para incluir o que disparou entre o último
-      // tick do hook, de 500ms, e este exato momento.
-      void capturedOccurrences // o hook existe para re-renderizar; a verdade vem do global
-      const ocorrencias = ocorrenciasDeEvento().filter(o => isRecordableMetaEvent(o.name))
+      // PROTOCOLO v2: o navegador NÃO manda mais lista de eventos — o servidor deriva tudo da
+      // resposta gravada e devolve `browser_events` com os event_id definitivos. O que viaja são
+      // as DICAS: a etiqueta de dedup de cada gatilho já disparado no clique.
 
       const res = await fetch('/api/responses', {
         method: 'POST',
@@ -804,10 +815,8 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
           respondent_id: respondentId,
           ...utms,
           url_params: getUrlParams(form.id) ?? undefined,
-          meta_events: allMetaEvents,
-          // Uma entrada por DISPARO. Formato NOVO e separado de propósito: `meta_events` continua
-          // sendo só nomes porque planilha, CSV, PDF e e-mail já dependem desse formato.
-          meta_event_ids: ocorrencias,
+          protocol_version: 2,
+          capi_hints: dicasParaEnvio(),
         }),
       })
 
@@ -867,10 +876,27 @@ export const FormPlayer = React.memo(function FormPlayer({ form, ownerPlan = 'fr
       // gatilho de conversão no GTM mesmo sem configurar evento por bloco. Vai só
       // pro dataLayer — não toca no Meta.
       pushDataLayerEvent('form_submit', { form_id: form.id })
-      // Disparo pós-sucesso dos eventos de conclusão (on_complete + conjuntos):
-      // os nomes já foram enviados em meta_events no payload acima. Com
-      // redirect_url, o delay padrão de 2800ms dá janela pro retry do fbq/ttq.
-      for (const name of pendingEventNames) fireNamedPixelEvent(name)
+      // Disparo pós-sucesso. Preferência: `browser_events` do servidor — os event_id são os
+      // MESMOS da fila, então navegador e servidor deduplicam no Meta. `dispararGatilho` pula o
+      // que o clique já disparou (mesmo triggerId). Sem `browser_events` (formulário sem token:
+      // não há via servidor nem fila), o fallback LOCAL dispara conclusão + conjuntos — o
+      // comportamento clássico, sem par para deduplicar porque só existe uma via.
+      const eventosDoServidor = (resultado as { browser_events?: Array<{ triggerId: string; eventName: string; eventId: string; value?: number; currency?: string }> } | null)?.browser_events
+      if (eventosDoServidor && eventosDoServidor.length > 0) {
+        for (const ev of eventosDoServidor) {
+          dispararGatilho({ triggerId: ev.triggerId, eventName: ev.eventName, eventId: ev.eventId,
+            ...(typeof ev.value === 'number' ? { value: ev.value } : {}),
+            ...(ev.currency ? { currency: ev.currency } : {}) })
+        }
+      } else {
+        const nomeConclusao = (form.pixel_event_on_complete || '').trim()
+        if (nomeConclusao) dispararGatilho({ triggerId: 'complete', eventName: nomeConclusao })
+        for (const ev of ((form.pixels as PixelConfig | null)?.answerSetEvents) || []) {
+          if (!ev?.id) continue
+          const bateu = evaluateAnswerSetEvents([ev], finalAnswers as Record<string, unknown>, new Set(questions.map(q => q.id))).length > 0
+          if (bateu) dispararGatilho({ triggerId: `answerset:${ev.id}`, eventName: ev.name })
+        }
+      }
 
       // ── CONVERSÃO DO GOOGLE ADS (2026-08) ────────────────────────────────────────────────
       //

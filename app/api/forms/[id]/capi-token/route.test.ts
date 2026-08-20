@@ -28,6 +28,7 @@ vi.mock('next/server', () => ({
 const validar = vi.hoisted(() => vi.fn(async () => ({ estado: 'ok' as const, conclusivo: true })))
 vi.mock('@/lib/meta-capi', () => ({ validarCredencialCapi: validar }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn(), logWarn: vi.fn(), log: vi.fn() }))
+vi.mock('@/lib/capi-worker', () => ({ religarBloqueadas: vi.fn(async () => 0), processarFila: vi.fn(async () => ({})) }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 
 const servicoFrom = vi.hoisted(() => vi.fn())

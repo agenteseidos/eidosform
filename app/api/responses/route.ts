@@ -7,7 +7,7 @@ import { getRequestUser } from '@/lib/supabase/request-auth'
 import { checkAndIncrementResponseCount, sendNearLimitAlert, PLANS } from '@/lib/plan-limits'
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
-import { isRecordableMetaEvent, derivarEventosAutorizados, lerPixelDoFormulario } from '@/lib/pixel-events'
+import { isRecordableMetaEvent, lerPixelDoFormulario } from '@/lib/pixel-events'
 import type { AnswerSetEvent, PixelEventRule } from '@/types/pixel-events'
 import { extractLead } from '@/lib/lead-extraction'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
@@ -17,7 +17,9 @@ import { sendWhatsAppOnFormResponse } from '@/lib/integration-stubs'
 import { canUseLeadWhatsApp } from '@/lib/whatsapp-capability'
 import { upsertSubmission } from '@/lib/google-sheets'
 import { logError, logWarn } from '@/lib/logger'
-import { sendMetaCAPIEvent, extractPIIFromAnswers, decidirEnviosCapi, codigoDeTesteValido } from '@/lib/meta-capi'
+import { codigoDeTesteValido } from '@/lib/meta-capi'
+import { derivarGatilhos, lerDicasDoNavegador, montarUserData, montarEventosParaFila, type EventoParaFila } from '@/lib/capi-triggers'
+import { processarFila } from '@/lib/capi-worker'
 import { decifrarToken } from '@/lib/capi-credential'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
@@ -165,23 +167,17 @@ export async function POST(req: NextRequest) {
   // navegador e o do servidor são o MESMO lead. Sem isto ele conta os dois.
   // Só entram nomes que já sobreviveram ao filtro acima: o mapa não pode ser via de entrada para
   // evento que `isRecordableMetaEvent` recusou.
-  // Uma entrada por DISPARO: o Meta exige `event_id` único por ocorrência. Só entram nomes que
-  // já sobreviveram ao filtro acima — e, mais adiante, só os que a CONFIGURAÇÃO do formulário
-  // autorizar. Isto aqui é higiene de formato; a autorização é outra camada, de propósito.
-  const nomesAceitos = new Set(metaEvents)
-  const metaOcorrencias: Array<{ name: string; id: string }> = []
-  if (Array.isArray(body.meta_event_ids)) {
-    for (const item of body.meta_event_ids.slice(0, MAX_META_EVENTS * 2)) {
-      if (!item || typeof item !== 'object') continue
-      const { name, id } = item as { name?: unknown; id?: unknown }
-      if (typeof name !== 'string' || typeof id !== 'string') continue
-      const nomeLimpo = name.trim().slice(0, MAX_META_EVENT_LEN)
-      const idLimpo = id.trim().slice(0, 64)
-      if (nomeLimpo && idLimpo && nomesAceitos.has(nomeLimpo)) {
-        metaOcorrencias.push({ name: nomeLimpo, id: idLimpo })
-      }
-    }
-  }
+  // ── PROTOCOLO v2 (18/08/2026, redesenho aprovado em parecer) ────────────────────────────
+  // O navegador NÃO manda mais lista de eventos. Ele manda `capi_hints` — SÓ a etiqueta de
+  // deduplicação de cada gatilho que ele disparou no instante do clique. QUAIS eventos existem,
+  // quantos, com que nome, valor e horário: tudo é DERIVADO AQUI, da resposta gravada
+  // (`derivarGatilhos`). Dica sem gatilho derivado é ignorada; forjá-la não infla nada.
+  //
+  // `protocolVersion !== 2` = bundle antigo em cache: grava a resposta normalmente e NÃO enfileira
+  // CAPI — o navegador velho dispara com ids próprios, e enfileirar com ids do servidor contaria
+  // o mesmo lead duas vezes. Melhor perder a via servidor por algumas horas que duplicar.
+  const protocoloV2 = body.protocol_version === 2
+  const dicasNavegador = lerDicasDoNavegador(body.capi_hints)
 
   const utmData = {
     utm_source: typeof body.utm_source === 'string' ? body.utm_source : null,
@@ -631,15 +627,81 @@ export async function POST(req: NextRequest) {
 
   // Atualiza tanto parciais adotadas quanto a row recém-criada. O CAS garante
   // que só um submit promove a resposta e executa os side effects.
+  let browserEventsParaPlayer: Array<{ triggerId: string; eventName: string; eventId: string; value?: number; currency?: string }> = []
   if (existingResponseId || completed) {
-    const { data: updated, error: updateError } = await supabase
-      .from('responses')
-      .update({ answers, meta_events: metaEvents, completed, last_question_answered: lastQuestionAnswered, ...utmData, ...(urlParams ? { url_params: urlParams } : {}) } as ResponseUpdate)
-      .eq('id', responseId)
-      .eq('form_id', form_id as string)
-      .eq('completed', false)
-      .select('id, meta_events, sheets_row_index, url_params, submitted_at')
-      .single() as { data: { id: string; meta_events?: string[]; sheets_row_index: number | null; url_params?: Record<string, string> | null; submitted_at?: string } | null; error: unknown }
+    // ── DERIVAÇÃO NO SERVIDOR ──────────────────────────────────────────────────────────────
+    // Um evento por gatilho satisfeito, calculado da resposta JÁ PODADA (fora-do-caminho não
+    // conta — P1 do parecer). meta_events deixa de vir do body: a coluna passa a registrar o
+    // que o SERVIDOR derivou, e é isso que planilha/e-mail/export leem.
+    const px = (form.pixels ?? {}) as { answerSetEvents?: AnswerSetEvent[]; metaTestEventCode?: string; metaTestEventCodeAt?: string }
+    const gatilhos = derivarGatilhos({
+      onComplete: form.pixel_event_on_complete,
+      answerSetEvents: px.answerSetEvents ?? null,
+      questions: effectiveQuestions as QuestionConfig[],
+      answers: answers as Record<string, unknown>,
+      completed,
+    })
+    const nomesDerivados = gatilhos.map((g) => g.eventName)
+
+    // Enfileira só com o kit completo: protocolo novo, plano com pixels, pixel E credencial.
+    // Sem credencial não há envio possível — criar linha viraria lixo eterno na fila.
+    let eventosParaFila: EventoParaFila[] = []
+    const pixelDoCliente = lerPixelDoFormulario(form.pixels)
+    if (protocoloV2 && completed !== undefined && ownerPlanConfig?.pixels && pixelDoCliente && gatilhos.length > 0) {
+      const { data: temCred } = await supabase
+        .from('form_capi_credentials')
+        .select('form_id')
+        .eq('form_id', form_id as string)
+        .maybeSingle()
+      if (temCred) {
+        eventosParaFila = montarEventosParaFila({
+          gatilhos,
+          dicas: dicasNavegador,
+          pixelId: pixelDoCliente,
+          userData: montarUserData({
+            answers: answers as Record<string, unknown>,
+            questions: effectiveQuestions as Array<{ id: string; type?: string; title?: string }>,
+            ip,
+            userAgent: req.headers.get('user-agent') ?? undefined,
+          }),
+          eventSourceUrl: req.headers.get('referer') ?? undefined,
+          testEventCode: codigoDeTesteValido(px.metaTestEventCode, px.metaTestEventCodeAt),
+        })
+      }
+    }
+
+    // ── GRAVAÇÃO + FILA NUMA TRANSAÇÃO SÓ ──────────────────────────────────────────────────
+    // A função do banco promove a resposta E enfileira os eventos juntos: se uma parte falhar,
+    // nenhuma acontece. Era a janela apontada no parecer — resposta promovida, fila perdida.
+    const { data: rpcData, error: updateError } = await supabase.rpc('promover_resposta_e_enfileirar_capi', {
+      p_response_id: responseId,
+      p_form_id: form_id as string,
+      p_answers: answers,
+      p_meta_events: nomesDerivados,
+      p_completed: completed,
+      p_last_question: lastQuestionAnswered,
+      p_utm_source: utmData.utm_source, p_utm_medium: utmData.utm_medium,
+      p_utm_campaign: utmData.utm_campaign, p_utm_term: utmData.utm_term,
+      p_utm_content: utmData.utm_content,
+      p_url_params: urlParams,
+      p_eventos: eventosParaFila,
+    } as never)
+
+    const rpc = rpcData as {
+      promovida?: boolean; submittedAt?: string; sheetsRowIndex?: number | null
+      metaEvents?: string[]
+      browserEvents?: Array<{ triggerId: string; eventName: string; eventId: string; value?: number; currency?: string }>
+    } | null
+    const updated = rpc?.promovida
+      ? {
+          id: responseId,
+          meta_events: rpc.metaEvents ?? nomesDerivados,
+          sheets_row_index: rpc.sheetsRowIndex ?? null,
+          url_params: undefined as Record<string, string> | null | undefined,
+          submitted_at: rpc.submittedAt,
+        }
+      : null
+    browserEventsParaPlayer = rpc?.browserEvents ?? []
 
     // ANEXO → RESPOSTA. Só aqui o id existe; antes desta linha as fichas ficavam com
     // response_id nulo e a purga por resposta nunca as encontraria. (Parecer Codex, 16/08.)
@@ -840,103 +902,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── Meta Conversions API — envio pelo SERVIDOR, com a credencial DO CLIENTE ──────────────
-    //
-    // REESCRITO EM 18/08/2026. Até aqui isto usava `META_PIXEL_ID` e `META_ACCESS_TOKEN`
-    // GLOBAIS: o cliente colava o pixel dele no construtor e o evento — com o e-mail e o telefone
-    // hasheados do lead DELE — ia para a conta do Instituto Eidos. A conversão do cliente nunca
-    // chegava, e o dado do lead dele entrava no nosso ativo de publicidade.
-    //
-    // Agora: pixel do formulário + token do formulário. SEM FALLBACK — formulário sem token
-    // simplesmente não tem envio pelo servidor, e o pixel do navegador segue funcionando.
-    if (ownerPlanConfig?.pixels && metaEvents.length > 0) {
-      // Fonte única: trata os apelidos antigos do campo e exige formato numérico. Ler só
-      // `metaPixelId` aqui deixava formulário antigo com pixel no navegador e sem CAPI.
-      const pixelDoCliente = lerPixelDoFormulario(form.pixels)
-
-      if (pixelDoCliente) {
-        postSubmitTasks.push((async () => {
-          const { data: cred } = await supabase
-            .from('form_capi_credentials')
-            .select('token_encrypted, pixel_id')
-            .eq('form_id', form_id as string)
-            .maybeSingle()
-
-          const c = cred as { token_encrypted?: string; pixel_id?: string | null } | null
-          const token = decifrarToken(c?.token_encrypted, form_id as string)
-          // Sem token do cliente não sai nada pelo servidor. Este é o ponto exato onde o
-          // vazamento antigo acontecia — e onde ele agora termina em silêncio.
-          if (!token) return
-
-          const pii = extractPIIFromAnswers(
-            answers as Record<string, unknown>,
-            effectiveQuestions as Array<{ id: string; type?: string; title?: string; fields?: Array<{ id: string; ref?: string }> }>
-          )
-          const userAgent = req.headers.get('user-agent') ?? undefined
-          const referer = req.headers.get('referer') ?? undefined
-
-          // ⚠️ AUTORIZAÇÃO NO SERVIDOR (correção do achado mais grave do parecer independente).
-          // O corpo do POST é anônimo. Sem isto, um estranho mandaria `Purchase` e o servidor
-          // dispararia no pixel do cliente com o token verdadeiro dele. Aqui a configuração
-          // GRAVADA do formulário é relida e as condições são REAVALIADAS contra as respostas que
-          // este servidor recebeu — o navegador diz o que disparou, quem autoriza somos nós.
-          const px = (form.pixels ?? {}) as {
-            answerSetEvents?: AnswerSetEvent[]
-            metaTestEventCode?: string
-            metaTestEventCodeAt?: string
-          }
-          // Código de teste do formulário, se ainda dentro da validade. Expira sozinho: evento
-          // marcado como teste NÃO conta para otimização, então um código esquecido zeraria as
-          // conversões daquele cliente em silêncio.
-          const codigoTeste = codigoDeTesteValido(px.metaTestEventCode, px.metaTestEventCodeAt)
-          const autorizados = derivarEventosAutorizados({
-            onStart: form.pixel_event_on_start,
-            onComplete: form.pixel_event_on_complete,
-            answerSetEvents: px.answerSetEvents ?? null,
-            questions: effectiveQuestions as Array<{ id: string; pixelEvents?: PixelEventRule[] }>,
-            answers: answers as Record<string, unknown>,
-          })
-
-          const aEnviar = decidirEnviosCapi({
-            // O valor REAL, não `true` fixo. O `if` acima já barra, mas escrever `true` aqui
-            // tornava o portão de plano do núcleo de decisão letra morta: quem um dia mexesse na
-            // condição de fora derrubaria a checagem inteira sem perceber. Dois portões de
-            // verdade, não um portão e um enfeite.
-            planoPermite: Boolean(ownerPlanConfig?.pixels),
-            pixelId: pixelDoCliente,
-            token,
-            // Pixel trocado depois da validação = par não aprovado. Recusa até revalidar.
-            pixelValidado: c?.pixel_id ?? null,
-            ocorrencias: metaOcorrencias,
-            autorizados,
-          })
-
-          if (aEnviar.length < metaOcorrencias.length) {
-            // Vale registrar: é o sinal de POST adulterado — ou de configuração que mudou depois
-            // que o lead abriu a página.
-            logWarn('[capi] ocorrências descartadas por falta de autorização', {
-              formId: form_id, recebidas: metaOcorrencias.length, enviadas: aEnviar.length,
-            })
-          }
-
-          await Promise.all(aEnviar.map(({ eventName, eventId, value, currency }) => {
-            return sendMetaCAPIEvent({
-              ...pii,
-              pixelId: pixelDoCliente,
-              accessToken: token,
-              eventName,
-              eventId,
-              value,
-              currency,
-              ...(codigoTeste ? { testEventCode: codigoTeste } : {}),
-              ip,
-              userAgent,
-              formTitle: form.title ?? undefined,
-              eventSourceUrl: referer,
-            })
-          }))
-        })().catch((err) => logError('Falha no envio CAPI', err)))
-      }
+    // ── Meta CAPI: TENTATIVA IMEDIATA da fila ─────────────────────────────────────────────────
+    // Os eventos já estão no `capi_outbox` (gravados na MESMA transação da resposta). Aqui só se
+    // tenta a entrega na hora, para o evento chegar em segundos; o que falhar fica na fila e o
+    // cron recupera com o MESMO event_id — retentativa nunca duplica.
+    if (browserEventsParaPlayer.length > 0) {
+      postSubmitTasks.push(
+        processarFila(supabase, { responseId }).catch((err) => logError('Falha na tentativa imediata de CAPI', err))
+      )
     }
 
     // Webhook externo configurado pelo usuário — feature gated
@@ -1003,6 +976,10 @@ export async function POST(req: NextRequest) {
     {
       response_id: responseId,
       completed,
+      // O que o NAVEGADOR deve disparar, com os event_id definitivos (os mesmos da fila).
+      // O player compara com o que já disparou no clique e dispara só o que falta — tipicamente
+      // o de conclusão, cujo gatilho só o servidor confirma.
+      ...(browserEventsParaPlayer.length > 0 ? { browser_events: browserEventsParaPlayer } : {}),
       ...(issuePartialToken ? { partial_token: signPartialToken(responseId) } : {}),
     },
     {

@@ -13,6 +13,90 @@ import { getEffectivePlan, type PlanId } from '@/lib/plans'
 import { PLANS } from '@/lib/plan-definitions'
 import { filterQuestionsByPlan } from '@/lib/questions'
 import { sanitizeUrlParams } from '@/lib/url-params'
+import { PLANS as PLAN_TABLE } from '@/lib/plan-definitions'
+import { derivarGatilhos, lerDicasDoNavegador, montarUserData, montarEventosParaFila } from '@/lib/capi-triggers'
+import { lerPixelDoFormulario } from '@/lib/pixel-events'
+import { codigoDeTesteValido } from '@/lib/meta-capi'
+import { processarFila } from '@/lib/capi-worker'
+
+/**
+ * QUALIFICAÇÃO NO MEIO DO PREENCHIMENTO (18/08/2026, decisão do Sidney).
+ *
+ * "Se o lead é qualificado, não importa se não terminou o form" — neste produto a resposta
+ * parcial é capturada e o alerta de lead incompleto existe, então o qualificado que abandona É um
+ * lead trabalhável. O evento de qualificação entra na fila AQUI, no autosave, não só no submit.
+ *
+ * Diferenças deliberadas em relação ao submit final:
+ *  · SEM transação com a gravação: o autosave REPETE — se o enfileiramento falhar agora, o
+ *    próximo save rederiva e a UNIQUE (response_id, trigger_id) mantém tudo idempotente. A
+ *    atomicidade só é indispensável no submit, que é a última chance.
+ *  · `completed: false` na derivação: o gatilho 'complete' jamais nasce de autosave (e a função
+ *    do banco tem a mesma guarda, em profundidade).
+ *  · Best-effort de ponta a ponta: erro aqui NUNCA derruba o autosave — perder um save de
+ *    progresso para ganhar um evento seria trocar o certo pelo duvidoso.
+ */
+async function enfileirarCapiDoParcial(opts: {
+  supabase: ReturnType<typeof createAdminClient>
+  form: { id: string; user_id: string; pixels: Record<string, unknown> | null; pixel_event_on_complete: string | null }
+  ownerPlan: PlanId
+  responseId: string
+  formQuestions: QuestionConfig[]
+  answers: Record<string, unknown>
+  body: Record<string, unknown>
+  ip: string
+  userAgent?: string
+  referer?: string
+}): Promise<void> {
+  try {
+    const { supabase, form, ownerPlan, responseId, formQuestions, answers, body } = opts
+    if (body.protocol_version !== 2) return
+    if (!PLAN_TABLE[ownerPlan]?.pixels) return
+    const pixelDoCliente = lerPixelDoFormulario(form.pixels)
+    if (!pixelDoCliente) return
+
+    const px = (form.pixels ?? {}) as { answerSetEvents?: import('@/types/pixel-events').AnswerSetEvent[]; metaTestEventCode?: string; metaTestEventCodeAt?: string }
+    const gatilhos = derivarGatilhos({
+      onComplete: form.pixel_event_on_complete,
+      answerSetEvents: px.answerSetEvents ?? null,
+      questions: formQuestions,
+      answers,
+      completed: false,
+    })
+    if (gatilhos.length === 0) return
+
+    // Sem credencial não há envio possível — não cria lixo na fila.
+    const { data: temCred } = await supabase
+      .from('form_capi_credentials').select('form_id').eq('form_id', form.id).maybeSingle()
+    if (!temCred) return
+
+    const eventos = montarEventosParaFila({
+      gatilhos,
+      dicas: lerDicasDoNavegador(body.capi_hints),
+      pixelId: pixelDoCliente,
+      userData: montarUserData({
+        answers,
+        questions: formQuestions as Array<{ id: string; type?: string; title?: string }>,
+        ip: opts.ip, userAgent: opts.userAgent,
+      }),
+      eventSourceUrl: opts.referer,
+      testEventCode: codigoDeTesteValido(px.metaTestEventCode, px.metaTestEventCodeAt),
+    })
+
+    const { error } = await supabase.from('capi_outbox').insert(
+      eventos.map((e) => ({ ...e, response_id: responseId, form_id: form.id,
+        expires_at: new Date(Date.parse(e.event_time) + 7 * 86400_000).toISOString() })) as never,
+    )
+    // 23505 = gatilho já enfileirado por um save anterior — o caso NORMAL do autosave repetido.
+    if (error && !String((error as { code?: string }).code) .includes('23505')) {
+      logError('[partial] falha ao enfileirar CAPI (não bloqueante)', error, { responseId })
+      return
+    }
+    // Tentativa imediata: o evento de quem vai abandonar não pode esperar o cron.
+    void processarFila(supabase, { responseId }).catch(() => {})
+  } catch (err) {
+    logError('[partial] exceção no enfileiramento CAPI (não bloqueante)', err, {})
+  }
+}
 
 // POST /api/responses/partial
 //
@@ -115,10 +199,10 @@ export async function POST(req: NextRequest) {
   // Form + dono (precisa do plano pro gating do Sheets)
   const { data: form, error: formError } = await supabase
     .from('forms')
-    .select('id, user_id, questions, status, is_closed, paused, google_sheets_enabled, google_sheets_id')
+    .select('id, user_id, questions, status, is_closed, paused, google_sheets_enabled, google_sheets_id, pixels, pixel_event_on_complete')
     .eq('id', form_id)
     .eq('status', 'published')
-    .single() as { data: { id: string; user_id: string; questions: QuestionConfig[]; status: string; is_closed: boolean; paused: boolean; google_sheets_enabled: boolean; google_sheets_id: string | null } | null; error: unknown }
+    .single() as { data: { id: string; user_id: string; questions: QuestionConfig[]; status: string; is_closed: boolean; paused: boolean; google_sheets_enabled: boolean; google_sheets_id: string | null; pixels: Record<string, unknown> | null; pixel_event_on_complete: string | null } | null; error: unknown }
 
   if (formError || !form) {
     return NextResponse.json({ error: 'Formulário não encontrado' }, { status: 404, headers: CORS_HEADERS })
@@ -209,7 +293,14 @@ export async function POST(req: NextRequest) {
   // Em update o parâmetro é ignorado (restrição server-side, auditoria Codex).
   const deferSheets = body.defer_sheets === true
 
-  const updateCtx = { supabase, form, ownerPlan, valid, utmData, urlParams, lastQuestionOk, formQuestions: effectiveQuestions, revision }
+  // Contexto do CAPI: o que a derivação precisa e as funções de escrita não tinham.
+  const capiCtx = {
+    body: body as Record<string, unknown>,
+    ip,
+    userAgent: req.headers.get('user-agent') ?? undefined,
+    referer: req.headers.get('referer') ?? undefined,
+  }
+  const updateCtx = { supabase, form, ownerPlan, valid, utmData, urlParams, lastQuestionOk, formQuestions: effectiveQuestions, revision, capiCtx }
 
   // 1) Caminho id+token (prova de posse clássica)
   if (existingResponseId && verifyPartialToken(partialToken, existingResponseId)) {
@@ -276,6 +367,7 @@ export async function POST(req: NextRequest) {
   }) as typeof valid
 
   return await createPartialResponse({
+    capiCtx,
     supabase, form, ownerPlan, answers: validComAnexos, utmData, urlParams,
     lastQuestionAnswered: lastQuestionOk, formQuestions: effectiveQuestions,
     sessionHash, revision, deferSheets, updateCtx,
@@ -298,7 +390,7 @@ interface PartialTarget {
 // linha confirmada.
 async function updatePartialResponse(opts: {
   supabase: ReturnType<typeof createAdminClient>
-  form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
+  form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null; pixels: Record<string, unknown> | null; pixel_event_on_complete: string | null }
   ownerPlan: PlanId
   target: PartialTarget
   valid: Record<string, unknown>
@@ -307,8 +399,9 @@ async function updatePartialResponse(opts: {
   lastQuestionOk: string | null
   formQuestions: QuestionConfig[]
   revision: number | null
+  capiCtx: { body: Record<string, unknown>; ip: string; userAgent?: string; referer?: string }
 }): Promise<NextResponse> {
-  const { supabase, form, ownerPlan, target, valid, utmData, urlParams, lastQuestionOk, formQuestions, revision } = opts
+  const { supabase, form, ownerPlan, target, valid, utmData, urlParams, lastQuestionOk, formQuestions, revision, capiCtx } = opts
 
   // url_params: novo valor válido atualiza; ausente PRESERVA o da parcial.
   const effectiveUrlParams = urlParams ?? sanitizeUrlParams(target.url_params) ?? null
@@ -346,6 +439,14 @@ async function updatePartialResponse(opts: {
     )
   }
 
+  // Qualificação no meio do preenchimento: deriva e enfileira AGORA (best-effort; a UNIQUE
+  // do banco mantém idempotente através dos autosaves repetidos).
+  await enfileirarCapiDoParcial({
+    supabase, form: form as never, ownerPlan, responseId: target.id,
+    formQuestions, answers: valid, body: capiCtx.body,
+    ip: capiCtx.ip, userAgent: capiCtx.userAgent, referer: capiCtx.referer,
+  })
+
   await syncToSheetsIfEnabled({
     supabase,
     form,
@@ -366,7 +467,7 @@ async function updatePartialResponse(opts: {
 
 async function createPartialResponse(opts: {
   supabase: ReturnType<typeof createAdminClient>
-  form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
+  form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null; pixels: Record<string, unknown> | null; pixel_event_on_complete: string | null }
   ownerPlan: PlanId
   answers: Record<string, unknown>
   utmData: Record<string, string | null>
@@ -376,9 +477,10 @@ async function createPartialResponse(opts: {
   sessionHash: string | null
   revision: number | null
   deferSheets: boolean
+  capiCtx: { body: Record<string, unknown>; ip: string; userAgent?: string; referer?: string }
   updateCtx: {
     supabase: ReturnType<typeof createAdminClient>
-    form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
+    form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null; pixels: Record<string, unknown> | null; pixel_event_on_complete: string | null }
     ownerPlan: PlanId
     valid: Record<string, unknown>
     utmData: Record<string, string | null>
@@ -386,6 +488,7 @@ async function createPartialResponse(opts: {
     lastQuestionOk: string | null
     formQuestions: QuestionConfig[]
     revision: number | null
+    capiCtx: { body: Record<string, unknown>; ip: string; userAgent?: string; referer?: string }
   }
 }): Promise<NextResponse> {
   const { supabase, form, ownerPlan, answers, utmData, urlParams, lastQuestionAnswered, formQuestions, sessionHash, revision, deferSheets, updateCtx } = opts
@@ -433,6 +536,13 @@ async function createPartialResponse(opts: {
     return NextResponse.json({ error: 'Erro ao salvar progresso' }, { status: 500, headers: CORS_HEADERS })
   }
 
+  // Primeira gravação também deriva: pergunta qualificadora logo na abertura entra aqui.
+  await enfileirarCapiDoParcial({
+    supabase, form: form as never, ownerPlan, responseId: created.id,
+    formQuestions, answers, body: opts.capiCtx.body,
+    ip: opts.capiCtx.ip, userAgent: opts.capiCtx.userAgent, referer: opts.capiCtx.referer,
+  })
+
   // defer_sheets (só na criação): o handshake antecipado captura id/token sem
   // antecipar a linha na planilha — ela nasce no próximo save (60s/beacon).
   if (!deferSheets) {
@@ -457,7 +567,7 @@ async function createPartialResponse(opts: {
 
 async function syncToSheetsIfEnabled(opts: {
   supabase: ReturnType<typeof createAdminClient>
-  form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null }
+  form: { id: string; user_id: string; google_sheets_enabled: boolean; google_sheets_id: string | null; pixels: Record<string, unknown> | null; pixel_event_on_complete: string | null }
   ownerPlan: PlanId
   answers: Record<string, unknown>
   utmData: Record<string, string | null>

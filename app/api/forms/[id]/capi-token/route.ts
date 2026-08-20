@@ -6,6 +6,7 @@ import { PLANS, type PlanName } from '@/lib/plan-definitions'
 import { cifrarToken, dicaDoToken, cofreConfigurado } from '@/lib/capi-credential'
 import { validarCredencialCapi } from '@/lib/meta-capi'
 import { lerPixelDoFormulario } from '@/lib/pixel-events'
+import { religarBloqueadas, processarFila } from '@/lib/capi-worker'
 import { log, logError } from '@/lib/logger'
 
 /**
@@ -203,7 +204,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: 'Não foi possível salvar.' }, { status: 500 })
   }
 
-  log('[capi-token] token gravado e validado', { formId: id, pixelId: dono.pixelId })
+  // Token novo para o MESMO pixel religa o que estava preso por auth: token revogado não mata o
+  // evento — a configuração foi corrigida e a fila anda. (Desenho do parecer independente.)
+  const religadas = await religarBloqueadas(createServiceRoleClient(), id, dono.pixelId)
+  if (religadas > 0) {
+    void processarFila(createServiceRoleClient(), { limite: religadas }).catch(() => {})
+  }
+
+  log('[capi-token] token gravado e validado', { formId: id, pixelId: dono.pixelId, religadas })
   return NextResponse.json({ ok: true, dica: dicaDoToken(token), validadoEm: veredito.conclusivo ? agora : null })
 }
 

@@ -157,6 +157,26 @@ export interface Database {
         Args: { p_key: string; p_window_ms: number; p_max_requests: number }
         Returns: Array<{ allowed: boolean; current_count: number; reset_in_ms: number }>
       }
+      // Promove a resposta E enfileira os eventos de CAPI na MESMA transação
+      // (migrations 20260818_capi_outbox + _parciais). Execute só via service_role.
+      promover_resposta_e_enfileirar_capi: {
+        Args: {
+          p_response_id: string
+          p_form_id: string
+          p_answers: Json
+          p_meta_events: string[]
+          p_completed: boolean
+          p_last_question: string | null
+          p_utm_source: string | null
+          p_utm_medium: string | null
+          p_utm_campaign: string | null
+          p_utm_term: string | null
+          p_utm_content: string | null
+          p_url_params: Json | null
+          p_eventos: Json
+        }
+        Returns: Json
+      }
       check_and_increment_response: {
         Args: { p_user_id: string; p_response_id: string }
         Returns: {
@@ -746,6 +766,66 @@ export interface Database {
           revoked_at?: string | null
           expires_at?: string | null
           claimed_at?: string | null
+        }
+        Relationships: []
+      }
+      capi_outbox: {
+        // Fila de entrega do CAPI (migration 20260818_capi_outbox). Snapshot imutável por
+        // (response_id, trigger_id); o event_id persistido é reusado em toda retentativa.
+        Row: {
+          id: string
+          response_id: string
+          form_id: string
+          trigger_id: string
+          pixel_id: string
+          event_name: string
+          event_id: string
+          event_time: string
+          value: number | null
+          currency: string | null
+          action_source: string
+          event_source_url: string | null
+          user_data: Record<string, Json>
+          test_event_code: string | null
+          payload_version: number
+          status: 'pending' | 'processing' | 'sent' | 'retryable' | 'blocked_auth' | 'dead' | 'expired'
+          attempts: number
+          last_error: string | null
+          last_attempt_at: string | null
+          sent_at: string | null
+          next_attempt_at: string
+          expires_at: string
+          lease_token: string | null
+          leased_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          response_id: string
+          form_id: string
+          trigger_id: string
+          pixel_id: string
+          event_name: string
+          event_id: string
+          event_time: string
+          value?: number | null
+          currency?: string | null
+          action_source?: string
+          event_source_url?: string | null
+          user_data?: Record<string, Json>
+          test_event_code?: string | null
+          expires_at: string
+        }
+        Update: {
+          status?: 'pending' | 'processing' | 'sent' | 'retryable' | 'blocked_auth' | 'dead' | 'expired'
+          attempts?: number
+          last_error?: string | null
+          last_attempt_at?: string | null
+          sent_at?: string | null
+          next_attempt_at?: string
+          lease_token?: string | null
+          leased_at?: string | null
+          updated_at?: string
         }
         Relationships: []
       }

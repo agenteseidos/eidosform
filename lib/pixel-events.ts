@@ -29,15 +29,19 @@ export function pushDataLayerEvent(event: string, params?: Record<string, unknow
 }
 
 /**
- * Identificador único do evento, gerado NO NAVEGADOR e reaproveitado pelo servidor.
+ * DISPARO POR GATILHO (18/08/2026, protocolo v2) — o contrato do instante do clique.
  *
- * É a peça que faltava para o CAPI não contar o mesmo lead duas vezes (18/08/2026). O Meta
- * deduplica cruzando `event_name` + `event_id`: se o navegador manda "Lead" com o id X e o
- * servidor manda "Lead" com o MESMO id X, ele entende que é um evento só. Sem o id — como era
- * até aqui — ele conta os dois, e o cliente otimiza campanha em cima do dobro de conversões.
+ * O navegador avalia a regra localmente e dispara o pixel NA HORA (decisão do Sidney: a
+ * qualificação vale quando acontece). Cada disparo gera um `eventId` e registra a DICA
+ * `{triggerId, eventId}`, que viaja nos salvamentos. O servidor deriva os gatilhos SOZINHO da
+ * resposta gravada — a dica é só a etiqueta de deduplicação, para o envio server-side usar o
+ * mesmo id e o Meta juntar as duas vias. Forjar dica não infla nada.
  *
- * Gerado uma vez por evento e guardado: o mesmo disparo precisa levar o mesmo id nas duas vias.
+ * Um gatilho dispara UMA vez por preenchimento (`__eidosCapiDisparados`); o servidor tem a mesma
+ * garantia na UNIQUE (response_id, trigger_id) da fila.
  */
+export type CapiHint = { triggerId: string; eventId: string }
+
 function novoEventId(): string {
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -47,67 +51,62 @@ function novoEventId(): string {
   return `e-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-/**
- * Registra o disparo e devolve o id que o fbq deve usar.
- *
- * ⚠️ CORRIGIDO EM 18/08/2026 (parecer independente). A primeira versão guardava um mapa
- * nome→id em que "o primeiro id vence para sempre": se o MESMO nome disparasse duas vezes na
- * mesma página, as duas ocorrências levariam o mesmo `event_id`. O Meta especifica `event_id`
- * ÚNICO POR OCORRÊNCIA — a deduplicação documentada é entre navegador e servidor, não uma forma
- * de fundir dois disparos do navegador. Repetir o id seria pedir ao Meta que descartasse um
- * evento legítimo.
- *
- * Agora cada disparo é uma OCORRÊNCIA com id próprio. Uma reserva feita antes do POST
- * (`reservarEventId`) é CONSUMIDA pelo disparo correspondente, para que o mesmo evento não vire
- * duas ocorrências.
- *
- * O array `__eidosCapturedFbqEvents` continua sendo só de nomes: é dele que sai a coluna
- * `meta_events`, cujo formato já está gravado em planilha, CSV, PDF e e-mail.
- */
-function recordCapturedEvent(name: string): string {
-  const id = novoEventId()
-  if (typeof window === 'undefined' || !name) return id
-  if (!window.__eidosCapturedFbqEvents) window.__eidosCapturedFbqEvents = []
-  window.__eidosCapturedFbqEvents.push(name)
-  if (!window.__eidosFbqOcorrencias) window.__eidosFbqOcorrencias = []
-
-  const reservada = window.__eidosFbqOcorrencias.find((o) => o.nome === name && !o.disparado)
-  if (reservada) {
-    reservada.disparado = true
-    return reservada.id
-  }
-  window.__eidosFbqOcorrencias.push({ nome: name, id, disparado: true })
-  return id
-}
-
-/**
- * RESERVA o eventID de um evento que ainda vai disparar.
- *
- * Existe por causa de uma ordem que não dá para inverter: os eventos de conclusão são CALCULADOS
- * antes do POST (para entrarem em `meta_events` de forma determinística) mas só são DISPARADOS
- * depois que o servidor confirma — envio que falhou não pode virar conversão. Só que o POST é
- * justamente quem leva os ids para o servidor.
- *
- * Reservando aqui, o id já viaja no POST e o disparo posterior reaproveita o mesmo valor: o
- * `recordCapturedEvent` respeita o primeiro id gravado para cada nome. Sem isto, navegador e
- * servidor mandariam ids diferentes para o mesmo evento e o Meta contaria dois leads.
- */
-export function reservarEventId(name: string): string {
-  const id = novoEventId()
-  if (typeof window === 'undefined' || !name) return id
-  if (!window.__eidosFbqOcorrencias) window.__eidosFbqOcorrencias = []
-  // Já existe reserva não disparada para este nome? Reaproveita — reservar duas vezes o mesmo
-  // evento pendente criaria uma ocorrência fantasma que nunca vira disparo no navegador.
-  const pendente = window.__eidosFbqOcorrencias.find((o) => o.nome === name && !o.disparado)
-  if (pendente) return pendente.id
-  window.__eidosFbqOcorrencias.push({ nome: name, id, disparado: false })
-  return id
-}
-
-/** As ocorrências desta página, no formato que viaja no POST: `[{name, id}, ...]`. */
-export function ocorrenciasDeEvento(): Array<{ name: string; id: string }> {
+/** As dicas acumuladas desta página, no formato que viaja no POST. */
+export function dicasParaEnvio(): CapiHint[] {
   if (typeof window === 'undefined') return []
-  return (window.__eidosFbqOcorrencias ?? []).map((o) => ({ name: o.nome, id: o.id }))
+  return [...(window.__eidosCapiHints ?? [])]
+}
+
+export function gatilhoJaDisparado(triggerId: string): boolean {
+  if (typeof window === 'undefined') return false
+  return (window.__eidosCapiDisparados ?? new Set()).has(triggerId)
+}
+
+/**
+ * Dispara UM gatilho no navegador (fbq com eventID + dataLayer + ttq) e registra a dica.
+ * `eventId` explícito = veio do servidor (browser_events pós-submit); ausente = clique local,
+ * o navegador gera e o servidor adota via dica. Repetição do mesmo gatilho é ignorada.
+ */
+export function dispararGatilho(params: {
+  triggerId: string
+  eventName: string
+  eventId?: string
+  value?: number
+  currency?: string
+}): void {
+  if (typeof window === 'undefined' || !params.eventName) return
+  if (!window.__eidosCapiDisparados) window.__eidosCapiDisparados = new Set()
+  if (window.__eidosCapiDisparados.has(params.triggerId)) return
+  window.__eidosCapiDisparados.add(params.triggerId)
+
+  const eventId = params.eventId ?? novoEventId()
+  if (!window.__eidosCapiHints) window.__eidosCapiHints = []
+  window.__eidosCapiHints.push({ triggerId: params.triggerId, eventId })
+
+  // Nomes seguem para o buffer legado: a UI de "eventos capturados" ainda lê dele.
+  if (!window.__eidosCapturedFbqEvents) window.__eidosCapturedFbqEvents = []
+  window.__eidosCapturedFbqEvents.push(params.eventName)
+
+  // GTM/Google — sem eventID (conceito do Meta).
+  pushDataLayerEvent(params.eventName)
+  fireFbqComId(params.eventName, eventId, params.value, params.currency)
+  fireTtqEvent(params.eventName)
+}
+
+function fireFbqComId(name: string, eventID: string, value?: number, currency?: string, retries = 10) {
+  if (typeof window === 'undefined') return
+  const { fbq } = window
+  if (!fbq) {
+    if (retries > 0) setTimeout(() => fireFbqComId(name, eventID, value, currency, retries - 1), 300)
+    return
+  }
+  const params = value !== undefined ? { value, currency: currency || 'BRL' } : undefined
+  const standardEvents = ['Lead', 'Purchase', 'CompleteRegistration', 'Contact', 'InitiateCheckout', 'ViewContent', 'AddToCart', 'AddPaymentInfo', 'Subscribe']
+  if (standardEvents.includes(name)) {
+    fbq('track', name, params ?? {}, { eventID })
+  } else {
+    fbq('trackCustom', name, params ?? {}, { eventID })
+  }
 }
 
 function normalizeAnswer(answer: unknown): string {
@@ -163,25 +162,6 @@ export function matchesCondition(answer: unknown, condition: PixelEventCondition
 
 function splitOptionList(value: string): string[] {
   return value.split('|').map(v => v.trim()).filter(v => v !== '')
-}
-
-export function firePixelEvent(event: PixelEventConfig) {
-  // Google/GTM — dispara uma vez, imediatamente (independe do fbq).
-  pushDataLayerEvent(
-    event.name,
-    event.value !== undefined
-      ? { value: event.value, currency: event.currency || 'BRL' }
-      : undefined,
-  )
-  // Meta — comportamento inalterado (espera o fbq carregar, com retry).
-  fireFbqEvent(event)
-  // TikTok — mesmo padrão do Meta (espera o ttq carregar, com retry).
-  fireTtqEvent(
-    event.name,
-    event.value !== undefined
-      ? { value: event.value, currency: event.currency || 'BRL' }
-      : undefined,
-  )
 }
 
 /**
@@ -282,29 +262,6 @@ export function fireGoogleAdsConversion(sendTo: string | null, retries = 10) {
   gtag('event', 'conversion', { send_to: sendTo })
 }
 
-function fireFbqEvent(event: PixelEventConfig, retries = 10) {
-  if (typeof window === 'undefined') return
-  const { fbq } = window
-  if (!fbq) {
-    if (retries > 0) {
-      setTimeout(() => fireFbqEvent(event, retries - 1), 300)
-    }
-    return
-  }
-
-  const params = event.value !== undefined
-    ? { value: event.value, currency: event.currency || 'BRL' }
-    : undefined
-
-  // O `eventID` é o 4º argumento do fbq. É ele que casa com o `event_id` do envio pelo servidor.
-  const eventID = recordCapturedEvent(event.name)
-  if (event.type === 'standard') {
-    fbq('track', event.name, params, { eventID })
-  } else {
-    fbq('trackCustom', event.name, params, { eventID })
-  }
-}
-
 export function fireNamedPixelEvent(name: string) {
   if (!name) return
   // Google/GTM — dispara uma vez, imediatamente (independe do fbq).
@@ -325,21 +282,16 @@ function fireFbqNamedEvent(name: string, retries = 10) {
     }
     return
   }
-  const eventID = recordCapturedEvent(name)
+  // Uso remanescente: SÓ o evento de abertura (on_start), que por decisão não tem par no
+  // servidor — logo não gera dica nem precisa de eventID casado. Registra o nome no buffer
+  // legado (UI de eventos capturados) e dispara.
+  if (!window.__eidosCapturedFbqEvents) window.__eidosCapturedFbqEvents = []
+  window.__eidosCapturedFbqEvents.push(name)
   const standardEvents = ['Lead', 'Purchase', 'CompleteRegistration', 'Contact', 'InitiateCheckout', 'ViewContent', 'AddToCart', 'AddPaymentInfo', 'Subscribe']
   if (standardEvents.includes(name)) {
-    fbq('track', name, {}, { eventID })
+    fbq('track', name)
   } else {
-    fbq('trackCustom', name, {}, { eventID })
-  }
-}
-
-export function evaluatePixelEvents(pixelEvents: PixelEventRule[] | undefined, answer: unknown) {
-  if (!pixelEvents || pixelEvents.length === 0) return
-  for (const rule of pixelEvents) {
-    if (matchesCondition(answer, rule.condition)) {
-      firePixelEvent(rule.event)
-    }
+    fbq('trackCustom', name)
   }
 }
 
@@ -468,65 +420,6 @@ export function linkConfiguracoesDoPixel(pixelId: string | null | undefined): st
   const limpo = (pixelId ?? '').trim()
   if (!/^\d{10,20}$/.test(limpo)) return null
   return `https://eventsmanager.facebook.com/events_manager2/list/dataset/${limpo}/settings`
-}
-
-/**
- * O QUE ESTE FORMULÁRIO TEM AUTORIZAÇÃO PARA MANDAR AO META PELO SERVIDOR.
- *
- * ⚠️ ESTE É O CONSERTO DO ACHADO MAIS GRAVE DO PARECER INDEPENDENTE (18/08/2026).
- *
- * O submit de formulário publicado é ANÔNIMO por natureza — qualquer um posta. Até aqui, a lista
- * `meta_events` que vinha nesse POST era usada quase como veio: `isRecordableMetaEvent` é uma
- * lista de BLOQUEIO (recusa PageView, ViewContent e mais quatro) e libera todo o resto, inclusive
- * `Purchase`, `Lead` e qualquer nome inventado.
- *
- * Enquanto o CAPI usava o pixel global da plataforma, isso sujava o ativo do dono. Com o CAPI por
- * cliente ficou pior: um estranho podia mandar `{"meta_events":["Purchase"]}` e o servidor
- * dispararia no pixel do CLIENTE, autenticado com o token VERDADEIRO dele — poluindo atribuição e
- * otimização de campanha de terceiro.
- *
- * A regra agora: o navegador pode DIZER o que disparou, mas quem AUTORIZA é o servidor, relendo a
- * configuração gravada do formulário e reavaliando as condições contra as respostas que ele mesmo
- * recebeu. Nome que o dono não configurou não sai daqui — não importa o que veio no POST.
- *
- * Pura de propósito: sem rede, sem banco, testável sozinha.
- */
-export function derivarEventosAutorizados(params: {
-  onStart?: string | null
-  onComplete?: string | null
-  answerSetEvents?: AnswerSetEvent[] | null
-  questions: Array<{ id: string; pixelEvents?: PixelEventRule[] }>
-  answers: Record<string, unknown>
-}): Map<string, PixelEventConfig | null> {
-  const { onStart, onComplete, answerSetEvents, questions, answers } = params
-  // Map em vez de Set porque o valor guarda `value`/`currency` da configuração — sem isso um
-  // `Purchase` chegaria ao Meta sem valor e a campanha não conseguiria otimizar por receita.
-  const autorizados = new Map<string, PixelEventConfig | null>()
-
-  const nomeSimples = (v: string | null | undefined) => (v || '').trim()
-  for (const n of [nomeSimples(onStart), nomeSimples(onComplete)]) {
-    if (n && !autorizados.has(n)) autorizados.set(n, null)
-  }
-
-  // Regras POR PERGUNTA: reavaliadas aqui contra as respostas recebidas. Confiar no navegador
-  // para dizer que a condição bateu seria deixar a mesma porta aberta um andar acima.
-  const existentes = new Set(questions.map((q) => q.id))
-  for (const q of questions) {
-    for (const regra of q.pixelEvents || []) {
-      const nome = (regra.event?.name || '').trim()
-      if (!nome || !existentes.has(q.id)) continue
-      if (matchesCondition(answers[q.id], regra.condition) && !autorizados.has(nome)) {
-        autorizados.set(nome, regra.event)
-      }
-    }
-  }
-
-  // Eventos por conjunto de respostas: mesma avaliação que o navegador faz, refeita aqui.
-  for (const nome of evaluateAnswerSetEvents(answerSetEvents, answers, existentes)) {
-    if (!autorizados.has(nome)) autorizados.set(nome, null)
-  }
-
-  return autorizados
 }
 
 export function isRecordableMetaEvent(name: string): boolean {

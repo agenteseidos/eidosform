@@ -422,3 +422,41 @@ mesma dedup navegador↔servidor serve aqui. O envio server-side pode reusar `se
 passando o pixel/token da PLATAFORMA — que é o uso legítimo dele, agora que é parâmetro.
 
 **Esforço:** ~2 sessões, incluindo os eventos de compra.
+
+---
+
+## D-10 · Hero da landing vira CAPTURA REAL (demo → formulário EidosForm + WhatsApp)
+
+**Origem:** conversa Sidney×Claude (sessão `bcd5c3a1`, ~fim de julho/2026). Plano FECHADO com
+decisões do Sidney, mas nunca executado e nunca registrado — resgatado dos transcritos em
+20/08/2026 quando o Sidney lembrou ("a pessoa que testar isso aí vira lead").
+
+**Hoje:** `components/v3/hero-demo.tsx` é teatro client-side puro; a tela promete "Nenhum dado é
+enviado". Quem testa a demo se perde. A mudança COMEÇA por reescrever essa microcopy honestamente.
+
+**Decisões FECHADAS do Sidney (não reabrir):**
+- Hero vira formulário EidosForm real — dogfooding: a página roda sobre o produto que vende.
+- Ordem: **nome → WhatsApp → e-mail → objetivo** (contato cedo = abandono recuperável; fim em
+  múltipla escolha fecha num clique).
+- **Conta dedicada** (ex. leads@institutoeidos.com.br), `responses_limit = -1` (a RPC honra -1;
+  o trigger do vitalício só pina `lifetime_access=true`, então persiste). Notificações de e-mail
+  DESLIGADAS nessa conta (abandono da demo não vira e-mail).
+- **Delay do disparo WhatsApp: 30 min** em env própria (timer varre a 15 min → efetivo 30-45;
+  10 min pedidos originalmente não são entregáveis com precisão).
+- **Template UTILITY família "seu teste"** (ação do CONTATO — a família que aprovou nos
+  experimentos de 23-24/07). SEM máscara {UP}: o texto honesto já segura utility; mascarar viraria
+  parameter-abuse à toa. Enviar SÓ se o lead não abriu conversa antes.
+- **CTA único `wa.me`** na tela de obrigado (lead quente fala com a Elen na hora; o delay cobre o
+  resto). Sem checkbox LGPD (decisão explícita do Sidney).
+- 2 temas da marca em `lib/themes.ts` (escuro #0A0A0F+#F5B731 p/ v3; claro p/ v4) + carrossel.
+- `lib/hero-demo/config.ts` no padrão migracao/config.ts (IDs pinados + validação de contrato).
+
+**⏳ DECISÃO ABERTA:** os 2 temas novos viram produto p/ todo mundo ("9 temas" na vitrine — voto
+do Claude: sim) ou ficam exclusivos da casa (copy segue "7")?
+
+**Sinergia nova (não existia no plano original):** a conta dedicada pode ter pixel+token de CAPI
+(D-08/protocolo v2) → a landing mede as próprias conversões pelo motor recém-validado. Conecta com
+[[D-09]] (pixel do próprio EidosForm).
+
+**Esforço estimado no plano original:** ~2,5 sessões (fundação ½ · temas ½ · hero real 1 ·
+template+disparo ½).

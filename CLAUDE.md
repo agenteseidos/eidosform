@@ -31,10 +31,21 @@ pelo **SQL Editor do painel Supabase**.
 | 3 | `check_and_increment_response(uuid)` | Assinatura real tem **2 parâmetros** — SQL montado pelo arquivo falhou com `42883` |
 | 4 | (nada — invisível no código) | `GRANT` amplo ao `anon` em **14 tabelas + a view `published_forms`**, que é auto-atualizável e roda com `security_invoker=false`: havia caminho para **alterar/apagar formulário publicado de qualquer cliente sem login** |
 | 5 | `get_response_counts_by_forms` = `COUNT(*)` puro (migration `20260428`) | Tem uma **guarda de propriedade** que o arquivo não tem (`auth.uid() IS NULL OR EXISTS(... f.user_id = auth.uid())`). Confirmado em 07/08/2026 lendo `pg_proc.prosrc`. Não muda o resultado para quem chama com service-role, mas prova de novo que o `.sql` é a versão de ontem |
+| 6 | `database.types.ts`: `responses.meta_events: string[]` | **A coluna é JSONB.** A RPC do CAPI (20/08/2026) nasceu com `COALESCE(p_meta_events::text[], meta_events)` → erro de PLANNER 42804 → **todo submit devolveu "Erro ao salvar resposta" por ~20h**, com 1524 testes verdes — o mock do banco simulava a crença, não o real. Zero leads perdidos por sorte |
 
 **O caso 4 é o que mais importa como lição.** Uma auditoria de 30 lotes e 85 mil linhas, com dois
 modelos e passe duplo adversarial, **não o encontrou** — porque ele não existe em lugar nenhum do
 código. Risco de configuração e de estado do banco é estruturalmente invisível à revisão de código.
+
+**⚠️ O caso 6 estende a regra aos TIPOS e ao TESTE.** O `database.types.ts` é gerado do
+repositório — ele mente junto. Duas obrigações operacionais desde 20/08/2026:
+1. **Antes de escrever SQL/RPC que toca coluna existente**, conferir o tipo REAL. Sem SQL Editor:
+   o OpenAPI do PostgREST responde da VPS — `GET $SUPABASE_URL/rest/v1/` (service key) →
+   `definitions.<tabela>.properties.<coluna>.format`. 30 segundos.
+2. **Toda função de banco nova ganha uma SONDA REAL assim que criada**: chamada inofensiva direto
+   no PostgREST de produção (id inexistente → 200 "não fez nada"). Erro de tipo é de
+   planejamento — a sonda pega na hora, sem tocar dado. **"Pronto" só depois da sonda**; suíte
+   verde com mock não prova contrato com o banco.
 
 **Receita para `GRANT`/`REVOKE`:** use bloco `DO` que descobre a assinatura real
 (`p.oid::regprocedure`) e aplica por OID — imune a divergência e a sobrecargas. E lembre que

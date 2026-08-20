@@ -458,5 +458,33 @@ do Claude: sim) ou ficam exclusivos da casa (copy segue "7")?
 (D-08/protocolo v2) → a landing mede as próprias conversões pelo motor recém-validado. Conecta com
 [[D-09]] (pixel do próprio EidosForm).
 
-**Esforço estimado no plano original:** ~2,5 sessões (fundação ½ · temas ½ · hero real 1 ·
-template+disparo ½).
+**Esforço estimado no plano original:** ~2,5 sessões — REVISADO após parecer Codex de 20/08 para
+**~4,75–6,25 sessões** (subestimei a costura com a Elen; mesma lição dos anexos).
+
+### Decisões FECHADAS na rodada de 20/08 (Sidney × Claude × parecer Codex — não reabrir)
+- **Conta técnica:** `leads@eidosform.com.br` (catch-all ImprovMX já entrega no Gmail dele —
+  provado com e-mail de teste; chegou no SPAM → Sidney marca "não é spam" + filtro).
+- **5 perguntas:** nome → WhatsApp → e-mail → objetivo (3 opções) → **volume esperado/mês**
+  (até 100 · 1.000 · 5.000 · +5.000 — degraus = planos Free/Starter/Plus/Professional).
+- **Sugestão de plano:** na TELA DE OBRIGADO (livre de regra Meta) + na conversa da Elen.
+  NUNCA no template (= MARKETING).
+- **Template seco de confirmação** (`eidosform_teste_recebido_v1`, UTILITY, nome + objetivo) —
+  a venda acontece quando o lead RESPONDE (janela 24h → Elen livre).
+- **Condição de envio (ideia do Sidney):** só dispara se o lead NÃO criou conta com aquele
+  e-mail e NÃO falou com a Elen. Follow-up de sumido, não confirmação imediata.
+- **Delay: 30 min** · **Janela: TODOS os dias, 8h–21h** (Elen responde 24/7).
+- **Aviso na tela** (sem checkbox): botão "Enviar teste" + linha "Seus dados são salvos. A
+  equipe do EidosForm pode te chamar no WhatsApp para ajudar." — frase de EQUIPE, não de
+  produto, para não parecer que o EidosForm dispara WhatsApp a respondentes (não é feature).
+- **Temas:** visuais internos dos heroes no MVP (NÃO entram no enum do produto — banco/Zod só
+  aceitam os 7; virar "9 temas" = migração própria, adiado).
+- **Imagem de fundo como tema:** REMOVIDA da D-10 → entrega separada Plus+ (~1,5-2,5 sessões,
+  desenho seguro no parecer Codex: reprocessar server-side, sem SVG, scrim fixo).
+- **🚫 ANTI-ABUSO RECUSADO pelo Sidney (20/08): sem Turnstile, sem teto diário, sem dedup
+  por telefone/24h, sem restrição BR.** "Deixe salvo como sugestão" — fica REGISTRADO como
+  upgrade recomendado se surgir abuso ou antes de escalar tráfego pago. Consequência aceita:
+  a mesma pessoa testando 2× recebe 2 mensagens; abuso escala sem teto.
+- Supressão por "ENVIOU mensagem" (inbound real na Elen), não "abriu o wa.me" (inobservável) —
+  exige endpoint novo na Elen (last-inbound + estado por telefone).
+- Ordem de execução (Codex): template→Meta PRIMEIRO (fila externa) · sinal da Elen · conta/seed ·
+  controller+heroes · outbox+worker+timer próprio · canário · publicar.

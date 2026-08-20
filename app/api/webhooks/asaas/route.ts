@@ -977,30 +977,6 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        log('[asaas-webhook] Payment overdue, reverting to free', { userId: user.id, customerId })
-
-        const { data: overdueRows, error: overdueError } = await supabase
-          .from('profiles')
-          .update({
-            plan: 'free',
-            plan_status: 'overdue',
-            plan_expires_at: null,
-            annual_started_at: null,
-            // free LIMPA a régua de valoração (caso 5). (Commit C, proration.)
-            proration_basis_days: null,
-            billing_period_start_on: null,
-            billing_period_end_on: null,
-            limit_alert_sent: false,
-            responses_limit: PLANS.free.maxResponses,
-            ...buildResponseQuotaPeriodReset(),
-          })
-          .eq('id', user.id)
-          .select('id')
-
-        if (overdueError || !overdueRows || overdueRows.length !== 1) {
-          throw new Error(`Falha ao reverter plano (overdue) (rows=${overdueRows?.length ?? 0}): ${overdueError?.message ?? 'sem erro DB'}`)
-        }
-
         await updateCheckoutLink({
           customerId,
           subscriptionId: payment?.subscription ?? null,
@@ -1009,8 +985,12 @@ export async function POST(req: NextRequest) {
           status: 'overdue',
         })
 
-        const downgrade = await handleDowngrade(user.id, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-        log('[asaas-webhook] Downgrade processed', { userId: user.id, pausedForms: downgrade.pausedCount })
+        // Decisão de negócio (06/08): OVERDUE entra em carência de 5 dias. O webhook registra
+        // o atraso, mas NÃO derruba acesso nem pausa formulários — isso fica centralizado no
+        // expire-plans, que reconsulta o gateway e só rebaixa após OVERDUE_GRACE_DAYS.
+        log('[asaas-webhook] PAYMENT_OVERDUE registrado — acesso mantido até expire-plans decidir após a carência', {
+          userId: user.id, customerId, subscriptionId: overdueSubId,
+        })
 
         break
       }

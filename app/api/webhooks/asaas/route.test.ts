@@ -89,7 +89,7 @@ import { POST } from './route'
 import { createClient } from '@supabase/supabase-js'
 import { getSubscription } from '@/lib/asaas'
 import { finalizeActivation, claimActivationEffects } from '@/lib/billing-activation'
-import { handleUpgrade } from '@/lib/plan-limits'
+import { handleDowngrade, handleUpgrade } from '@/lib/plan-limits'
 import { sendBillingOpsAlert, sendPlanActivated } from '@/lib/resend'
 import { runPlanChangeBackstop, runCardFallbackBackstop } from '@/lib/plan-switch'
 
@@ -101,6 +101,7 @@ const mockGetSubscription = vi.mocked(getSubscription)
 const mockFinalize = vi.mocked(finalizeActivation)
 const mockClaim = vi.mocked(claimActivationEffects)
 const mockHandleUpgrade = vi.mocked(handleUpgrade)
+const mockHandleDowngrade = vi.mocked(handleDowngrade)
 const mockOpsAlert = vi.mocked(sendBillingOpsAlert)
 const mockPlanActivated = vi.mocked(sendPlanActivated)
 
@@ -478,8 +479,6 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
       profiles: [
         { data: USER_ROW, error: null }, // getProfileById (resolve inicial)
         { data: { asaas_subscription_id: 'sub_1', plan: 'starter', plan_status: 'active', plan_expires_at: null }, error: null },
-        { data: [{ id: 'user-1' }], error: null }, // revert p/ free (overdue)
-        { data: USER_ROW, error: null }, // getProfileById (re-resolve do updateCheckoutLink)
       ],
     })
     mockCreateClient.mockReturnValue(db as never)
@@ -492,6 +491,10 @@ describe('POST /api/webhooks/asaas — PAYMENT_CONFIRMED × guard de preço-chei
       && JSON.stringify(c.args) === JSON.stringify(['payment_method', 'plan_switch_fallback']))
     // 1 no resolveBillingContext inicial (opção 3) + 1 no re-resolve do updateCheckoutLink (opção 3).
     expect(neqCalls.length).toBeGreaterThanOrEqual(2)
+    // Regressão principal: o webhook NÃO rebaixa mais na hora.
+    const downgrade = calls.find((c) => c.table === 'profiles' && c.method === 'update'
+      && (c.args[0] as { plan?: string })?.plan === 'free')
+    expect(downgrade).toBeUndefined()
   })
 })
 
@@ -739,6 +742,38 @@ describe('POST /api/webhooks/asaas — evento de dinheiro sem dono vai para o DL
 
     expect((await res.json() as { processed?: boolean }).processed).toBe(false)
     expect(foiParaDLQ(calls)).toBeTruthy()
+  })
+})
+
+describe('POST /api/webhooks/asaas — PAYMENT_OVERDUE respeita a carência do expire-plans', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('registra overdue no checkout e mantém o acesso quando a assinatura ativa bate', async () => {
+    const { db, calls } = makeRecordingDb({
+      asaas_webhook_events: [{ error: null }],
+      billing_checkouts: [
+        { data: CK_ROW, error: null }, // resolveBillingContext
+        { data: CK_ROW, error: null }, // updateCheckoutLink re-resolve
+        { error: null },               // update do checkout p/ overdue
+      ],
+      profiles: [
+        { data: USER_ROW, error: null }, // getProfileById
+        { data: { asaas_subscription_id: 'sub_1', plan: 'starter', plan_status: 'active', plan_expires_at: null }, error: null },
+      ],
+    })
+    mockCreateClient.mockReturnValue(db as never)
+
+    const body = { id: 'evt_overdue_active', event: 'PAYMENT_OVERDUE', payment: { customer: 'cus_1', value: 49, subscription: 'sub_1' } }
+    const res = await POST(makeReq(body))
+
+    expect((await res.json() as { received: boolean }).received).toBe(true)
+    const checkoutOverdue = calls.find((c) => c.table === 'billing_checkouts' && c.method === 'update'
+      && (c.args[0] as { status?: string })?.status === 'overdue')
+    expect(checkoutOverdue).toBeTruthy()
+    const downgrade = calls.find((c) => c.table === 'profiles' && c.method === 'update'
+      && (c.args[0] as { plan?: string })?.plan === 'free')
+    expect(downgrade).toBeUndefined()
+    expect(mockHandleDowngrade).not.toHaveBeenCalled()
   })
 })
 

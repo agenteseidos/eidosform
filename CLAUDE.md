@@ -281,6 +281,15 @@ plan 'free' + status 'active').
 >   token no Meta. (Erro que eu cometi ao instruir o Sidney; pego pelo parecer independente.)
 >   ⚠️ Existe cópia local das vars antigas em `.env.production.local` (ignorado pelo git, não vai
 >   no deploy) — apagar depois de revogar o token antigo.
+>   🔁 **NA NOITE DE 18/08 o CAPI virou PROTOCOLO v2** (14 commits no dia, até `51f26ac`): o
+>   navegador manda só `capi_hints` (etiquetas de dedup); o SERVIDOR deriva os gatilhos da
+>   resposta gravada (`lib/capi-triggers.ts`), grava resposta+fila na mesma transação (RPC
+>   `promover_resposta_e_enfileirar_capi`) e o worker (`lib/capi-worker.ts`) entrega com
+>   retentativa idempotente (`capi_outbox`; cron `/api/cron/capi-outbox` no crontab da VPS,
+>   min 52). Qualificação dispara NO MEIO do preenchimento (decisão do Sidney — a rota /partial
+>   também enfileira). ⚠️ NÃO reintroduzir lista de eventos vinda do POST: foi o P0 do parecer
+>   (inflação de conversão na conta do cliente). Estado completo e Fase 4 pendente (teste E2E):
+>   ficha do vault, seção '📍 ONDE PARAMOS — FIM DO DIA 18/08'.
 > - **"UTM na mensagem do WhatsApp por padrão"**: as variáveis `{utm_*}` existem,
 >   mas os templates PADRÃO não as usam. (O bug de perda de UTM na revalidação do
 >   abandono FOI corrigido.)

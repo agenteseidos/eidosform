@@ -769,6 +769,31 @@ export interface Database {
         }
         Relationships: []
       }
+      contact_channel_state: {
+        // A FICHA do contato por telefone (migration 20260820_contact_channel_state).
+        // Elen escreve a cada inbound/opt-out; follow-up e régua leem antes de disparar.
+        Row: {
+          phone: string
+          last_inbound_at: string | null
+          opted_out: boolean
+          opted_out_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          phone: string
+          last_inbound_at?: string | null
+          opted_out?: boolean
+          opted_out_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          last_inbound_at?: string | null
+          opted_out?: boolean
+          opted_out_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       hero_followup_outbox: {
         // Fila do follow-up do hero da landing (migration 20260820_hero_followup_outbox, D-10).
         // UNIQUE(response_id): no máximo UMA mensagem por teste da demonstração.

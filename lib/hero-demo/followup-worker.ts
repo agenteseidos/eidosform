@@ -35,30 +35,31 @@ type Linha = {
 }
 
 /**
- * O contato já falou com a gente? Pergunta à Elen.
+ * O contato já falou com a gente? LÊ A FICHA (20/08/2026, arquitetura do Sidney).
  *
- * `desconhecido: true` quando a Elen não respondeu — e quem chama trata isso como "adiar", nunca
- * como "pode mandar". Preferir atrasar uma mensagem a mandá-la por cima de uma conversa.
+ * A ficha (`contact_channel_state`) é abastecida pela Elen a cada mensagem recebida e a cada
+ * opt-out — então a resposta está no NOSSO banco, em tempo real, sem a Vercel precisar alcançar
+ * a VPS. ("Abriu o wa.me" continua inobservável; só a MENSAGEM prova, e é a mensagem que grava.)
+ *
+ * `desconhecido: true` só quando a LEITURA falha (banco fora, tabela ausente) — e quem chama
+ * trata isso como "adiar", nunca como "pode mandar". Ficha SEM linha = nunca falou = pode.
  */
-export async function consultarEstadoContato(phoneDigits: string): Promise<EstadoContato> {
-  const url = process.env.ELEN_CONTACT_STATE_URL
-  const secret = process.env.ELEN_OPTOUT_SECRET
-  if (!url || !secret) {
-    logWarn('[hero-followup] ELEN_CONTACT_STATE_URL/SECRET ausentes — estado desconhecido')
-    return { lastInboundAt: null, optedOut: false, desconhecido: true }
-  }
+export async function consultarEstadoContato(db: SupabaseClient, phoneDigits: string): Promise<EstadoContato> {
   try {
-    const res = await fetch(`${url}?phone=${encodeURIComponent(phoneDigits)}`, {
-      headers: { Authorization: `Bearer ${secret}` },
-      signal: AbortSignal.timeout(4000),
-    })
-    if (!res.ok) return { lastInboundAt: null, optedOut: false, desconhecido: true }
-    const j = await res.json().catch(() => null) as
-      { ok?: boolean; optedOut?: boolean; lastInboundAt?: number | null } | null
-    if (!j?.ok) return { lastInboundAt: null, optedOut: false, desconhecido: true }
+    const { data, error } = await db
+      .from('contact_channel_state')
+      .select('last_inbound_at, opted_out')
+      .eq('phone', phoneDigits)
+      .maybeSingle()
+    if (error) {
+      logWarn('[hero-followup] ficha ilegível — estado desconhecido (adia)', { erro: error.message })
+      return { lastInboundAt: null, optedOut: false, desconhecido: true }
+    }
+    const f = data as { last_inbound_at: string | null; opted_out: boolean } | null
+    if (!f) return { lastInboundAt: null, optedOut: false }
     return {
-      lastInboundAt: typeof j.lastInboundAt === 'number' ? j.lastInboundAt : null,
-      optedOut: j.optedOut === true,
+      lastInboundAt: f.last_inbound_at ? Date.parse(f.last_inbound_at) : null,
+      optedOut: f.opted_out === true,
     }
   } catch {
     return { lastInboundAt: null, optedOut: false, desconhecido: true }
@@ -129,7 +130,7 @@ export async function processarFollowups(db: SupabaseClient, limite = 20): Promi
     ) as string | undefined
 
     const [contato, temConta] = await Promise.all([
-      consultarEstadoContato(bruto.phone),
+      consultarEstadoContato(db, bruto.phone),
       criouConta(db, email ?? null),
     ])
 

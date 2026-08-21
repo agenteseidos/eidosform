@@ -47,6 +47,13 @@ repositório — ele mente junto. Duas obrigações operacionais desde 20/08/202
    planejamento — a sonda pega na hora, sem tocar dado. **"Pronto" só depois da sonda**; suíte
    verde com mock não prova contrato com o banco.
 
+**⚠️ E o caso 6 tem um irmão operacional (20/08):** publicar o CONSUMIDOR antes do RECURSO
+existir. O hero das landings foi ao ar apontando para um formulário ainda em RASCUNHO — 1h de demo
+quebrada na página de vendas (zero impacto por sorte: tráfego zero). Em lote que muda página
+pública: **publicar o recurso ANTES do push, ou nascer atrás de flag.**
+E ao diagnosticar pelo PostgREST, **olhe o CORPO antes de contar**: um `len()` numa resposta de
+erro conta as chaves do erro (`code/details/hint/message` = "4 respostas" que não existem).
+
 **Receita para `GRANT`/`REVOKE`:** use bloco `DO` que descobre a assinatura real
 (`p.oid::regprocedure`) e aplica por OID — imune a divergência e a sobrecargas. E lembre que
 **views não aparecem em `pg_tables`**: varra `pg_views` também (foi assim que o caso 4 quase escapou).

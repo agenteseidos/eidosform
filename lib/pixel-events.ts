@@ -3,7 +3,7 @@
  * Avalia regras por pergunta e dispara eventos no Meta Pixel.
  */
 
-import { PixelEventRule, PixelEventCondition, PixelEventConfig, AnswerSetEvent } from '@/types/pixel-events'
+import { PixelEventCondition, AnswerSetEvent } from '@/types/pixel-events'
 
 declare global {
   interface Window {

@@ -21,12 +21,12 @@ const perguntas = [
 
 const base = {
   onComplete: 'Lead',
-  answerSetEvents: [
+  answerSetEvents: ([
     { id: 'as1', name: 'PerfilCompleto', match: 'all' as const, conditions: [
       { questionId: 'q1', condition: { operator: 'equals', value: 'alto' } },
-      { questionId: 'q2', condition: { operator: 'is_not_empty' } },
+      { questionId: 'q2', condition: { operator: 'is_not_empty', value: '' } },
     ] },
-  ],
+  ] as unknown as import('@/types/pixel-events').AnswerSetEvent[]),
   questions: perguntas,
   answers: { q1: 'alto', q2: 'Ana' } as Record<string, unknown>,
   completed: true,
@@ -78,7 +78,7 @@ describe('derivarGatilhos', () => {
     // Sem isto, quem configurou "Lead" na conclusão E num conjunto contaria 2 no dia da virada.
     const r = derivarGatilhos({
       ...base,
-      answerSetEvents: [{ id: 'as2', name: 'Lead', match: 'all', conditions: [{ questionId: 'q2', condition: { operator: 'is_not_empty' } }] }],
+      answerSetEvents: [{ id: 'as2', name: 'Lead', match: 'all', conditions: [{ questionId: 'q2', condition: { operator: 'is_not_empty', value: '' } }] }],
     })
     expect(r.filter((g) => g.eventName === 'Lead')).toEqual([{ triggerId: 'complete', eventName: 'Lead' }])
   })
@@ -87,7 +87,7 @@ describe('derivarGatilhos', () => {
     const r = derivarGatilhos({
       ...base,
       answerSetEvents: [
-        { id: 'tem:dois-pontos', name: 'Quebrado', match: 'all', conditions: [{ questionId: 'q2', condition: { operator: 'is_not_empty' } }] },
+        { id: 'tem:dois-pontos', name: 'Quebrado', match: 'all', conditions: [{ questionId: 'q2', condition: { operator: 'is_not_empty', value: '' } }] },
         ...base.answerSetEvents,
       ],
     })

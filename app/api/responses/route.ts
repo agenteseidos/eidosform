@@ -1,4 +1,4 @@
-import type { ResponseInsert, ResponseUpdate, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
+import type { ResponseInsert, AnswerItemInsert, QuestionConfig } from '@/lib/database.types'
 import { reivindicarAnexos, vincularAnexosAResposta } from '@/lib/form-file-claim'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
@@ -8,7 +8,7 @@ import { checkAndIncrementResponseCount, sendNearLimitAlert, PLANS } from '@/lib
 import { getEffectivePlan } from '@/lib/plans'
 import { dispatchWebhook } from '@/lib/webhook-dispatcher'
 import { isRecordableMetaEvent, lerPixelDoFormulario } from '@/lib/pixel-events'
-import type { AnswerSetEvent, PixelEventRule } from '@/types/pixel-events'
+import type { AnswerSetEvent } from '@/types/pixel-events'
 import { extractLead } from '@/lib/lead-extraction'
 import { checkResponseRateLimitAsync } from '@/lib/response-rate-limit'
 import { validateAllAnswers, pruneOrphanAnswers, pruneOffPathAnswers } from '@/lib/field-validators'
@@ -20,7 +20,7 @@ import { logError, logWarn } from '@/lib/logger'
 import { codigoDeTesteValido } from '@/lib/meta-capi'
 import { derivarGatilhos, lerDicasDoNavegador, montarUserData, montarEventosParaFila, type EventoParaFila } from '@/lib/capi-triggers'
 import { processarFila } from '@/lib/capi-worker'
-import { decifrarToken } from '@/lib/capi-credential'
+import { ehFormularioDoHero, enfileirarFollowupDoHero } from '@/lib/hero-demo/enfileirar'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { signPartialToken, verifyPartialToken } from '@/lib/partial-token'
 import { isValidSessionKey, hashSessionKey, hashLogPrefix } from '@/lib/partial-session'
@@ -899,6 +899,18 @@ export async function POST(req: NextRequest) {
               .eq('id', responseId)
           }
         })().catch((e) => logError('Google Sheets sync failed:', e))
+      )
+    }
+
+    // ── FOLLOW-UP DO HERO DA LANDING (D-10) ───────────────────────────────────────────────────
+    // Só o formulário da demonstração gera isto. A mensagem sai 30 min depois, e SÓ se a pessoa
+    // não tiver criado conta nem falado com a Elen — a decisão é do worker, na hora do envio.
+    if (completed && ehFormularioDoHero(form_id as string)) {
+      postSubmitTasks.push(
+        enfileirarFollowupDoHero(supabase, {
+          responseId,
+          answers: answers as Record<string, unknown>,
+        }).catch((err) => logError('Falha ao enfileirar follow-up do hero', err)),
       )
     }
 

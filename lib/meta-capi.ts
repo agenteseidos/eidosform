@@ -29,19 +29,6 @@ import { log, logError } from '@/lib/logger'
 
 const META_API_URL = 'https://graph.facebook.com/v21.0'
 
-/**
- * SHA-256 hash a string for Meta Advanced Matching.
- * Trims, lowercases, and normalizes before hashing.
- */
-async function sha256Normalize(data: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const normalized = data.trim().toLowerCase().replace(/\s+/g, '')
-  const buffer = encoder.encode(normalized)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
 
 /**
  * Extract PII fields from form answers for Meta CAPI.

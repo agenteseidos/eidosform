@@ -769,6 +769,54 @@ export interface Database {
         }
         Relationships: []
       }
+      hero_followup_outbox: {
+        // Fila do follow-up do hero da landing (migration 20260820_hero_followup_outbox, D-10).
+        // UNIQUE(response_id): no máximo UMA mensagem por teste da demonstração.
+        Row: {
+          id: string
+          response_id: string
+          phone: string
+          nome: string
+          objetivo: string
+          recomendacao: string
+          due_at: string
+          status: 'pending' | 'processing' | 'sent' | 'skipped' | 'failed' | 'expired'
+          skip_reason: string | null
+          attempts: number
+          last_error: string | null
+          last_attempt_at: string | null
+          sent_at: string | null
+          wamid: string | null
+          lease_token: string | null
+          leased_at: string | null
+          expires_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          response_id: string
+          phone: string
+          nome: string
+          objetivo: string
+          recomendacao: string
+          due_at: string
+          expires_at: string
+        }
+        Update: {
+          status?: 'pending' | 'processing' | 'sent' | 'skipped' | 'failed' | 'expired'
+          skip_reason?: string | null
+          attempts?: number
+          last_error?: string | null
+          last_attempt_at?: string | null
+          sent_at?: string | null
+          wamid?: string | null
+          lease_token?: string | null
+          leased_at?: string | null
+          due_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       capi_outbox: {
         // Fila de entrega do CAPI (migration 20260818_capi_outbox). Snapshot imutável por
         // (response_id, trigger_id); o event_id persistido é reusado em toda retentativa.

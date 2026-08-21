@@ -136,11 +136,27 @@ if (spec.thankYou) {
   row.thank_you_button_url = btnUrl
 }
 
+// ── NOTIFICAÇÕES: EXPLÍCITAS, nunca por omissão (20/08/2026, parecer independente) ──────────
+// O default de `notify_owner_enabled` no banco é LIGADO. Antes deste bloco, um spec que não
+// falasse de notificação criava um form que mandava e-mail ao dono a cada resposta E a cada
+// abandono — o que, num formulário de captação em landing pública, significa o dono levando
+// spam de todo curioso que mexeu e desistiu. `notify_email_enabled: false` sozinho NÃO resolve:
+// ele desliga só o endereço EXTRA (lib/notification-email.ts).
+// Contrato: quem quer notificação pede no spec; silêncio no spec = silêncio na caixa.
+row.notify_owner_enabled = spec.notify?.owner === true
+row.notify_email_enabled = spec.notify?.extraEmail != null
+if (spec.notify?.extraEmail) row.notify_email = spec.notify.extraEmail
+// Planilha e webhook também só existem quando pedidos.
+row.google_sheets_enabled = spec.googleSheets === true
+
 const { data: created, error: cErr } = await supabase
-  .from('forms').insert(row).select('id, slug, status').single()
+  .from('forms').insert(row).select('id, slug, status, notify_owner_enabled, notify_email_enabled').single()
 if (cErr) {
   console.error('ERRO ao criar:', cErr.message)
   process.exit(1)
 }
 console.log('✅ Form criado:', created)
+if (!created.notify_owner_enabled && !created.notify_email_enabled) {
+  console.log('   notificações por e-mail: DESLIGADAS (owner + extra)')
+}
 console.log(`URL pública: https://eidosform.com.br/f/${created.slug}  (${created.status})`)

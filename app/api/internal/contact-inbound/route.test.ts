@@ -17,7 +17,7 @@ vi.mock('next/server', () => ({
 }))
 vi.mock('@/lib/logger', () => ({ logError: vi.fn(), logWarn: vi.fn(), log: vi.fn() }))
 
-const upsert = vi.hoisted(() => vi.fn(async () => ({ error: null })))
+const upsert = vi.hoisted(() => vi.fn(async (_linha: Record<string, unknown>) => ({ error: null })))
 vi.mock('@/lib/supabase/service-role', () => ({
   createServiceRoleClient: () => ({ from: () => ({ upsert }) }),
 }))

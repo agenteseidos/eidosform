@@ -65,9 +65,22 @@ export async function preflightWhatsAppDunning(templates: string[], agora = Date
 
   const base = 'https://graph.facebook.com/v21.0'
   try {
-    const nomes = encodeURIComponent(JSON.stringify(templates))
+    // ⚠️ SEM FILTRO `name` — corrigido em 22/08/2026, e o defeito era CARO.
+    //
+    // A versão anterior mandava `?name=` com um ARRAY JSON dos nomes
+    // (`["eidosform_cobranca_v1","eidosform_plano_rebaixado_v2"]`). A Graph API aceita `name`
+    // com UM nome só: array e CSV devolvem ZERO linhas — sem erro, sem aviso, lista vazia. O
+    // porteiro lia isso como "template inexistente" e FECHAVA o canal. Resultado: o WhatsApp da
+    // régua NUNCA pôde sair desde que este módulo nasceu (14/08). Ficou invisível porque o canal
+    // estava atrás da flag até 20/08; assim que o Sidney ligou, a régua silenciou todo dia e o
+    // e-mail seguia sozinho — sintoma indistinguível de "ainda não é a hora".
+    //
+    // Verificado contra a API real: `?name=X` → 1 linha · `?name=["X"]` → 0 · `?name=X,Y` → 0 ·
+    // sem filtro → todas. Buscar todas e filtrar aqui é o caminho que não depende de uma
+    // sintaxe de filtro não documentada. `limit=200` cobre com folga (16 hoje); se um dia a WABA
+    // passar disso, a paginação precisa entrar — e o `template_inexistente` avisa alto.
     const [tpl, num] = await Promise.all([
-      graph(`${base}/${c.wabaId}/message_templates?name=${nomes}&limit=50`, c.token),
+      graph(`${base}/${c.wabaId}/message_templates?limit=200`, c.token),
       graph(`${base}/${c.phoneId}?fields=quality_rating`, c.token),
     ])
 

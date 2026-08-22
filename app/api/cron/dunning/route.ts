@@ -99,6 +99,11 @@ export async function GET(req: NextRequest) {
   }
 
   const r = { candidatos: candidatos?.length ?? 0, avisados: 0, silenciados: 0, alertasRebaixamento: 0, falhas: 0 }
+  // Estado do canal na RESPOSTA (22/08/2026). Sem isto, "canal fechado" e "ainda não é a hora"
+  // são indistinguíveis de fora — foi exatamente o que escondeu por 8 dias um porteiro que
+  // recusava todo mundo por um filtro de API malformado. O log do cron na VPS agora mostra o
+  // motivo em toda rodada, sem precisar de acesso aos logs da Vercel.
+  const canal = { whatsapp: 'desligado' as string }
   const dia = dataAtualBRT()
   let recuperaveis = new Set<string>()
   try {
@@ -117,6 +122,11 @@ export async function GET(req: NextRequest) {
   const preflight = whatsappLigado
     ? await preflightWhatsAppDunning(Object.values(DUNNING_WHATSAPP_TEMPLATES))
     : ({ pode: false, motivo: 'flag_desligada' } as const)
+  canal.whatsapp = !whatsappLigado
+    ? 'flag_desligada'
+    : preflight.pode
+      ? 'ok'
+      : `bloqueado:${preflight.motivo}${'detalhe' in preflight && preflight.detalhe ? `(${preflight.detalhe})` : ''}`
   if (whatsappLigado && !preflight.pode) {
     logWarn('[cron/dunning] canal WhatsApp bloqueado nesta rodada — só e-mail', {
       motivo: preflight.motivo, detalhe: 'detalhe' in preflight ? preflight.detalhe : undefined,
@@ -361,5 +371,5 @@ export async function GET(req: NextRequest) {
   }
 
   if (r.avisados > 0 || r.alertasRebaixamento > 0) log('[cron/dunning] concluído', r)
-  return NextResponse.json({ ok: true, horaBRT: `${String(Math.floor(minutoBRT / 60)).padStart(2, '0')}:${String(minutoBRT % 60).padStart(2, '0')}`, ...r })
+  return NextResponse.json({ ok: true, horaBRT: `${String(Math.floor(minutoBRT / 60)).padStart(2, '0')}:${String(minutoBRT % 60).padStart(2, '0')}`, canal: canal.whatsapp, ...r })
 }

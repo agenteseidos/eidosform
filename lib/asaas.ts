@@ -45,6 +45,10 @@ export interface AsaasCustomerPayload {
   province?: string
   city?: string
   state?: string
+  /** Sempre true nos nossos customers: as cobranças do cliente são comunicadas pelos NOSSOS
+   *  canais (régua D-01, confirmações). As notificações do próprio Asaas duplicariam tudo com a
+   *  cara e a URL DELES — inclusive a página de fatura que oferece débito. */
+  notificationDisabled?: boolean
 }
 
 async function asaasFetch(path: string, options: RequestInit = {}) {
@@ -80,6 +84,12 @@ export async function updateCustomer(customerId: string, payload: Partial<AsaasC
 
 /** Cria ou retorna customer existente pelo email */
 export async function createCustomer(payload: AsaasCustomerPayload): Promise<{ id: string; name: string; email: string }> {
+  // `notificationDisabled: true` NA RAIZ do customer (parecer independente, 24/08). O desliga-
+  // mento por lote de notificações (`disableCustomerNotifications`, abaixo) é não-bloqueante e
+  // não cobre customer antigo que nunca repassou pelo checkout — auditoria de 24/08 achou o
+  // customer real do Sidney com as notificações do Asaas LIGADAS durante o teste da régua.
+  // Este campo é o interruptor de raiz; o lote fica como reforço por canal.
+  const comSilencio = { ...payload, notificationDisabled: true }
   const existing = await asaasFetch(`/customers?email=${encodeURIComponent(payload.email)}`)
   if (existing.totalCount > 0) {
     const found = existing.data[0]
@@ -88,13 +98,13 @@ export async function createCustomer(payload: AsaasCustomerPayload): Promise<{ i
     // digitou no modal — compra por CNPJ saía como pessoa física. Atualiza
     // SEMPRE no reuso; falha não bloqueia (dados velhos = comportamento antigo).
     try {
-      await updateCustomer(found.id, payload)
+      await updateCustomer(found.id, comSilencio)
     } catch (err) {
       logWarn('[asaas] update do customer reusado falhou — segue com dados antigos', { customerId: found.id, err: String(err) })
     }
     return found
   }
-  return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(payload) })
+  return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(comSilencio) })
 }
 
 /**

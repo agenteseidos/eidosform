@@ -488,3 +488,38 @@ do Claude: sim) ou ficam exclusivos da casa (copy segue "7")?
   exige endpoint novo na Elen (last-inbound + estado por telefone).
 - Ordem de execução (Codex): template→Meta PRIMEIRO (fila externa) · sinal da Elen · conta/seed ·
   controller+heroes · outbox+worker+timer próprio · canário · publicar.
+
+---
+
+## D-11 · 🧊 SUSPENSA — Página de pagamento própria (URL EidosForm no lugar da fatura Asaas)
+
+**Origem:** Sidney, 24/08/2026 ("seria interessante que a URL final fosse do eidosform"), durante
+o teste da régua de cobrança. **Parecer adversarial do Codex no MESMO dia:
+`/home/sidney/pesquisas/pesquisa-pagina-propria-pagamento-eidosform-2026-08-24.md` — veredito:
+NÃO implementar como desenhado.** Sidney concordou em suspender ("não implementar agora, ok").
+
+**Por que suspensa (o resumo do parecer):**
+- **PCI:** número de cartão passando pelo NOSSO servidor ≈ enquadramento SAQ D (o nível pesado) —
+  custo/obrigações desproporcionais para produto sem clientes pagantes. É O bloqueador.
+- Vercel Hobby proíbe uso comercial (bloqueador independente — virou a decisão "Pro", à parte).
+- Contrato do Asaas com furos não sondados: `remoteIp` NÃO existe no schema público de
+  `payWithCreditCard`; 3DS sem contrato público; token no retorno não confirmado.
+- "Pagar a mais antiga destrava" é FALSO com 2+ vencidas (`expire-plans` bloqueia com QUALQUER
+  OVERDUE) — corrigir o comentário em `getLinkPagamentoVencido` quando mexer ali.
+- Formulário público de PAN exige anti-carding que o Sidney historicamente recusa.
+- Estimativa Codex: 9,5–15 dias úteis + esperas de Asaas/adquirente/QSA.
+
+**Condições de REVIVAL (todas):** (1) receita que justifique OU provedor com tokenização
+client-side (cartão nunca toca nosso servidor); (2) respostas formais do Asaas às 4 perguntas
+(3DS, remoteIp, token no retorno, débito desabilitável); (3) Vercel Pro feita; (4) Sidney aceitar
+proteção anti-carding.
+
+**O problema REAL foi resolvido sem a página (Fase 1, executada em 24/08):**
+- Página de fatura do Asaas VESTIDA de EidosForm (paymentCheckoutConfig via API: logo + cores,
+  APPROVED). URL asaas.com fica como dívida estética consciente.
+- `notificationDisabled: true` na criação/reuso de customer (commit `1ac84ad`) + backfill do
+  customer real (estava LIGADO — o Asaas mandava cobranças paralelas com débito durante o teste).
+- Débito na página de fatura: **NÃO configurável** (nem painel nem API — comportamento da
+  plataforma com billingType CREDIT_CARD, confirmado na doc oficial). Sidney vai pedir no chat
+  do suporte; se negarem, o estrago é limitado: quem paga no débito regulariza a fatura, a
+  renovação seguinte falha e a régua recaptura com chance de crédito.

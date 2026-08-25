@@ -7,6 +7,8 @@ import { computeProrationBasisDays } from '@/lib/proration'
 import { log, logError, logWarn } from '@/lib/logger'
 import { buildResponseQuotaPeriodReset } from '@/lib/response-quota'
 import { isValidBearerSecret } from '@/lib/bearer-auth'
+import { sendBillingOpsAlert } from '@/lib/resend'
+import { PRAZO_DIAS, diasDesde } from '@/lib/dunning-engine'
 
 /**
  * GET /api/cron/expire-plans — CRON diário (Vercel).
@@ -30,15 +32,12 @@ import { isValidBearerSecret } from '@/lib/bearer-auth'
  * Motivo: o Asaas retenta o cartão nos dias seguintes ao vencimento; derrubar no dia 1 pausaria
  * os formulários de um cliente que ia pagar. Acima disso, é acesso pago sem receita.
  */
-const OVERDUE_GRACE_DAYS = 5
-
-/** Dias inteiros decorridos desde `dateStr` (YYYY-MM-DD). `null` se a data for ilegível. */
-function diasDesde(dateStr: string | null): number | null {
-  if (!dateStr) return null
-  const t = Date.parse(`${dateStr}T00:00:00-03:00`)
-  if (Number.isNaN(t)) return null
-  return Math.floor((Date.now() - t) / 86_400_000)
-}
+// FONTE ÚNICA (auditoria 25/08/2026). Este número e o `PRAZO_DIAS` da régua de cobrança eram
+// duas constantes independentes com o mesmo valor, e o teste que dizia guardar o alinhamento só
+// verificava `PRAZO_DIAS === 5` — nunca importava esta. Passaria intacto se alguém mudasse a
+// carência aqui para 30 dias, e a régua passaria a prometer um prazo que o rebaixamento não
+// honra. Agora divergir é impossível: é a MESMA constante, e o mesmo `diasDesde`.
+const OVERDUE_GRACE_DAYS = PRAZO_DIAS
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
@@ -70,7 +69,17 @@ export async function GET(req: NextRequest) {
 
   let reverted = 0
   let extended = 0
-  let skipped = 0
+  // DESFECHOS DETALHADOS (auditoria 25/08/2026). `skipped` sozinho não distingue "adiei de
+  // propósito" de "tentei escrever e falhou" — e os DOIS ramos de erro de escrita (extErr,
+  // revErr) não incrementavam NADA, então `total` podia ser MAIOR que a soma dos contadores
+  // justamente nos casos em que o banco fica inconsistente (forms pausados + plano ainda pago).
+  // No plano Hobby esta resposta JSON é a única evidência que sobrevive: ela não pode mentir
+  // por omissão. Agora cada perfil cai em EXATAMENTE UM desfecho e vale a identidade:
+  //   total === reverted + extended + grace + transient + writeFailed + conflict
+  let grace = 0        // dentro da carência: decisão adiada de propósito (esperado)
+  let transient = 0    // falha de rede/consulta: decisão adiada por precaução (não esperado)
+  let writeFailed = 0  // a escrita foi TENTADA e falhou → pode haver estado inconsistente
+  let conflict = 0     // CAS perdeu a corrida: outro caminho alterou o perfil (esperado, raro)
 
   for (const row of expired ?? []) {
     const p = row as { id: string; plan: string | null; plan_status: string | null; plan_cycle: string | null; plan_expires_at: string | null; asaas_subscription_id: string | null }
@@ -92,7 +101,7 @@ export async function GET(req: NextRequest) {
             // Consulta falhou → conservador: não estende E não derruba (mesma postura do
             // catch de erro transitório abaixo). Reavalia no próximo tick.
             shouldRevert = false
-            skipped++
+            transient++
             logWarn('[cron/expire-plans] consulta de OVERDUE falhou — adia decisão', { profileId: p.id })
             continue
           }
@@ -107,7 +116,7 @@ export async function GET(req: NextRequest) {
             const diasVencido = diasDesde(due.oldestDueDate)
             if (diasVencido !== null && diasVencido < OVERDUE_GRACE_DAYS) {
               shouldRevert = false
-              skipped++
+              grace++
               logWarn('[cron/expire-plans] cobrança VENCIDA dentro da carência — aguarda', {
                 profileId: p.id, subscriptionId: p.asaas_subscription_id,
                 oldestDueDate: due.oldestDueDate, diasVencido, carenciaDias: OVERDUE_GRACE_DAYS,
@@ -149,9 +158,13 @@ export async function GET(req: NextRequest) {
             .eq('plan', p.plan)
             .eq('plan_expires_at', p.plan_expires_at)
             .select('id')
-          if (extErr) logError('[cron/expire-plans] falha ao estender', extErr, { profileId: p.id })
+          if (extErr) {
+            // Antes NÃO incrementava contador nenhum — a resposta JSON escondia a falha.
+            writeFailed++
+            logError('[cron/expire-plans] falha ao estender', extErr, { profileId: p.id })
+          }
           else if (!extRows || extRows.length === 0) {
-            skipped++
+            conflict++
             logWarn('[cron/expire-plans] extensão PERDEU A CORRIDA (estado mudou sob o cron) — não gravei', { profileId: p.id })
           } else extended++
           shouldRevert = false
@@ -163,7 +176,7 @@ export async function GET(req: NextRequest) {
         if (!/error 404/i.test(msg)) {
           // transitório → não reverte agora (não derruba pagante por falha de rede)
           shouldRevert = false
-          skipped++
+          transient++
           logWarn('[cron/expire-plans] Asaas transitório — adia reversão', { profileId: p.id, error: msg })
         }
         // 404 → sub não existe mais → reverte abaixo
@@ -214,13 +227,27 @@ export async function GET(req: NextRequest) {
           .eq('plan_expires_at', p.plan_expires_at)
           .select('id')
         if (revErr) {
-          logError('[cron/expire-plans] forms pausados mas falha ao marcar free (retenta no próximo tick)', revErr, { profileId: p.id })
+          // ⚠️ ESTADO INCONSISTENTE: handleDowngrade JÁ recompôs os formulários pelas regras do
+          // free e a marcação do plano falhou — o perfil segue PAGO com os formulários já
+          // recompostos como free. Antes isto não incrementava contador nenhum e só ia para o
+          // console (inalcançável no Hobby). Agora conta como writeFailed e a rota alerta no
+          // fim da execução. A cura é a mesma da corrida perdida: recompor os formulários pelo
+          // plano REALMENTE persistido, para não deixar pausado quem continua pagante.
+          writeFailed++
+          logError('[cron/expire-plans] forms recompostos mas falha ao marcar free (retenta no próximo tick)', revErr, { profileId: p.id })
+          try {
+            const { data: atual } = await admin.from('profiles').select('plan').eq('id', p.id).single()
+            const planoAtual = ((atual as { plan?: string | null } | null)?.plan ?? 'free') as PlanName
+            await recomputeActiveForms(key, p.id, planoAtual)
+          } catch (healErr) {
+            logError('[cron/expire-plans] cura pós-falha-de-escrita falhou — formulários podem estar pausados indevidamente', healErr, { profileId: p.id })
+          }
         } else if (!revRows || revRows.length === 0) {
           // Perdeu a corrida DEPOIS de pausar os formulários — o handleDowngrade acima já os
           // pausou pelas regras do free, mas o dono acabou de pagar. CURA: relê o plano atual e
           // recompõe o que fica no ar pelas regras do plano VERDADEIRO. Sem isto, o cliente
           // pagaria e ficaria com os formulários pausados até alguém notar.
-          skipped++
+          conflict++
           logWarn('[cron/expire-plans] reversão PERDEU A CORRIDA (provável pagamento durante o cron) — curando os formulários', { profileId: p.id })
           try {
             const { data: atual } = await admin.from('profiles').select('plan').eq('id', p.id).single()
@@ -234,12 +261,40 @@ export async function GET(req: NextRequest) {
         }
       } catch (err) {
         // downgrade falhou (forms não pausados) → NÃO marca free → próximo tick retenta.
-        skipped++
+        writeFailed++
         logError('[cron/expire-plans] downgrade falhou; adiando reversão (retenta no próximo tick)', err, { profileId: p.id })
       }
     }
   }
 
-  log('[cron/expire-plans] concluído', { total: expired?.length ?? 0, reverted, extended, skipped })
-  return NextResponse.json({ ok: true, total: expired?.length ?? 0, reverted, extended, skipped })
+  const total = expired?.length ?? 0
+  const skipped = grace + transient + writeFailed + conflict
+  // INVARIANTE: todo perfil da fila tem que ter caído em exatamente um desfecho. Se não fechar,
+  // existe caminho novo sem contabilidade — o defeito que esta auditoria encontrou. Não derruba
+  // a execução (o trabalho já foi feito); denuncia.
+  const contabilizados = reverted + extended + skipped
+  const desfechos = { grace, transient, writeFailed, conflict }
+
+  // ALERTA DURÁVEL. `writeFailed` significa que a escrita foi TENTADA e falhou — o perfil pode
+  // ter ficado inconsistente. No Hobby o console não sobrevive, então este é o único canal que
+  // chega em alguém. (Antes: zero chamadas de alerta neste arquivo — era o único cron de
+  // billing sem alarme próprio, e é o que decide dinheiro.)
+  if (writeFailed > 0 || contabilizados !== total) {
+    await sendBillingOpsAlert({
+      subject: writeFailed > 0
+        ? '🔴 expire-plans: falha de ESCRITA — perfil pode estar inconsistente'
+        : '🟠 expire-plans: contabilidade não fecha',
+      lines: {
+        'O QUE ISSO SIGNIFICA': writeFailed > 0
+          ? 'O cron tentou gravar o rebaixamento (ou a extensão) e o banco recusou. Os formulários podem já ter sido recompostos como free com o plano ainda pago. O próximo tick retenta.'
+          : 'Algum perfil da fila não caiu em nenhum desfecho contabilizado — há caminho sem contador.',
+        total: String(total), reverted: String(reverted), extended: String(extended),
+        ...Object.fromEntries(Object.entries(desfechos).map(([k, v]) => [k, String(v)])),
+        contabilizados: String(contabilizados),
+      },
+    }).catch((e) => logError('[cron/expire-plans] alerta de ops NÃO foi entregue', e))
+  }
+
+  log('[cron/expire-plans] concluído', { total, reverted, extended, skipped, ...desfechos })
+  return NextResponse.json({ ok: true, total, reverted, extended, skipped, ...desfechos })
 }

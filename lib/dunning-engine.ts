@@ -23,6 +23,16 @@
  *  a MESMA janela, senão a régua promete um prazo que o rebaixamento não respeita. */
 export const PRAZO_DIAS = 5
 
+/**
+ * SLA de conclusão do rebaixamento: quanto tempo depois do instante devido (00:00 BRT do dia
+ * `PRAZO_DIAS`) ainda é aceitável a conta seguir paga sem isso ser incidente.
+ *
+ * Vem do agendamento real, não de palpite: o cron da Vercel no plano Hobby pode executar em
+ * QUALQUER ponto entre 00:00 e 00:59 BRT, e o backstop da VPS roda 01:10 BRT. Passou de 01:30
+ * sem rebaixar, alguma coisa quebrou. Mexer nos horários do agendador exige revisar este número.
+ */
+export const SLA_REBAIXAMENTO_MS = 90 * 60_000
+
 /** Estágio da régua: D+0 a D+5. O D+5 é o único pós-rebaixamento. */
 export type EstagioDunning = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -103,9 +113,20 @@ export function decidirAviso(estado: EstadoConta, agora = Date.now()): DecisaoDu
  */
 export function detectarRebaixamentoAtrasado(estado: EstadoConta, agora = Date.now()): boolean {
   if (estado.temVencida !== true) return false
+  if (estado.plano === 'free') return false
   const dias = diasDesde(estado.vencidaDesde, agora)
   if (dias === null) return false
-  return dias > PRAZO_DIAS && estado.plano !== 'free'
+  // ⚠️ ERA `dias > PRAZO_DIAS` — ESTRITAMENTE MAIOR. O expire-plans rebaixa em `dias >= 5`, e o
+  // detector só olhava a partir do dia 6: o DIA EM QUE O REBAIXAMENTO É DEVIDO era ponto cego
+  // POR CONSTRUÇÃO. No incidente de 25/08/2026 ele rodou 75 vezes, avaliou a conta em todas
+  // (`candidatos:2`) e devolveu `alertasRebaixamento:0` em 100% delas — inclusive 3 minutos
+  // antes de alguém corrigir à mão. Pior: a correção manual marcou o plano como `free`, e a
+  // guarda `plano !== 'free'` fez o alerta de D+6 nunca sair. O incidente apagou a própria prova.
+  //
+  // Agora o gatilho é o MESMO instante do rebaixamento (`>=`), atrasado por um SLA explícito —
+  // não por um número mágico de hora do dia. Ver SLA_REBAIXAMENTO_MS.
+  const devidoEm = Date.parse(`${estado.vencidaDesde}T00:00:00-03:00`) + PRAZO_DIAS * 86_400_000
+  return agora - devidoEm >= SLA_REBAIXAMENTO_MS
 }
 
 /**

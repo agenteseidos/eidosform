@@ -43,6 +43,21 @@ import {
  * (event_id UNIQUE): a primeira rodada do dia grava e alerta; as outras 47 colidem e calam.
  * Erro que NÃO é conflito deixa passar — perder um alerta operacional é pior que repeti-lo.
  */
+/**
+ * Devolve o marcador do dia quando a ENTREGA do alerta falhou (auditoria 25/08/2026).
+ *
+ * Sem isto, o marcador é consumido pela tentativa e não pela entrega: uma falha do Resend
+ * gastava a única chance do dia e o incidente ficava mudo até o dia seguinte — exatamente o
+ * modo de falha que este alerta existe para denunciar.
+ */
+async function liberarAlertaDiario(db: SupabaseClient, profileId: string, dia: string): Promise<void> {
+  const { error } = await db
+    .from('asaas_webhook_events')
+    .delete()
+    .eq('event_id', `dunning-downgrade-late:${profileId}:${dia}`)
+  if (error) logWarn('[cron/dunning] não consegui devolver o marcador do alerta — só retenta amanhã', { profileId })
+}
+
 async function reivindicarAlertaDiario(db: SupabaseClient, profileId: string, dia: string): Promise<boolean> {
   const { error } = await db
     .from('asaas_webhook_events')
@@ -98,7 +113,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'query falhou' }, { status: 500 })
   }
 
-  const r = { candidatos: candidatos?.length ?? 0, avisados: 0, silenciados: 0, alertasRebaixamento: 0, falhas: 0 }
+  const r = { candidatos: candidatos?.length ?? 0, avisados: 0, silenciados: 0, alertasRebaixamento: 0, alertasNaoEntregues: 0, falhas: 0 }
   // Estado do canal na RESPOSTA (22/08/2026). Sem isto, "canal fechado" e "ainda não é a hora"
   // são indistinguíveis de fora — foi exatamente o que escondeu por 8 dias um porteiro que
   // recusava todo mundo por um filtro de API malformado. O log do cron na VPS agora mostra o
@@ -160,15 +175,25 @@ export async function GET(req: NextRequest) {
       // Marcador diário: com o timer de 30 min, uma conta presa geraria 48 alertas por dia e
       // enterraria justamente o incidente que ele existe para denunciar. (S2, auditoria 14/08.)
       if (detectarRebaixamentoAtrasado(estado) && await reivindicarAlertaDiario(db, p.id, dia)) {
-        r.alertasRebaixamento++
-        await sendBillingOpsAlert({
+        // ⚠️ O incremento e o marcador ficavam ANTES do envio, e o envio era `.catch(() => {})` —
+        // o erro era engolido inteiro. Falha de entrega virava "alertei" no relatório, sem
+        // retentativa, com o marcador do dia já gasto. Agora só conta o que foi ACEITO pelo
+        // canal; o que falhou devolve o marcador para a próxima rodada (30 min) retentar.
+        const entrega = await sendBillingOpsAlert({
           subject: '🔴 Rebaixamento ATRASADO: passou do prazo e a conta segue paga',
           lines: {
             'O QUE ISSO SIGNIFICA': 'O expire-plans deveria ter rebaixado esta conta e não rebaixou — verificar se o cron está rodando.',
             profileId: p.id, cliente: p.email, plano: p.plan,
             vencidaDesde: due.oldestDueDate, assinatura: subscriptionId,
           },
-        }).catch(() => {})
+        }).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }))
+        if (entrega?.error) {
+          r.alertasNaoEntregues++
+          logError('[cron/dunning] alerta de rebaixamento atrasado NÃO foi entregue — devolvendo o marcador', undefined, { profileId: p.id, motivo: entrega.error })
+          await liberarAlertaDiario(db, p.id, dia)
+        } else {
+          r.alertasRebaixamento++
+        }
       }
 
       const decisao = decidirAviso(estado)

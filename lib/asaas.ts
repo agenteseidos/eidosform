@@ -51,13 +51,28 @@ export interface AsaasCustomerPayload {
   notificationDisabled?: boolean
 }
 
+/**
+ * Teto de espera para LEITURAS no Asaas (auditoria 25/08/2026).
+ *
+ * O `fetch` nativo não tem timeout: uma conexão pendurada espera para sempre. Como o
+ * `vercel.json` corta as funções em 30s, UMA chamada travada mata a execução inteira — e no
+ * incidente de 25/08 isso ficou entre as hipóteses vivas para o cron que não rebaixou.
+ *
+ * ⚠️ SÓ EM LEITURA (GET), de propósito. Abortar um POST que cria cobrança/assinatura é pior que
+ * esperar: o Asaas pode ter processado o cartão e nós concluiríamos que falhou — cliente
+ * cobrado sem plano. Escrita continua sem teto; quem a protege é o maxDuration.
+ */
+const ASAAS_READ_TIMEOUT_MS = 10_000
+
 async function asaasFetch(path: string, options: RequestInit = {}) {
   const apiKey = (process.env.ASAAS_API_KEY ?? '').trim()
   if (!apiKey) {
     throw new Error('ASAAS_API_KEY não configurada')
   }
+  const ehLeitura = String(options.method ?? 'GET').toUpperCase() === 'GET'
   const res = await fetch(`${getAsaasBaseUrl()}${path}`, {
     ...options,
+    ...(ehLeitura && !options.signal ? { signal: AbortSignal.timeout(ASAAS_READ_TIMEOUT_MS) } : {}),
     headers: {
       'Content-Type': 'application/json',
       access_token: apiKey,

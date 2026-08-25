@@ -57,7 +57,7 @@ A conta é **Hobby** (máx. 2 crons, só diários). Por isso o `vercel.json` age
 
 | Job | Onde roda |
 |---|---|
-| `expire-plans` | Vercel, `0 3 * * *` |
+| `expire-plans` | Vercel, `0 3 * * *` (= 00:00 BRT) **+ backstop na VPS `10 1 * * *`** (01:10 BRT, hora local) |
 | `reconcile-checkouts` | crontab da VPS (`7 * * * *`) |
 | `sweep-received` | crontab da VPS (`22 * * * *`) |
 | `reconcile-subscriptions` | crontab da VPS (`37 * * * *`) |
@@ -136,25 +136,60 @@ https://eidosform.vercel.app  (ou domínio customizado)
 ```
 
 
-## ⚠️ 25/08/2026 — `expire-plans` passou a rodar na VPS (o cron da Vercel não é confiável)
+## ⚠️ 25/08/2026 — `expire-plans` ganhou backstop na VPS, alarme próprio e SLA
 
-**O que aconteceu:** no teste real da régua de cobrança, o rebaixamento do D+5 **não ocorreu** à
-meia-noite. O cron da Vercel (`vercel.json`, `0 3 * * *`) estava configurado, habilitado e
-apontando para o deployment atual — e simplesmente não disparou. Rodado à mão às 09:08 BRT,
-reverteu na hora (`reverted: 1`), provando que a lógica estava certa: o problema era o AGENDADOR.
+> **Correção de redação (26/08).** A primeira versão desta seção — e o commit `b5e21bb`, e um
+> comentário no crontab — afirmavam que o cron da Vercel *"simplesmente não disparou"*. **Isso
+> nunca foi medido.** No Hobby o log de runtime é retido por 1 hora (às 09:07 o das 03:00 já
+> tinha expirado), `/v3/events` não expõe execução de cron, e nada nesta VPS observa invocação
+> vinda da Vercel: a hipótese é **infalsificável** a partir da evidência disponível. Ficou como
+> lição: inferência plausível não vira fato só porque nada a contradiz.
 
-**Por que importa:** `expire-plans` é o job que protege a RECEITA — é ele que tira o acesso pago
-de quem parou de pagar. Um dia sem rodar é um dia de acesso pago de graça, silencioso.
+**O que foi MEDIDO:** às 09:07 BRT o perfil ainda estava `plan='plus'`, `plan_status='active'`,
+`downgraded_at=null` — o rebaixamento **não tinha ocorrido** ~9h depois do horário devido. Rodado
+à mão às 09:08, reverteu na hora (`reverted: 1`); a segunda execução devolveu `total: 0`. Foram
+eliminados por prova: carência ainda válida, extensão bem-sucedida, linha fora da consulta
+(`plan_expires_at` era `2026-08-21T02:59:59Z`, 4 dias no passado) e apagão de log da VPS.
 
-**Por que não dá para confiar:** a Vercel documenta, no plano Hobby, atraso de **até 59 minutos**
-([docs](https://vercel.com/docs/cron-jobs/manage-cron-jobs)) — o real foi **9h+**. E o Hobby não
-tem log de runtime, então não há como auditar se rodou.
+**O que NÃO foi determinado:** a causa. Seguem vivas — e indistinguíveis — falha da consulta ao
+Asaas, exceção no `getSubscription`, falha de escrita, timeout de 30s com uma chamada pendurada,
+e "não disparou".
 
-**Correção:** entrou no crontab do `sidney` (`20 3 * * *` UTC = 00:20 BRT), pelo mesmo
-`run-cron.sh` dos outros 5 jobs, gravando em `cron.log`. **O cron da Vercel FICA como reserva** —
-`expire-plans` é idempotente (provado: segunda execução seguida devolveu `total: 0`), então rodar
-duas vezes não causa dano.
+**Por que importa:** `expire-plans` protege a RECEITA — é ele que tira o acesso pago de quem
+parou de pagar. Um dia sem rodar é um dia de acesso pago de graça, silencioso.
 
-**Quando migrar para o Vercel Pro** (decisão do Sidney: ao fechar 2 assinaturas pagas), revisitar:
-no Pro o cron dispara dentro do minuto e há log de runtime. Ainda assim, manter o da VPS não
-custa nada e dá observabilidade em arquivo.
+**O achado maior:** o watchdog que existia para exatamente isso (`detectarRebaixamentoAtrasado`,
+na régua, de 30 em 30 min) ficou mudo por um sinal de comparação — exigia `dias > 5` enquanto o
+rebaixamento acontece em `dias >= 5`. **O dia devido era ponto cego por construção.** Rodou 75
+vezes durante o incidente com `alertasRebaixamento: 0`.
+
+**O que mudou (25/08):**
+- Detector: `dias >= PRAZO_DIAS` + **SLA explícito** (`SLA_REBAIXAMENTO_MS`, 90 min) em vez de
+  hora mágica. Casos de fronteira (dia 4, dia 5, instante exato do devido) travados por teste.
+- `OVERDUE_GRACE_DAYS` e `diasDesde` viraram **fonte única** com a régua — o teste que dizia
+  guardar o alinhamento só verificava `PRAZO_DIAS === 5` e nunca olhava o `expire-plans`.
+- `expire-plans` ganhou **alarme próprio** (era o único cron de billing sem) e **contabilidade
+  fechada**: `total === reverted + extended + grace + transient + writeFailed + conflict`. Os dois
+  ramos de erro de escrita não incrementavam nada — a resposta JSON mentia por omissão justamente
+  quando o banco ficava inconsistente.
+- Watchdog: o marcador diário e o contador ficavam **antes** do envio, e o envio era
+  `.catch(() => {})`. Agora só conta o que o canal aceitou; falha de entrega **devolve o
+  marcador** para a próxima rodada.
+- `asaasFetch` ganhou timeout de 10s **em leitura** (GET). Escrita segue sem teto de propósito:
+  abortar um POST que cria cobrança é pior que esperar.
+- `run-cron.sh` **preserva o exit code** (saía 0 até em HTTP 500) e grava a linha num único
+  `printf` (o log saía entrelaçado com jobs concorrentes).
+
+**Agendamento resultante:**
+| Quando (BRT) | Quem |
+|---|---|
+| 00:00–00:59 | cron da Vercel (Hobby: até 59 min de atraso documentado) |
+| 01:10 | backstop no crontab da VPS — grava o JSON em `cron.log` |
+| 01:30 em diante | watchdog da régua alerta se ainda não rebaixou |
+
+O backstop da VPS **não existe pela redundância de disparo** — existe porque é a única
+observabilidade do job no Hobby. Mexer nos horários exige revisar `SLA_REBAIXAMENTO_MS`.
+
+**Quando migrar para o Vercel Pro** (decisão do Sidney: ao fechar 2 assinaturas pagas): compre
+pelos **logs de runtime**, que foram o custo real deste episódio — não pela pontualidade. O Pro
+não conserta falha transitória silenciosa.

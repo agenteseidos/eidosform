@@ -5,9 +5,11 @@
  * foi rebaixada" para quem ainda está com plano ativo. Estes testes existem para os dois.
  */
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   decidirAviso, detectarRebaixamentoAtrasado, diasDesde, ehHoraDoEstagio,
-  dataAtualBRT, HORARIO_POR_ESTAGIO, PRAZO_DIAS,
+  dataAtualBRT, HORARIO_POR_ESTAGIO, PRAZO_DIAS, SLA_REBAIXAMENTO_MS,
   HORARIO_WHATSAPP_POR_ESTAGIO,
   canaisNaHora,
   hm,
@@ -58,6 +60,15 @@ describe('a régua de 6 estágios, um por dia', () => {
   it('o prazo prometido bate com a carência do expire-plans', () => {
     // Se estes dois números divergirem, a régua promete um prazo que o rebaixamento não honra.
     expect(PRAZO_DIAS).toBe(5)
+  })
+
+  it('a carência do expire-plans é a MESMA constante — não uma cópia com o mesmo valor', () => {
+    // ⚠️ O teste acima SOZINHO não guardava nada: ele nunca importou nem leu o expire-plans.
+    // Passaria intacto se alguém trocasse a carência do rebaixamento para 30 dias. Agora a
+    // fonte é única e este teste quebra se alguém reintroduzir o literal. (Auditoria 25/08/2026.)
+    const src = readFileSync(join(__dirname, '..', 'app', 'api', 'cron', 'expire-plans', 'route.ts'), 'utf-8')
+    expect(src).toMatch(/const OVERDUE_GRACE_DAYS = PRAZO_DIAS/)
+    expect(src).not.toMatch(/const OVERDUE_GRACE_DAYS = \d/)
   })
 })
 
@@ -111,6 +122,40 @@ describe('🛡️ detector: o rebaixamento não aconteceu', () => {
 
   it('quem pagou nunca dispara alarme', () => {
     expect(detectarRebaixamentoAtrasado(pagante({ temVencida: false, vencidaDesde: vencidaHa(9) }), AGORA)).toBe(false)
+  })
+
+  // ── A FRONTEIRA (auditoria 25/08/2026) ────────────────────────────────────────────────────
+  // O detector exigia `dias > PRAZO_DIAS`, mas o expire-plans rebaixa em `dias >= PRAZO_DIAS`:
+  // o DIA DEVIDO era ponto cego por construção, e o alarme desenhado para "o rebaixamento não
+  // aconteceu" chegava 24h tarde. A suíte testava 7, 7, 3 e 9 — nunca 5. Estes casos travam
+  // exatamente o dia da virada e o SLA que a substitui.
+  const devidoEm = (diasAtras: number) =>
+    Date.parse(`${vencidaHa(diasAtras)}T00:00:00-03:00`) + PRAZO_DIAS * 86_400_000
+
+  it('DIA 5, passado o SLA, e a conta segue paga → ALERTA (era o ponto cego)', () => {
+    const t = devidoEm(5) + SLA_REBAIXAMENTO_MS
+    expect(diasDesde(vencidaHa(5), t)).toBe(PRAZO_DIAS)
+    expect(detectarRebaixamentoAtrasado(pagante({ vencidaDesde: vencidaHa(5) }), t)).toBe(true)
+  })
+
+  it('DIA 5, no instante exato do devido → ainda NÃO alerta: o cron tem a janela do SLA', () => {
+    expect(detectarRebaixamentoAtrasado(pagante({ vencidaDesde: vencidaHa(5) }), devidoEm(5))).toBe(false)
+  })
+
+  it('DIA 5, um milissegundo antes do fim do SLA → ainda NÃO alerta', () => {
+    const t = devidoEm(5) + SLA_REBAIXAMENTO_MS - 1
+    expect(detectarRebaixamentoAtrasado(pagante({ vencidaDesde: vencidaHa(5) }), t)).toBe(false)
+  })
+
+  it('DIA 4 nunca alerta, nem no fim do dia — a carência é intencional', () => {
+    const fimDoDia4 = devidoEm(4) - 1
+    expect(diasDesde(vencidaHa(4), fimDoDia4)).toBe(PRAZO_DIAS - 1)
+    expect(detectarRebaixamentoAtrasado(pagante({ vencidaDesde: vencidaHa(4) }), fimDoDia4)).toBe(false)
+  })
+
+  it('o SLA cobre a janela real do agendador (Vercel Hobby até 00:59 + backstop 01:10 BRT)', () => {
+    // Se alguém mexer nos horários do cron sem revisar o SLA, este teste denuncia.
+    expect(SLA_REBAIXAMENTO_MS).toBeGreaterThanOrEqual(70 * 60_000)
   })
 })
 

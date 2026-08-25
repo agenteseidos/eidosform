@@ -139,7 +139,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at, email')
+    .select('plan, plan_expires_at, email, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
 
@@ -542,7 +542,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   // Best-effort: a exclusão já aconteceu e não se desfaz por causa disto. Erro vai para o log.
   const { data: perfil } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
   const plano = getEffectivePlan(perfil) as PlanName

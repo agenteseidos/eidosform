@@ -41,7 +41,7 @@ async function fetchOwnerState(
   if (!form?.user_id) return { plan: 'free', semCota: false }
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at, responses_used, responses_limit, response_period_end_at')
+    .select('plan, plan_expires_at, responses_used, responses_limit, response_period_end_at, plan_status, asaas_subscription_id')
     .eq('id', form.user_id)
     .single()
   return {

@@ -128,7 +128,7 @@ export async function checkFormLimit(userId: string): Promise<{ allowed: boolean
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', userId)
     .single()
 

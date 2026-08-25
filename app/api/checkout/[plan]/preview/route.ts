@@ -44,6 +44,11 @@ export async function GET(
   // TRAVA DE SEGURANÇA (Codex): bloqueia o preview de mudança de plano/ciclo bloqueada — o usuário
   // não vê um resumo enganoso de um fluxo que o POST vai recusar. Mesma fonte da verdade do POST,
   // inclusive o plano EFETIVO (P2-b: plano expirado conta como free → recompra liberada).
+  // ⚠️ DE PROPÓSITO SEM CARÊNCIA (25/08/2026). Em todo o resto do produto o inadimplente
+  // mantém o plano durante os 5 dias; aqui não, porque este caminho existe justamente para
+  // DESTRAVAR a recompra: enxergar 'plus' faria o checkLaunchScope recusar com 409 quem está
+  // tentando voltar a pagar. Omitir plan_status/asaas_subscription_id é o que mantém isso —
+  // getEffectivePlan só concede carência com os dois presentes.
   const effectiveCurrentPlan = getEffectivePlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
   const launchBlock = checkLaunchScope({ currentPlan: effectiveCurrentPlan, targetPlan: plan, cycle })
   if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })

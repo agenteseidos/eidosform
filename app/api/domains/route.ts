@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   // P0 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
   const userPlan = getEffectivePlan(profile) as PlanName
@@ -110,7 +110,7 @@ export async function GET() {
   // P1 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
   const userPlan = getEffectivePlan(profile) as PlanName
@@ -157,7 +157,7 @@ export async function DELETE(req: NextRequest) {
   // P1 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
   const userPlan = getEffectivePlan(profile) as PlanName
@@ -210,7 +210,7 @@ export async function PATCH(req: NextRequest) {
   // P1 FIX: Feature gate — custom domains require Professional plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
   const userPlan = getEffectivePlan(profile) as PlanName

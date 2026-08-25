@@ -1,3 +1,5 @@
+import { CARENCIA_INADIMPLENCIA_DIAS } from './plans'
+
 /**
  * Régua de cobrança — o MOTOR de decisão (D-01, decidido com o Sidney em 11/08/2026).
  *
@@ -21,7 +23,7 @@
 
 /** Prazo de regularização. Espelha OVERDUE_GRACE_DAYS do expire-plans — os dois têm de contar
  *  a MESMA janela, senão a régua promete um prazo que o rebaixamento não respeita. */
-export const PRAZO_DIAS = 5
+export const PRAZO_DIAS = CARENCIA_INADIMPLENCIA_DIAS
 
 /**
  * SLA de conclusão do rebaixamento: quanto tempo depois do instante devido (00:00 BRT do dia

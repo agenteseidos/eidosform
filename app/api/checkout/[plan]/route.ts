@@ -142,6 +142,11 @@ export async function POST(
   // Plano EFETIVO (P2-b, audit 2026-06-09): plano pago já EXPIRADO conta como 'free' — sem isto,
   // um cliente vencido que o cron diário ainda não reverteu tomava 409 ao tentar COMPRAR de novo
   // (perda de venda por até 24h).
+  // ⚠️ DE PROPÓSITO SEM CARÊNCIA (25/08/2026). Em todo o resto do produto o inadimplente
+  // mantém o plano durante os 5 dias; aqui não, porque este caminho existe justamente para
+  // DESTRAVAR a recompra: enxergar 'plus' faria o checkLaunchScope recusar com 409 quem está
+  // tentando voltar a pagar. Omitir plan_status/asaas_subscription_id é o que mantém isso —
+  // getEffectivePlan só concede carência com os dois presentes.
   const effectiveCurrentPlan = getEffectivePlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
   const launchBlock = checkLaunchScope({ currentPlan: effectiveCurrentPlan, targetPlan: plan, cycle })
   if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })

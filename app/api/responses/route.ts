@@ -271,7 +271,7 @@ export async function POST(req: NextRequest) {
   const formQuestions = (form.questions ?? []) as QuestionConfig[]
   const { data: ownerProfile, error: ownerProfileError } = await supabase
     .from('profiles')
-    .select('plan, email, plan_expires_at')
+    .select('plan, email, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', form.user_id)
     .single() as { data: { plan: string | null; email: string | null; plan_expires_at: string | null } | null; error: unknown }
   if (ownerProfileError || !ownerProfile) {

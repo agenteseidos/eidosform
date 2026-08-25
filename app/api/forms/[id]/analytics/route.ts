@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // P1 FIX: Feature gate — advanced analytics (abandonment, avg time) require Plus plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
   const userPlan = getEffectivePlan(profile) as PlanName

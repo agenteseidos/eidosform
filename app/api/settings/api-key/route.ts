@@ -18,7 +18,7 @@ export async function POST() {
   // Verificar plano Professional (considerando EXPIRAÇÃO — P1, Codex 2026-06-08).
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single() as { data: { plan: string; plan_expires_at: string | null } | null }
 
@@ -139,7 +139,7 @@ export async function DELETE() {
   // P1 FIX: Verify plan before allowing revocation
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single() as { data: { plan: string; plan_expires_at: string | null } | null }
 

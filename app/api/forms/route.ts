@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
   // Fetch plan for feature gates and limits
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
   const userPlan = getEffectivePlan(profile)

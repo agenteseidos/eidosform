@@ -42,7 +42,7 @@ export default async function EditFormPage({ params }: EditFormPageProps) {
   const profileUserId = isAdmin ? form.user_id : user.id
   const { data: profile } = await dbClient
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', profileUserId)
     .single()
 

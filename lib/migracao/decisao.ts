@@ -36,6 +36,8 @@ export function resolverPlanoAtual(prof: {
   plan_status?: string | null
   plan_cycle?: string | null
   plan_expires_at?: string | null
+  /** Necessário para a CARÊNCIA: sem assinatura viva, vencido é vencido. (25/08/2026) */
+  asaas_subscription_id?: string | null
 }): {
   plano: PlanId | null
   ciclo: 'MONTHLY' | 'YEARLY' | null
@@ -52,7 +54,15 @@ export function resolverPlanoAtual(prof: {
     // Plano precisa ser um valor CONHECIDO — não coage silenciosamente pra free
     // (dado corrompido/legado → humano confere em vez de recomendar errado).
     if (!PLANOS_CONHECIDOS.has(planoRaw)) return { plano: null, ciclo: null, indeterminado: true, cancelando: false }
-    const plano = getEffectivePlan({ plan: planoRaw, plan_expires_at: prof.plan_expires_at })
+    // Repassa status+assinatura: durante a carência de inadimplência o cliente AINDA tem o
+    // plano pago, e a Elen não pode dizer "sua conta está no Grátis" para quem tem 5 dias
+    // de prazo correndo. (Split-brain corrigido em 25/08/2026.)
+    const plano = getEffectivePlan({
+      plan: planoRaw,
+      plan_expires_at: prof.plan_expires_at,
+      plan_status: prof.plan_status,
+      asaas_subscription_id: prof.asaas_subscription_id,
+    })
     // Se expirou e o plano efetivo virou free, o ciclo do plano pago NÃO vale mais
     // (senão a Elen diria "sua conta está no Grátis anual").
     return {

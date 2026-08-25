@@ -51,7 +51,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // P0-04: Gate CSV export by plan
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
 

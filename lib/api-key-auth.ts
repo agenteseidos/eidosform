@@ -63,7 +63,7 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
   // (P1, audit Codex 2026-06-08.)
   const { data: planRow } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', resolvedProfile.id)
     .single()
   const effectivePlan = getEffectivePlan(planRow ?? { plan: resolvedProfile.plan })

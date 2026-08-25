@@ -62,7 +62,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const supabase = createAdminClient()
   const { data: dupProfile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', user.id)
     .single()
   const dupPlan = getEffectivePlan(dupProfile)

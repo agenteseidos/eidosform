@@ -190,7 +190,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .filter((id) => PLANS[id].abandonedLeadAlert)
   const { data: profiles, error: profilesErr } = await supabase
     .from('profiles')
-    .select('id, email, plan, plan_expires_at')
+    .select('id, email, plan, plan_expires_at, plan_status, asaas_subscription_id')
     .in('plan', eligiblePlanIds as string[])
   if (profilesErr) return fail('profiles', profilesErr)
 
@@ -198,7 +198,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ainda tem plan='plus' na coluna e não pode receber.
   const ownerEmailById = new Map<string, string>()
   for (const p of profiles ?? []) {
-    const effective = getEffectivePlan(p as { plan?: string | null; plan_expires_at?: string | null })
+    const effective = getEffectivePlan(p as import('@/lib/plans').PerfilParaPlanoEfetivo)
     if (!PLANS[effective]?.abandonedLeadAlert) continue
     ownerEmailById.set(p.id as string, (p.email as string | null) ?? '')
   }

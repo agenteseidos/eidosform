@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
     // limit(2) basta: só se distingue 0, 1 e "mais de 1" ENTRE CONFIRMADOS.
     const { data, error } = await db
       .from('profiles')
-      .select('full_name, plan, plan_status, plan_cycle, plan_expires_at, email_confirmed_at')
+      .select('full_name, plan, plan_status, plan_cycle, plan_expires_at, email_confirmed_at, asaas_subscription_id')
       .eq('phone_match_key_br', phoneKey)
       .not('email_confirmed_at', 'is', null)
       .limit(2)

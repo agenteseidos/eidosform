@@ -58,7 +58,7 @@ export async function GET(
   // Check if form owner's plan supports partial responses
   const { data: ownerProfile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', form.user_id)
     .single()
 
@@ -163,7 +163,7 @@ export async function PUT(
   // Check if form owner's plan supports partial responses
   const { data: ownerProfile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', form.user_id)
     .single()
 

@@ -65,7 +65,7 @@ async function planoPermite(userId: string): Promise<boolean> {
   const supabase = await createClient()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan, plan_expires_at')
+    .select('plan, plan_expires_at, plan_status, asaas_subscription_id')
     .eq('id', userId)
     .single()
   return Boolean(PLANS[getEffectivePlan(profile) as PlanName]?.pixels)

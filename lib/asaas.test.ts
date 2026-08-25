@@ -248,11 +248,13 @@ describe('hasConfirmedPaymentForSubscription — recorte de data', () => {
 describe('getLinkPagamentoVencido', () => {
   it('devolve a URL da cobrança vencida MAIS ANTIGA (é ela que trava a renovação)', async () => {
     stubFetch(200, { data: [
-      { dueDate: '2026-08-20', invoiceUrl: 'https://fatura/nova' },
-      { dueDate: '2026-08-10', invoiceUrl: 'https://fatura/antiga' },
+      { id: 'pay_nova', dueDate: '2026-08-20', invoiceUrl: 'https://fatura/nova', value: 127 },
+      { id: 'pay_antiga', dueDate: '2026-08-10', invoiceUrl: 'https://fatura/antiga', value: 49 },
     ] })
     const r = await getLinkPagamentoVencido('sub_1')
-    expect(r).toEqual({ ok: true, url: 'https://fatura/antiga', dueDate: '2026-08-10' })
+    // `value` e `paymentId` entraram em 25/08 para o aviso de dívida no painel poder dizer
+    // QUANTO se deve, e para a conferência pós-cancelamento saber qual cobrança checar.
+    expect(r).toEqual({ ok: true, url: 'https://fatura/antiga', dueDate: '2026-08-10', value: 49, paymentId: 'pay_antiga' })
   })
 
   it('🛡️ NUNCA cai no boleto — mesmo que a fatura traga bankSlipUrl', async () => {
@@ -266,7 +268,7 @@ describe('getLinkPagamentoVencido', () => {
 
   it('sem cobrança vencida → url null, mas ok:true (não é erro)', async () => {
     stubFetch(200, { data: [] })
-    expect(await getLinkPagamentoVencido('sub_1')).toEqual({ ok: true, url: null, dueDate: null })
+    expect(await getLinkPagamentoVencido('sub_1')).toEqual({ ok: true, url: null, dueDate: null, value: null, paymentId: null })
   })
 
   it('cobrança vencida SEM url nenhuma → null com ok:true (a régua manda sem botão)', async () => {
@@ -278,6 +280,6 @@ describe('getLinkPagamentoVencido', () => {
 
   it('gateway fora do ar → ok:false (a régua decide o que fazer, não inventa link)', async () => {
     stubFetch(500, {})
-    expect(await getLinkPagamentoVencido('sub_1')).toEqual({ ok: false, url: null, dueDate: null })
+    expect(await getLinkPagamentoVencido('sub_1')).toEqual({ ok: false, url: null, dueDate: null, value: null, paymentId: null })
   })
 })

@@ -719,10 +719,18 @@ export async function POST(req: NextRequest) {
         // profile JÁ ativo na mesma sub (RECEIVED tardio da liquidação do cartão, ~D+32).
         const { data: previousProfile } = await supabase
           .from('profiles')
-          .select('asaas_subscription_id, plan, plan_status, plan_cycle, plan_expires_at')
+          .select('asaas_subscription_id, overdue_subscription_id, plan, plan_status, plan_cycle, plan_expires_at')
           .eq('id', user.id)
           .single()
-        const previousSubId = previousProfile?.asaas_subscription_id ?? null
+        // ⚠️ `?? overdue_subscription_id` (25/08/2026) — ERA SÓ `asaas_subscription_id`, e num
+        // perfil REBAIXADO esse campo é NULO: o expire-plans move a assinatura para
+        // `overdue_subscription_id` ao cortar. Resultado: quem foi rebaixado e assinava de novo
+        // pelo painel ficava com DUAS subs ACTIVE — a nova e a velha inadimplente — porque o
+        // cancelamento da anterior recebia `null` e não fazia nada. Só o reconcile pegava, até
+        // uma hora depois, com risco de cobrança dobrada na janela.
+        // SEGURO no caminho oposto: quem PAGA a fatura vencida reativa a MESMA assinatura, e o
+        // finalizeActivation não cancela quando anterior === nova.
+        const previousSubId = previousProfile?.asaas_subscription_id ?? previousProfile?.overdue_subscription_id ?? null
         // Reparar o produto é efeito de ESTADO, não de comunicação. O marker permanente de
         // ativação já foi consumido na primeira compra desta mesma assinatura; depois de um
         // corte por inadimplência ele continuará ocupado, mas os formulários precisam voltar.

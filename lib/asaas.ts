@@ -754,25 +754,28 @@ export async function hasOverduePaymentForSubscription(subscriptionId: string): 
  * Quem chama tem de ter um caminho sem link (a régua troca o botão por "responda este e-mail")
  * — um botão quebrado numa cobrança é pior que nenhum botão.
  */
-export async function getLinkPagamentoVencido(subscriptionId: string): Promise<{ ok: boolean; url: string | null; dueDate: string | null }> {
+export async function getLinkPagamentoVencido(subscriptionId: string): Promise<{ ok: boolean; url: string | null; dueDate: string | null; value: number | null; paymentId: string | null }> {
   try {
     const data = await asaasFetch(`/payments?subscription=${encodeURIComponent(subscriptionId)}&status=OVERDUE&limit=20`)
-    const pays: Array<{ dueDate?: string; invoiceUrl?: string }> = data?.data ?? []
+    const pays: Array<{ id?: string; dueDate?: string; invoiceUrl?: string; value?: number }> = data?.data ?? []
     // Mais ANTIGA primeiro: é a que trava a renovação; pagar ela é o que regulariza a conta.
     const ordenadas = pays
       .filter((p) => typeof p.dueDate === 'string' && p.dueDate)
       .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))
     const alvo = ordenadas.find((p) => p.invoiceUrl)
-    if (!alvo) return { ok: true, url: null, dueDate: ordenadas[0]?.dueDate ?? null }
+    if (!alvo) return { ok: true, url: null, dueDate: ordenadas[0]?.dueDate ?? null, value: ordenadas[0]?.value ?? null, paymentId: ordenadas[0]?.id ?? null }
     // SÓ `invoiceUrl` (15/08). O fallback para `bankSlipUrl` que existia aqui era a página do
     // BOLETO: se uma fatura viesse sem invoiceUrl, o botão "Regularizar meu pagamento" levaria o
     // cliente a um boleto — meio de pagamento que o EidosForm não vende ([[decisions]]). Sem
     // invoiceUrl agora é `url: null`, e a régua já sabe lidar: o e-mail troca o botão por
     // "responda este e-mail" e o WhatsApp é suprimido. Degrada, não mente.
-    return { ok: true, url: alvo.invoiceUrl ?? null, dueDate: alvo.dueDate ?? null }
+    return { ok: true, url: alvo.invoiceUrl ?? null, dueDate: alvo.dueDate ?? null, value: alvo.value ?? null, paymentId: alvo.id ?? null }
   } catch (err) {
     logWarn('[asaas] getLinkPagamentoVencido falhou', { subscriptionId, err: String(err).slice(0, 120) })
-    return { ok: false, url: null, dueDate: null }
+    // `ok: false` = NÃO SEI (rede/5xx) — diferente de "não há dívida". Quem consome tem de
+    // tratar os dois de formas opostas: o aviso no painel some, mas a guarda do checkout NÃO
+    // pode bloquear a venda por uma falha de leitura.
+    return { ok: false, url: null, dueDate: null, value: null, paymentId: null }
   }
 }
 

@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { BillingPlans } from '@/components/billing-plans'
+import { AvisoDivida } from '@/components/aviso-divida'
 import { CheckoutSuccessOverlay } from '@/components/checkout-success-overlay'
 
 export const dynamic = 'force-dynamic'
@@ -100,6 +101,10 @@ export default async function BillingPage() {
           <p className="text-xs text-slate-400 mt-1">{planLimit - usedResponses} respostas restantes este mês</p>
         </div>
       </Card>
+
+      {/* Fatura vencida: o aviso vem ANTES dos planos de propósito — quem tem dívida precisa
+          ver que basta regularizar, em vez de assinar de novo e pagar duas vezes. */}
+      <AvisoDivida />
 
       <BillingPlans currentPlan={currentPlan} currentCycle={currentCycle} planStatus={planStatus} />
 

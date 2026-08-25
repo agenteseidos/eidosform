@@ -14,6 +14,7 @@ import {
   updateSubscription,
   updateSubscriptionCreditCard,
   extractCardToken,
+  getLinkPagamentoVencido,
 } from '@/lib/asaas'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError, logWarn } from '@/lib/logger'
@@ -253,6 +254,23 @@ export async function finalizeActivation(params: {
         await cancelSubscription(previousSubscriptionId)
         cancelledPrevious = true
         log(`${tag}: sub anterior cancelada explicitamente`, { userId, oldSubscriptionId: previousSubscriptionId, newSubscriptionId })
+        // O Asaas DOCUMENTA que remover a assinatura remove junto as cobranças pendentes e
+        // vencidas ("as pagas permanecem para histórico"). Documentação não é observação: se
+        // sobrar uma fatura vencida órfã, ela vira dívida fantasma para um cliente que ACABOU
+        // de pagar. Conferimos e denunciamos — nunca deixamos passar em silêncio.
+        try {
+          const restou = await getLinkPagamentoVencido(previousSubscriptionId)
+          if (restou.ok && restou.dueDate) {
+            await sendBillingOpsAlert({
+              subject: '🔴 Fatura vencida SOBREVIVEU ao cancelamento da assinatura antiga',
+              lines: {
+                'O QUE ISSO SIGNIFICA': 'O cliente assinou de novo, a assinatura antiga foi cancelada, mas a cobrança vencida dela continua no Asaas — vai aparecer como dívida para quem acabou de pagar. Remover à mão no painel do Asaas.',
+                userId, assinaturaAntiga: previousSubscriptionId, assinaturaNova: newSubscriptionId,
+                cobranca: restou.paymentId ?? '—', vencimento: restou.dueDate, valor: String(restou.value ?? '—'),
+              },
+            }).catch(() => {})
+          }
+        } catch { /* conferência é best-effort: nunca derruba a ativação de quem pagou */ }
       } else {
         log(`${tag}: cancel da sub anterior pulado — profile mudou durante a conciliação`, { userId, oldSubscriptionId: previousSubscriptionId, newSubscriptionId })
       }

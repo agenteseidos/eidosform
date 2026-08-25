@@ -98,4 +98,20 @@ describe('🛡️ fonte única do número', () => {
     const { PRAZO_DIAS } = await import('./dunning-engine')
     expect(PRAZO_DIAS).toBe(CARENCIA_INADIMPLENCIA_DIAS)
   })
+
+  it('o SQL da cota usa o MESMO número de dias que o TypeScript', async () => {
+    // O banco não importa constante de TS: lá o 5 é literal. Este teste é a única amarra
+    // possível entre os dois lados — se alguém mudar a carência aqui e esquecer o banco,
+    // volta o split-brain que esta mudança existe para matar.
+    // ⚠️ LIMITE HONESTO: isto guarda o ARQUIVO da migration, não o banco. Só a sonda real
+    // (no fim do próprio .sql) prova o que está rodando. Regra nº 1 deste projeto.
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const sql = readFileSync(join(__dirname, '..', 'supabase', 'migrations', '20260825_carencia_cota.sql'), 'utf-8')
+    expect(sql).toContain(`interval '${CARENCIA_INADIMPLENCIA_DIAS} days'`)
+    // E a âncora: sem truncar para o dia BRT, o SQL concederia ~24h a mais que o expire-plans.
+    expect(sql).toContain(`date_trunc('day', v_expires AT TIME ZONE 'America/Sao_Paulo')`)
+    // E as duas guardas que impedem a carência de virar acesso pago de graça.
+    expect(sql).toContain(`v_plan_status = 'active' AND v_sub_id IS NOT NULL`)
+  })
 })

@@ -46,7 +46,7 @@ export type PerfilParaPlanoEfetivo = {
  * duraria ~24h a mais que a do `expire-plans` — e essa diferença só aparece quando o cron
  * falha, ou seja, exatamente na hora errada.
  */
-function fimDaCarencia(expiraEmMs: number): number {
+export function fimDaCarencia(expiraEmMs: number): number {
   const diaBRT = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date(expiraEmMs)) // 'YYYY-MM-DD'
@@ -71,6 +71,23 @@ function fimDaCarencia(expiraEmMs: number): number {
  *     seguinte (decisão do Sidney, 25/08). Campo ausente ⇒ sem carência, nunca o contrário:
  *     chamador que não selecionou os campos se comporta como antes desta mudança.
  */
+/**
+ * Último instante em que a carência ainda segura o plano — `null` quando não há carência
+ * (plano free, sem expiração, ainda não venceu, cancelou, ou sem assinatura viva).
+ *
+ * Existe para quem precisa DIZER o prazo, não só decidir o acesso: a ficha da Elen usa isto
+ * para responder "você tem até tal dia para regularizar" em vez de um "expirado" seco.
+ */
+export function fimDaCarenciaDe(profile: PerfilParaPlanoEfetivo | null | undefined): number | null {
+  if (normalizePlan(profile?.plan) === 'free') return null
+  const expiresAt = profile?.plan_expires_at
+  if (!expiresAt) return null
+  const exp = new Date(expiresAt).getTime()
+  if (Number.isNaN(exp)) return null
+  if (!(profile?.plan_status === 'active' && profile?.asaas_subscription_id)) return null
+  return fimDaCarencia(exp)
+}
+
 export function getEffectivePlan(
   profile: PerfilParaPlanoEfetivo | null | undefined,
   agora: number = Date.now()

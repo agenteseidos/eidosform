@@ -11,7 +11,7 @@ vi.mock('next/server', () => ({
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimitAsync: vi.fn(async () => ({ allowed: true, resetIn: 0 })) }))
 
-import { POST, sanitizarNome, derivarStatus, diaBRT } from './route'
+import { POST, sanitizarNome, derivarStatus, diaBRT, montarFicha } from './route'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 
@@ -94,6 +94,10 @@ describe('ficha — match único entre CONFIRMADOS', () => {
       ciclo: 'YEARLY',
       status: 'canceling',
       acesso_ate: '2026-08-29', // dia BRT estrito
+      // Campos da carência (25/08/2026): NULOS aqui de propósito — quem cancelou não deve
+      // dívida nem ganha prazo de regularização.
+      regularizar_ate: null,
+      plano_anterior: null,
     })
     expect(JSON.stringify(body)).not.toMatch(/email|asaas|cpf/i)
   })
@@ -170,5 +174,68 @@ describe('derivarStatus / diaBRT', () => {
   it('diaBRT estrito', () => {
     expect(diaBRT('2026-08-30T02:59:59+00:00')).toBe('2026-08-29')
     expect(diaBRT('lixo')).toBeNull()
+  })
+})
+
+describe('🛡️ a Elen sabe explicar o que houve com a conta (25/08/2026)', () => {
+  // Antes destes casos ela via a conta no gratuito e dizia 'unknown' — respondia como se a
+  // pessoa nunca tivesse pago. E, durante a carência, dizia 'expired' para quem AINDA TINHA
+  // o plano, contradizendo o produto.
+  const VENCEU = '2026-08-21T02:59:59+00:00'
+  const DENTRO = Date.parse('2026-08-23T12:00:00Z')   // 2 dias após vencer — carência correndo
+  const DEPOIS = Date.parse('2026-08-26T12:00:00Z')   // carência já acabou
+
+  const emAtraso = {
+    ...CONFIRMADO, plan: 'plus', plan_status: 'active', plan_cycle: 'MONTHLY',
+    plan_expires_at: VENCEU, asaas_subscription_id: 'sub_x',
+  }
+  const rebaixado = {
+    ...CONFIRMADO, plan: 'free', plan_status: 'expired', plan_expires_at: null,
+    downgraded_at: '2026-08-25T12:08:16Z', overdue_subscription_id: 'sub_x', previous_plan: 'plus',
+  }
+
+  it('EM ATRASO com prazo correndo → "overdue", não "expired"', () => {
+    vi.setSystemTime(DENTRO)
+    expect(derivarStatus(emAtraso as never)).toBe('overdue')
+  })
+
+  it('e a ficha diz ATÉ QUANDO dá para regularizar', () => {
+    vi.setSystemTime(DENTRO)
+    const f = montarFicha(emAtraso as never)
+    expect(f.status).toBe('overdue')
+    expect(f.regularizar_ate).toBe('2026-08-25')  // meia-noite BRT do 5º dia
+    expect(f.plano).toBe('plus')                   // ainda TEM o plano
+  })
+
+  it('passado o prazo, sem o cron ter rodado → volta a ser "expired"', () => {
+    vi.setSystemTime(DEPOIS)
+    expect(derivarStatus(emAtraso as never)).toBe('expired')
+  })
+
+  it('REBAIXADA por falta de pagamento → "downgraded" (era "unknown")', () => {
+    vi.setSystemTime(DEPOIS)
+    expect(derivarStatus(rebaixado as never)).toBe('downgraded')
+  })
+
+  it('e a ficha diz QUAL plano a pessoa perdeu', () => {
+    vi.setSystemTime(DEPOIS)
+    const f = montarFicha(rebaixado as never)
+    expect(f.status).toBe('downgraded')
+    expect(f.plano_anterior).toBe('plus')
+    expect(f.regularizar_ate).toBeNull()  // o prazo já acabou; não prometer o que não há
+  })
+
+  it('quem CANCELOU e acabou o período não vira "downgraded" — não deve dívida', () => {
+    vi.setSystemTime(DEPOIS)
+    const cancelou = { ...CONFIRMADO, plan: 'free', plan_status: 'cancelled', plan_expires_at: null }
+    expect(derivarStatus(cancelou as never)).toBe('cancelled')
+  })
+
+  it('quem está em dia não expõe prazo nem plano anterior', () => {
+    vi.setSystemTime(Date.parse('2026-08-01T12:00:00Z'))
+    const f = montarFicha({ ...CONFIRMADO, plan_status: 'active', plan_expires_at: '2026-12-01T02:59:59+00:00' } as never)
+    expect(f.status).toBe('active')
+    expect(f.regularizar_ate).toBeNull()
+    expect(f.plano_anterior).toBeNull()
   })
 })

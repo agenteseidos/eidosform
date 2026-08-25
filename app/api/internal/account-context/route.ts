@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { normalizarTelefoneBR } from '@/lib/migracao/regua'
-import { normalizePlan } from '@/lib/plans'
+import { normalizePlan, getEffectivePlan, fimDaCarenciaDe } from '@/lib/plans'
 
 /**
  * POST /api/internal/account-context — FICHA DA CONTA para o atendimento
@@ -42,7 +42,16 @@ function autorizado(req: NextRequest): boolean {
   return recebido.length === esperado.length && timingSafeEqual(recebido, esperado)
 }
 
-type FichaStatus = 'active' | 'canceling' | 'cancelled' | 'expired' | 'unknown'
+type FichaStatus =
+  | 'active'
+  /** Pagamento em ATRASO, prazo de regularização ainda correndo — o plano pago continua valendo. */
+  | 'overdue'
+  /** Já foi rebaixada para o gratuito por falta de pagamento (o prazo acabou). */
+  | 'downgraded'
+  | 'canceling'
+  | 'cancelled'
+  | 'expired'
+  | 'unknown'
 
 /** Sanitização do nome: remove controle, colapsa espaço, limita tamanho. */
 export function sanitizarNome(raw: unknown): string | null {
@@ -67,14 +76,34 @@ type ProfileRow = {
   plan_cycle: string | null
   plan_expires_at: string | null
   email_confirmed_at: string | null
+  /** Carência: sem assinatura viva, vencido é vencido. */
+  asaas_subscription_id?: string | null
+  /** Carimbo do rebaixamento por inadimplência (só o expire-plans grava). */
+  downgraded_at?: string | null
+  /** Assinatura que gerou a dívida, preservada no rebaixamento. */
+  overdue_subscription_id?: string | null
+  /** Plano que a pessoa TINHA antes do rebaixamento — a Elen precisa saber o que ela perdeu. */
+  previous_plan?: string | null
 }
 
 export function derivarStatus(p: ProfileRow): FichaStatus {
   const plan = normalizePlan(p.plan)
   const st = String(p.plan_status ?? '').trim().toLowerCase()
+
+  // REBAIXADA POR FALTA DE PAGAMENTO (25/08/2026). Antes caía em 'unknown': a Elen via a conta
+  // no gratuito e não sabia explicar POR QUÊ — respondia como se a pessoa nunca tivesse pago.
+  // Os dois carimbos são gravados juntos, e SÓ pelo expire-plans no corte por inadimplência
+  // (`rebaixamentoPorInadimplencia`); cancelamento normal não passa por aqui.
+  if (plan === 'free' && p.downgraded_at && p.overdue_subscription_id) return 'downgraded'
+
   if (plan !== 'free' && p.plan_expires_at) {
     const exp = new Date(p.plan_expires_at).getTime()
-    if (!Number.isNaN(exp) && exp <= Date.now()) return 'expired'
+    if (!Number.isNaN(exp) && exp <= Date.now()) {
+      // ⚠️ `getEffectivePlan` é a FONTE ÚNICA da carência. Se ele ainda concede o plano, a
+      // pessoa está EM ATRASO com prazo correndo — não expirada. Dizer 'expired' aqui faria a
+      // Elen contradizer o produto, que (decisão do Sidney, 25/08) mantém tudo até o 5º dia.
+      return getEffectivePlan(p) !== 'free' ? 'overdue' : 'expired'
+    }
   }
   if (st === 'active') return 'active'
   if (st === 'canceling') return 'canceling'
@@ -84,12 +113,19 @@ export function derivarStatus(p: ProfileRow): FichaStatus {
 
 export function montarFicha(p: ProfileRow) {
   const ciclo = p.plan_cycle === 'MONTHLY' || p.plan_cycle === 'YEARLY' ? p.plan_cycle : null
+  const status = derivarStatus(p)
+  const fimCarencia = fimDaCarenciaDe(p)
   return {
     nome: sanitizarNome(p.full_name),
     plano: normalizePlan(p.plan),
     ciclo,
-    status: derivarStatus(p),
+    status,
     acesso_ate: diaBRT(p.plan_expires_at),
+    // DIA LIMITE para regularizar, só enquanto o prazo corre. É uma DATA, nunca um valor de
+    // cobrança — a ficha continua proibida de revelar dinheiro (ver docblock do arquivo).
+    regularizar_ate: status === 'overdue' && fimCarencia ? diaBRT(new Date(fimCarencia).toISOString()) : null,
+    // O que a pessoa PERDEU no rebaixamento. Sem isto a Elen sabe que caiu, mas não de onde.
+    plano_anterior: status === 'downgraded' ? normalizePlan(p.previous_plan) : null,
   }
 }
 
@@ -142,7 +178,7 @@ export async function POST(req: NextRequest) {
     // limit(2) basta: só se distingue 0, 1 e "mais de 1" ENTRE CONFIRMADOS.
     const { data, error } = await db
       .from('profiles')
-      .select('full_name, plan, plan_status, plan_cycle, plan_expires_at, email_confirmed_at, asaas_subscription_id')
+      .select('full_name, plan, plan_status, plan_cycle, plan_expires_at, email_confirmed_at, asaas_subscription_id, downgraded_at, overdue_subscription_id, previous_plan')
       .eq('phone_match_key_br', phoneKey)
       .not('email_confirmed_at', 'is', null)
       .limit(2)

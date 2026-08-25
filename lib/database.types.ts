@@ -284,6 +284,13 @@ export interface Database {
           billing_period_end_on: string | null
           asaas_customer_id: string | null
           asaas_subscription_id: string | null
+          // ⚠️ COLUNAS QUE EXISTEM NO BANCO E FALTAVAM AQUI (Regra nº 1, caso 6 — 25/08/2026).
+          // Conferidas no OpenAPI do PostgREST de PRODUÇÃO. A ausência fazia o tsc recusar um
+          // `.select()` de coluna REAL — o arquivo de tipos é gerado do repo e mente junto.
+          downgraded_at: string | null
+          overdue_subscription_id: string | null
+          previous_plan: string | null
+          previous_plan_cycle: string | null
           plan_cycle: string | null
           phone: string | null
           phone_match_key_br: string | null
@@ -318,6 +325,10 @@ export interface Database {
           plan_expires_at?: string | null
           asaas_customer_id?: string | null
           asaas_subscription_id?: string | null
+          downgraded_at?: string | null
+          overdue_subscription_id?: string | null
+          previous_plan?: string | null
+          previous_plan_cycle?: string | null
           plan_cycle?: string | null
           phone?: string | null
           phone_match_key_br?: never
@@ -352,6 +363,10 @@ export interface Database {
           plan_expires_at?: string | null
           asaas_customer_id?: string | null
           asaas_subscription_id?: string | null
+          downgraded_at?: string | null
+          overdue_subscription_id?: string | null
+          previous_plan?: string | null
+          previous_plan_cycle?: string | null
           plan_cycle?: string | null
           phone?: string | null
           phone_match_key_br?: never

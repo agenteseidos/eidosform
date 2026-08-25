@@ -134,3 +134,27 @@ https://srqtjoakjzzmpzauvoxc.supabase.co/auth/v1/callback
 ```
 https://eidosform.vercel.app  (ou domínio customizado)
 ```
+
+
+## ⚠️ 25/08/2026 — `expire-plans` passou a rodar na VPS (o cron da Vercel não é confiável)
+
+**O que aconteceu:** no teste real da régua de cobrança, o rebaixamento do D+5 **não ocorreu** à
+meia-noite. O cron da Vercel (`vercel.json`, `0 3 * * *`) estava configurado, habilitado e
+apontando para o deployment atual — e simplesmente não disparou. Rodado à mão às 09:08 BRT,
+reverteu na hora (`reverted: 1`), provando que a lógica estava certa: o problema era o AGENDADOR.
+
+**Por que importa:** `expire-plans` é o job que protege a RECEITA — é ele que tira o acesso pago
+de quem parou de pagar. Um dia sem rodar é um dia de acesso pago de graça, silencioso.
+
+**Por que não dá para confiar:** a Vercel documenta, no plano Hobby, atraso de **até 59 minutos**
+([docs](https://vercel.com/docs/cron-jobs/manage-cron-jobs)) — o real foi **9h+**. E o Hobby não
+tem log de runtime, então não há como auditar se rodou.
+
+**Correção:** entrou no crontab do `sidney` (`20 3 * * *` UTC = 00:20 BRT), pelo mesmo
+`run-cron.sh` dos outros 5 jobs, gravando em `cron.log`. **O cron da Vercel FICA como reserva** —
+`expire-plans` é idempotente (provado: segunda execução seguida devolveu `total: 0`), então rodar
+duas vezes não causa dano.
+
+**Quando migrar para o Vercel Pro** (decisão do Sidney: ao fechar 2 assinaturas pagas), revisitar:
+no Pro o cron dispara dentro do minuto e há log de runtime. Ainda assim, manter o da VPS não
+custa nada e dá observabilidade em arquivo.

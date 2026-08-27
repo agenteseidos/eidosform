@@ -5,7 +5,7 @@ import { createServerClient } from '@supabase/ssr'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getWhatsappUrl, getWhatsappAuthHeaders } from '@/lib/whatsapp-client'
 import { buildMessage } from '@/lib/whatsapp-template'
-import { isValidWhatsAppPhone } from '@/lib/phone'
+import { isValidWhatsAppPhone, toWhatsAppDigits } from '@/lib/phone'
 import { canUseLeadWhatsApp, LEAD_WHATSAPP_UNAVAILABLE } from '@/lib/whatsapp-capability'
 import { isValidBearerSecret } from '@/lib/bearer-auth'
 
@@ -62,8 +62,23 @@ function normalizeValue(value: string): string {
 /**
  * Send message via WhatsApp VPS server
  */
+/** Erro de DADO (número inválido), separado de erro de TRANSPORTE. Ver o catch do POST. */
+export class NumeroInvalidoError extends Error {
+  constructor(readonly numero: string) {
+    super(`Número de WhatsApp inválido: "${numero}"`)
+    this.name = 'NumeroInvalidoError'
+  }
+}
+
 async function sendViaVps(phone: string, message: string, idempotencyKey?: string): Promise<{ messageId: string | null; duplicate?: boolean; queued?: boolean; blocked?: boolean; transport?: string | null }> {
-  const cleanPhone = phone.replace(/\D/g, '')
+  // ⚠️ ERA `phone.replace(/\D/g, '')` — só tirava a pontuação e mandava o resto CRU.
+  // Quem digitasse "83999376704" (sem o 55) via o envio falhar com "Failed to send message",
+  // sem pista nenhuma do motivo — aconteceu com o dono em 27/08/2026, e as 3 tentativas
+  // seguidas ainda dispararam o alarme de "os ENVIOS estão falhando", como se fosse o
+  // transporte. `toWhatsAppDigits` já existia, com teste, e simplesmente não era usada aqui:
+  // ela prefixa o 55 em números de 10-11 dígitos e devolve '' fora da faixa aceitável.
+  const cleanPhone = toWhatsAppDigits(phone)
+  if (!cleanPhone) throw new NumeroInvalidoError(phone)
 
   try {
     const response = await fetch(getWhatsappUrl('/api/whatsapp/send'), {
@@ -402,6 +417,19 @@ async function handleDirectSend(data: DirectSendRequest & { formId?: string; ide
     if (msg.startsWith('WHATSAPP_UNAVAILABLE')) {
       return NextResponse.json({ success: false, error: 'WhatsApp service unavailable' }, { status: 503 })
     }
-    return NextResponse.json({ success: false, error: 'Failed to send message' }, { status: 502 })
+    // ERRO DE DADO ≠ ERRO DE TRANSPORTE. Número inválido é 400 com o motivo na tela: o cliente
+    // consegue se corrigir sozinho, e o alarme de transporte não conta isso como queda.
+    if (err instanceof NumeroInvalidoError) {
+      return NextResponse.json(
+        { success: false, error: 'Número de WhatsApp inválido. Use o formato com código do país: 5583999999999.' },
+        { status: 400 }
+      )
+    }
+    // O motivo REAL viaja na resposta: no plano Hobby o console não é recuperável, e "Failed to
+    // send message" sozinho não permitia a ninguém — cliente ou dono — descobrir o que houve.
+    return NextResponse.json(
+      { success: false, error: 'Falha ao enviar a mensagem', details: msg.slice(0, 200) },
+      { status: 502 }
+    )
   }
 }

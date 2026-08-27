@@ -65,7 +65,7 @@ _Registro completo: `eidos-shared/auditoria-geral-2026-08/99-sintese/lote-1-exec
 ## Tech Stack
 
 - **Next.js 16** (App Router) with React 19
-- **Supabase** for auth (Google OAuth + Magic Link) and PostgreSQL database
+- **Supabase** for auth (Google OAuth + e-mail/senha) and PostgreSQL database
 - **Tailwind CSS v4** + **shadcn/ui** for styling
 - **Framer Motion** for animations
 - **Cloudflare R2** for file uploads (optional)
@@ -160,7 +160,12 @@ Use `getThemeCSSVariables()` to apply as inline CSS custom properties.
 
 ## Auth Flow
 
-1. User visits `/login` → Google OAuth or Magic Link
+1. User visits `/login` → **Google OAuth** ou **e-mail + senha** (com `/forgot-password`
+   → `/reset-password`). ⚠️ **NÃO existe Magic Link** — este arquivo afirmou que existia até
+   25/08/2026 e fez o Claude instruir o Sidney a usar um fluxo inexistente. Contas de serviço
+   criadas por programa (ex.: `leads@eidosform.com.br`, dona do formulário da demo) nascem SEM
+   senha e SEM Google: o único caminho de primeiro acesso é 'esqueci minha senha', que depende
+   do alias do domínio (ImprovMX) encaminhar para uma caixa real.
 2. Supabase redirects to `/auth/callback` → exchanges code for session
 3. Middleware (`lib/supabase/middleware.ts`) refreshes session on protected routes
 4. Dashboard layout checks auth, redirects to `/login` if unauthenticated

@@ -428,9 +428,39 @@ fastify.post('/api/whatsapp/qr', { onRequest: requireAuth }, async (request, rep
   }
 });
 
+/**
+ * Número do WhatsApp em dígitos, com o 55 completado quando vem no formato brasileiro local.
+ *
+ * ORIGEM (27/08/2026): o dono configurou "83999376704" (sem o 55) no builder. O envio falhou
+ * com "Failed to send message", sem pista do motivo — e as 3 tentativas seguidas dispararam o
+ * alarme de "os ENVIOS estão falhando", como se o transporte estivesse fora do ar. Não estava:
+ * dois envios funcionaram nos minutos seguintes.
+ *
+ * Duas lições viraram código: (1) o formato local é o que a pessoa digita naturalmente, então
+ * completar o 55 é obrigação nossa; (2) erro de DADO não pode contar como falha de TRANSPORTE,
+ * senão o alarme mente e a gente aprende a ignorá-lo — que é como um alarme morre.
+ */
+function normalizarDestino(raw) {
+  const d = String(raw ?? '').replace(/\D/g, '');
+  if (d.length < 10 || d.length > 15) return null;
+  if (d.length === 10 || d.length === 11) return `55${d}`;
+  return d;
+}
+
 fastify.post('/api/whatsapp/send', { onRequest: requireAuth }, async (request, reply) => {
-  const { to, message, idempotencyKey } = request.body || {};
-  if (!to || !message) return reply.code(400).send({ error: 'Missing to or message' });
+  const { to: toBruto, message, idempotencyKey } = request.body || {};
+  if (!toBruto || !message) return reply.code(400).send({ error: 'Missing to or message' });
+
+  // 400 e NADA MAIS: não chama transporte, não conta falha, não acorda ninguém. É erro de
+  // quem pediu, não do canal.
+  const to = normalizarDestino(toBruto);
+  if (!to) {
+    log(`[send] destino invalido rejeitado (nao conta como falha de transporte)`);
+    return reply.code(400).send({
+      error: 'Invalid destination number',
+      details: 'Use dígitos com código do país. Ex: 5583999999999.',
+    });
+  }
 
   // PRÉ-CHECAGENS ANTES DO RATE LIMIT (auditoria 2026-08, lote 3 · L3-6).
   //

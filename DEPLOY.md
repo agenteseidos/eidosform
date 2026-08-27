@@ -61,6 +61,7 @@ A conta é **Hobby** (máx. 2 crons, só diários). Por isso o `vercel.json` age
 | `reconcile-checkouts` | crontab da VPS (`7 * * * *`) |
 | `sweep-received` | crontab da VPS (`22 * * * *`) |
 | `reconcile-subscriptions` | crontab da VPS (`37 * * * *`) |
+| `nfse-retry` | crontab da VPS (`41 * * * *`) — reenvia NFS-e rejeitada; teto de 6 tentativas + alerta |
 | `abandoned-leads` | timer systemd `eidosform-abandoned.timer` (15 min) |
 | `abandoned-leads-email` | timer systemd `eidosform-abandoned-email.timer` (15 min) — **⚠️ ainda NÃO instalado** |
 

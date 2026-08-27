@@ -1040,6 +1040,9 @@ export interface AsaasInvoiceSummary {
   payment?: string | null
   value?: number
   number?: string | null
+  /** Nosso carimbo de origem (`nfse:pay:{paymentId}`) — a API devolve; é como a retentativa
+   *  distingue nota emitida por NÓS de nota criada à mão no painel do Asaas. */
+  externalReference?: string | null
 }
 
 /** Lista as notas vinculadas a uma cobrança (GET /v3/invoices?payment=). */
@@ -1083,6 +1086,23 @@ export async function scheduleInvoiceForPayment(params: {
     }),
   })
   return { id: data.id, status: data.status }
+}
+
+/** Lista notas por STATUS na conta inteira (GET /v3/invoices?status=). Usado pela retentativa. */
+export async function listInvoicesByStatus(status: string): Promise<AsaasInvoiceSummary[]> {
+  const data = await asaasFetch(`/invoices?status=${encodeURIComponent(status)}&limit=100`)
+  return (data?.data ?? []) as AsaasInvoiceSummary[]
+}
+
+/**
+ * Reenvia à prefeitura uma nota rejeitada (POST /v3/invoices/{id}/authorize).
+ * Validado em produção em 27/08/2026: nota em ERROR (L999 de descrição vazia, instabilidade do
+ * webservice municipal) foi reenviada e AUTORIZADA minutos depois, sem nenhuma mudança de
+ * configuração — número municipal 1013714.
+ */
+export async function authorizeInvoice(invoiceId: string): Promise<{ id: string; status: string }> {
+  const data = await asaasFetch(`/invoices/${encodeURIComponent(invoiceId)}/authorize`, { method: 'POST' })
+  return { id: data.id ?? invoiceId, status: data.status ?? 'UNKNOWN' }
 }
 
 /** Cancela uma NFS-e (POST /v3/invoices/{id}/cancel). Gratuito; sujeito a prazo municipal. */

@@ -156,3 +156,50 @@ export async function cancelarNotasDoPagamento(params: {
     return 'failed'
   }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// RETENTATIVA AUTOMÁTICA DE NOTA REJEITADA (27/08/2026)
+//
+// Origem: a primeira NFS-e de valor cheio (R$127) voltou da prefeitura de João Pessoa com
+// "L999" e descrição VAZIA. Não era nada nosso: a retentativa manual, sem mudar uma vírgula,
+// foi AUTORIZADA minutos depois (nota 1013714) — instabilidade do webservice municipal.
+//
+// Sem isto, a nota ficava em ERROR até o PRÓXIMO evento do pagamento (a liquidação do cartão,
+// que pode demorar um mês). Com isto, o cron de hora em hora reenvia sozinho — e desiste com
+// alarme depois de MAX_TENTATIVAS_NOTA, porque aí a causa provável é cadastral (inscrição
+// municipal, DMS, migração de emissor) e a conversa é com o contador, não com o robô.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Depois disso, para de tentar e alerta: 6 tentativas ≈ 6h de prefeitura fora do ar. */
+export const MAX_TENTATIVAS_NOTA = 6
+
+export type DecisaoRetentativa =
+  | { retentar: true }
+  | { retentar: false; motivo: 'nao_gerida' | 'pagamento_ilegivel' | 'pagamento_nao_vigente' | 'esgotado' }
+
+/**
+ * A nota em ERROR merece nova tentativa?
+ *
+ * Pura e testável. As guardas, na ordem do risco:
+ *  1. Só notas que NÓS emitimos (externalReference `nfse:pay:`) — nota criada à mão no painel
+ *     do Asaas não é nossa para reenviar.
+ *  2. Leitura do pagamento falhou → NÃO conta tentativa; a próxima hora resolve. ("não sei"
+ *     nunca vira decisão — mesma regra da dívida pendente.)
+ *  3. Pagamento não está mais vigente (estornado/cancelado) → NUNCA reenviar. Re-emitir nota
+ *     de pagamento estornado criaria documento fiscal de receita que não existe.
+ *  4. Esgotou o teto → para e alerta (provável causa cadastral; humano decide).
+ */
+export function decidirRetentativaNota(params: {
+  externalReference: string | null | undefined
+  /** Status da COBRANÇA no Asaas; `null` = não consegui ler agora. */
+  paymentStatus: string | null
+  tentativasFeitas: number
+}): DecisaoRetentativa {
+  if (!params.externalReference?.startsWith('nfse:pay:')) return { retentar: false, motivo: 'nao_gerida' }
+  if (params.paymentStatus === null) return { retentar: false, motivo: 'pagamento_ilegivel' }
+  if (!['CONFIRMED', 'RECEIVED'].includes(params.paymentStatus)) {
+    return { retentar: false, motivo: 'pagamento_nao_vigente' }
+  }
+  if (params.tentativasFeitas >= MAX_TENTATIVAS_NOTA) return { retentar: false, motivo: 'esgotado' }
+  return { retentar: true }
+}

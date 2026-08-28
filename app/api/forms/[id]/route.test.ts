@@ -204,7 +204,41 @@ describe('PATCH — recálculo do que fica no ar', () => {
   })
 })
 
-describe('🛡️ DELETE — a purga de anexos NUNCA roda antes da autorização (P0, 16/08)', () => {
+describe('🛡️ EDITAR NUNCA APAGA ANEXO (P0 de 17→27/08 — 10 dias no ar)', () => {
+  // O bloco de purga viveu DENTRO DO PATCH de 17/08 a 27/08. Origem: o commit 282a617 corrigia
+  // um P0 real (purga antes do 401 no DELETE) e, ao mover o bloco para depois da prova de
+  // propriedade, moveu-o para o HANDLER ERRADO. Efeito: o autosave do builder (4s de inatividade,
+  // blur, publicar, despublicar) destruía TODOS os anexos dos respondentes daquele formulário.
+  //
+  // A suíte da época passava — os 2 testes de purga olhavam só o DELETE, e passavam VAZIOS
+  // porque o DELETE tinha deixado de chamar. Ninguém perguntava pelo PATCH. É o mesmo defeito
+  // de método do caso 6/7 da Regra nº 1: teste que prova a crença, não o contrato.
+  beforeEach(() => { purgarAnexos.mockClear() })
+
+  it('PATCH válido do DONO → o formulário é salvo e NENHUM anexo é tocado', async () => {
+    mockCreateClient.mockResolvedValue(supabaseFalso({ plan: 'plus' }) as never)
+
+    const res = await PATCH(req({ title: 'Novo título' }), { params })
+
+    expect(res.status).toBe(200)
+    expect(updatePayload.title).toBe('Novo título')
+    expect(purgarAnexos).not.toHaveBeenCalled()
+  })
+
+  it('PATCH REJEITADO (payload inválido) também não apaga nada', async () => {
+    // O agravante que quase passou batido: a purga rodava ANTES de ler o corpo, então um save
+    // que morria na validação já tinha destruído os arquivos. Isso não é hipótese — em 27/08 um
+    // validador desatualizado fez TODO save devolver "Payload inválido" por horas.
+    mockCreateClient.mockResolvedValue(supabaseFalso({ plan: 'plus' }) as never)
+
+    const res = await PATCH(req({ title: '' }), { params })  // título vazio: o Zod recusa
+
+    expect(res.status).toBe(400)
+    expect(purgarAnexos).not.toHaveBeenCalled()
+  })
+})
+
+describe('🛡️ EXCLUIR APAGA OS ANEXOS — e só depois de provar a propriedade', () => {
   // Eu introduzi este defeito na própria implementação dos anexos privados: a purga ficava ANTES
   // do `if (!user) return 401`. Qualquer pessoa com o UUID de um formulário publicado mandava
   // DELETE sem sessão, o servidor apagava TODOS os anexos com service-role, e só então respondia
@@ -231,5 +265,41 @@ describe('🛡️ DELETE — a purga de anexos NUNCA roda antes da autorização
     await DELETE(req({}), { params })
 
     expect(purgarAnexos).not.toHaveBeenCalled()
+  })
+
+  it('DONO exclui → os anexos SÃO purgados (o outro lado, que ninguém testava)', async () => {
+    // Sem este caso, os dois testes acima passam VAZIOS: um DELETE que não purga nunca satisfaz
+    // "não purgou antes da autorização". Foi exatamente assim que o defeito atravessou 10 dias.
+    mockCreateClient.mockResolvedValue(supabaseFalso({ plan: 'plus' }) as never)
+
+    const res = await DELETE(req({}), { params })
+
+    expect(res.status).toBe(200)
+    expect(purgarAnexos).toHaveBeenCalledTimes(1)
+    // O ALVO importa: `{ formId }` purga o formulário inteiro. Se um dia alguém passar
+    // `{ responseId }` aqui, o DELETE deixaria anexos vivos e órfãos.
+    expect((purgarAnexos.mock.calls[0] as unknown[])[1]).toEqual({ formId: 'f1' })
+  })
+
+  it('a purga acontece ANTES do delete — senão o cascade some com as fichas', async () => {
+    // Ordem deliberada: apagada a linha do formulário, o cascade leva `form_files` junto e o
+    // objeto ficaria órfão e VIVO no storage — o defeito que a política de privacidade publicada
+    // ("deletados em até 30 dias") não permite.
+    const ordem: string[] = []
+    purgarAnexos.mockImplementationOnce(async () => { ordem.push('purga'); return { revogados: 1, removidos: 1 } })
+    const base = supabaseFalso({ plan: 'plus' })
+    const fromOriginal = base.from as unknown as (t: string) => Record<string, unknown>
+    ;(base as unknown as { from: unknown }).from = (t: string) => {
+      const real = fromOriginal(t)
+      if (t === 'forms') {
+        return { ...real, delete: () => { ordem.push('delete'); return (real.delete as () => unknown)() } }
+      }
+      return real
+    }
+    mockCreateClient.mockResolvedValue(base as never)
+
+    await DELETE(req({}), { params })
+
+    expect(ordem).toEqual(['purga', 'delete'])
   })
 })

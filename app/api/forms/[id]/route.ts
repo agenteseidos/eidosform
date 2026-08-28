@@ -82,17 +82,20 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
   }
 
-  // ANEXOS: só DEPOIS de autenticar e provar a propriedade (P0 corrigido 16/08).
-  // Eu havia colocado esta purga ANTES do 401 — qualquer pessoa com o UUID de um formulário
-  // publicado apagava todos os anexos dele sem sessão nenhuma, e só então recebia "Unauthorized".
-  // Rodar com service-role antes da autorização é destruição de dado por requisição anônima.
-  // Aqui, o `existing` já provou que este usuário é o dono.
-  try {
-    const { purgarAnexos } = await import('@/lib/form-file-purge')
-    const { createServiceRoleClient } = await import('@/lib/supabase/service-role')
-    await purgarAnexos(createServiceRoleClient(), { formId: id })
-  } catch { /* exclusão do formulário nunca falha por causa do anexo */ }
-
+  // 🚫 NUNCA purgar anexos aqui. Editar um formulário NÃO pode apagar os arquivos que os
+  // respondentes enviaram — e por 10 dias apagou. O bloco de purga vivia nesta linha desde
+  // 282a617 (17/08/2026): aquele commit corrigia um P0 real (a purga rodava ANTES do 401 no
+  // DELETE, então qualquer um com o UUID apagava anexo alheio sem sessão) e, ao mover o bloco
+  // para depois da prova de propriedade, moveu-o para o HANDLER ERRADO. O comentário órfão que
+  // sobrou aqui — "exclusão do formulário nunca falha por causa do anexo" — falava de exclusão
+  // dentro de uma atualização; era a impressão digital do engano.
+  //
+  // Efeito enquanto durou: o autosave do builder (4s de inatividade, teto de 30s, blur, publicar
+  // e despublicar) destruía TODOS os anexos do formulário. Pior: a purga vinha ANTES de ler o
+  // corpo, então até PATCH REJEITADO (payload inválido, 409 de duas abas) apagava. Zero perda
+  // real por sorte — o único formulário com anexos não foi editado no período.
+  //
+  // A purga correta vive no DELETE, antes do `.delete()`. Travado por teste nos dois sentidos.
   const rawBody = await req.json()
 
   // P2-O: Payload size limit for PATCH (500KB)
@@ -520,6 +523,22 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
   if (!existing) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 })
+  }
+
+  // ANEXOS: revoga o link e apaga o objeto ANTES do `.delete()` — depois do cascade as fichas
+  // de `form_files` somem e o arquivo ficaria órfão e VIVO no storage, contrariando a política
+  // de privacidade publicada ("dados deletados em até 30 dias").
+  //
+  // Aqui, e só aqui: `user` já autenticou e `existing` já provou a propriedade — foi este o P0
+  // de 16/08 (purga antes do 401 = destruição de dado por requisição anônima). Best-effort: a
+  // exclusão do formulário não se desfaz porque o storage teve um soluço; o que falhar fica
+  // revogado (link morto) e a varredura de órfãos recolhe depois.
+  try {
+    const { purgarAnexos } = await import('@/lib/form-file-purge')
+    const { createServiceRoleClient } = await import('@/lib/supabase/service-role')
+    await purgarAnexos(createServiceRoleClient(), { formId: id })
+  } catch (err) {
+    logError('DELETE /api/forms/[id]: purga de anexos falhou (exclusão segue)', err, { id })
   }
 
   const { error } = await supabase

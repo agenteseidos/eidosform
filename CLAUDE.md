@@ -47,6 +47,25 @@ repositório — ele mente junto. Duas obrigações operacionais desde 20/08/202
    planejamento — a sonda pega na hora, sem tocar dado. **"Pronto" só depois da sonda**; suíte
    verde com mock não prova contrato com o banco.
 
+**⚠️ CASO 7 (27/08/2026) — A SONDA QUE NÃO SONDAVA NADA.** A regra acima manda "sonda real" em
+toda função/tipo novo. Para ENUM do Postgres, a sonda que eu usava era **cerimônia vazia**:
+`PATCH` em id inexistente aceita **qualquer** valor (testado: `"isso-nao-existe-de-jeito-nenhum"`
+→ HTTP 204), porque nenhuma linha é tocada e o Postgres nem converte o tipo. Resultado: dei um
+tema como validado no banco e o save quebrou em produção com `22P02`.
+**Sonda CORRETA para enum = FILTRO DE LEITURA**, que força o cast mesmo casando 0 linhas:
+`GET /rest/v1/<tabela>?<coluna>=eq.<valor>&select=id` → valor inválido devolve **400 22P02**.
+Regra geral: **sonda que não pode falhar não é prova**. Antes de aceitar uma sonda, pergunte
+"o que ela devolveria se eu passasse lixo?" — se devolve sucesso, ela não testa nada.
+
+**⚠️ TEMA VIVE EM QUATRO LUGARES** (mesmo dia, mesmo lote): `lib/themes.ts` · união `ThemePreset`
+· ENUM `public.theme_preset` no banco · **validador Zod em `lib/schemas/form-schema.ts`**. Cuidei
+de três e o quarto quebrou o save ("Payload inválido"), porque o Zod é quem roda de VERDADE. O
+teste de TIPO não pega — tipo é apagado na compilação; ele documenta o contrato, não o executa.
+Hoje o Zod **deriva** de `themes` e `lib/themes.test.ts` exercita o validador de RUNTIME.
+**Ao adicionar valor a um enum: banco → sonda por filtro → só então o deploy.** Publiquei o
+código antes de o Sidney rodar o `ALTER TYPE` e o builder ofereceu um tema que o banco recusava —
+o mesmo erro do irmão operacional abaixo, cometido no dia em que o citei.
+
 **⚠️ E o caso 6 tem um irmão operacional (20/08):** publicar o CONSUMIDOR antes do RECURSO
 existir. O hero das landings foi ao ar apontando para um formulário ainda em RASCUNHO — 1h de demo
 quebrada na página de vendas (zero impacto por sorte: tráfego zero). Em lote que muda página

@@ -451,8 +451,13 @@ enviado". Quem testa a demo se perde. A mudança COMEÇA por reescrever essa mic
 - 2 temas da marca em `lib/themes.ts` (escuro #0A0A0F+#F5B731 p/ v3; claro p/ v4) + carrossel.
 - `lib/hero-demo/config.ts` no padrão migracao/config.ts (IDs pinados + validação de contrato).
 
-**⏳ DECISÃO ABERTA:** os 2 temas novos viram produto p/ todo mundo ("9 temas" na vitrine — voto
-do Claude: sim) ou ficam exclusivos da casa (copy segue "7")?
+**✅ RESOLVIDO EM 27/08/2026 — os 2 temas viram produto para TODO MUNDO ("9 temas" na vitrine).**
+⚠️ Correção de registro: este documento os dava como criados desde 20/08, e **não estavam** —
+`lib/themes.ts` tinha 7 e a demo usava o `midnight` genérico. Criados agora: `eidos-escuro` e
+`eidos-claro`, sem gating de plano, com a demo (`/f/demo`) vestida de `eidos-escuro`. Copy das
+/v3 e /v4 atualizada (5 pontos cada) e a paleta dos mockups passou a sair de `themeList` — ela
+estava chumbada com 7 hexadecimais que nem batiam com os temas reais. Commit `0291798`.
+⚠️ `forms.theme` é ENUM do Postgres: tema novo exige `ALTER TYPE` no banco ANTES do código.
 
 **Sinergia nova (não existia no plano original):** a conta dedicada pode ter pixel+token de CAPI
 (D-08/protocolo v2) → a landing mede as próprias conversões pelo motor recém-validado. Conecta com

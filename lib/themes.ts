@@ -64,6 +64,33 @@ export const themes: Record<ThemePreset, ThemeConfig> = {
     accentColor: '#C2674A',
     fontFamily: "'DM Sans', sans-serif",
   },
+  // ── TEMAS DA MARCA (27/08/2026) ────────────────────────────────────────────────────────────
+  // As cores da landing viram tema de formulário: o cliente pode vestir o dele com a nossa
+  // identidade, e a DEMO da página de vendas finalmente mostra a cara do produto (usava o
+  // `midnight` genérico). Disponíveis para TODOS os planos — não há gating de tema no builder.
+  //
+  // ⚠️ REGRA DE CONTRASTE, não estética: o player pinta o TEXTO do botão principal com
+  // `theme.backgroundColor` sobre `theme.primaryColor` (form-player.tsx). Logo, primary e
+  // background têm de ser opostos em luminosidade. No claro, o primary é o PRETO da marca —
+  // amarelo com texto creme seria ilegível. É o mesmo padrão de Minimal e Terracota.
+  'eidos-escuro': {
+    id: 'eidos-escuro',
+    name: 'Eidos Escuro',
+    primaryColor: '#F5B731',   // amarelo da marca → botão amarelo com texto quase-preto
+    backgroundColor: '#0A0A0F',
+    textColor: '#FFFFFF',
+    accentColor: '#E8923A',    // o laranja de hover da landing
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+  },
+  'eidos-claro': {
+    id: 'eidos-claro',
+    name: 'Eidos Claro',
+    primaryColor: '#0A0A0F',   // preto da marca → botão preto com texto creme
+    backgroundColor: '#FBF7EE',
+    textColor: '#0A0A0F',
+    accentColor: '#E8923A',
+    fontFamily: "'Inter', sans-serif",
+  },
 }
 
 export const themeList = Object.values(themes)

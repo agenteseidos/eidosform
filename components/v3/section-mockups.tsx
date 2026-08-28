@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowRight, Check, Globe, ImageIcon, Link2, Lock, Target } from 'lucide-react'
+import { themeList } from '@/lib/themes'
 
 // Mockups codados das seções de ênfase da /v3 — mini-interfaces ilustrativas
 // no estilo da demo do hero (HTML/CSS, sem assets externos). São decorativos:
@@ -49,7 +50,7 @@ export function MockupSegmentation() {
   )
 }
 
-/** Marca: o mesmo formulário em 2 dos 7 temas, com a logo do cliente na abertura */
+/** Marca: o mesmo formulário em 2 dos temas, com a logo do cliente na abertura */
 export function MockupBrand() {
   return (
     <div className="select-none" aria-hidden>
@@ -85,12 +86,15 @@ export function MockupBrand() {
         </div>
       </div>
 
-      {/* Paleta dos 7 temas */}
+      {/* Paleta dos temas — cores vêm de `themeList`, NÃO de uma lista à parte.
+          Até 27/08/2026 eram 7 hexadecimais chumbados aqui, e eles nem batiam com os temas
+          reais (#3b82f6 não é a cor de nenhum tema). Anunciar paleta que o produto não entrega
+          é promessa sem lastro — mesma regra de `lib/plan-marketing.ts`. */}
       <div className="mt-4 flex items-center justify-center gap-2">
-        {['#3b82f6', '#0ea5e9', '#f97316', '#22c55e', '#a78bfa', '#94a3b8', '#b85c38'].map((c) => (
-          <span key={c} className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: c }} />
+        {themeList.map((t) => (
+          <span key={t.id} className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: t.primaryColor }} />
         ))}
-        <span className="ml-2 text-[11px] text-slate-500">7 temas profissionais</span>
+        <span className="ml-2 text-[11px] text-slate-500">{themeList.length} temas profissionais</span>
       </div>
     </div>
   )

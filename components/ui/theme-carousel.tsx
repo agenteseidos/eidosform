@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { themeList } from '@/lib/themes'
 import type { ThemeConfig } from '@/lib/database.types'
 
-// Carrossel dos 7 temas na seção "Sua marca" das landings (/v3 e /v4).
+// Carrossel de TODOS os temas (itera `themeList`) na seção "Sua marca" das landings (/v3 e /v4).
 // Mesma lógica do carrossel de vídeos da LP do Instituto Luiz Almeida:
 // deriva contínua para a esquerda via rAF, loop infinito com o conjunto
 // triplicado, pausa no hover/toque, setas com ease-out cúbico, e
@@ -137,7 +137,7 @@ export function ThemeCarousel({ variant }: { variant: 'dark' | 'light' }) {
       : 'bg-white border border-slate-200 text-slate-600 shadow-sm hover:text-slate-900 hover:border-slate-300'
 
   return (
-    <div className="relative" role="region" aria-label="Exemplos dos 7 temas de formulário">
+    <div className="relative" role="region" aria-label="Exemplos dos temas de formulário">
       <div
         ref={trackRef}
         className="flex gap-3.5 overflow-x-auto py-1 scrollbar-none"

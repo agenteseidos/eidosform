@@ -156,9 +156,9 @@ const EMPHASIS_SECTIONS = [
   {
     id: 'marca',
     title: 'Formulário com a cara da sua marca',
-    desc: 'Escolha um dos 7 temas profissionais, coloque a sua logo na tela de boas-vindas e publique no seu próprio domínio. O formulário chega com a sua cara, não com a nossa.',
+    desc: 'Escolha um dos 9 temas profissionais, coloque a sua logo na tela de boas-vindas e publique no seu próprio domínio. O formulário chega com a sua cara, não com a nossa.',
     bullets: [
-      '7 temas profissionais prontos',
+      '9 temas profissionais prontos',
       'Sua logo na tela de boas-vindas',
       "Sem marca d'água a partir do Plus",
       'Domínio próprio no Professional (formularios.suamarca.com.br)',
@@ -175,7 +175,7 @@ const SHARE_ITEMS = [
   { icon: CornerDownRight, title: 'Redirecionamento pós-envio', desc: 'Ao final, o lead segue direto para a página de obrigado do seu funil.' },
 ]
 
-// O mockup estático da marca deu lugar ao carrossel com os 7 temas reais.
+// O mockup estático da marca deu lugar ao carrossel com os 9 temas reais.
 function BrandThemesCarousel() {
   return <ThemeCarousel variant="dark" />
 }
@@ -186,7 +186,7 @@ const SECTION_MOCKUPS = {
 } as const
 
 const AGENCY_BULLETS = [
-  'Cada formulário com um dos 7 temas + a logo do cliente na abertura',
+  'Cada formulário com um dos 9 temas + a logo do cliente na abertura',
   'Domínio personalizado por formulário, no endereço de cada cliente',
   'Webhooks levando cada lead direto ao CRM do cliente (com as UTMs juntas)',
   'Templates prontos de captura e briefing feitos para agência',
@@ -260,7 +260,7 @@ const FAQS = [
     },
   {
     q: 'Quantos tipos de pergunta e modelos prontos existem?',
-    a: 'São 20 tipos de pergunta — de texto e múltipla escolha a CPF/CNPJ, endereço com CEP automático, agendamento com Calendly, upload de arquivo e NPS — e 11 templates prontos, incluindo captura para agência de tráfego e briefing de agência. Além de 7 temas visuais e do Mapa da Lógica, que mostra visualmente todos os caminhos do seu formulário.',
+    a: 'São 20 tipos de pergunta — de texto e múltipla escolha a CPF/CNPJ, endereço com CEP automático, agendamento com Calendly, upload de arquivo e NPS — e 11 templates prontos, incluindo captura para agência de tráfego e briefing de agência. Além de 9 temas visuais e do Mapa da Lógica, que mostra visualmente todos os caminhos do seu formulário.',
   },
   {
     q: 'O que acontece quando atinjo o limite de respostas do mês?',

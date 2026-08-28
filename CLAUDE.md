@@ -142,7 +142,13 @@ Add new types by:
 
 ### Theme System
 
-7 presets in `lib/themes.ts`: midnight, ocean, sunset, forest, lavender, minimal, terracota
+9 presets in `lib/themes.ts`: midnight, ocean, sunset, forest, lavender, minimal, terracota,
+**eidos-escuro**, **eidos-claro** (temas da marca, 27/08/2026 — disponíveis a TODOS os planos).
+
+⚠️ `forms.theme` é ENUM do Postgres (`public.theme_preset`), não texto livre: **tema novo exige
+`ALTER TYPE ... ADD VALUE` no banco ANTES do código**, senão o builder oferece e o save explode.
+⚠️ O player pinta o TEXTO do botão principal com `theme.backgroundColor` sobre
+`theme.primaryColor` — primary e background TÊM de ser opostos em luminosidade (teste trava isso).
 
 Each theme defines: `primaryColor`, `backgroundColor`, `textColor`, `accentColor`, `fontFamily`
 

@@ -6,7 +6,8 @@
  * (slug, plan limits, feature gates) AFTER schema validation.
  */
 import { z } from 'zod'
-import type { QuestionType } from '@/lib/database.types'
+import type { QuestionType, ThemePreset } from '@/lib/database.types'
+import { themes } from '@/lib/themes'
 
 const QUESTION_TYPES = [
   'short_text',
@@ -288,7 +289,13 @@ const baseFormShape = {
   description: z.string().max(2000).nullable().optional(),
   slug: slugSchema,
   status: z.enum(['draft', 'published', 'closed']).optional(),
-  theme: z.enum(['midnight', 'ocean', 'sunset', 'forest', 'lavender', 'minimal', 'terracota']).optional(),
+  // ⚠️ DERIVADO de `themes`, NUNCA uma lista repetida à mão (bug de 27/08/2026).
+  // Esta linha tinha os 7 ids escritos literalmente. Ao entrar os temas da marca, o mapa, o tipo
+  // e o ENUM do banco foram atualizados — este validador não, e ele é quem roda de VERDADE no
+  // save: o builder oferecia o tema e o salvamento devolvia "Payload inválido".
+  // O teste de tipo não pegou porque tipo de TS é apagado na compilação — ele documenta o
+  // contrato, não o executa. Derivar da fonte faz o descompasso deixar de ser possível.
+  theme: z.enum(Object.keys(themes) as [ThemePreset, ...ThemePreset[]]).optional(),
   questions: QuestionsArraySchema.optional(),
   thank_you_enabled: z.boolean().optional(),
   thank_you_message: z.string().max(5000).optional(),

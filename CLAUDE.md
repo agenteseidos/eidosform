@@ -143,12 +143,17 @@ Add new types by:
 ### Theme System
 
 9 presets in `lib/themes.ts`: midnight, ocean, sunset, forest, lavender, minimal, terracota,
-**eidos-escuro**, **eidos-claro** (temas da marca, 27/08/2026 — disponíveis a TODOS os planos).
+**onix**, **areia** (temas da marca, 27/08/2026 — disponíveis a TODOS os planos).
 
 ⚠️ `forms.theme` é ENUM do Postgres (`public.theme_preset`), não texto livre: **tema novo exige
 `ALTER TYPE ... ADD VALUE` no banco ANTES do código**, senão o builder oferece e o save explode.
 ⚠️ O player pinta o TEXTO do botão principal com `theme.backgroundColor` sobre
 `theme.primaryColor` — primary e background TÊM de ser opostos em luminosidade (teste trava isso).
+⚠️ **Tema vive em QUATRO lugares**: `lib/themes.ts` (fonte) · união `ThemePreset` · ENUM
+`public.theme_preset` no banco · **validador Zod em `lib/schemas/form-schema.ts`**. O Zod agora
+DERIVA de `themes` — não repetir a lista. Em 27/08 ele ficou para trás e o save quebrou com
+"Payload inválido" enquanto o builder já oferecia o tema; o teste de TIPO não pegou porque tipo é
+apagado na compilação. `lib/themes.test.ts` exercita o validador de RUNTIME.
 
 Each theme defines: `primaryColor`, `backgroundColor`, `textColor`, `accentColor`, `fontFamily`
 

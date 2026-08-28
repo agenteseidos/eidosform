@@ -69,12 +69,12 @@ describe('🛡️ contraste: o botão principal tem de ser legível em TODO tema
 
 describe('🛡️ os temas da marca', () => {
   it('existem, com as cores da landing', () => {
-    expect(themes['eidos-escuro']).toMatchObject({
-      id: 'eidos-escuro', name: 'Eidos Escuro',
+    expect(themes.onix).toMatchObject({
+      id: 'onix', name: 'Ônix',
       primaryColor: '#F5B731', backgroundColor: '#0A0A0F', accentColor: '#E8923A',
     })
-    expect(themes['eidos-claro']).toMatchObject({
-      id: 'eidos-claro', name: 'Eidos Claro',
+    expect(themes.areia).toMatchObject({
+      id: 'areia', name: 'Areia',
       primaryColor: '#0A0A0F', backgroundColor: '#FBF7EE', accentColor: '#E8923A',
     })
   })
@@ -100,12 +100,35 @@ describe('🛡️ os temas da marca', () => {
   })
 })
 
+describe('🛡️ o VALIDADOR DE RUNTIME aceita todo tema (o teste que faltou em 27/08)', () => {
+  // O bug: `theme` era um `z.enum([...])` com os 7 ids escritos à mão em form-schema.ts. Os
+  // temas novos entraram no mapa, no tipo e no ENUM do banco — e não ali. O builder oferecia e
+  // o save devolvia "Payload inválido: expected one of midnight|ocean|...".
+  //
+  // O teste anterior olhava a UNIÃO ThemePreset, que é apagada na compilação: ele provava a
+  // documentação do contrato, não o contrato. Este roda o validador de verdade.
+  it.each(themeList.map((t) => [t.name, t.id] as const))('%s passa pelo schema de save', async (_n, id) => {
+    const { FormUpdateSchema } = await import('./schemas/form-schema')
+    const r = FormUpdateSchema.safeParse({ theme: id })
+    expect(r.success, `o validador recusou o tema "${id}" — mesmo defeito de 27/08`).toBe(true)
+  })
+
+  it('e continua recusando tema inexistente', async () => {
+    const { FormUpdateSchema } = await import('./schemas/form-schema')
+    expect(FormUpdateSchema.safeParse({ theme: 'nao-existe' }).success).toBe(false)
+  })
+})
+
 describe('🛡️ o ENUM do banco tem de conhecer todo tema do código', () => {
   it('cada tema tem o ALTER TYPE registrado na migration', () => {
     // Regra nº 1: o repo não descreve o banco. Isto guarda o ARQUIVO; só a sonda real prova o
     // banco (feita em 27/08 antes do deploy: PATCH com id inexistente devolveu [] e HTTP 200).
-    const sql = readFileSync(join(__dirname, '..', 'supabase', 'migrations', '20260827_temas_eidos.sql'), 'utf-8')
-    for (const id of ['eidos-escuro', 'eidos-claro']) expect(sql).toContain(`ADD VALUE IF NOT EXISTS '${id}'`)
+    // Duas migrations: a que CRIOU os valores e a que os RENOMEOU horas depois (padrão de nome).
+    const criacao = readFileSync(join(__dirname, '..', 'supabase', 'migrations', '20260827_temas_eidos.sql'), 'utf-8')
+    for (const id of ['eidos-escuro', 'eidos-claro']) expect(criacao).toContain(`ADD VALUE IF NOT EXISTS '${id}'`)
+    const rename = readFileSync(join(__dirname, '..', 'supabase', 'migrations', '20260827_temas_onix_areia.sql'), 'utf-8')
+    expect(rename).toContain('RENAME VALUE')
+    for (const id of ['onix', 'areia']) expect(rename).toContain(`TO '${id}'`)
   })
 
   it('a união ThemePreset cobre exatamente os temas existentes', () => {

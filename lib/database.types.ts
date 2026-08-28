@@ -68,8 +68,8 @@ export type ThemePreset =
   | 'lavender'
   | 'minimal'
   | 'terracota'
-  | 'eidos-escuro'
-  | 'eidos-claro'
+  | 'onix'
+  | 'areia'
 
 export interface ThemeConfig {
   id: ThemePreset

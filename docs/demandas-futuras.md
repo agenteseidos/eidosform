@@ -453,8 +453,9 @@ enviado". Quem testa a demo se perde. A mudança COMEÇA por reescrever essa mic
 
 **✅ RESOLVIDO EM 27/08/2026 — os 2 temas viram produto para TODO MUNDO ("9 temas" na vitrine).**
 ⚠️ Correção de registro: este documento os dava como criados desde 20/08, e **não estavam** —
-`lib/themes.ts` tinha 7 e a demo usava o `midnight` genérico. Criados agora: `eidos-escuro` e
-`eidos-claro`, sem gating de plano, com a demo (`/f/demo`) vestida de `eidos-escuro`. Copy das
+`lib/themes.ts` tinha 7 e a demo usava o `midnight` genérico. Criados agora: **`onix`** e **`areia`**
+(renomeados de eidos-escuro/eidos-claro no mesmo dia, para o padrão de UMA palavra dos demais),
+sem gating de plano, com a demo (`/f/demo`) vestida de `onix`. Copy das
 /v3 e /v4 atualizada (5 pontos cada) e a paleta dos mockups passou a sair de `themeList` — ela
 estava chumbada com 7 hexadecimais que nem batiam com os temas reais. Commit `0291798`.
 ⚠️ `forms.theme` é ENUM do Postgres: tema novo exige `ALTER TYPE` no banco ANTES do código.

@@ -10,7 +10,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { createCheckout, createCustomer, updateCustomer, disableCustomerNotifications, buildExternalReference, buildPlanChangeReference, createPaymentWithToken, refundPayment, getPaymentById, findPaymentByExternalReference, PLAN_PRICES, type BillingCycle } from '@/lib/asaas'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields, toAsaasCustomerPayload } from '@/lib/billing-profile'
-import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
+import { PLAN_ORDER, getEffectiveCommercialPlan, isTrialPlan, type PlanId } from '@/lib/plans'
 import { computePlanChange, decidePlanChangeAttempt, type PlanChangeRecoveryRow } from '@/lib/plan-change'
 import { addDaysToTodayBRT } from '@/lib/proration'
 import { executePlanSwitch, nextDueDateAfterFullCycle, recordPlanChangePaymentApplied } from '@/lib/plan-switch'
@@ -147,7 +147,8 @@ export async function POST(
   // DESTRAVAR a recompra: enxergar 'plus' faria o checkLaunchScope recusar com 409 quem está
   // tentando voltar a pagar. Omitir plan_status/asaas_subscription_id é o que mantém isso —
   // getEffectivePlan só concede carência com os dois presentes.
-  const effectiveCurrentPlan = getEffectivePlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
+  // TRIAL: para comprar, conta em trial é conta nova (getEffectiveCommercialPlan → 'free').
+  const effectiveCurrentPlan = getEffectiveCommercialPlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
   const launchBlock = checkLaunchScope({ currentPlan: effectiveCurrentPlan, targetPlan: plan, cycle })
   if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })
 
@@ -177,12 +178,14 @@ export async function POST(
   // o saldo restante vira crédito pra reassinar. (#2, Sidney 2026-06-08.)
   const hasPaidPeriodRemaining =
     !profile.asaasSubscriptionId &&
+    profile.plan_status === 'canceling' &&        // saldo real só existe em cancelamento
+    !isTrialPlan(profile.plan) &&                 // trial tem preço 0: nunca vira crédito
     profile.plan !== 'free' &&
     !!profile.plan_expires_at &&
     new Date(profile.plan_expires_at).getTime() > Date.now()
 
   const change = computePlanChange({
-    currentPlan: profile.plan as PlanId,
+    currentPlan: (isTrialPlan(profile.plan) ? 'free' : profile.plan) as PlanId,
     // plan_cycle CRU (string | null), idêntico ao preview — NÃO forçar 'MONTHLY' aqui.
     // Forçar divergia do preview p/ perfil pago legado com plan_cycle=null (P2-6, audit
     // Codex 2026-06-07): preview via null→cycle change, POST via MONTHLY→sem proration.
@@ -272,7 +275,8 @@ export async function POST(
     // LOCK por profile em volta de TODA a operação (inclusive a cobrança avulsa) — o
     // executor não adquire lock (não-reentrante). 2º POST simultâneo → 409.
     const lockKey = `planchange:${profile.profileId}`
-    if (!(await acquireLock(sSupa, lockKey))) {
+    const lockToken = await acquireLock(sSupa, lockKey)
+    if (!lockToken) {
       return NextResponse.json(
         { error: 'Já estamos processando uma alteração da sua assinatura. Aguarde um instante e tente novamente.' },
         { status: 409 }
@@ -558,7 +562,7 @@ export async function POST(
       })
       return NextResponse.json({ status: 'success', changed: true, nextChargeDate: nextDueDate, proration })
     } finally {
-      await releaseLock(sSupa, lockKey)
+      await releaseLock(sSupa, lockKey, lockToken)
     }
   }
 

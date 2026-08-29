@@ -2,6 +2,51 @@ export const PLAN_ORDER = ['free', 'starter', 'plus', 'professional'] as const
 
 export type PlanId = (typeof PLAN_ORDER)[number]
 
+/**
+ * PLAN_ORDER é a ordem COMERCIAL: o que aparece na grade, o que pode ser comprado
+ * e a hierarquia de recursos. `trial` NÃO entra aqui de propósito — se entrasse,
+ * `/checkout/trial` viraria rota válida (as rotas derivam desta lista) e a hierarquia
+ * free < trial < starter diria que o trial tem MENOS recursos que o Starter, o oposto
+ * do que ele entrega. (Decisão 28/08/2026, spec v12 §2.)
+ */
+
+/** Planos que uma CONTA pode ter, incluindo os que não estão à venda. */
+export const ACCOUNT_PLANS = [...PLAN_ORDER, 'trial'] as const
+export type AccountPlanId = (typeof ACCOUNT_PLANS)[number]
+
+/** Planos que podem ser COMPRADOS (têm preço). Nunca inclui free nem trial. */
+export type BillablePlanId = Exclude<PlanId, 'free'>
+export const BILLABLE_PLANS: readonly BillablePlanId[] = ['starter', 'plus', 'professional'] as const
+
+export function isBillablePlan(plan?: string | null): plan is BillablePlanId {
+  const n = plan?.trim().toLowerCase()
+  return !!n && (BILLABLE_PLANS as readonly string[]).includes(n)
+}
+
+/** Normaliza para um plano de CONTA (preserva 'trial'). Desconhecido → 'free'. */
+export function normalizeAccountPlan(plan?: string | null): AccountPlanId {
+  const normalized = plan?.trim().toLowerCase()
+  if (normalized && (ACCOUNT_PLANS as readonly string[]).includes(normalized)) {
+    return normalized as AccountPlanId
+  }
+  return 'free'
+}
+
+/**
+ * Traduz o plano da CONTA para o plano de DIREITOS (o que a pessoa pode usar).
+ * O trial entrega exatamente o Plus. Todo portão de produto deve comparar por aqui;
+ * quem decide dinheiro (checkout, proração, NFS-e, dunning, conversão) usa o plano
+ * da conta cru, nunca este.
+ */
+export function entitlementPlan(plan: AccountPlanId | string | null | undefined): PlanId {
+  const p = normalizeAccountPlan(plan)
+  return p === 'trial' ? 'plus' : p
+}
+
+export function isTrialPlan(plan?: string | null): boolean {
+  return normalizeAccountPlan(plan) === 'trial'
+}
+
 export function normalizePlan(plan?: string | null): PlanId {
   const normalized = plan?.trim().toLowerCase()
   if (normalized && (PLAN_ORDER as readonly string[]).includes(normalized)) {
@@ -88,11 +133,11 @@ export function fimDaCarenciaDe(profile: PerfilParaPlanoEfetivo | null | undefin
   return fimDaCarencia(exp)
 }
 
-export function getEffectivePlan(
+export function getEffectiveAccountPlan(
   profile: PerfilParaPlanoEfetivo | null | undefined,
   agora: number = Date.now()
-): PlanId {
-  const plan = normalizePlan(profile?.plan)
+): AccountPlanId {
+  const plan = normalizeAccountPlan(profile?.plan)
   if (plan === 'free') return 'free'
   const expiresAt = profile?.plan_expires_at
   if (!expiresAt) return plan
@@ -100,9 +145,37 @@ export function getEffectivePlan(
   if (Number.isNaN(exp) || agora <= exp) return plan
 
   // Passou da expiração. A carência de INADIMPLÊNCIA ainda pode segurar o plano.
+  // O trial NUNCA tem carência: ele não tem assinatura, então cai aqui direto.
   const inadimplenteComAssinaturaViva =
     profile?.plan_status === 'active' && Boolean(profile?.asaas_subscription_id)
   if (inadimplenteComAssinaturaViva && agora < fimDaCarencia(exp)) return plan
 
   return 'free'
+}
+
+/**
+ * Plano COMERCIAL efetivo — o que vale para CHECKOUT e PREÇOS.
+ * Trial não é plano pago: para comprar, quem está em trial é tratado como conta nova
+ * (primeira compra, preço cheio, crédito zero). Sem isto, o trial seria lido como
+ * "pagante Plus" pelo launch guard e como "cancelado com saldo" pela proração.
+ */
+export function getEffectiveCommercialPlan(
+  profile: PerfilParaPlanoEfetivo | null | undefined,
+  agora: number = Date.now()
+): PlanId {
+  const p = getEffectiveAccountPlan(profile, agora)
+  return p === 'trial' ? 'free' : p
+}
+
+/**
+ * Plano EFETIVO DE DIREITOS — é o que todo portão de produto deve usar.
+ * Devolve o plano comercial equivalente: uma conta em `trial` responde 'plus'.
+ * Para saber a IDENTIDADE da conta (é trial? é pagante?), use
+ * `getEffectiveAccountPlan`, que preserva 'trial'.
+ */
+export function getEffectivePlan(
+  profile: PerfilParaPlanoEfetivo | null | undefined,
+  agora: number = Date.now()
+): PlanId {
+  return entitlementPlan(getEffectiveAccountPlan(profile, agora))
 }

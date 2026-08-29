@@ -119,7 +119,12 @@ describe('sendConfirmationTemplate — nunca quebra a ação principal', () => {
   it('erro do Graph (ex.: template ainda PENDING): loga alto e devolve send_failed', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: { message: 'Template not approved', code: 132001 } }) })
     const r = await sendConfirmationTemplate({ toPhone: '83999376704', template: 'x', bodyParams: [], context: 't' })
-    expect(r).toEqual({ sent: false, skipped: 'send_failed', desfecho: 'recusado' })
+    expect(r).toEqual({
+      sent: false, skipped: 'send_failed', desfecho: 'recusado',
+      // Código do Graph e HTTP passaram a ser devolvidos (28/08): a régua do trial
+      // decide entre repetir e desistir a partir DELES, não do texto do erro.
+      graphCode: 132001, httpStatus: 400,
+    })
     expect(vi.mocked(logError)).toHaveBeenCalled()
   })
 

@@ -64,7 +64,8 @@ export async function GET(req: NextRequest) {
     const customerId = ck.asaas_customer_id
     if (!customerId || !ck.profile_id) { results.skipped++; continue }
     const lockKey = `activation:${ck.profile_id}`
-    if (!(await acquireLock(db, lockKey))) { results.skipped++; continue }
+    const lockToken = await acquireLock(db, lockKey)
+    if (!lockToken) { results.skipped++; continue }
     try {
       // profile atual
       const { data: prof } = await db.from('profiles').select('id, plan, plan_status, plan_cycle, asaas_subscription_id').eq('id', ck.profile_id).single()
@@ -157,7 +158,7 @@ export async function GET(req: NextRequest) {
       logError('[cron/reconcile-checkouts] erro no item', e, { checkoutId: ck.id })
       results.skipped++
     } finally {
-      await releaseLock(db, lockKey)
+      await releaseLock(db, lockKey, lockToken)
     }
   }
 

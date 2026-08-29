@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { signRecoveryToken, RECOVERY_COOKIE_NAME } from '@/lib/recovery-token'
 import { safeLocalRedirect } from '@/lib/safe-redirect'
 import { notifyCadastroConfirmado } from '@/lib/whatsapp-confirmations'
+import { concederTrialNaConfirmacao } from '@/lib/trial/grant-on-confirm'
 import { logError } from '@/lib/logger'
 
 export async function GET(request: Request) {
@@ -41,7 +42,15 @@ export async function GET(request: Request) {
       // corrida de duplo-clique pode duplicar — aceitável p/ transacional).
       // Roda em after(): nunca atrasa nem quebra o redirect do usuário.
       const user = data.user
-      if (type === 'signup' && user?.id && user.user_metadata?.wpp_cadastro_notified !== true) {
+
+      // TRIAL: mesmo gancho do /auth/confirm. Este caminho (PKCE) é o antigo, mas continua
+      // valendo para links de e-mail já enviados — deixar o trial só no /confirm faria a
+      // concessão depender de qual template o Supabase usou.
+      const trial = type === 'signup' && user?.id
+        ? await concederTrialNaConfirmacao(user.id, user.user_metadata)
+        : { ehTrial: false }
+
+      if (type === 'signup' && user?.id && !trial.ehTrial && user.user_metadata?.wpp_cadastro_notified !== true) {
         const userId = user.id
         const metadata = user.user_metadata ?? {}
         after(async () => {

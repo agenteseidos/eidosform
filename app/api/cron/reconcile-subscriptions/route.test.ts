@@ -16,7 +16,7 @@ vi.mock('next/server', () => ({
 }))
 vi.mock('@supabase/supabase-js', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/asaas', () => ({ getCustomerSubscriptions: vi.fn(), cancelSubscription: vi.fn() }))
-vi.mock('@/lib/billing-lock', () => ({ acquireLock: vi.fn(), releaseLock: vi.fn() }))
+vi.mock('@/lib/billing-lock', () => ({ acquireLock: vi.fn<() => Promise<string | null>>(), releaseLock: vi.fn() }))
 vi.mock('@/lib/resend', () => ({ sendBillingOpsAlert: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }))
 
@@ -82,7 +82,7 @@ describe('GET /api/cron/reconcile-subscriptions', () => {
   it('DETECTA 2 subs ACTIVE em alert-only (não reporta clean) — regressão do no-op', async () => {
     // Desde 2026-06-10 a ação é ON por padrão; alert-only agora exige =false explícito.
     const { GET, asaas, lock, supa, resend } = await load({ BILLING_RECONCILE_SUBSCRIPTIONS_ACTIONS: 'false' })
-    vi.mocked(lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(lock.acquireLock).mockResolvedValue('tok-test')
     // Contrato real da lib: ARRAY direto (não { data: [...] }).
     vi.mocked(asaas.getCustomerSubscriptions).mockResolvedValue(TWO_ACTIVE as never)
     vi.mocked(supa.createClient).mockReturnValue(makeDb({ profiles: [{ data: [PROFILE], error: null }] }) as never)
@@ -99,7 +99,7 @@ describe('GET /api/cron/reconcile-subscriptions', () => {
 
   it('com ACTIONS ligado, cancela a órfã mais antiga e mantém a keep', async () => {
     const { GET, asaas, lock, supa } = await load({ BILLING_RECONCILE_SUBSCRIPTIONS_ACTIONS: 'true' })
-    vi.mocked(lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(lock.acquireLock).mockResolvedValue('tok-test')
     vi.mocked(asaas.getCustomerSubscriptions).mockResolvedValue(TWO_ACTIVE as never)
     vi.mocked(asaas.cancelSubscription).mockResolvedValue({ deleted: true, id: 'sub_orfa' } as never)
     vi.mocked(supa.createClient).mockReturnValue(makeDb({
@@ -117,7 +117,7 @@ describe('GET /api/cron/reconcile-subscriptions', () => {
 
   it('1 sub ACTIVE → clean, sem alerta e sem cancelamento', async () => {
     const { GET, asaas, lock, supa, resend } = await load()
-    vi.mocked(lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(lock.acquireLock).mockResolvedValue('tok-test')
     vi.mocked(asaas.getCustomerSubscriptions).mockResolvedValue([TWO_ACTIVE[0]] as never)
     vi.mocked(supa.createClient).mockReturnValue(makeDb({ profiles: [{ data: [PROFILE], error: null }] }) as never)
 
@@ -132,7 +132,7 @@ describe('GET /api/cron/reconcile-subscriptions', () => {
 
   it('profile que não aponta p/ nenhuma ACTIVE → ambíguo: alerta, não cancela', async () => {
     const { GET, asaas, lock, supa } = await load({ BILLING_RECONCILE_SUBSCRIPTIONS_ACTIONS: 'true' })
-    vi.mocked(lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(lock.acquireLock).mockResolvedValue('tok-test')
     vi.mocked(asaas.getCustomerSubscriptions).mockResolvedValue(TWO_ACTIVE as never)
     vi.mocked(supa.createClient).mockReturnValue(makeDb({
       profiles: [{ data: [{ ...PROFILE, asaas_subscription_id: 'sub_outra' }], error: null }],

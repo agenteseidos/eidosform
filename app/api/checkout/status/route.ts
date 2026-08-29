@@ -5,7 +5,7 @@ import { checkRateLimitAsync } from '@/lib/rate-limit'
 import { getSubscription, getCustomerSubscriptions, hasConfirmedPaymentForSubscription } from '@/lib/asaas'
 import { handleUpgrade } from '@/lib/plan-limits'
 import { buildActivePlanUpdate, finalizeActivation, isExpectedFullPrice, stampAnnualStart } from '@/lib/billing-activation'
-import { acquireLock, releaseLock } from '@/lib/billing-lock'
+import { acquireLock, releaseLock, heartbeatLock } from '@/lib/billing-lock'
 import { sendBillingOpsAlert } from '@/lib/resend'
 import { log, logError, logWarn } from '@/lib/logger'
 
@@ -196,10 +196,24 @@ export async function GET() {
     // false SEM erro: o overlay continua pollando e a próxima rodada entra depois que o outro
     // caminho terminar. É o caminho com a recuperação mais barata dos cinco.
     const activationLockKey = `activation:${user!.id}`
-    if (!(await acquireLock(admin, activationLockKey))) {
+    const activationLockToken = await acquireLock(admin, activationLockKey)
+    if (!activationLockToken) {
       log('[checkout/status] lock de ativação ocupado — aguardando o outro caminho (próximo poll retenta)', { userId: user!.id })
       return false
     }
+    // A ativação fala com o Asaas várias vezes e as ESCRITAS não têm timeout de propósito
+    // (lib/asaas.ts: abortar um POST que cria cobrança é pior que esperar). Ou seja, este bloco
+    // pode passar do lease e outro executor assumiria o lock. O heartbeat renova a posse
+    // enquanto trabalhamos; ele só estende se o token ainda for nosso.
+    const heartbeat = setInterval(() => {
+      void heartbeatLock(admin, activationLockKey, activationLockToken).then((aindaDono) => {
+        if (!aindaDono) {
+          logError('[checkout/status] POSSE DO LOCK PERDIDA durante a ativação', null, { userId: user!.id })
+        }
+      })
+    }, 20_000)
+    if (typeof heartbeat.unref === 'function') heartbeat.unref()
+
     try {
       log('[checkout/status] Persisting plan from Asaas polling (service-role)', {
         userId: user!.id,
@@ -299,7 +313,8 @@ export async function GET() {
 
       return true
     } finally {
-      await releaseLock(admin, activationLockKey)
+      clearInterval(heartbeat)
+      await releaseLock(admin, activationLockKey, activationLockToken)
     }
   }
 

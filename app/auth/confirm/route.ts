@@ -13,6 +13,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { concederTrialNaConfirmacao } from '@/lib/trial/grant-on-confirm'
 import { signRecoveryToken, RECOVERY_COOKIE_NAME } from '@/lib/recovery-token'
 import { safeLocalRedirect } from '@/lib/safe-redirect'
 import { notifyCadastroConfirmado } from '@/lib/whatsapp-confirmations'
@@ -77,7 +78,18 @@ export async function GET(request: Request) {
   // Gatilho do WhatsApp de cadastro — MESMA lógica/dedupe do callback: flag só
   // após envio ok; roda em after() (nunca atrasa o redirect).
   const user = data.user
-  if (type === 'signup' && user?.id && user.user_metadata?.wpp_cadastro_notified !== true) {
+
+  // TRIAL: conceder ANTES de decidir a mensagem. Duas razões para ser aqui e com await:
+  //   (1) quem veio de uma campanha precisa achar o plano já ativo ao cair no painel;
+  //   (2) a decisão sobre a mensagem depende do resultado — quem entrou por trial recebe o
+  //       aviso do D0 ("seu acesso ao plano Plus foi ativado até DD/MM"), não o genérico
+  //       "cadastro confirmado". Mandar os dois seria duas mensagens seguidas dizendo o mesmo.
+  // Nunca lança: falha no trial não pode impedir alguém de confirmar o e-mail.
+  const trial = type === 'signup' && user?.id
+    ? await concederTrialNaConfirmacao(user.id, user.user_metadata)
+    : { ehTrial: false }
+
+  if (type === 'signup' && user?.id && !trial.ehTrial && user.user_metadata?.wpp_cadastro_notified !== true) {
     const userId = user.id
     const metadata = user.user_metadata ?? {}
     after(async () => {

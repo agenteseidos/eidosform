@@ -478,6 +478,7 @@ export async function POST(req: NextRequest) {
   // final feliz. Se o processo morrer antes, o lock fica stale e o acquire seguinte o toma
   // atomicamente após 2min (comportamento já existente do billing-lock).
   let activationLockHeld: string | null = null
+  let activationLockToken: string | null = null
 
   try {
     switch (event) {
@@ -773,10 +774,12 @@ export async function POST(req: NextRequest) {
         // ESTE perfil agora → lançar manda o evento ao DLQ e o reprocessador retenta depois
         // que o outro terminar. Nada se perde; nada roda em dupla.
         const activationLockKey = `activation:${user.id}`
-        if (!(await acquireLock(supabase, activationLockKey))) {
+        const acquiredToken = await acquireLock(supabase, activationLockKey)
+        if (!acquiredToken) {
           throw new Error(`lock de ativação ocupado p/ profile ${user.id} — DLQ/retry (outro caminho ativando)`)
         }
         activationLockHeld = activationLockKey
+        activationLockToken = acquiredToken
 
         const alreadyActiveSamePlan =
           previousProfile?.plan === plan &&
@@ -1286,7 +1289,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     // Solta o lock de ativação se este caminho o segurava — sem isto, o DLQ/retry deste mesmo
     // evento esperaria os 2min do stale-takeover à toa.
-    if (activationLockHeld) { await releaseLock(supabase, activationLockHeld); activationLockHeld = null }
+    if (activationLockHeld) { await releaseLock(supabase, activationLockHeld, activationLockToken); activationLockHeld = null; activationLockToken = null }
     // Retornamos 200 (não 500) intencionalmente: o evento já passou idempotency e
     // foi gravado em asaas_webhook_events. Retornar 5xx fazia o Asaas retentar o
     // evento dezenas/centenas de vezes, gerando retry storm (consumiu 30k requisições
@@ -1325,7 +1328,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Final feliz: solta o lock de ativação (o outro ponto de soltura é o catch acima).
-  if (activationLockHeld) { await releaseLock(supabase, activationLockHeld); activationLockHeld = null }
+  if (activationLockHeld) { await releaseLock(supabase, activationLockHeld, activationLockToken); activationLockHeld = null; activationLockToken = null }
 
   // Promove o registro de idempotência 'received' → 'processed' (só o desta rota; o filtro
   // por status evita clobber de markers/locks e do 'failed' setado no catch). Best-effort:

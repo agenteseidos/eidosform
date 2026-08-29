@@ -143,6 +143,29 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
+      // Canonicalização BR do telefone — a MESMA regra da coluna gerada profiles.phone_match_key_br.
+      // Usar esta função (e não o toWhatsAppDigits do TS) é obrigatório para casar listas com
+      // contas: o TS devolve 13 dígitos (com o nono dígito) e a coluna gerada devolve 12.
+      canonical_phone_match_key_br: {
+        Args: { raw_phone: string }
+        Returns: string
+      }
+      reserve_trial_signup: {
+        Args: { p_codigo: string; p_email_hash: string; p_phone_key: string }
+        Returns: Json
+      }
+      trial_signup_bind: {
+        Args: { p_intent_id: string; p_user_id: string }
+        Returns: Json
+      }
+      grant_trial: {
+        Args: { p_profile_id: string; p_owner_token: string }
+        Returns: Json
+      }
+      lapse_trials_vencidos: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
       generate_api_key: {
         Args: Record<PropertyKey, never>
         Returns: string
@@ -808,6 +831,276 @@ export interface Database {
           opted_out?: boolean
           opted_out_at?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      // ─────────────────────────────────────────────────────────────────────────────
+      // TRIAL de 30 dias (migrations 20260828_trial_02..04). O plano `trial` entrega os
+      // direitos do Plus mas NÃO existe comercialmente: a identidade dele mora aqui,
+      // não em profiles.plan sozinho. Escrita só por service role (RLS sem policy).
+      // ─────────────────────────────────────────────────────────────────────────────
+      trial_campaigns: {
+        Row: {
+          id: string
+          nome: string
+          codigo: string
+          codigo_anterior: string | null
+          valido_ate: string
+          duration_days: number
+          confirm_hours: number
+          exige_lista: boolean
+          teto: number | null
+          reservas: number
+          ativa: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          nome: string
+          codigo: string
+          valido_ate: string
+          duration_days?: number
+          confirm_hours?: number
+          exige_lista?: boolean
+          teto?: number | null
+        }
+        Update: {
+          codigo?: string
+          codigo_anterior?: string | null
+          valido_ate?: string
+          ativa?: boolean
+          teto?: number | null
+          reservas?: number
+        }
+        Relationships: []
+      }
+      trial_whitelist: {
+        Row: {
+          campaign_id: string
+          phone_match_key_br: string
+          nome: string | null
+          imported_at: string
+        }
+        Insert: {
+          campaign_id: string
+          phone_match_key_br: string
+          nome?: string | null
+        }
+        Update: { nome?: string | null }
+        Relationships: []
+      }
+      trial_signup_intents: {
+        // Evidência criada ANTES da conta: é ela que permite o reconciliador concluir
+        // um cadastro que morreu entre o signUp e o vínculo.
+        Row: {
+          id: string
+          campaign_id: string
+          email_hash: string
+          phone_match_key_br: string
+          duration_days_snapshot: number
+          state: 'reserved' | 'bound' | 'expired'
+          user_id: string | null
+          expires_at: string
+          created_at: string
+        }
+        Insert: {
+          campaign_id: string
+          email_hash: string
+          phone_match_key_br: string
+          duration_days_snapshot: number
+          state: 'reserved' | 'bound' | 'expired'
+          expires_at: string
+          user_id?: string | null
+        }
+        Update: {
+          state?: 'reserved' | 'bound' | 'expired'
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      plan_trials: {
+        // Ledger: UM trial por telefone, para sempre. O telefone é a chave primária de
+        // propósito — trocar de e-mail não devolve o benefício.
+        Row: {
+          phone_match_key_br: string
+          campaign_id: string
+          profile_id: string | null
+          status: 'pendente_confirmacao' | 'ativo' | 'convertido' | 'expirado' | 'lapsed'
+          duration_days_snapshot: number
+          signup_at: string
+          confirm_by: string
+          granted_at: string | null
+          expires_at: string | null
+          converted_at: string | null
+          expired_at: string | null
+          lapsed_at: string | null
+        }
+        Insert: {
+          phone_match_key_br: string
+          campaign_id: string
+          status: 'pendente_confirmacao' | 'ativo' | 'convertido' | 'expirado' | 'lapsed'
+          duration_days_snapshot: number
+          confirm_by: string
+          profile_id?: string | null
+        }
+        Update: {
+          status?: 'pendente_confirmacao' | 'ativo' | 'convertido' | 'expirado' | 'lapsed'
+          profile_id?: string | null
+          granted_at?: string | null
+          expires_at?: string | null
+          converted_at?: string | null
+          expired_at?: string | null
+          lapsed_at?: string | null
+        }
+        Relationships: []
+      }
+      trial_deliveries: {
+        // Régua D0/D15/D25/D30. `state` é o despacho; `delivery` é o que a Meta reportou.
+        // Os dois nunca se misturam: uma mensagem pode estar `accepted` e ter falhado a entrega.
+        Row: {
+          id: string
+          phone_match_key_br: string
+          stage: 'd0' | 'd15' | 'd25' | 'd30'
+          state: 'pending' | 'reserved' | 'sealed' | 'accepted' | 'ambiguous' | 'skipped' | 'dead'
+          delivery: 'none' | 'sent' | 'delivered' | 'read' | 'failed'
+          due_at: string
+          valid_until: string
+          next_attempt_at: string | null
+          lease_token: string | null
+          lease_until: string | null
+          attempts: number
+          template: string | null
+          params: Json | null
+          provider_id: string | null
+          sealed_at: string | null
+          accepted_at: string | null
+          ambiguous_at: string | null
+          dead_at: string | null
+          last_http_status: number | null
+          last_graph_code: string | null
+          last_error: string | null
+          skip_reason: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          phone_match_key_br: string
+          stage: 'd0' | 'd15' | 'd25' | 'd30'
+          due_at: string
+          valid_until: string
+        }
+        Update: {
+          state?: 'pending' | 'reserved' | 'sealed' | 'accepted' | 'ambiguous' | 'skipped' | 'dead'
+          delivery?: 'none' | 'sent' | 'delivered' | 'read' | 'failed'
+          next_attempt_at?: string | null
+          lease_token?: string | null
+          lease_until?: string | null
+          attempts?: number
+          template?: string | null
+          params?: Json | null
+          provider_id?: string | null
+          sealed_at?: string | null
+          accepted_at?: string | null
+          ambiguous_at?: string | null
+          dead_at?: string | null
+          last_http_status?: number | null
+          last_graph_code?: string | null
+          last_error?: string | null
+          skip_reason?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_status_events: {
+        // Append-only. event_id = sha256(wamid|status|occurred_at|graph_error_code).
+        Row: {
+          event_id: string
+          wamid: string | null
+          biz_opaque_callback_data: string | null
+          status: string
+          graph_error_code: string | null
+          occurred_at: string
+          received_at: string
+        }
+        Insert: {
+          event_id: string
+          status: string
+          occurred_at: string
+          wamid?: string | null
+          biz_opaque_callback_data?: string | null
+          graph_error_code?: string | null
+        }
+        // Append-only por contrato: o Update existe só para satisfazer o tipo do cliente.
+        Update: {
+          wamid?: string | null
+          biz_opaque_callback_data?: string | null
+          graph_error_code?: string | null
+        }
+        Relationships: []
+      }
+      account_capabilities: {
+        // Capacidades que NÃO são flag de plano. Hoje só `lead_whatsapp` (o aviso de lead no
+        // WhatsApp do cliente), que antes dependia de uma allowlist de ids em env var.
+        Row: {
+          profile_id: string
+          capability: 'lead_whatsapp'
+          valid_until: string | null
+          source: string
+          granted_at: string
+        }
+        Insert: {
+          profile_id: string
+          capability: 'lead_whatsapp'
+          source: string
+          valid_until?: string | null
+        }
+        Update: {
+          valid_until?: string | null
+          source?: string
+        }
+        Relationships: []
+      }
+      billing_locks: {
+        // Lock com DONO. O release só apaga se o owner_token bater — sem isso, um executor
+        // lento apagava o lock de quem assumiu depois dele.
+        Row: {
+          lock_key: string
+          owner_token: string
+          lease_until: string
+          updated_at: string
+        }
+        Insert: {
+          lock_key: string
+          owner_token: string
+          lease_until: string
+          updated_at?: string
+        }
+        Update: {
+          owner_token?: string
+          lease_until?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trial_claim_attempts: {
+        // Tentativa inválida de usar um link de trial. É LOG: nunca invalida a oferta de
+        // quem tem direito (senão um terceiro derrubaria o trial alheio de propósito).
+        Row: {
+          id: string
+          phone_tentado: string | null
+          campaign_codigo: string | null
+          motivo: string
+          created_at: string
+        }
+        Insert: {
+          motivo: string
+          phone_tentado?: string | null
+          campaign_codigo?: string | null
+        }
+        // Append-only por contrato (é log).
+        Update: {
+          motivo?: string
+          phone_tentado?: string | null
+          campaign_codigo?: string | null
         }
         Relationships: []
       }

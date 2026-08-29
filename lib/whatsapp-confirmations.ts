@@ -166,7 +166,15 @@ export async function sendConfirmationTemplate(params: {
   buttonUrlParam?: string | null
   /** Rótulo curto pro evento da Elen (ex.: "Plus Mensal", "Starter → Plus"). */
   eventoDetalhe?: string
-}): Promise<{ sent: boolean; skipped?: string; wamid?: string; desfecho: DesfechoEnvio }> {
+  /**
+   * Etiqueta nossa que a Meta devolve nos webhooks de status. É o que permite descobrir o WAMID
+   * de uma mensagem cuja resposta HTTP se perdeu — sem ela, "aceitou ou não?" fica sem resposta
+   * e o único caminho seguro seria nunca reenviar. Usada pela régua do trial.
+   */
+  bizOpaqueCallbackData?: string | null
+  /** Pula a checagem de opt-out daqui (quem chama já checou, com política própria). */
+  pularOptOut?: boolean
+}): Promise<{ sent: boolean; skipped?: string; wamid?: string; desfecho: DesfechoEnvio; graphCode?: number | null; httpStatus?: number | null }> {
   try {
     const creds = cloudCreds()
     if (!creds) {
@@ -175,7 +183,7 @@ export async function sendConfirmationTemplate(params: {
     }
     const digits = toWhatsAppDigits(params.toPhone ?? '')
     if (!digits) return { sent: false, skipped: 'no_phone', desfecho: 'nao_tentado' }
-    if (await isOptedOut(digits)) {
+    if (!params.pularOptOut && await isOptedOut(digits)) {
       log('[wpp-confirm] Destinatário em opt-out — confirmação suprimida', { context: params.context })
       return { sent: false, skipped: 'opted_out', desfecho: 'nao_tentado' }
     }
@@ -187,6 +195,7 @@ export async function sendConfirmationTemplate(params: {
         messaging_product: 'whatsapp',
         to: digits,
         type: 'template',
+        ...(params.bizOpaqueCallbackData ? { biz_opaque_callback_data: params.bizOpaqueCallbackData } : {}),
         template: {
           name: params.template,
           language: { code: 'pt_BR' },
@@ -215,7 +224,10 @@ export async function sendConfirmationTemplate(params: {
         context: params.context, template: params.template,
       })
       // A Meta RESPONDEU recusando → nada saiu → seguro reenviar depois.
-      return { sent: false, skipped: 'send_failed', desfecho: 'recusado' }
+      return {
+        sent: false, skipped: 'send_failed', desfecho: 'recusado',
+        graphCode: json?.error?.code ?? null, httpStatus: res.status,
+      }
     }
     const wamid = json.messages[0].id
     log('[wpp-confirm] Confirmação enviada', { context: params.context, template: params.template, wamid })

@@ -26,7 +26,7 @@ vi.mock('@/lib/billing-activation', () => ({
   activatePaidSubscription: vi.fn(),
   isExpectedFullPrice: vi.fn(),
 }))
-vi.mock('@/lib/billing-lock', () => ({ acquireLock: vi.fn(), releaseLock: vi.fn() }))
+vi.mock('@/lib/billing-lock', () => ({ acquireLock: vi.fn<() => Promise<string | null>>(), releaseLock: vi.fn() }))
 vi.mock('@/lib/resend', () => ({ sendBillingOpsAlert: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }))
 
@@ -119,7 +119,7 @@ const FREE_PROFILE = { id: 'user-1', plan: 'free', plan_status: null, plan_cycle
 const ACTIVE_SUB = [{ id: 'sub_1', status: 'ACTIVE', value: 49, cycle: 'MONTHLY' }]
 
 function setupHappyPath(mods: Awaited<ReturnType<typeof load>>) {
-  vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+  vi.mocked(mods.lock.acquireLock).mockResolvedValue('tok-test')
   vi.mocked(mods.asaas.getCustomerSubscriptions).mockResolvedValue(ACTIVE_SUB as never)
   vi.mocked(mods.asaas.hasConfirmedPaymentForSubscription).mockResolvedValue({ confirmed: true, ok: true })
   vi.mocked(mods.act.isExpectedFullPrice).mockReturnValue(true)
@@ -252,7 +252,7 @@ describe('GET /api/cron/reconcile-checkouts (backstop)', () => {
     // .neq('payment_method','plan_switch_fallback') — o filtro é feito server-side em prod.
     const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
     const calls: Array<{ table: string; method: string; args: unknown[] }> = []
-    vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(mods.lock.acquireLock).mockResolvedValue('tok-test')
     vi.mocked(mods.supa.createClient).mockReturnValue(makeMethodRecordingDb({
       billing_checkouts: [{ data: [], error: null }, { data: [], error: null }],
       profiles: [{ data: null, error: null }],
@@ -267,7 +267,7 @@ describe('GET /api/cron/reconcile-checkouts (backstop)', () => {
 
   it('linha ≥15min com pagamento CONFIRMED → runCardFallbackBackstop (source reconcile)', async () => {
     const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
-    vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(mods.lock.acquireLock).mockResolvedValue('tok-test')
     vi.mocked(mods.asaas.findPaymentByCheckoutSession).mockResolvedValue({ ok: true, payment: { id: 'pay_9', status: 'CONFIRMED' } })
     vi.mocked(mods.ps.runCardFallbackBackstop).mockResolvedValue('switched')
     vi.mocked(mods.supa.createClient).mockReturnValue(makeDb({
@@ -291,7 +291,7 @@ describe('GET /api/cron/reconcile-checkouts (backstop)', () => {
 
   it('🛡️ (P1-B) linha ≥15min e <90min SEM pagamento → intocada (não expira cedo, sem backstop)', async () => {
     const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
-    vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(mods.lock.acquireLock).mockResolvedValue('tok-test')
     vi.mocked(mods.asaas.findPaymentByCheckoutSession).mockResolvedValue({ ok: true, payment: null })
     vi.mocked(mods.supa.createClient).mockReturnValue(makeDb({
       billing_checkouts: [
@@ -312,7 +312,7 @@ describe('GET /api/cron/reconcile-checkouts (backstop)', () => {
   it('linha ≥90min sem pagamento → status cancelled + last_event CARD_FALLBACK_EXPIRED', async () => {
     const mods = await load({ BILLING_RECONCILE_CHECKOUTS_ACTIONS: 'true' })
     const updates: Array<{ table: string; payload: unknown }> = []
-    vi.mocked(mods.lock.acquireLock).mockResolvedValue(true)
+    vi.mocked(mods.lock.acquireLock).mockResolvedValue('tok-test')
     vi.mocked(mods.asaas.findPaymentByCheckoutSession).mockResolvedValue({ ok: true, payment: null })
     vi.mocked(mods.supa.createClient).mockReturnValue(makeUpdateRecordingDb({
       billing_checkouts: [

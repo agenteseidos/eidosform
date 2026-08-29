@@ -7,7 +7,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { PLAN_ORDER, getEffectivePlan, type PlanId } from '@/lib/plans'
+import { PLAN_ORDER, getEffectiveCommercialPlan, isTrialPlan, type PlanId } from '@/lib/plans'
 import { BILLING_FIELD_LABELS, getBillingProfileForUser, getMissingBillingFields } from '@/lib/billing-profile'
 import { computePlanChange } from '@/lib/plan-change'
 import { checkLaunchScope } from '@/lib/billing-launch-guard'
@@ -49,7 +49,8 @@ export async function GET(
   // DESTRAVAR a recompra: enxergar 'plus' faria o checkLaunchScope recusar com 409 quem está
   // tentando voltar a pagar. Omitir plan_status/asaas_subscription_id é o que mantém isso —
   // getEffectivePlan só concede carência com os dois presentes.
-  const effectiveCurrentPlan = getEffectivePlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
+  // TRIAL: para comprar, conta em trial é conta nova (getEffectiveCommercialPlan → 'free').
+  const effectiveCurrentPlan = getEffectiveCommercialPlan({ plan: profile.plan, plan_expires_at: profile.plan_expires_at })
   const launchBlock = checkLaunchScope({ currentPlan: effectiveCurrentPlan, targetPlan: plan, cycle })
   if (launchBlock) return NextResponse.json(launchBlock.body, { status: launchBlock.status })
 
@@ -59,12 +60,14 @@ export async function GET(
   // bater com o POST (mesma derivação) p/ o preview não divergir da execução.
   const hasPaidPeriodRemaining =
     !profile.asaasSubscriptionId &&
+    profile.plan_status === 'canceling' &&
+    !isTrialPlan(profile.plan) &&
     profile.plan !== 'free' &&
     !!profile.plan_expires_at &&
     new Date(profile.plan_expires_at).getTime() > Date.now()
 
   const change = computePlanChange({
-    currentPlan: profile.plan,
+    currentPlan: isTrialPlan(profile.plan) ? 'free' : profile.plan,
     currentCycle: profile.plan_cycle,
     planExpiresAt: profile.plan_expires_at,
     hasActiveSubscription: !!profile.asaasSubscriptionId,

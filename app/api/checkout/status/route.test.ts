@@ -32,7 +32,7 @@ vi.mock('@/lib/plan-limits', () => ({
 vi.mock('@/lib/resend', () => ({ sendBillingOpsAlert: vi.fn(async () => ({})) }))
 vi.mock('@/lib/logger', () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }))
 const lockMocks = vi.hoisted(() => ({
-  acquireLock: vi.fn(async () => true),
+  acquireLock: vi.fn(async (): Promise<string | null> => 'tok-test'),
   releaseLock: vi.fn(async () => undefined),
 }))
 vi.mock('@/lib/billing-lock', () => lockMocks)
@@ -117,7 +117,7 @@ function makeAdminDb() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  lockMocks.acquireLock.mockResolvedValue(true)
+  lockMocks.acquireLock.mockResolvedValue('tok-test')
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost'
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'chave'
 })

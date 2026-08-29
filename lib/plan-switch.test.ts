@@ -31,7 +31,7 @@ vi.mock('@/lib/asaas', async (importOriginal) => {
   return { ...orig, ...asaasMocks }
 })
 vi.mock('@/lib/billing-lock', () => ({
-  acquireLock: vi.fn(async () => true),
+  acquireLock: vi.fn(async (): Promise<string | null> => 'tok-test'),
   releaseLock: vi.fn(async () => undefined),
 }))
 const resendMocks = vi.hoisted(() => ({
@@ -346,7 +346,7 @@ describe('runPlanChangeBackstop', () => {
 
   it('lock ocupado (síncrono em andamento) → throw p/ retry', async () => {
     state.profileRow = { plan: 'starter', plan_cycle: 'MONTHLY', asaas_subscription_id: 'sub_old', asaas_customer_id: 'cus_1', asaas_card_token: 'tok_1' }
-    vi.mocked(acquireLock).mockResolvedValueOnce(false)
+    vi.mocked(acquireLock).mockResolvedValueOnce(null)
     await expect(
       runPlanChangeBackstop(makeDb(), { profileId: PROFILE_ID, plan: 'plus', cycle: 'MONTHLY', paymentId: 'pay_1', source: 'webhook' })
     ).rejects.toThrow(/lock ocupado/)
@@ -641,7 +641,7 @@ describe('runCardFallbackBackstop (fallback de cartão morto)', () => {
 
   // Teste 19 — lock ocupado → throw (retry via cron/reprocess).
   it('lock ocupado → throw p/ retry', async () => {
-    vi.mocked(acquireLock).mockResolvedValueOnce(false)
+    vi.mocked(acquireLock).mockResolvedValueOnce(null)
     await expect(call()).rejects.toThrow(/lock ocupado/)
   })
 

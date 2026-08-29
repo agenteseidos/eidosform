@@ -51,7 +51,8 @@ export async function GET(req: NextRequest) {
     const customerId = p.asaas_customer_id
     if (!customerId) continue
     const lockKey = `activation:${p.id}` // mesmo lock da ativação — não mexer enquanto ativa
-    if (!(await acquireLock(db, lockKey))) continue
+    const lockToken = await acquireLock(db, lockKey)
+    if (!lockToken) continue
     try {
       // getCustomerSubscriptions retorna o ARRAY direto (P0, audit 2026-06-09: ler `.data`
       // aqui produzia [] → o cron reportava "clean" p/ sempre e nunca detectava duplicatas).
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       logError('[cron/reconcile-subscriptions] erro no profile', e, { profileId: p.id })
     } finally {
-      await releaseLock(db, lockKey)
+      await releaseLock(db, lockKey, lockToken)
     }
   }
 

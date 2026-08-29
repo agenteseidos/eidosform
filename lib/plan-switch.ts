@@ -552,7 +552,8 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
   // LOCK PRIMEIRO (anti-TOCTOU, audit 2026-06-15): lê profile + linha de recuperação e decide TODOS
   // os guards (attempt, already_applied, downgrade, expectedOldSub) SOB o lock. Antes os guards liam
   // um snapshot pré-lock e só o CAS do executePlanSwitch protegia — defesa indireta e frágil.
-  if (!(await acquireLock(db, lockKey))) {
+  const lockToken = await acquireLock(db, lockKey)
+  if (!lockToken) {
     throw new Error(`${tag} lock ocupado (fluxo síncrono em andamento?) — retry`)
   }
   try {
@@ -664,7 +665,7 @@ export async function runPlanChangeBackstop(db: SupabaseClient, params: {
     log(`${tag}: troca concluída pelo backstop`, { profileId, plan, cycle, paymentId, newSub: result.newSubscriptionId })
     return 'switched'
   } finally {
-    await releaseLock(db, lockKey)
+    await releaseLock(db, lockKey, lockToken)
   }
 }
 
@@ -791,7 +792,8 @@ export async function runCardFallbackBackstop(db: SupabaseClient, params: {
   const lockKey = `planchange:${profileId}`
 
   // 2) LOCK PRIMEIRO (anti-TOCTOU) e RELÊ profile + linha sob o lock.
-  if (!(await acquireLock(db, lockKey))) {
+  const lockToken = await acquireLock(db, lockKey)
+  if (!lockToken) {
     throw new Error(`${tag} lock ocupado (fluxo síncrono/outro backstop em andamento?) — retry`)
   }
   try {
@@ -936,6 +938,6 @@ export async function runCardFallbackBackstop(db: SupabaseClient, params: {
     log(`${tag}: troca concluída pelo fallback de cartão morto`, { profileId, plan: row.plan, cycle: row.cycle, paymentId, newSub: result.newSubscriptionId })
     return 'switched'
   } finally {
-    await releaseLock(db, lockKey)
+    await releaseLock(db, lockKey, lockToken)
   }
 }

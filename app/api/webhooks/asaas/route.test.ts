@@ -18,7 +18,7 @@ vi.mock('next/server', () => ({
 vi.mock('@supabase/supabase-js', () => ({ createClient: vi.fn() }))
 // Trava de ativação (varredura 10/08/2026): livre por padrão; os testes dela ocupam de propósito.
 const lockMocks = vi.hoisted(() => ({
-  acquireLock: vi.fn(async () => true),
+  acquireLock: vi.fn(async (): Promise<string | null> => 'tok-test'),
   releaseLock: vi.fn(async () => undefined),
 }))
 vi.mock('@/lib/billing-lock', () => lockMocks)
@@ -787,7 +787,7 @@ describe('POST /api/webhooks/asaas — PAYMENT_OVERDUE respeita a carência do e
 describe('POST /api/webhooks/asaas — trava de ativação', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    lockMocks.acquireLock.mockResolvedValue(true)
+    lockMocks.acquireLock.mockResolvedValue('tok-test')
   })
 
   function setupAtivacao() {
@@ -801,7 +801,7 @@ describe('POST /api/webhooks/asaas — trava de ativação', () => {
   it('🛡️ lock OCUPADO → evento vai para o DLQ, nenhuma escrita em profiles', async () => {
     // Outro caminho está ativando este perfil agora. Lançar manda ao DLQ e o reprocessador
     // retenta DEPOIS que o outro terminar. Nada se perde; nada roda em dupla.
-    lockMocks.acquireLock.mockResolvedValue(false)
+    lockMocks.acquireLock.mockResolvedValue(null)
     const { calls } = setupAtivacao()
 
     const res = await POST(makeReq(CONFIRMED_BODY))
@@ -818,7 +818,7 @@ describe('POST /api/webhooks/asaas — trava de ativação', () => {
     await POST(makeReq(CONFIRMED_BODY))
 
     expect(lockMocks.acquireLock).toHaveBeenCalledWith(expect.anything(), 'activation:user-1')
-    expect(lockMocks.releaseLock).toHaveBeenCalledWith(expect.anything(), 'activation:user-1')
+    expect(lockMocks.releaseLock).toHaveBeenCalledWith(expect.anything(), 'activation:user-1', 'tok-test')
   })
 
   it('SOLTA o lock também quando o ramo falha no meio (throw → DLQ)', async () => {
@@ -836,6 +836,6 @@ describe('POST /api/webhooks/asaas — trava de ativação', () => {
     const res = await POST(makeReq(CONFIRMED_BODY))
 
     expect((await res.json() as { processed?: boolean }).processed).toBe(false)
-    expect(lockMocks.releaseLock).toHaveBeenCalledWith(expect.anything(), 'activation:user-1')
+    expect(lockMocks.releaseLock).toHaveBeenCalledWith(expect.anything(), 'activation:user-1', 'tok-test')
   })
 })

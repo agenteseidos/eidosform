@@ -304,7 +304,8 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
     // webhook do mesmo perfil. Ocupada → relança: o evento continua 'failed' e a próxima
     // tentativa entra depois que o outro caminho terminar.
     const activationLockKey = `activation:${profile.id}`
-    if (!(await acquireLock(supabase, activationLockKey))) {
+    const activationLockToken = await acquireLock(supabase, activationLockKey)
+    if (!activationLockToken) {
       throw new Error(`lock de ativação ocupado p/ profile ${profile.id} — mantém failed p/ retry`)
     }
     try {
@@ -356,7 +357,7 @@ async function reconcile(supabase: SupabaseClient, row: FailedEvent): Promise<st
       log('[asaas-reprocess] plano ativado via reprocesso', { profileId: profile.id, plan })
       return 'activated'
     } finally {
-      await releaseLock(supabase, activationLockKey)
+      await releaseLock(supabase, activationLockKey, activationLockToken)
     }
   }
 
